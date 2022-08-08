@@ -6,23 +6,65 @@ Created on Mon Jun 14 11:32:24 2021
 """
 import netCDF4 as nc
 import numpy as np
+import time
 
-region = 'EU'
-#fn_sword = 'E:/Users/Elizabeth Humphries/Documents/SWORD/For_Server/outputs/Reaches_Nodes_v10/netcdf/'+region.lower()+'_sword_v10.nc'
-fn_sword = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/Reaches_Nodes/netcdf/'+region.lower()+'_sword_v11.nc'
+region = 'OC'
+fn_sword = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v13/netcdf/'+region.lower()+'_sword_v13.nc'
 
 sword = nc.Dataset(fn_sword, 'r+')
 
-n_lon = sword.groups['nodes'].variables['x'][:]
+# n_lon = sword.groups['nodes'].variables['x'][:]
 r_lon = sword.groups['reaches'].variables['x'][:]
 
+### Update date and time stamp
+sword.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime())
+# sword.updates = "Added SIC4D discharge algorithm group and associated parameters. \
+#                     Added low_slopw_flag variable to reaches group. Changed a few Yukon \
+#                     River reaches extreme distance coeficient from 1 to 20."
+#sword.production_date
+#sword.updates
 
 ### Create New Variable(s)
 
-sword.groups['nodes'].createVariable('sinuosity', 'f8', ('num_nodes',), fill_value=-9999.)
-sword.groups['nodes'].variables['sinuosity'][:] = np.zeros(len(n_lon))
+#create variable
+sword.groups['reaches']['discharge_models']['constrained'].createGroup('SIC4DVar')
+sword.groups['reaches']['discharge_models']['unconstrained'].createGroup('SIC4DVar')
+#create variables
+sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
+sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
+sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('Abar', 'f8', ('num_reaches',), fill_value=-9999.)
+sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('Abar', 'f8', ('num_reaches',), fill_value=-9999.)
+sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('n', 'f8', ('num_reaches',), fill_value=-9999.)
+sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('n', 'f8', ('num_reaches',), fill_value=-9999.)
+sword.groups['reaches'].createVariable('low_slope_flag', 'i4', ('num_reaches',), fill_value=-9999.)
+#add fill values
+sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['sbQ_rel'][:] = np.repeat(-9999, len(r_lon))
+sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['sbQ_rel'][:] = np.repeat(-9999, len(r_lon))
+sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['Abar'][:] = np.repeat(-9999, len(r_lon))
+sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['Abar'][:] = np.repeat(-9999, len(r_lon))
+sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['n'][:] = np.repeat(-9999, len(r_lon))
+sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['n'][:] = np.repeat(-9999, len(r_lon))
+sword.groups['reaches'].variables['low_slope_flag'][:] = np.repeat(0,len(r_lon))
 
 sword.close()
+
+#check new variables
+#sword.groups['nodes'].variables.keys()
+#sword.groups['reaches'].variables.keys()
+
+
+### fix Yukon reaches
+# rch1 = np.where(sword.groups['nodes'].variables['reach_id'][:] == 81250500011)[0]
+# rch2 = np.where(sword.groups['nodes'].variables['reach_id'][:] == 81250500031)[0]
+# rch3 = np.where(sword.groups['nodes'].variables['reach_id'][:] == 81250500041)[0]
+# rch4 = np.where(sword.groups['nodes'].variables['reach_id'][:] == 81250700021)[0]
+
+# sword.groups['nodes'].variables['ext_dist_coef'][rch1] = 20
+# sword.groups['nodes'].variables['ext_dist_coef'][rch2] = 20
+# sword.groups['nodes'].variables['ext_dist_coef'][rch3] = 20
+# sword.groups['nodes'].variables['ext_dist_coef'][rch4] = 20
+
+
 
 '''
 # NODES
@@ -89,6 +131,5 @@ sword.groups['reaches']['discharge_models']['unconstrained']['MOMMA'].variables[
 
 '''
 
-#sword.groups['nodes'].variables.keys()
-#sword.groups['reaches'].variables.keys()
+
 

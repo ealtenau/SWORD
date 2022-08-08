@@ -63,12 +63,14 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     ucmod3 = qgrp1.createGroup('HiVDI')
     ucmod4 = qgrp1.createGroup('MOMMA')
     ucmod5 = qgrp1.createGroup('SADS')
+    ucmod6 = qgrp1.createGroup('SIC4DVar')
     # constrained discharge models
     cmod1 = qgrp2.createGroup('MetroMan')
     cmod2 = qgrp2.createGroup('BAM')
     cmod3 = qgrp2.createGroup('HiVDI')
     cmod4 = qgrp2.createGroup('MOMMA')
     cmod5 = qgrp2.createGroup('SADS')
+    cmod6 = qgrp2.createGroup('SIC4DVar')
 
     # dimensions
     #root_grp.createDimension('d1', 2)
@@ -254,6 +256,8 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_max_wth = rch_grp.createVariable(
         'max_width', 'f8', ('num_reaches',), fill_value=-9999.)
     rch_max_wth.units = 'meters'
+    rch_low_slope = rch_grp.createVariable(
+        'low_slope_flag', 'i4', ('num_reaches',), fill_value=-9999.)
     # subgroup 1 - 'area_fits'
     h_break = sub_grp1.createVariable(
         'h_break', 'f8', ('num_domains','num_reaches'), fill_value=-9999.)
@@ -344,6 +348,14 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
         'n', 'f8', ('num_reaches',), fill_value=-9999.)
     uc_sads_sbQ_rel = ucmod5.createVariable(
         'sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
+    # SIC4DVar (ucmod6)
+    uc_sic4d_Abar = ucmod6.createVariable(
+        'Abar', 'f8', ('num_reaches',), fill_value=-9999.)
+    uc_sic4d_Abar.units = 'meters'
+    uc_sic4d_n = ucmod6.createVariable(
+        'n', 'f8', ('num_reaches',), fill_value=-9999.)
+    uc_sic4d_sbQ_rel = ucmod6.createVariable(
+        'sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
     # constrained discharge subgroups
     # MetroMan (cmod1)
     c_metroman_Abar = cmod1.createVariable(
@@ -405,6 +417,14 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     c_sads_n = cmod5.createVariable(
         'n', 'f8', ('num_reaches',), fill_value=-9999.)
     c_sads_sbQ_rel = cmod5.createVariable(
+        'sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
+    # SIC4DVar (cmod6)
+    c_sic4d_Abar = cmod6.createVariable(
+        'Abar', 'f8', ('num_reaches',), fill_value=-9999.)
+    c_sic4d_Abar.units = 'meters'
+    c_sic4d_n = cmod6.createVariable(
+        'n', 'f8', ('num_reaches',), fill_value=-9999.)
+    c_sic4d_sbQ_rel = cmod6.createVariable(
         'sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
 
     # saving data
@@ -483,6 +503,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_orbits[:,:] = reaches.orbits
     rch_river_name[:] = reaches.river_name
     rch_max_wth[:] = reaches.max_wth
+    rch_low_slope[:] = reaches.low_slope
     # subgroup1 - area fits
     h_break[:,:] = reaches.h_break
     w_break[:,:] = reaches.w_break
@@ -523,6 +544,10 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     uc_sads_Abar[:] = reaches.sads_abar
     uc_sads_n[:] = reaches.sads_n
     uc_sads_sbQ_rel[:] = reaches.sads_sbQ_rel
+    # ucmod6
+    uc_sic4d_Abar[:] = reaches.sic4d_abar
+    uc_sic4d_n[:] = reaches.sic4d_n
+    uc_sic4d_sbQ_rel[:] = reaches.sic4d_sbQ_rel
     # cmod1
     c_metroman_Abar[:] = reaches.metroman_abar
     c_metroman_ninf[:] = reaches.metroman_ninf
@@ -552,6 +577,10 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     c_sads_Abar[:] = reaches.sads_abar
     c_sads_n[:] = reaches.sads_n
     c_sads_sbQ_rel[:] = reaches.sads_sbQ_rel
+    # cmod6
+    c_sic4d_Abar[:] = reaches.sic4d_abar
+    c_sic4d_n[:] = reaches.sic4d_n
+    c_sic4d_sbQ_rel[:] = reaches.sic4d_sbQ_rel
 
     root_grp.close()
 

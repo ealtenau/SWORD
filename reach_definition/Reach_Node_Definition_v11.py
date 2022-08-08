@@ -304,6 +304,7 @@ nodes.nchan_max[np.where(nodes.nchan_max == 0)] = 1
 reaches.iceflag = np.zeros((366, len(reaches.id)))
 reaches.river_name = np.repeat('NaN', len(reaches.id))
 reaches.max_wth = np.zeros(len(reaches.id))
+reaches.low_slope = np.zeros(len(reaches.id))
 # discharge subgroup 1
 reaches.h_break = np.full((4,len(reaches.id)), -9999.0)
 reaches.w_break = np.full((4,len(reaches.id)), -9999.0)
@@ -314,7 +315,7 @@ reaches.h_w_nobs = np.repeat(-9999., len(reaches.id))
 reaches.fit_coeffs = np.zeros((2, 3, len(reaches.id)))
 reaches.fit_coeffs[np.where(reaches.fit_coeffs == 0)] = -9999.0
 reaches.med_flow_area = np.repeat(-9999., len(reaches.id))
-#MEtroMan
+#MetroMan
 reaches.metroman_ninf = np.repeat(-9999, len(reaches.id))
 reaches.metroman_p = np.repeat(-9999, len(reaches.id))
 reaches.metroman_abar = np.repeat(-9999, len(reaches.id))
@@ -343,6 +344,10 @@ reaches.sads_sbQ_rel = np.repeat(-9999, len(reaches.id))
 reaches.bam_abar = np.repeat(-9999, len(reaches.id))
 reaches.bam_n = np.repeat(-9999, len(reaches.id))
 reaches.bam_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#SIC4DVar
+reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
+reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
+reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
 
 ### TRANSPOSE CERTAIN VARIABLES:
 centerlines.reach_id = centerlines.reach_id.T
