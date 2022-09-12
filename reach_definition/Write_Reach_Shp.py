@@ -121,8 +121,9 @@ reaches = gp.GeoDataFrame([
     swot_orbits,
     data.groups['reaches'].variables['swot_obs'][:],
     rch_type,
-    # data.groups['reaches'].variables['lake_id'][:],
     data.groups['reaches'].variables['river_name'][:],
+    data.groups['reaches'].variables['edit_flag'][:],
+    # data.groups['reaches'].variables['lake_id'][:],
 ]).T
 
 #rename columns.
@@ -154,8 +155,9 @@ reaches.rename(
         23:"swot_orbit",
         24:"swot_obs",
         25:"type",
-        # 26:"lake_id",
         26:"river_name",
+        27:"edit_flag",
+        # 28:"lake_id",
         },inplace=True)
 
 
@@ -183,7 +185,7 @@ level2 = [int(str(r)[0:2]) for r in reaches['reach_id']]
 unq_l2 = np.unique(level2)
 rch_cp = reaches.copy(); rch_cp['level2'] = level2
 for lvl in list(range(len(unq_l2))):
-    outshp = outpath + 'shp/' + region + '/' + region.lower() + "_sword_reaches_hb_" + str(unq_l2[lvl]) + "_" + version + '.shp'
+    outshp = outpath + 'shp/' + region + '/' + region.lower() + "_sword_reaches_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
     subset = rch_cp[rch_cp['level2'] == unq_l2[lvl]]
     subset = subset.drop(columns=['level2'])
     subset.to_file(outshp)

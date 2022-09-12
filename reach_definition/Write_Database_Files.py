@@ -171,6 +171,8 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     node_river_name = node_grp.createVariable(
         'river_name', 'S50', ('num_nodes',))
     node_river_name._Encoding = 'ascii'
+    node_edit_flag = node_grp.createVariable(
+        'edit_flag', 'i4', ('num_nodes',), fill_value=-9999.)
 
     # reach variables
     Reach_ID = rch_grp.createVariable(
@@ -258,6 +260,8 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_max_wth.units = 'meters'
     rch_low_slope = rch_grp.createVariable(
         'low_slope_flag', 'i4', ('num_reaches',), fill_value=-9999.)
+    rch_edit_flag = rch_grp.createVariable(
+        'edit_flag', 'i4', ('num_reaches',), fill_value=-9999.)
     # subgroup 1 - 'area_fits'
     h_break = sub_grp1.createVariable(
         'h_break', 'f8', ('num_domains','num_reaches'), fill_value=-9999.)
@@ -468,6 +472,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     node_sinuosity[:] = nodes.sinuosity
     node_river_name[:] = nodes.river_name
     node_manual_add[:] = nodes.manual_add
+    node_edit_flag[:] = nodes.edit_flag
 
     # reach data
     Reach_ID[:] = reaches.id
@@ -504,6 +509,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_river_name[:] = reaches.river_name
     rch_max_wth[:] = reaches.max_wth
     rch_low_slope[:] = reaches.low_slope
+    rch_edit_flag[:] = reaches.edit_flag
     # subgroup1 - area fits
     h_break[:,:] = reaches.h_break
     w_break[:,:] = reaches.w_break

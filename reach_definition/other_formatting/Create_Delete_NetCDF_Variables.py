@@ -8,16 +8,24 @@ import netCDF4 as nc
 import numpy as np
 import time
 
-region = 'OC'
-fn_sword = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v13/netcdf/'+region.lower()+'_sword_v13.nc'
+region = 'NA'
+fn_sword = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v14/netcdf/'+region.lower()+'_sword_v14.nc'
 
 sword = nc.Dataset(fn_sword, 'r+')
 
-# n_lon = sword.groups['nodes'].variables['x'][:]
+n_lon = sword.groups['nodes'].variables['x'][:]
 r_lon = sword.groups['reaches'].variables['x'][:]
 
+sword.groups['reaches'].createVariable('edit_flag', 'i4', ('num_reaches',), fill_value=-9999.)
+sword.groups['nodes'].createVariable('edit_flag', 'i4', ('num_nodes',), fill_value=-9999.)
+
+sword.groups['reaches'].variables['edit_flag'][:] = np.zeros(len(r_lon))
+sword.groups['nodes'].variables['edit_flag'][:] = np.zeros(len(n_lon))
+
+sword.close()
+
 ### Update date and time stamp
-sword.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime())
+# sword.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime())
 # sword.updates = "Added SIC4D discharge algorithm group and associated parameters. \
 #                     Added low_slopw_flag variable to reaches group. Changed a few Yukon \
 #                     River reaches extreme distance coeficient from 1 to 20."
@@ -27,26 +35,26 @@ sword.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime())
 ### Create New Variable(s)
 
 #create variable
-sword.groups['reaches']['discharge_models']['constrained'].createGroup('SIC4DVar')
-sword.groups['reaches']['discharge_models']['unconstrained'].createGroup('SIC4DVar')
-#create variables
-sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
-sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
-sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('Abar', 'f8', ('num_reaches',), fill_value=-9999.)
-sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('Abar', 'f8', ('num_reaches',), fill_value=-9999.)
-sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('n', 'f8', ('num_reaches',), fill_value=-9999.)
-sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('n', 'f8', ('num_reaches',), fill_value=-9999.)
-sword.groups['reaches'].createVariable('low_slope_flag', 'i4', ('num_reaches',), fill_value=-9999.)
-#add fill values
-sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['sbQ_rel'][:] = np.repeat(-9999, len(r_lon))
-sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['sbQ_rel'][:] = np.repeat(-9999, len(r_lon))
-sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['Abar'][:] = np.repeat(-9999, len(r_lon))
-sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['Abar'][:] = np.repeat(-9999, len(r_lon))
-sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['n'][:] = np.repeat(-9999, len(r_lon))
-sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['n'][:] = np.repeat(-9999, len(r_lon))
-sword.groups['reaches'].variables['low_slope_flag'][:] = np.repeat(0,len(r_lon))
+# sword.groups['reaches']['discharge_models']['constrained'].createGroup('SIC4DVar')
+# sword.groups['reaches']['discharge_models']['unconstrained'].createGroup('SIC4DVar')
+# #create variables
+# sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
+# sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('sbQ_rel', 'f8', ('num_reaches',), fill_value=-9999.)
+# sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('Abar', 'f8', ('num_reaches',), fill_value=-9999.)
+# sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('Abar', 'f8', ('num_reaches',), fill_value=-9999.)
+# sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].createVariable('n', 'f8', ('num_reaches',), fill_value=-9999.)
+# sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].createVariable('n', 'f8', ('num_reaches',), fill_value=-9999.)
+# sword.groups['reaches'].createVariable('low_slope_flag', 'i4', ('num_reaches',), fill_value=-9999.)
+# #add fill values
+# sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['sbQ_rel'][:] = np.repeat(-9999, len(r_lon))
+# sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['sbQ_rel'][:] = np.repeat(-9999, len(r_lon))
+# sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['Abar'][:] = np.repeat(-9999, len(r_lon))
+# sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['Abar'][:] = np.repeat(-9999, len(r_lon))
+# sword.groups['reaches']['discharge_models']['constrained']['SIC4DVar'].variables['n'][:] = np.repeat(-9999, len(r_lon))
+# sword.groups['reaches']['discharge_models']['unconstrained']['SIC4DVar'].variables['n'][:] = np.repeat(-9999, len(r_lon))
+# sword.groups['reaches'].variables['low_slope_flag'][:] = np.repeat(0,len(r_lon))
 
-sword.close()
+# sword.close()
 
 #check new variables
 #sword.groups['nodes'].variables.keys()
