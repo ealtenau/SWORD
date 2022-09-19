@@ -24,7 +24,7 @@ def get_ngh_info(data):
             nghs1 = nghs1.split()
             nghs1 =  [int(n) for n in nghs1]
             for idx in list(range(len(nghs1))):
-                n1 = np.where(data.reach_id == str(nghs1[idx]))[0]
+                n1 = np.where(data.reach_id == str(nghs1[idx]))[0] #remove string condition if reaches were written using python
                 if len(n1) == 0:
                     continue
                 else:
@@ -37,7 +37,7 @@ def get_ngh_info(data):
             nghs2 = nghs2.split()
             nghs2 =  [int(n) for n in nghs2]
             for idy in list(range(len(nghs2))):
-                n2 = np.where(data.reach_id == str(nghs2[idy]))[0]
+                n2 = np.where(data.reach_id == str(nghs2[idy]))[0] #remove string condition if reaches were written using python
                 if len(n2) == 0:
                     continue
                 else:
@@ -76,26 +76,31 @@ for f in list(range(len(files))):
                 topo_flag[ind] = 0
             else:
                 topo_flag[ind] = 1
+                # print(ind, 'cond 1')
         elif nghs[ind,1] == -9999 and nghs[ind,3] == rch_wse:
             if np.max([nghs[ind,2],nghs[ind,4]]) > rch_facc and np.min([nghs[ind,2],nghs[ind,4]]) < rch_facc:
                 topo_flag[ind] = 0
             else:
                 topo_flag[ind] = 1
+                # print(ind, 'cond 2')
         elif nghs[ind,1] == rch_wse and nghs[ind,3] == -9999:
             if np.max([nghs[ind,2],nghs[ind,4]]) > rch_facc and np.min([nghs[ind,2],nghs[ind,4]]) < rch_facc:
                 topo_flag[ind] = 0
             else:
                 topo_flag[ind] = 1
+                # print(ind, 'cond 3')
         elif nghs[ind,1] >= rch_wse and nghs[ind,3] >= rch_wse:
             if np.max([nghs[ind,2],nghs[ind,4]]) > rch_facc and np.min([nghs[ind,2],nghs[ind,4]]) < rch_facc:
                 topo_flag[ind] = 0
             else:
                 topo_flag[ind] = 1
+                # print(ind, 'cond 4')
         elif nghs[ind,1] <= rch_wse and nghs[ind,3] <= rch_wse: 
             if np.max([nghs[ind,2],nghs[ind,4]]) > rch_facc and np.min([nghs[ind,2],nghs[ind,4]]) < rch_facc:
                 topo_flag[ind] = 0
             else:
                 topo_flag[ind] = 1
+                # print(ind, 'cond 5')
         else:
             continue
 
@@ -107,7 +112,7 @@ for f in list(range(len(files))):
     del(data)
 
 data_all = gp.GeoDataFrame(data_all)
-data_all.to_file('/Users/ealteanau/Documents/SWORD_Dev/outputs/v13/gpkg/'+region.lower()+'_sword_v13.gpkg', driver='GPKG', layer='reaches')
+data_all.to_file('/Users/ealteanau/Documents/SWORD_Dev/outputs/rch_edits/'+region.lower()+'_sword_v13.gpkg', driver='GPKG', layer='reaches')
 flag = np.where(data_all['topo_flag'] == 1)[0]
 flag2 = np.where((data_all['topo_flag'] == 1) & (data_all['type'] != 5))[0]
 print('DONE', np.round(((len(flag)/len(data_all.reach_id))*100),3), np.round(((len(flag2)/len(data_all.reach_id))*100),3))
