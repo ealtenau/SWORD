@@ -60,7 +60,7 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y):
 
 #read in netcdf data. 
 region = 'NA'
-version = 'v13'
+version = 'v14'
 outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'

@@ -172,7 +172,8 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
         'river_name', 'S50', ('num_nodes',))
     node_river_name._Encoding = 'ascii'
     node_edit_flag = node_grp.createVariable(
-        'edit_flag', 'i4', ('num_nodes',), fill_value=-9999.)
+        'edit_flag',  'S50', ('num_nodes',))
+    node_edit_flag._Encoding = 'ascii'
 
     # reach variables
     Reach_ID = rch_grp.createVariable(
@@ -261,7 +262,8 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_low_slope = rch_grp.createVariable(
         'low_slope_flag', 'i4', ('num_reaches',), fill_value=-9999.)
     rch_edit_flag = rch_grp.createVariable(
-        'edit_flag', 'i4', ('num_reaches',), fill_value=-9999.)
+        'edit_flag', 'S50', ('num_reaches',), fill_value=-9999.)
+    rch_edit_flag._Encoding = 'ascii'
     # subgroup 1 - 'area_fits'
     h_break = sub_grp1.createVariable(
         'h_break', 'f8', ('num_domains','num_reaches'), fill_value=-9999.)

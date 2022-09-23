@@ -3,7 +3,9 @@ import netCDF4 as nc
 import pandas as pd
 import numpy as np
 
-###########################################################################################
+##############################################################################################################################
+##############################################################################################################################
+##############################################################################################################################
 
 def apply_updates(rpt_sub, sword):
     rpt_sub = rpt_sub.fillna(0)
@@ -15,6 +17,11 @@ def apply_updates(rpt_sub, sword):
             if flag == 1:
                 rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
                 nodes_rch = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                    edit_val = str(flag)
+                else:
+                    edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag)
+                
                 rch_up1 = np.where(sword.groups['reaches'].variables['rch_id_up'][0,:] == rpt_sub['reach_id'][row])[0]
                 rch_up2 = np.where(sword.groups['reaches'].variables['rch_id_up'][1,:] == rpt_sub['reach_id'][row])[0]
                 rch_up3 = np.where(sword.groups['reaches'].variables['rch_id_up'][2,:] == rpt_sub['reach_id'][row])[0]
@@ -36,9 +43,9 @@ def apply_updates(rpt_sub, sword):
                 new_node_ids = [int(n + str(rpt_sub['data1'][row])) for n in node_basin]
                 #update reach id variables
                 sword.groups['reaches'].variables['reach_id'][rch] = new_rch_id
-                sword.groups['reaches'].variables['edit_flag'][rch] = rpt_sub['report_index'][row]
+                sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
                 sword.groups['nodes'].variables['reach_id'][nodes_rch] = new_rch_id
-                sword.groups['nodes'].variables['edit_flag'][nodes_rch] = rpt_sub['report_index'][row]
+                sword.groups['nodes'].variables['edit_flag'][nodes_rch] = edit_val
                 if len(cl_rch1) > 0:
                     sword.groups['centerlines'].variables['reach_id'][0,cl_rch1] = new_rch_id
                 if len(rch_up1) > 0:
@@ -88,6 +95,11 @@ def apply_updates(rpt_sub, sword):
                 n_rch_up = sword.groups['reaches'].variables['n_rch_up'][rch]
                 n_rch_dn = sword.groups['reaches'].variables['n_rch_down'][rch]
                 nodes_rch = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                    edit_val = str(flag)
+                else:
+                    edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag)
+                
                 #create new variables
                 node_ids = sword.groups['nodes'].variables['node_id'][nodes_rch] 
                 dist_out = sword.groups['nodes'].variables['dist_out'][nodes_rch]
@@ -96,12 +108,12 @@ def apply_updates(rpt_sub, sword):
                 #update variables in netcdf
                 sword.groups['nodes'].variables['node_id'][nodes_rch] = new_node_ids
                 sword.groups['nodes'].variables['dist_out'][nodes_rch] = new_dist_out
-                sword.groups['nodes'].variables['edit_flag'][nodes_rch] = rpt_sub['report_index'][row]
+                sword.groups['nodes'].variables['edit_flag'][nodes_rch] = edit_val
                 sword.groups['reaches'].variables['rch_id_up'][:,rch] = rch_dn
                 sword.groups['reaches'].variables['rch_id_dn'][:,rch] = rch_up
                 sword.groups['reaches'].variables['n_rch_up'][rch] = n_rch_dn
                 sword.groups['reaches'].variables['n_rch_down'][rch] = n_rch_up
-                sword.groups['reaches'].variables['edit_flag'][rch] = rpt_sub['report_index'][row]
+                sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
                 for n in list(range(len(node_ids))):
                     cl_n1 = np.where(sword.groups['centerlines'].variables['node_id'][0,:] == node_ids[n])[0]
                     cl_n2 = np.where(sword.groups['centerlines'].variables['node_id'][1,:] == node_ids[n])[0]
@@ -120,6 +132,11 @@ def apply_updates(rpt_sub, sword):
             elif flag == 3: 
                 rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
                 nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                    edit_val = str(flag)
+                else:
+                    edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag)
+                
                 up_ngh = rpt_sub['data1'][row]
                 if up_ngh == 0:
                     up_ngh = np.zeros(1)
@@ -140,26 +157,86 @@ def apply_updates(rpt_sub, sword):
                 sword.groups['reaches'].variables['rch_id_dn'][:,rch] = dn_arr # dim = (4,1), type = int
                 sword.groups['reaches'].variables['n_rch_up'][rch] = len(up_ngh) 
                 sword.groups['reaches'].variables['n_rch_down'][rch] = len(dn_ngh)
-                sword.groups['reaches'].variables['edit_flag'][rch] = rpt_sub['report_index'][row]
-                sword.groups['nodes'].variables['edit_flag'][nodes] = rpt_sub['report_index'][row]
+                sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
+                sword.groups['nodes'].variables['edit_flag'][nodes] = edit_val
 
             # River Name
             else: #flag == 4
-                rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
-                nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
-                sword.groups['reaches'].variables['river_name'][rch] = rpt_sub['data1'][row]
-                sword.groups['reaches'].variables['edit_flag'][rch] = rpt_sub['report_index'][row]
-                sword.groups['nodes'].variables['river_name'][nodes] = np.repeat(rpt_sub['data1'][row], len(nodes))
-                sword.groups['nodes'].variables['edit_flag'][nodes] = rpt_sub['report_index'][row]
+                flag2 = rpt_sub['data1'][row]
+                if flag2 == 1:
+                    rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    # nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                        edit_val = str(flag) + str(flag2)
+                    else:
+                        edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag) + str(flag2)
+                    sword.groups['reaches'].variables['facc'][rch] = rpt_sub['data2'][row]
+                    sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
+                    # sword.groups['nodes'].variables['facc'][nodes] = np.repeat(rpt_sub['data2'][row], len(nodes))
+                    # sword.groups['nodes'].variables['edit_flag'][nodes] = edit_val
+                elif flag2 == 2:
+                    rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    # nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                        edit_val = str(flag) + str(flag2)
+                    else:
+                        edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag) + str(flag2)
+                    sword.groups['reaches'].variables['wse'][rch] = rpt_sub['data2'][row]
+                    sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
+                    # sword.groups['nodes'].variables['wse'][nodes] = np.repeat(rpt_sub['data2'][row], len(nodes))
+                    # sword.groups['nodes'].variables['edit_flag'][nodes] = edit_val
+                elif flag2 == 3:
+                    rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    # nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                        edit_val = str(flag) + str(flag2)
+                    else:
+                        edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag) + str(flag2)
+                    sword.groups['reaches'].variables['width'][rch] = rpt_sub['data2'][row]
+                    sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
+                    # sword.groups['nodes'].variables['width'][nodes] = np.repeat(rpt_sub['data2'][row], len(nodes))
+                    # sword.groups['nodes'].variables['edit_flag'][nodes] = edit_val
+                elif flag2 == 4:
+                    rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    # nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                        edit_val = str(flag) + str(flag2)
+                    else:
+                        edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag) + str(flag2)
+                    sword.groups['reaches'].variables['dist_out'][rch] = rpt_sub['data2'][row]
+                    sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
+                    # sword.groups['nodes'].variables['dist_out'][nodes] = np.repeat(rpt_sub['data2'][row], len(nodes))
+                    # sword.groups['nodes'].variables['edit_flag'][nodes] = edit_val
+                elif flag2 == 5:
+                    rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                        edit_val = str(flag) + str(flag2)
+                    else:
+                        edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag) + str(flag2)
+                    sword.groups['reaches'].variables['slope'][rch] = rpt_sub['data2'][row]
+                    sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
+                else:
+                    rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                    if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                        edit_val = str(flag) + str(flag2)
+                    else:
+                        edit_val = str(int(sword.groups['reaches'].variables['edit_flag'][rch])) + ',' + str(flag) + str(flag2)
+                    sword.groups['reaches'].variables['river_name'][rch] = rpt_sub['data2'][row]
+                    sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
+                    sword.groups['nodes'].variables['river_name'][nodes] = np.repeat(rpt_sub['data2'][row], len(nodes))
+                    sword.groups['nodes'].variables['edit_flag'][nodes] = edit_val    
 
         except:
             print("Error with row: " + str(row), ", rch: " + str(rpt_sub['reach_id'][row]), ", flag: " + str(flag))
 
-###########################################################################################
+##############################################################################################################################
+##############################################################################################################################
+##############################################################################################################################
 
 version = 'v14'
 sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'+version+'/netcdf/'
-fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/src/sword_app/user_reports.csv'
+fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/src/other_src/sword_app/user_reports.csv'
 
 rpt = pd.read_csv(fn_reports)
 not_completed = np.where(rpt['updated'] == 0)[0]

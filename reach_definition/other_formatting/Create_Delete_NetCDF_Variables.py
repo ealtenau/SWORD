@@ -16,11 +16,13 @@ sword = nc.Dataset(fn_sword, 'r+')
 n_lon = sword.groups['nodes'].variables['x'][:]
 r_lon = sword.groups['reaches'].variables['x'][:]
 
-sword.groups['reaches'].createVariable('edit_flag', 'i4', ('num_reaches',), fill_value=-9999.)
-sword.groups['nodes'].createVariable('edit_flag', 'i4', ('num_nodes',), fill_value=-9999.)
+sword.groups['reaches'].createVariable('edit_flag', 'S50', ('num_reaches',))
+sword.groups['reaches'].variables['edit_flag']._Encoding = 'ascii'
+sword.groups['nodes'].createVariable('edit_flag', 'S50', ('num_nodes',))
+sword.groups['nodes'].variables['edit_flag']._Encoding = 'ascii'
 
-sword.groups['reaches'].variables['edit_flag'][:] = np.zeros(len(r_lon))
-sword.groups['nodes'].variables['edit_flag'][:] = np.zeros(len(n_lon))
+sword.groups['reaches'].variables['edit_flag'][:] = np.repeat('NaN', len(r_lon))
+sword.groups['nodes'].variables['edit_flag'][:] = np.repeat('NaN', len(n_lon))
 
 sword.close()
 

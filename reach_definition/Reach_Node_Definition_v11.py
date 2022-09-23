@@ -296,7 +296,7 @@ nodes.meand_len = np.zeros(len(nodes.id))
 nodes.sinuosity = np.zeros(len(nodes.id))
 nodes.river_name = np.repeat('NaN', len(nodes.id))
 nodes.manual_add = np.zeros(len(nodes.id))
-nodes.edit_flag = np.zeros(len(nodes.id))
+nodes.edit_flag = np.repeat('NaN', len(nodes.id))
 nodes.manual_add[np.where(nodes.wth == 1)] = 1
 nodes.nchan_mod[np.where(nodes.nchan_mod == 0)] = 1
 nodes.nchan_max[np.where(nodes.nchan_max == 0)] = 1
@@ -306,7 +306,7 @@ reaches.iceflag = np.zeros((366, len(reaches.id)))
 reaches.river_name = np.repeat('NaN', len(reaches.id))
 reaches.max_wth = np.zeros(len(reaches.id))
 reaches.low_slope = np.zeros(len(reaches.id))
-reaches.edit_flag = np.zeros(len(reaches.id))
+reaches.edit_flag = np.repeat('NaN', len(reaches.id))
 # discharge subgroup 1
 reaches.h_break = np.full((4,len(reaches.id)), -9999.0)
 reaches.w_break = np.full((4,len(reaches.id)), -9999.0)
