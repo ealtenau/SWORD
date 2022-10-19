@@ -29,22 +29,28 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y):
             for ct in list(range(len(in_rch_up_dn))):
                 x_pt = cl_x[in_rch_up_dn[ct]]
                 y_pt = cl_y[in_rch_up_dn[ct]]
-                #distance to first and last point. 
-                coords_1 = (y_pt, x_pt)
-                coords_2 = (cl_y[sort_ind[0]], cl_x[sort_ind[0]])
-                coords_3 = (cl_y[sort_ind[-1]], cl_x[sort_ind[-1]])
-                d1 = geopy.distance.geodesic(coords_1, coords_2).m
-                d2 = geopy.distance.geodesic(coords_1, coords_3).m
-                #if minimum distance is greater than 200 m then don't attach. 
-                if np.min([d1,d2]) > 200:
+                
+                if x_pt < 0 and np.min([cl_x[sort_ind[0]], cl_x[sort_ind[-1]]]) > 0:
+                    print(unq_rch[ind])
                     continue
+                
                 else:
-                    if d1 < d2:
-                        x_coords = np.insert(x_coords, 0, x_pt, axis=0)
-                        y_coords = np.insert(y_coords, 0, y_pt, axis=0)
-                    if d1 > d2: 
-                        x_coords = np.insert(x_coords, len(x_coords), x_pt, axis=0)
-                        y_coords = np.insert(y_coords, len(y_coords), y_pt, axis=0)
+                    #distance to first and last point. 
+                    coords_1 = (y_pt, x_pt)
+                    coords_2 = (cl_y[sort_ind[0]], cl_x[sort_ind[0]])
+                    coords_3 = (cl_y[sort_ind[-1]], cl_x[sort_ind[-1]])
+                    d1 = geopy.distance.geodesic(coords_1, coords_2).m
+                    d2 = geopy.distance.geodesic(coords_1, coords_3).m
+                    #if minimum distance is greater than 200 m then don't attach. 
+                    if np.min([d1,d2]) > 200:
+                        continue
+                    else:
+                        if d1 < d2:
+                            x_coords = np.insert(x_coords, 0, x_pt, axis=0)
+                            y_coords = np.insert(y_coords, 0, y_pt, axis=0)
+                        if d1 > d2: 
+                            x_coords = np.insert(x_coords, len(x_coords), x_pt, axis=0)
+                            y_coords = np.insert(y_coords, len(y_coords), y_pt, axis=0)
 
         pts = GeoSeries(map(Point, zip(x_coords, y_coords)))
         if len(pts) <= 1:
@@ -59,7 +65,7 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y):
 #############################################################################################
 
 #read in netcdf data. 
-region = 'NA'
+region = 'AS'
 version = 'v14'
 outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
 outpath = outdir+version+'/'

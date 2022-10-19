@@ -57,7 +57,7 @@ def get_ngh_info(data):
         
 #########################################################################################################################
 
-region = 'NA'
+region = 'AS'
 file_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v13/shp/'+region+'/'
 files = [f for f in os.listdir(file_dir) if 'shp' in f and 'reaches' in f]
 

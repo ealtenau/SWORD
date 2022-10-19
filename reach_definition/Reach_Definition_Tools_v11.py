@@ -5952,7 +5952,7 @@ def ghost_reaches(subcls):
 
 ###############################################################################
 
-def swot_obs_percentage(subcls, subreaches, data):
+def swot_obs_percentage(subcls, subreaches):
 
     """
     FUNCTION:
@@ -6363,6 +6363,6 @@ def format_cl_rch_ids(reaches, centerlines):
                 cl_rch_id[cp2,:] = reaches.rch_id_up[ind,0:4]
             if d1 < d2:
                 cl_rch_id[cp1,:] = reaches.rch_id_up[ind,0:4]
-                cl_rch_id[cp2,:] = reaches.rch_id_up[ind,0:4]
+                cl_rch_id[cp2,:] = reaches.rch_id_down[ind,0:4] #feel like this should be down...
 
     return cl_rch_id
