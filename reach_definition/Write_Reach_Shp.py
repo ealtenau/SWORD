@@ -65,11 +65,12 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y):
 #############################################################################################
 
 #read in netcdf data. 
-region = 'AS'
+region = 'NA'
 version = 'v14'
 outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+# fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v14/netcdf/na_sword_v14_subset.nc'
 
 data = nc.Dataset(fn)
 

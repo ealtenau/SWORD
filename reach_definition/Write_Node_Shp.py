@@ -17,10 +17,11 @@ import pandas as pd
 ###############################################################################
 
 region = 'NA'
-version = 'v13'
+version = 'v14'
 outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
 outpath = outdir+version+'/'
-fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+# fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v14/netcdf/na_sword_v14_subset.nc'
 
 # read originial data.
 data = nc.Dataset(fn)

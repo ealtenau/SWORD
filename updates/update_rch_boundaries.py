@@ -1,7 +1,7 @@
 from __future__ import division
 # import sys
 # sys.path.append('../reach_definition/')
-from reach_definition import Reach_Definition_Tools_v11 as rdt
+# from reach_definition import Reach_Definition_Tools_v11 as rdt
 import numpy as np
 import time
 import netCDF4 as nc
@@ -583,12 +583,12 @@ def filter_neighbors(subreaches):
 ###############################################################################
 
 def update_rch_ids(centerlines, nodes, new_ids):
-    nodes.new_id = np.copy(nodes.id)
-    centerlines.new_node_id = np.copy(centerlines.node_id)
-    centerlines.new_rch_id = np.copy(centerlines.reach_id)
+    nodes.old_id = np.copy(nodes.id)
+    centerlines.old_node_id = np.copy(centerlines.node_id)
+    centerlines.old_rch_id = np.copy(centerlines.reach_id)
     unq_rchs = np.unique(new_ids.new_rch_id)
     for ind in list(range(len(unq_rchs))):
-        node_rch = np.where(nodes.new_rch_id == unq_rchs[ind])[0]
+        node_rch = np.where(nodes.reach_id == unq_rchs[ind])[0]
         numloc = np.where(new_ids.new_rch_id == unq_rchs[ind])[0]
         
         if nodes.edit_flag[node_rch][0] == 'NaN':
@@ -608,7 +608,7 @@ def update_rch_ids(centerlines, nodes, new_ids):
         new_node_ids = [int(str(unq_rchs[ind])[:-1]+node_nums[i]+str(unq_rchs[ind])[-1:]) for i in list(range(len(node_nums)))]
         
         #update node id attributes. 
-        nodes.new_id[node_rch] = new_node_ids
+        nodes.id[node_rch] = new_node_ids
         nodes.edit_flag[node_rch] = np.repeat(edit_val, len(node_rch))
         
         #update centerline id attributes. 
@@ -617,8 +617,8 @@ def update_rch_ids(centerlines, nodes, new_ids):
             mx = np.where(centerlines.cl_id == nodes.cl_id[1,node_rch[nr]])[0]
             cl_vals = np.linspace(centerlines.cl_id[mn], centerlines.cl_id[mx], int((centerlines.cl_id[mx]-centerlines.cl_id[mn]))+1, dtype=int)
             cl_inds = np.where(np.in1d(centerlines.cl_id, cl_vals))[0]
-            centerlines.new_node_id[0,cl_inds] = new_node_ids[nr]
-            centerlines.new_rch_id[0,cl_inds] = unq_rchs[ind]
+            centerlines.node_id[0,cl_inds] = new_node_ids[nr]
+            centerlines.reach_id[0,cl_inds] = unq_rchs[ind]
 
 ###############################################################################
 
@@ -965,7 +965,7 @@ def calc_attributes_from_nodes(subreaches, nodes):
     max_wth = np.zeros(len(subreaches.id))
     edit_flag = np.zeros(len(subreaches.id),dtype=Object)
     for ind in list(range(len(subreaches.id))):
-        rch = np.where(nodes.new_rch_id == subreaches.id[ind])[0]
+        rch = np.where(nodes.reach_id == subreaches.id[ind])[0]
         dist_out[ind] = np.max(nodes.dist_out[rch])
         river_name[ind] = np.unique(nodes.river_name[rch])[0]
         max_wth[ind] = np.max(nodes.max_wth[rch])
@@ -992,18 +992,13 @@ def calc_cl_iceflag(reaches, centerlines):
 
 ###############################################################################
 
-def calc_attributes_from_cls(subreaches, centerlines):
-    cl_ids = np.zeros((2, len(subreaches.id)))
+def calc_cls_iceflag(subreaches, centerlines):
     ice_flag = np.zeros((366, len(subreaches.id)))
     for r in list(range(len(subreaches.id))):
-        rind = np.where(centerlines.new_rch_id[0,:] == subreaches.id[r])[0]
-        min_id = np.min(centerlines.cl_id[rind])
-        max_id = np.max(centerlines.cl_id[rind])
-        cl_ids[0,r] = min_id
-        cl_ids[1,r] = max_id
+        rind = np.where(centerlines.reach_id[0,:] == subreaches.id[r])[0]
         row = centerlines.ice_flag[:,rind[0]]
         ice_flag[:,r] = row
-    return cl_ids, ice_flag
+    return ice_flag
 
 ###############################################################################
 
@@ -1307,6 +1302,35 @@ def update_rch_indexes(subcls, new_rch_id):
                 new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))
 
     return new_rch_ind, new_rch_eps
+
+###############################################################################
+
+def update_cl_ids(subreaches, subnodes_ids, subcls):
+
+    ID = np.copy(subcls.id)
+    cl_reach_id = np.copy(subcls.reach_id)
+    cl_reach_ind = np.copy(subcls.rch_ind6)
+    cl_node_id = np.copy(subcls.node_id)
+    reach_id = np.copy(subreaches.id)
+    node_id = np.copy(subnodes_ids)
+
+    cl_id = np.zeros(len(ID))
+    rch_cl_id = np.full((len(reach_id), 2), 0)
+    node_cl_id = np.full((len(node_id), 2), 0)
+    for ind in list(range(len(reach_id))):
+        rch = np.where(cl_reach_id == reach_id[ind])[0]
+        cl_id[rch] = cl_reach_ind[rch]
+        rch_cl_id[ind, 0] = np.min(cl_id[rch])
+        rch_cl_id[ind, 1] = np.max(cl_id[rch])
+        uniq_nodes = np.unique(cl_node_id[rch])
+        for idx in list(range(len(uniq_nodes))):
+            Nodes = np.where(cl_node_id == uniq_nodes[idx])[0]
+            index = np.where(node_id == uniq_nodes[idx])[0]
+            node_cl_id[index,0] = np.min(cl_id[Nodes])
+            node_cl_id[index,1] = np.max(cl_id[Nodes])
+
+    return(cl_id, rch_cl_id, node_cl_id)
+
 
 ###############################################################################
 
@@ -2049,6 +2073,7 @@ def add_fill_vars(reaches):
 ###############################################################################
 ###############################################################################
 ###############################################################################
+start_all = time.time()
 
 version = 'v14'
 region = 'NA'
@@ -2062,14 +2087,14 @@ new_ids = pd.read_csv(rch_fn)
 centerlines, nodes, reaches = read_data(sword_dir)
 
 #create new attribute at node level with updated rch ids. 
-nodes.new_rch_id = np.copy(nodes.reach_id)
+nodes.old_rch_id = np.copy(nodes.reach_id)
 for ind in list(range(len(new_ids.node_id))): 
     n = np.where(nodes.id == new_ids.node_id[ind])[0]
-    nodes.new_rch_id[n] = new_ids.new_rch_id[ind]
+    nodes.reach_id[n] = new_ids.new_rch_id[ind]
 
 #update node and centerline reach ids.
-update_rch_ids(centerlines, nodes, new_ids)
 centerlines.ice_flag = calc_cl_iceflag(reaches, centerlines)
+update_rch_ids(centerlines, nodes, new_ids)
 
 ### ------------------------------------------------------------------------------------------- ###
 ### ------------------------------------------------------------------------------------------- ###
@@ -2079,6 +2104,9 @@ print('~~~~~~~~~ REDOING RCH ATTRIBUTES IN SUB-BASIN ~~~~~~~~~')
 print('Reading in merged data')
 cl_level6 = np.array([str(r)[0:6] for r in centerlines.reach_id[0,:]])
 cl_l6 = np.where(cl_level6 == str(new_ids.basin[0]))[0]
+nd_level6 = np.array([str(r)[0:6] for r in nodes.reach_id])
+nd_l6 = np.where(nd_level6 == str(new_ids.basin[0]))[0]
+
 merge = read_merge_netcdf_subset(fn_merge, new_ids.basin[0], 6)
 
 cl_pts = np.vstack((centerlines.x[cl_l6], centerlines.y[cl_l6])).T
@@ -2086,15 +2114,13 @@ merge_pts = np.vstack((merge.lon, merge.lat)).T
 kdt = sp.cKDTree(cl_pts)
 pt_dist, pt_ind = kdt.query(merge_pts, k = 5, distance_upper_bound = 500)
 #add reach ids to merge database 
-merge.reach_id = centerlines.new_rch_id[0,cl_l6[pt_ind[:,0]]] ### reach ids are odd....
-merge.node_id = centerlines.new_node_id[0,cl_l6[pt_ind[:,0]]]
-# merge.rch_ind6 = centerlines.cl_id[cl_l6[pt_ind[:,0]]]
+merge.reach_id = centerlines.reach_id[0,cl_l6[pt_ind[:,0]]] ### reach ids are odd....
+merge.node_id = centerlines.node_id[0,cl_l6[pt_ind[:,0]]]
 
 print('Updating Reach Indexes')
 # Updating reach indexes and type.
-merge.rch_ind6, merge.rch_eps6 = update_rch_indexes(merge, merge.reach_id)
-### NEED TO THINK ABOUT WHETHER CENTERLINE IDS NEED TO BE UPDATED. 
-# centerline_ids(subreaches, subnodes, subcls, cnt)
+merge.rch_ind6 = centerlines.cl_id[cl_l6[pt_ind[:,0]]]
+# merge.rch_ind6, merge.rch_eps6 = update_rch_indexes(merge, merge.reach_id) 
 
 print('Calculating Reach Length')
 # Updating reach flow distance.
@@ -2120,7 +2146,7 @@ subreaches.dist_out, subreaches.river_name,\
     subreaches.max_wth, subreaches.edit_flag = calc_attributes_from_nodes(subreaches, nodes)
 
 print('Calculating Attributes from Centerlines')
-subreaches.cl_id, subreaches.iceflag = calc_attributes_from_cls(subreaches, centerlines)
+subreaches.iceflag = calc_cls_iceflag(subreaches, centerlines)
 
 print('Defining Local Topology')
 # Defining intial topology.
@@ -2134,6 +2160,14 @@ print('Calculating SWOT Coverage')
 # Calculating swot coverage.
 subreaches.coverage, subreaches.orbits, subreaches.max_obs,\
     subreaches.median_obs, subreaches.mean_obs = swot_obs_percentage(merge, subreaches)
+
+# start_cnt = np.max(centerlines.cl_id)+1
+# cls_cl_id, rch_cl_id, node_cl_id = centerline_ids(subreaches, nodes, merge, start_cnt)
+__, rch_cl_id, node_cl_id = update_cl_ids(subreaches, nodes.id[nd_l6], merge)
+subreaches.cl_id = rch_cl_id.T
+# Replace node and centerline cl_id values. 
+nodes.cl_id[:,nd_l6] = node_cl_id.T
+# centerlines.cl_id[cl_l6[pt_ind[:,0]]] = cls_cl_id
 
 # Reformatting attributes
 subreaches.rch_id_up_filt = subreaches.rch_id_up_filt[:,0:4]
@@ -2152,7 +2186,7 @@ subreaches.low_slope = np.zeros(len(subreaches.id))
 ### ------------------------------------------------------------------------------------------- ###
 ### ------------------------------------------------------------------------------------------- ###
 
-#delete existing reaches in level2 basin.
+#delete existing reaches in level6 basin.
 level6 = np.array([str(r)[0:6] for r in reaches.id])
 l6 = np.where(level6 == str(new_ids.basin[0]))[0]
 old_reach_num = len(reaches.id)
@@ -2161,16 +2195,24 @@ delete_rchs(reaches, l6)
 #append new reaches
 append_data(reaches, subreaches)
 
+######## !!!!!!!!!!!!!!!! REMOVE !!!!!!!!!!!!!!!!!!!! #########
+# centerlines, nodes, reaches = subset_data(centerlines, nodes, reaches, subreaches.id)
+######## !!!!!!!!!!!!!!!! REMOVE !!!!!!!!!!!!!!!!!!!! #########
+
 #add fill variables for reaches
 add_fill_vars(reaches)
 
-#redo centerline ids for nodes and reaches. 
-cl_nodes_id = format_cl_node_ids(nodes, centerlines, verbose = True)
-cl_rch_id = format_cl_rch_ids(reaches, centerlines, verbose = True)
-centerlines.reach_id = np.insert(cl_rch_id, 0, centerlines.reach_id, axis = 0)
-centerlines.reach_id = centerlines.reach_id[0:4,:]
-centerlines.node_id =  np.insert(cl_nodes_id, 0, centerlines.node_id, axis = 0)
-centerlines.node_id = centerlines.node_id[0:4,:]
+#redo centerline ids for nodes and reaches. (only if no other updates are made)  
+# cl_nodes_id = format_cl_node_ids(nodes, centerlines, verbose = True)
+# cl_rch_id = format_cl_rch_ids(reaches, centerlines, verbose = True)
+# centerlines.reach_id = np.insert(cl_rch_id, 0, centerlines.reach_id, axis = 0)
+# centerlines.reach_id = centerlines.reach_id[0:4,:]
+# centerlines.node_id =  np.insert(cl_nodes_id, 0, centerlines.node_id, axis = 0)
+# centerlines.node_id = centerlines.node_id[0:4,:]
 
 #write new netcdf. 
-# write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+# outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'\
+#     +version+'/netcdf/'+region.lower()+'_sword_'+version+'_subset.nc'
+write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+end_all = time.time()
+print('Done in: ' + str(np.round((end_all-start_all)/60, 2)) + ' min')

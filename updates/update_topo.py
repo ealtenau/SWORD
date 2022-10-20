@@ -153,7 +153,46 @@ def neigboring_reaches(cl_lon, cl_lat, cl_rch, reaches):
 
 ###############################################################################
 
-def local_topology(subcls, subreaches, subset = True):
+def update_node_order(subcls, subnodes, subreaches, reach):
+    
+    nodes_rch = np.where(subnodes.reach_id == reach)[0]
+    rch = np.where(subreaches.id == reach)[0]
+    
+    if '2' in subreaches.edit_flag[rch][0].split(','):
+        edit_val = subreaches.edit_flag[rch][0]
+    elif 'N' in subreaches.edit_flag[rch][0].split(','):
+        edit_val = '2'
+    else:
+        edit_val = subreaches.edit_flag[rch][0] + ',2'
+                    
+    #create new variables
+    node_ids = subnodes.id[nodes_rch] 
+    dist_out = subnodes.dist_out[nodes_rch]
+    new_node_ids = node_ids[::-1]
+    new_dist_out = dist_out[::-1]  
+    #update variables in netcdf
+    subnodes.id[nodes_rch] = new_node_ids
+    subnodes.dist_out[nodes_rch] = new_dist_out
+    subnodes.edit_flag[nodes_rch] = np.repeat(edit_val, len(nodes_rch))
+    subreaches.edit_flag[rch] = edit_val
+
+    for n in list(range(len(node_ids))):
+        cl_n1 = np.where(subcls.node_id[0,:] == node_ids[n])[0]
+        cl_n2 = np.where(subcls.node_id[1,:] == node_ids[n])[0]
+        cl_n3 = np.where(subcls.node_id[2,:] == node_ids[n])[0]
+        cl_n4 = np.where(subcls.node_id[3,:] == node_ids[n])[0]
+        if len(cl_n1) > 0:
+            subcls.node_id[0,cl_n1] = new_node_ids[n]
+        if len(cl_n2) > 0:
+            subcls.node_id[1,cl_n2] = new_node_ids[n]
+        if len(cl_n3) > 0:
+            subcls.node_id[2,cl_n3] = new_node_ids[n]
+        if len(cl_n4) > 0:
+            subcls.node_id[3,cl_n4] = new_node_ids[n]
+
+###############################################################################
+
+def local_topology(subcls, subnodes, subreaches, subset = True):
 
     """
     FUNCTION:
@@ -192,16 +231,17 @@ def local_topology(subcls, subreaches, subset = True):
         rch_id_down[:,0:4] = subreaches.rch_id_down.T
     else:
         rch_list = np.copy(subreaches.id)
-        n_rch_up = np.zeros(len(np.unique(subcls.reach_id[0,:])))
-        n_rch_down = np.zeros(len(np.unique(subcls.reach_id[0,:])))
-        rch_id_up = np.zeros((len(np.unique(subcls.reach_id[0,:])),10))
-        rch_id_down = np.zeros((len(np.unique(subcls.reach_id[0,:])),10))
+        n_rch_up = np.zeros(len(subreaches.id))
+        n_rch_down = np.zeros(len(subreaches.id))
+        rch_id_up = np.zeros((len(subreaches.id),10))
+        rch_id_down = np.zeros((len(subreaches.id),10))
 
     for r in list(range(len(rch_list))):
-        #print(ind)
+        print(r)
         #identifying the current reach neighbors.
         ind = np.where(subreaches.id == rch_list[r])
-        nghs = subreaches.neighbors[ind,np.where(subreaches.neighbors[ind,:] > 0)[0]]
+        #not sure why the double zero indexes are needed after neighbors...
+        nghs = subreaches.neighbors[ind,np.where(subreaches.neighbors[ind,:][0][0] > 0)[0]][0]
 
         if len(nghs) == 0:
             continue
@@ -221,14 +261,16 @@ def local_topology(subcls, subreaches, subset = True):
             #finding the coordination of the reach endpoints.
             ep1_lon, ep1_lat = subcls.x[end1], subcls.y[end1]
             ep2_lon, ep2_lat = subcls.x[end2], subcls.y[end2]
+            node1 = subcls.node_id[0,end1]
+            node2 = subcls.node_id[0,end2]
 
             #looping through each reach neighbor and determining if it is
             #upstream or downstream based on flow accumulation or wse.
-            ep1_nghs = np.zeros([len(nghs[0]), 4])
-            ep2_nghs = np.zeros([len(nghs[0]), 4])
-            for idx in list(range(len(nghs[0]))):
-                rch2 = np.where(subreaches.id == nghs[0][idx])[0]
-                rch2_cls = np.where(subcls.reach_id[0,:] == nghs[0][idx])[0]
+            ep1_nghs = np.zeros([len(nghs), 4])
+            ep2_nghs = np.zeros([len(nghs), 4])
+            for idx in list(range(len(nghs))):
+                rch2 = np.where(subreaches.id == nghs[idx])[0]
+                rch2_cls = np.where(subcls.reach_id[0,:] == nghs[idx])[0]
                 ngh_dist = subreaches.dist_out[rch2]
                 ngh_wse = subreaches.wse[rch2]
                 ngh_facc = subreaches.facc[rch2]
@@ -253,13 +295,13 @@ def local_topology(subcls, subreaches, subset = True):
 
                 if ep1_dist <= ep2_dist: #if equal distance then assign to end1 for now...
                     fill_row = np.min(np.where(ep1_nghs[:,0] == 0)[0])
-                    ep1_nghs[fill_row,0] = nghs[0][idx]
+                    ep1_nghs[fill_row,0] = nghs[idx]
                     ep1_nghs[fill_row,1] = ngh_facc
                     ep1_nghs[fill_row,2] = ngh_wse
                     ep1_nghs[fill_row,3] = ngh_dist
                 else:
                     fill_row = np.min(np.where(ep2_nghs[:,0] == 0)[0])
-                    ep2_nghs[fill_row,0] = nghs[0][idx]
+                    ep2_nghs[fill_row,0] = nghs[idx]
                     ep2_nghs[fill_row,1] = ngh_facc
                     ep2_nghs[fill_row,2] = ngh_wse
                     ep2_nghs[fill_row,3] = ngh_dist
@@ -268,7 +310,89 @@ def local_topology(subcls, subreaches, subset = True):
             ep2_delete = np.where(ep2_nghs[:,0] == 0)[0]
             ep1_nghs = np.delete(ep1_nghs, ep1_delete, axis = 0)
             ep2_nghs = np.delete(ep2_nghs, ep2_delete, axis = 0)
+            
+            ################################# NODE CHECK ################################
+            if node1 != node2:
+                if len(ep1_nghs[:,0]) > 0 and len(ep2_nghs[:,0]) > 0:
+                    ngh1_wse = np.min(ep1_nghs[:,2])
+                    ngh1_facc = np.max(ep1_nghs[:,1])
+                    ngh2_wse = np.min(ep2_nghs[:,2])
+                    ngh2_facc = np.max(ep2_nghs[:,1])
+                    if ngh1_facc < ngh2_facc:
+                        check = node1 > node2
+                        if check == False:
+                            update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                            print(subreaches.id[ind], 'nodes switched')
+                    elif ngh1_facc > ngh2_facc:
+                        check = node1 < node2
+                        if check == False:
+                            update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                            print(subreaches.id[ind], 'nodes switched')
+                    else:
+                        if ngh1_wse > ngh2_wse:
+                            check = node1 > node2
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], 'nodes switched')
+                        else:
+                            check = node1 < node2
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], 'nodes switched')
 
+                if len(ep1_nghs[:,0]) > 0 and len(ep2_nghs[:,0]) == 0:
+                    ngh1_wse = np.min(ep1_nghs[:,2])
+                    ngh1_facc = np.max(ep1_nghs[:,1])
+                    if ngh1_facc < rch_facc:
+                        check = node1 > node2
+                        if check == False:
+                            update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                            print(subreaches.id[ind], 'nodes switched')
+                    elif ngh1_facc > rch_facc:
+                        check = node1 < node2
+                        if check == False:
+                            update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                            print(subreaches.id[ind], 'nodes switched')
+                    else:
+                        if ngh1_wse > rch_wse:
+                            check = node1 > node2
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], 'nodes switched')
+                        else:
+                            check = node1 < node2
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], 'nodes switched')
+                
+                if len(ep1_nghs[:,0]) == 0 and len(ep2_nghs[:,0]) > 0:
+                    ngh2_wse = np.min(ep2_nghs[:,2])
+                    ngh2_facc = np.max(ep2_nghs[:,1])
+                    if ngh2_facc < rch_facc:
+                        check = node2 > node1
+                        if check == False:
+                            update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                            print(subreaches.id[ind], 'nodes switched')
+                    elif ngh2_facc > rch_facc:
+                        check = node2 < node1
+                        if check == False:
+                            update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                            print(subreaches.id[ind], 'nodes switched')
+                    else:
+                        if ngh2_wse > rch_wse:
+                            check = node2 > node1
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], 'nodes switched')
+                        else:
+                            check = node2 < node1
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], 'nodes switched')
+                
+            ############################### NODE CHECK  END ##############################
+
+            #change dist to last option for updates...
             if len(ep1_nghs) > 0:
                 min_dist = np.min(ep1_nghs[:,3])
                 min_wse = np.min(ep1_nghs[:,2])
@@ -459,7 +583,7 @@ reaches.neighbors = all_nghs
 
 ### topo function
 reaches.n_rch_up, reaches.n_rch_down, \
-    reaches.rch_id_up, reaches.rch_id_down = local_topology(centerlines, reaches, subset = True)
+    reaches.rch_id_up, reaches.rch_id_down = local_topology(centerlines, nodes, reaches, subset = True)
 
 #filter neighbors
 reaches.rch_id_up_filt, reaches.n_rch_up_filt, \
@@ -474,10 +598,13 @@ reaches.rch_id_down_filt = reaches.rch_id_down_filt.T
 #check node directions - new function...
 
 #update netcdf
-sword.groups['reaches'].variables['n_rch_up'][:] = reaches.n_rch_up_filt
-sword.groups['reaches'].variables['n_rch_down'][:] = reaches.n_rch_down_filt
-sword.groups['reaches'].variables['rch_id_up'][:] = reaches.rch_id_up_filt
-sword.groups['reaches'].variables['rch_id_dn'][:] = reaches.rch_id_down_filt
+# sword.groups['reaches'].variables['n_rch_up'][:] = reaches.n_rch_up_filt
+# sword.groups['reaches'].variables['n_rch_down'][:] = reaches.n_rch_down_filt
+# sword.groups['reaches'].variables['rch_id_up'][:] = reaches.rch_id_up_filt
+# sword.groups['reaches'].variables['rch_id_dn'][:] = reaches.rch_id_down_filt
+# sword.groups['nodes'].variables['node_id'][:] = nodes.id
+# sword.groups['nodes'].variables['dist_out'][:] = nodes.dist_out
+# sword.groups['centerlines'].variables['node_id'][:] = centerlines.node_id[:]
 sword.close()
 
 end_all = time.time()
