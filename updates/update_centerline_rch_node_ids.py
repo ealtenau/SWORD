@@ -1,7 +1,7 @@
 from __future__ import division
 # import sys
 # sys.path.append('../reach_definition/')
-from reach_definition import Reach_Definition_Tools_v11 as rdt
+# from reach_definition import Reach_Definition_Tools_v11 as rdt
 import numpy as np
 import time
 import netCDF4 as nc
@@ -175,8 +175,8 @@ def format_cl_node_ids(nodes, centerlines, verbose):
 
     cl_nodes_id = np.zeros([4,len(centerlines.cl_id)])
     # divide up into basin level 6 to see if it makes things faster...
-    level_nodes = np.array([np.int(np.str(ind)[0:6]) for ind in nodes.id])
-    level_cl = np.array([np.int(np.str(ind)[0:6]) for ind in centerlines.node_id[0,:]])
+    level_nodes = np.array([int(str(ind)[0:6]) for ind in nodes.id])
+    level_cl = np.array([int(str(ind)[0:6]) for ind in centerlines.node_id[0,:]])
     uniq_level = np.unique(level_cl)
     for ind in list(range(len(uniq_level))):
         if verbose == True:
@@ -293,8 +293,8 @@ def format_cl_rch_ids(reaches, centerlines, verbose):
 start_all = time.time()
 
 version = 'v14'
-region = 'NA'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'\
+region = 'SA'
+sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 
 #read in data. 

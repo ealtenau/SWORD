@@ -16,44 +16,44 @@ import pandas as pd
 ###############################################################################
 ###############################################################################
 
-region = 'NA'
+region = 'AF'
 version = 'v14'
-outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
+outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
 outpath = outdir+version+'/'
-# fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
-fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v14/netcdf/na_sword_v14_subset.nc'
+fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+# fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v14/netcdf/na_sword_v14_subset.nc'
 
 # read originial data.
 data = nc.Dataset(fn)
 unq_nodes = data.groups['nodes'].variables['node_id'][:]
-node_type = [int(str(rch)[-1]) for rch in unq_nodes]
+node_type = np.array([int(str(rch)[-1]) for rch in unq_nodes])
 
 nodes = gp.GeoDataFrame([
-    data.groups['nodes'].variables['x'][:],
-    data.groups['nodes'].variables['y'][:],
-    data.groups['nodes'].variables['node_id'][:],
-    data.groups['nodes'].variables['node_length'][:],
-    data.groups['nodes'].variables['reach_id'][:],
-    data.groups['nodes'].variables['wse'][:],
-    data.groups['nodes'].variables['wse_var'][:],
-    data.groups['nodes'].variables['width'][:],
-    data.groups['nodes'].variables['width_var'][:],
-    data.groups['nodes'].variables['facc'][:],
-    data.groups['nodes'].variables['n_chan_max'][:],
-    data.groups['nodes'].variables['n_chan_mod'][:],
-    data.groups['nodes'].variables['obstr_type'][:],
-    data.groups['nodes'].variables['grod_id'][:],
-    data.groups['nodes'].variables['hfalls_id'][:],
-    data.groups['nodes'].variables['dist_out'][:],
-    data.groups['nodes'].variables['lakeflag'][:],
-    data.groups['nodes'].variables['max_width'][:],
-    data.groups['nodes'].variables['manual_add'][:],
-    data.groups['nodes'].variables['meander_length'][:],
-    data.groups['nodes'].variables['sinuosity'][:],
+    np.array(data.groups['nodes'].variables['x'][:]),
+    np.array(data.groups['nodes'].variables['y'][:]),
+    np.array(data.groups['nodes'].variables['node_id'][:]),
+    np.array(data.groups['nodes'].variables['node_length'][:]),
+    np.array(data.groups['nodes'].variables['reach_id'][:]),
+    np.array(data.groups['nodes'].variables['wse'][:]),
+    np.array(data.groups['nodes'].variables['wse_var'][:]),
+    np.array(data.groups['nodes'].variables['width'][:]),
+    np.array(data.groups['nodes'].variables['width_var'][:]),
+    np.array(data.groups['nodes'].variables['facc'][:]),
+    np.array(data.groups['nodes'].variables['n_chan_max'][:]),
+    np.array(data.groups['nodes'].variables['n_chan_mod'][:]),
+    np.array(data.groups['nodes'].variables['obstr_type'][:]),
+    np.array(data.groups['nodes'].variables['grod_id'][:]),
+    np.array(data.groups['nodes'].variables['hfalls_id'][:]),
+    np.array(data.groups['nodes'].variables['dist_out'][:]),
+    np.array(data.groups['nodes'].variables['lakeflag'][:]),
+    np.array(data.groups['nodes'].variables['max_width'][:]),
+    np.array(data.groups['nodes'].variables['manual_add'][:]),
+    np.array(data.groups['nodes'].variables['meander_length'][:]),
+    np.array(data.groups['nodes'].variables['sinuosity'][:]),
     node_type,
-    data.groups['nodes'].variables['river_name'][:],
-    data.groups['nodes'].variables['edit_flag'][:],
-    # data.groups['nodes'].variables['lake_id'][:],
+    np.array(data.groups['nodes'].variables['river_name'][:]),
+    np.array(data.groups['nodes'].variables['edit_flag'][:]),
+    # np.array(data.groups['nodes'].variables['lake_id'][:]),
 ]).T
 
 #rename columns.
@@ -96,17 +96,18 @@ print('Writing GeoPackage File')
 start = time.time()
 #write geopackage (continental scale)
 outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_nodes_' + version + '.gpkg'
-nodes.to_file(outgpkg, driver='GPKG', layer='reaches')
+nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
 #write as shapefile per level2 basin.
 print('Writing Shapefiles')
 start = time.time()
-level2 = [int(str(n)[0:2]) for n in nodes['node_id']]
+level2 = np.array([int(str(n)[0:2]) for n in nodes['node_id']])
 unq_l2 = np.unique(level2)
 nodes_cp = nodes.copy(); nodes_cp['level2'] = level2
 for lvl in list(range(len(unq_l2))):
+    print(unq_l2[lvl])
     outshp = outpath + 'shp/' + region + '/' + region.lower() + "_sword_nodes_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
     subset = nodes_cp[nodes_cp['level2'] == unq_l2[lvl]]
     subset = subset.drop(columns=['level2'])

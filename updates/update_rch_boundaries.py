@@ -2075,12 +2075,14 @@ def add_fill_vars(reaches):
 ###############################################################################
 start_all = time.time()
 
+write_custom = True
 version = 'v14'
 region = 'NA'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'\
+sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-fn_merge = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data_v10/'+region+'/'+region+'_Merge_v10.nc'
-rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/update_rch_boundaries.csv'
+sub_outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/Custom_CalVal_Rchs/'
+fn_merge = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/Merged_Data_v10/NA/NA_Merge_v10.nc'
+rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/Conneticut_SWORD_rch_boundary_changes_102222.csv'
 
 #read in data. 
 new_ids = pd.read_csv(rch_fn)
@@ -2093,7 +2095,13 @@ for ind in list(range(len(new_ids.node_id))):
     nodes.reach_id[n] = new_ids.new_rch_id[ind]
 
 #update node and centerline reach ids.
-centerlines.ice_flag = calc_cl_iceflag(reaches, centerlines)
+# centerlines.ice_flag = calc_cl_iceflag(reaches, centerlines)
+ice_fn = outfile = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
+    'SWOT_Coverage_Ice/v14/netcdf/na_centerline_iceflag.nc'
+ice = nc.Dataset(ice_fn)
+centerlines.ice_flag = ice.groups['centerlines'].variables['iceflag'][:]
+
+print('~~~~~~~~~~~~~ UPDATING REACH BOUNDARIES ~~~~~~~~~~~~~~')
 update_rch_ids(centerlines, nodes, new_ids)
 
 ### ------------------------------------------------------------------------------------------- ###
@@ -2161,6 +2169,7 @@ print('Calculating SWOT Coverage')
 subreaches.coverage, subreaches.orbits, subreaches.max_obs,\
     subreaches.median_obs, subreaches.mean_obs = swot_obs_percentage(merge, subreaches)
 
+print('Finalizing Reach Attributes')
 # start_cnt = np.max(centerlines.cl_id)+1
 # cls_cl_id, rch_cl_id, node_cl_id = centerline_ids(subreaches, nodes, merge, start_cnt)
 __, rch_cl_id, node_cl_id = update_cl_ids(subreaches, nodes.id[nd_l6], merge)
@@ -2195,14 +2204,11 @@ delete_rchs(reaches, l6)
 #append new reaches
 append_data(reaches, subreaches)
 
-######## !!!!!!!!!!!!!!!! REMOVE !!!!!!!!!!!!!!!!!!!! #########
-# centerlines, nodes, reaches = subset_data(centerlines, nodes, reaches, subreaches.id)
-######## !!!!!!!!!!!!!!!! REMOVE !!!!!!!!!!!!!!!!!!!! #########
-
 #add fill variables for reaches
 add_fill_vars(reaches)
 
-#redo centerline ids for nodes and reaches. (only if no other updates are made)  
+### OPTIONAL (only if no other updates are made)  
+#redo centerline ids for nodes and reaches. 
 # cl_nodes_id = format_cl_node_ids(nodes, centerlines, verbose = True)
 # cl_rch_id = format_cl_rch_ids(reaches, centerlines, verbose = True)
 # centerlines.reach_id = np.insert(cl_rch_id, 0, centerlines.reach_id, axis = 0)
@@ -2210,9 +2216,24 @@ add_fill_vars(reaches)
 # centerlines.node_id =  np.insert(cl_nodes_id, 0, centerlines.node_id, axis = 0)
 # centerlines.node_id = centerlines.node_id[0:4,:]
 
-#write new netcdf. 
-# outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'\
-#     +version+'/netcdf/'+region.lower()+'_sword_'+version+'_subset.nc'
+# write new netcdf.
 write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+
+######## !!!!!!!!!!!!!!!! SAVING SUBSETS FOR LATER UPDATES !!!!!!!!!!!!!!!!!!!! #########
+if write_custom == True:
+    print('Saving Custom Basin')
+    sub_centerlines, sub_nodes, sub_reaches = subset_data(centerlines, nodes, reaches, subreaches.id)
+    add_fill_vars(sub_reaches)
+    #redo centerline ids for nodes and reaches. (only if no other updates are made)  
+    cl_nodes_id = format_cl_node_ids(sub_nodes, sub_centerlines, verbose = True)
+    cl_rch_id = format_cl_rch_ids(sub_reaches, sub_centerlines, verbose = True)
+    sub_centerlines.reach_id = np.insert(cl_rch_id, 0, sub_centerlines.reach_id, axis = 0)
+    sub_centerlines.reach_id = sub_centerlines.reach_id[0:4,:]
+    sub_centerlines.node_id =  np.insert(cl_nodes_id, 0, sub_centerlines.node_id, axis = 0)
+    sub_centerlines.node_id = sub_centerlines.node_id[0:4,:]
+    sub_fn = sub_outdir+region.lower()+'_'+str(new_ids.basin[0])+'_calval_'+version+'.nc'
+    write_database_nc(sub_centerlines, sub_reaches, sub_nodes, region, sub_fn)
+######## !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #########
+
 end_all = time.time()
 print('Done in: ' + str(np.round((end_all-start_all)/60, 2)) + ' min')

@@ -65,9 +65,9 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y):
 #############################################################################################
 
 #read in netcdf data. 
-region = 'NA'
+region = 'AF'
 version = 'v14'
-outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
+outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 # fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v14/netcdf/na_sword_v14_subset.nc'
@@ -83,10 +83,10 @@ cl_y = data.groups['centerlines'].variables['y'][:]
 unq_rch = data.groups['reaches'].variables['reach_id'][:]
 
 #reformat multi-dimensional variables
-rch_type = [int(str(rch)[-1]) for rch in unq_rch]
-rch_up = data.groups['reaches'].variables['rch_id_up'][:].T
-rch_dn = data.groups['reaches'].variables['rch_id_dn'][:].T
-swot_orbs = data.groups['reaches'].variables['swot_orbits'][:].T
+rch_type = np.array([int(str(rch)[-1]) for rch in unq_rch])
+rch_up = np.array(data.groups['reaches'].variables['rch_id_up'][:]).T
+rch_dn = np.array(data.groups['reaches'].variables['rch_id_dn'][:]).T
+swot_orbs = np.array(data.groups['reaches'].variables['swot_orbits'][:]).T
 rch_id_up = []; rch_id_dn = []; swot_orbits = []
 for ind in list(range(len(rch_type))):
     rch_id_up.append(str(rch_up[ind,np.where(rch_up[ind,:] > 0)[0]])[1:-1])
@@ -102,35 +102,35 @@ print('Finished Reach Geometry in: '+str(np.round((end-start)/60,2))+' min')
 
 #create initial GeoDataFrame.
 reaches = gp.GeoDataFrame([
-    data.groups['reaches'].variables['x'][:],
-    data.groups['reaches'].variables['y'][:],
-    data.groups['reaches'].variables['reach_id'][:],
-    data.groups['reaches'].variables['reach_length'][:],
-    data.groups['reaches'].variables['n_nodes'][:],
-    data.groups['reaches'].variables['wse'][:],
-    data.groups['reaches'].variables['wse_var'][:],
-    data.groups['reaches'].variables['width'][:],
-    data.groups['reaches'].variables['width_var'][:],
-    data.groups['reaches'].variables['facc'][:],
-    data.groups['reaches'].variables['n_chan_max'][:],
-    data.groups['reaches'].variables['n_chan_mod'][:],
-    data.groups['reaches'].variables['obstr_type'][:],
-    data.groups['reaches'].variables['grod_id'][:],
-    data.groups['reaches'].variables['hfalls_id'][:],
-    data.groups['reaches'].variables['slope'][:],
-    data.groups['reaches'].variables['dist_out'][:],
-    data.groups['reaches'].variables['lakeflag'][:],
-    data.groups['reaches'].variables['max_width'][:],
-    data.groups['reaches'].variables['n_rch_up'][:],
-    data.groups['reaches'].variables['n_rch_down'][:],
+    np.array(data.groups['reaches'].variables['x'][:]),
+    np.array(data.groups['reaches'].variables['y'][:]),
+    np.array(data.groups['reaches'].variables['reach_id'][:]),
+    np.array(data.groups['reaches'].variables['reach_length'][:]),
+    np.array(data.groups['reaches'].variables['n_nodes'][:]),
+    np.array(data.groups['reaches'].variables['wse'][:]),
+    np.array(data.groups['reaches'].variables['wse_var'][:]),
+    np.array(data.groups['reaches'].variables['width'][:]),
+    np.array(data.groups['reaches'].variables['width_var'][:]),
+    np.array(data.groups['reaches'].variables['facc'][:]),
+    np.array(data.groups['reaches'].variables['n_chan_max'][:]),
+    np.array(data.groups['reaches'].variables['n_chan_mod'][:]),
+    np.array(data.groups['reaches'].variables['obstr_type'][:]),
+    np.array(data.groups['reaches'].variables['grod_id'][:]),
+    np.array(data.groups['reaches'].variables['hfalls_id'][:]),
+    np.array(data.groups['reaches'].variables['slope'][:]),
+    np.array(data.groups['reaches'].variables['dist_out'][:]),
+    np.array(data.groups['reaches'].variables['lakeflag'][:]),
+    np.array(data.groups['reaches'].variables['max_width'][:]),
+    np.array(data.groups['reaches'].variables['n_rch_up'][:]),
+    np.array(data.groups['reaches'].variables['n_rch_down'][:]),
     rch_id_up,
     rch_id_dn,
     swot_orbits,
-    data.groups['reaches'].variables['swot_obs'][:],
+    np.array(data.groups['reaches'].variables['swot_obs'][:]),
     rch_type,
-    data.groups['reaches'].variables['river_name'][:],
-    data.groups['reaches'].variables['edit_flag'][:],
-    # data.groups['reaches'].variables['lake_id'][:],
+    np.array(data.groups['reaches'].variables['river_name'][:]),
+    np.array(data.groups['reaches'].variables['edit_flag'][:]),
+    # np.array(data.groups['reaches'].variables['lake_id'][:]),
 ]).T
 
 #rename columns.
@@ -181,14 +181,14 @@ print('Writing GeoPackage File')
 start = time.time()
 #write geopackage (continental scale)
 outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_reaches_' + version + '.gpkg'
-reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
+# reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
 #write as shapefile per level2 basin.
 print('Writing Shapefiles')
 start = time.time()
-level2 = [int(str(r)[0:2]) for r in reaches['reach_id']]
+level2 = np.array([int(str(r)[0:2]) for r in reaches['reach_id']])
 unq_l2 = np.unique(level2)
 rch_cp = reaches.copy(); rch_cp['level2'] = level2
 for lvl in list(range(len(unq_l2))):

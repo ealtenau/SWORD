@@ -132,7 +132,13 @@ def apply_updates(rpt_sub, sword):
             elif flag == 3: 
                 rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
                 nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
-                if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                # if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
+                #     edit_val = str(flag)
+                # else:
+                #     edit_val = str(sword.groups['reaches'].variables['edit_flag'][rch][0]) + ',' + str(flag)
+                if '3' in sword.groups['reaches'].variables['edit_flag'][rch][0].split(','):
+                    edit_val = str(sword.groups['reaches'].variables['edit_flag'][rch][0])
+                elif sword.groups['reaches'].variables['edit_flag'][rch][0] == 'NaN':
                     edit_val = str(flag)
                 else:
                     edit_val = str(sword.groups['reaches'].variables['edit_flag'][rch][0]) + ',' + str(flag)
@@ -225,9 +231,9 @@ def apply_updates(rpt_sub, sword):
 ##############################################################################################################################
 
 version = 'v14'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'+version+'/netcdf/'
+sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 # fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/src/other_src/sword_app/user_reports.csv'
-fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/user_reports2.5.csv'
+fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/user_reports3.csv'
 
 rpt = pd.read_csv(fn_reports)
 not_completed = np.where(rpt['updated'] == 0)[0]
