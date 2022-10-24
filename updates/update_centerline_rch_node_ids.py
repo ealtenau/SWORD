@@ -1,14 +1,10 @@
 from __future__ import division
-# import sys
-# sys.path.append('../reach_definition/')
-# from reach_definition import Reach_Definition_Tools_v11 as rdt
 import numpy as np
 import time
 import netCDF4 as nc
-import pandas as pd
 from scipy import spatial as sp
-import geopy.distance
 import utm 
+import argparse
 
 ###############################################################################
 ###############################################################################
@@ -290,14 +286,14 @@ def format_cl_rch_ids(reaches, centerlines, verbose):
 ###############################################################################
 ###############################################################################
 
+parser = argparse.ArgumentParser()
+parser.add_argument("filepath", help="Input filepath to netcdf", type = str)
+args = parser.parse_args()
+
 start_all = time.time()
 
-version = 'v14'
-region = 'SA'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
-    +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-
 #read in data. 
+sword_dir = args.filepath
 sword = nc.Dataset(sword_dir, 'r+')
 centerlines, nodes, reaches = read_data(sword_dir)
 

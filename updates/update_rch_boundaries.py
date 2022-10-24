@@ -1073,8 +1073,8 @@ def format_cl_node_ids(nodes, centerlines, verbose):
 
     cl_nodes_id = np.zeros([4,len(centerlines.cl_id)])
     # divide up into basin level 6 to see if it makes things faster...
-    level_nodes = np.array([np.int(np.str(ind)[0:6]) for ind in nodes.id])
-    level_cl = np.array([np.int(np.str(ind)[0:6]) for ind in centerlines.node_id[0,:]])
+    level_nodes = np.array([int(str(ind)[0:6]) for ind in nodes.id])
+    level_cl = np.array([int(str(ind)[0:6]) for ind in centerlines.node_id[0,:]])
     uniq_level = np.unique(level_cl)
     for ind in list(range(len(uniq_level))):
         if verbose == True:
@@ -1415,11 +1415,11 @@ def centerline_ids(subreaches, subnodes, subcls, cnt):
 
     reach_basins = np.zeros(len(subreaches.id))
     for ind in list(range(len(subreaches.id))):
-        reach_basins[ind] = np.int(np.str(subreaches.id[ind])[0:6])
+        reach_basins[ind] = int(str(subreaches.id[ind])[0:6])
 
     nbasins = np.zeros(len(subnodes.id))
     for ind in list(range(len(subnodes.id))):
-        nbasins[ind] = np.int(np.str(subnodes.id[ind])[0:6])
+        nbasins[ind] = int(str(subnodes.id[ind])[0:6])
 
     cnt = cnt
     for ind in list(range(len(uniq_basins))):
@@ -2080,9 +2080,9 @@ version = 'v14'
 region = 'NA'
 sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-sub_outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/Custom_CalVal_Rchs/'
+sub_outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'  
 fn_merge = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/Merged_Data_v10/NA/NA_Merge_v10.nc'
-rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/Conneticut_SWORD_rch_boundary_changes_102222.csv'
+rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/Tanana_SWORD_changes_102022.csv'
 
 #read in data. 
 new_ids = pd.read_csv(rch_fn)
@@ -2108,7 +2108,7 @@ update_rch_ids(centerlines, nodes, new_ids)
 ### ------------------------------------------------------------------------------------------- ###
 ### ------------------------------------------------------------------------------------------- ###
 
-print('~~~~~~~~~ REDOING RCH ATTRIBUTES IN SUB-BASIN ~~~~~~~~~') 
+print('~~~~~~~~~ REDOING RCH ATTRIBUTES IN SUB-BASIN ~~~~~~~~') 
 print('Reading in merged data')
 cl_level6 = np.array([str(r)[0:6] for r in centerlines.reach_id[0,:]])
 cl_l6 = np.where(cl_level6 == str(new_ids.basin[0]))[0]

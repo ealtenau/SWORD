@@ -66,3 +66,4 @@ def write_cl_iceflag_nc(centerlines, outfile):
 outfile = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     'SWOT_Coverage_Ice/v14/netcdf/na_centerline_iceflag.nc'
 # write_cl_iceflag_nc(centerlines, outfile)
+
