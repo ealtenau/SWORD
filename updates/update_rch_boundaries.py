@@ -2082,7 +2082,7 @@ sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 sub_outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'  
 fn_merge = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/Merged_Data_v10/NA/NA_Merge_v10.nc'
-rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/Tanana_SWORD_changes_102022.csv'
+rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/StLaurence_SWORD_changes_102522.csv'
 
 #read in data. 
 new_ids = pd.read_csv(rch_fn)

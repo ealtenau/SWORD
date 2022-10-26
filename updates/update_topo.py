@@ -607,8 +607,8 @@ sword.groups['reaches'].variables['rch_id_dn'][:] = reaches.rch_id_down_filt
 sword.groups['reaches'].variables['edit_flag'][:] = reaches.edit_flag
 sword.groups['nodes'].variables['node_id'][:] = nodes.id
 sword.groups['nodes'].variables['dist_out'][:] = nodes.dist_out
+sword.groups['nodes'].variables['edit_flag'][:] = nodes.edit_flag
 sword.groups['centerlines'].variables['node_id'][:] = centerlines.node_id[:]
-sword.groups['centerlines'].variables['edit_flag'][:] = centerlines.edit_flag[:]
 sword.close()
 
 end_all = time.time()
