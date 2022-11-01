@@ -8,66 +8,14 @@ import geopy.distance
 import pandas as pd
 
 
-#########################################################################################
-def write_cl_iceflag_nc(centerlines, outfile):
 
-    start = time.time()
+fn = "/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/v14/netcdf/test.nc"
+data = nc.Dataset(fn, 'r+')
 
-    # global attributes
-    root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
-    root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
-    #root_grp.history = 'Created ' + time.ctime(time.time())
+data.groups['reaches'].variables['facc'][0] = 1
+data.groups['reaches'].variables['facc'][1] = 2
+data.close()
 
-    # groups
-    cl_grp = root_grp.createGroup('centerlines')
-
-    # dimensions
-    #root_grp.createDimension('d1', 2)
-    cl_grp.createDimension('num_points', len(centerlines.cl_id))
-    cl_grp.createDimension('num_domains', 4)
-    cl_grp.createDimension('julian_day', 366)
-
-    # centerline variables
-    cl_id = cl_grp.createVariable(
-        'cl_id', 'i8', ('num_points',), fill_value=-9999.)
-    cl_x = cl_grp.createVariable(
-        'x', 'f8', ('num_points',), fill_value=-9999.)
-    cl_x.units = 'degrees east'
-    cl_y = cl_grp.createVariable(
-        'y', 'f8', ('num_points',), fill_value=-9999.)
-    cl_y.units = 'degrees north'
-    reach_id = cl_grp.createVariable(
-        'reach_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
-    reach_id.format = 'CBBBBBRRRRT'
-    node_id = cl_grp.createVariable(
-        'node_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
-    node_id.format = 'CBBBBBRRRRNNNT'
-    cl_iceflag = cl_grp.createVariable(
-        'iceflag', 'i4', ('julian_day','num_points'), fill_value=-9999.)
-
-    # saving data
-    print("saving nc")
-    # centerline data
-    cl_id[:] = centerlines.cl_id
-    cl_x[:] = centerlines.x
-    cl_y[:] = centerlines.y
-    reach_id[:,:] = centerlines.reach_id
-    node_id[:,:] = centerlines.node_id
-    cl_iceflag[:,:] = centerlines.ice_flag
-
-    root_grp.close()
-    end = time.time()
-    print("Ended Saving Main NetCDF in: ", str(np.round((end-start)/60, 2)), " min")
-
-    return outfile
-
-
-
-
-outfile = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
-    'SWOT_Coverage_Ice/v14/netcdf/na_centerline_iceflag.nc'
-# write_cl_iceflag_nc(centerlines, outfile)
-
-
+print('Done')
 
 

@@ -6,6 +6,7 @@ from shapely.geometry import LineString, Point
 from geopandas import GeoSeries
 import pandas as pd
 import time
+import argparse
 
 #############################################################################################
 
@@ -65,9 +66,13 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y):
 #############################################################################################
 
 #read in netcdf data. 
-region = 'AF'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="continental region", type = str)
+args = parser.parse_args()
+
+region = args.region
 version = 'v14'
-outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 # fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v14/netcdf/na_sword_v14_subset.nc'
@@ -174,14 +179,15 @@ reaches.drop(rm_ind, inplace=True)
 reaches = reaches.apply(pd.to_numeric, errors='ignore') # reaches.dtypes
 #add geometry column and define crs. 
 reaches['geometry'] = geom
-reaches.set_geometry(col='geometry', inplace=True)
+reaches = gp.GeoDataFrame(reaches)
+reaches.set_geometry(col='geometry') #removed "inplace=True" option on leopold. 
 reaches = reaches.set_crs(4326, allow_override=True)
 
 print('Writing GeoPackage File')
 start = time.time()
 #write geopackage (continental scale)
 outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_reaches_' + version + '.gpkg'
-# reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
+reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
