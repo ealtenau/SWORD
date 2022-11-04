@@ -107,7 +107,8 @@ plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off'
 plt.title('Basins', fontsize=16)
 plt.xlabel('lon', fontsize=14)
 plt.ylabel('lat', fontsize=14)
-plt.scatter(points.lon, points.lat, c=bid, edgecolors='none', s = 3)
+plt.scatter(grwl.lon, grwl.lat, c=bid, edgecolors='none', s = 3)
+plt.show()
 
 plt.figure(13, figsize=(11,8))
 plt.rcParams['axes.linewidth'] = 1.5

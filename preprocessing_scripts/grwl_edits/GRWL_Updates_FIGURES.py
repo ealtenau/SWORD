@@ -117,9 +117,8 @@ for i in list(range(len(unq_id))):
     plt.scatter(grwl.x[seg], grwl.y[seg], c=color2[i], s = 5, edgecolors = 'None')
 w = np.where(grwl.finaleps > 0)[0]
 plt.scatter(grwl.x[w], grwl.y[w], c='black', s= 20, edgecolors = None)
-
+plt.show()
 
 z = np.where(grwl.tribs == 1)[0]
 plt.scatter(grwl.x[z], grwl.y[z], c='yellow', s= 20, edgecolors = None)
-
 

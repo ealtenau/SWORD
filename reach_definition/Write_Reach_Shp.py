@@ -65,7 +65,7 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y):
 #############################################################################################
 
 #read in netcdf data. 
-region = 'AF'
+region = 'OC'
 version = 'v14'
 outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
 outpath = outdir+version+'/'

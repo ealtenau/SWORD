@@ -26,7 +26,7 @@ class Object(object):
 
 ###############################################################################
 
-def read_netcdf(filename1, filename2):
+def read_netcdf(filename1):
 
     """
     FUNCTION:
@@ -42,7 +42,7 @@ def read_netcdf(filename1, filename2):
 
     data = Object()
     new = nc.Dataset(filename1)
-    new2 = nc.Dataset(filename2)
+    # new2 = nc.Dataset(filename2)
     data.x = new.groups['reaches'].variables['x'][:]
     data.y = new.groups['reaches'].variables['y'][:]
     data.id = new.groups['reaches'].variables['reach_id'][:]
@@ -55,9 +55,9 @@ def read_netcdf(filename1, filename2):
     data.wth = new.groups['reaches'].variables['width'][:]
     data.nchan_mod = new.groups['reaches'].variables['n_chan_mod'][:]
     data.swot_obs = new.groups['reaches'].variables['swot_obs'][:]
-    data.swot_perc = new2.groups['reaches'].variables['perc_coverage'][:].T
+    # data.swot_perc = new2.groups['reaches'].variables['perc_coverage'][:].T
     new.close()
-    new2.close()
+    # new2.close()
 
     return data
 
@@ -89,7 +89,7 @@ def append_data(reaches, subreaches, cnt):
         reaches.slope = np.copy(subreaches.slope)
         reaches.nchan_mod = np.copy(subreaches.nchan_mod)
         reaches.swot_obs = np.copy(subreaches.swot_obs)
-        reaches.swot_perc = np.copy(subreaches.swot_perc)
+        # reaches.swot_perc = np.copy(subreaches.swot_perc)
         reaches.node_dist = np.copy(subreaches.node_dist)
         reaches.node_rch_id = np.copy(subreaches.node_rch_id)
         reaches.node_wse = np.copy(subreaches.node_wse)
@@ -104,21 +104,21 @@ def append_data(reaches, subreaches, cnt):
         reaches.slope = np.insert(reaches.slope, len(reaches.slope), np.copy(subreaches.slope))
         reaches.nchan_mod = np.insert(reaches.nchan_mod, len(reaches.nchan_mod), np.copy(subreaches.nchan_mod))
         reaches.swot_obs = np.insert(reaches.swot_obs, len(reaches.swot_obs), np.copy(subreaches.swot_obs))
-        reaches.swot_perc = np.insert(reaches.swot_perc, len(reaches.swot_perc), np.copy(subreaches.swot_perc), axis = 0)
+        # reaches.swot_perc = np.insert(reaches.swot_perc, len(reaches.swot_perc), np.copy(subreaches.swot_perc), axis = 0)
         reaches.node_dist = np.insert(reaches.node_dist, len(reaches.node_dist), np.copy(subreaches.node_dist))
         reaches.node_rch_id = np.insert(reaches.node_rch_id, len(reaches.node_rch_id), np.copy(subreaches.node_rch_id))
         reaches.node_wse = np.insert(reaches.node_wse, len(reaches.node_wse), np.copy(subreaches.node_wse))
 
 ###############################################################################
 #sword_rivers = np.sort(glob.glob('E:/Users/Elizabeth Humphries/Documents/SWORD/For_Server/outputs/Reaches_Nodes_v10/netcdf/*v10*'))
-sword_rivers = np.sort(glob.glob('C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/Reaches_Nodes/netcdf/*v12*'))
-sword_obs = np.sort(glob.glob('C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/SWOT_Coverage/*v12*'))
+sword_rivers = np.sort(glob.glob('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v14/netcdf/*v14*'))
+# sword_obs = np.sort(glob.glob('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/SWOT_Coverage_Ice/v14/netcdf/*v14*'))
 sword = Object()
 cnt = 0
 for ind in list(range(len(sword_rivers))):
     fn1 = sword_rivers[ind]
-    fn2 = sword_obs[ind]
-    data = read_netcdf(fn1, fn2)
+    # fn2 = sword_obs[ind]
+    data = read_netcdf(fn1)
     append_data(sword, data, cnt)
     cnt = cnt+1
 
@@ -163,9 +163,9 @@ np.sum(sword.len[rivers])/np.sum(sword.len[All]) #86%
 '''
 
 # average reach lengths globally.
-print(np.mean(sword.len[All])) #10.1 km 
-print(np.median(sword.len[All])) #10.5 km
-print(np.mean(sword.len[rivers])) #11.7 km 
+print(np.mean(sword.len[All])) #9.9 km 
+print(np.median(sword.len[All])) #10.4 km
+print(np.mean(sword.len[rivers])) #11.6 km 
 print(np.median(sword.len[rivers])) #10.9 km 
 
 np.max(sword.swot_obs[All]) #31

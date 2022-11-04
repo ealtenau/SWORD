@@ -293,18 +293,19 @@ args = parser.parse_args()
 start_all = time.time()
 
 #read in data. 
-sword_dir = args.filepath
-sword = nc.Dataset(sword_dir, 'r+')
+# sword_dir = args.filepath
+sword_dir="/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v14/netcdf/na_sword_v14.nc"
 centerlines, nodes, reaches = read_data(sword_dir)
 
 #redo centerline ids for nodes and reaches. 
 cl_nodes_id = format_cl_node_ids(nodes, centerlines, verbose = True)
 cl_rch_id = format_cl_rch_ids(reaches, centerlines, verbose = True)
-centerlines.reach_id = np.insert(cl_rch_id, 0, centerlines.reach_id, axis = 0)
+centerlines.reach_id = np.insert(cl_rch_id, 0, centerlines.reach_id[0,:], axis = 0)
 centerlines.reach_id = centerlines.reach_id[0:4,:]
-centerlines.node_id =  np.insert(cl_nodes_id, 0, centerlines.node_id, axis = 0)
+centerlines.node_id =  np.insert(cl_nodes_id, 0, centerlines.node_id[0,:], axis = 0)
 centerlines.node_id = centerlines.node_id[0:4,:]
 
+sword = nc.Dataset(sword_dir, 'r+')
 sword.groups['centerlines'].variables['reach_id'][:] = centerlines.reach_id[:]
 sword.groups['centerlines'].variables['node_id'][:] = centerlines.node_id[:]
 sword.close()

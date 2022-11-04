@@ -556,7 +556,7 @@ def filter_neighbors(subreaches):
 start_all = time.time()
 
 version = 'v14'
-region='NA'
+region='OC'
 sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc', 'r+')
 
