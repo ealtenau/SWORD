@@ -65,42 +65,57 @@ VERSION UPDATES since v05:
 
 from __future__ import division
 import os
-os.chdir('C:/Users/ealtenau/Documents/Research/SWAG/For_Server/scripts/merging_databases/') #path to scripts will need updating. 
+os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/merging_databases/') #path to scripts will need updating. 
 import Merge_Tools_v06 as mgt
 import time
 import numpy as np
 from scipy import spatial as sp
 import glob
-#import utm
+import re
 import geopandas as gp
+import argparse
 
 ###############################################################################
 ###############################    Inputs    ##################################
 ###############################################################################
 
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Region", type = str)
+parser.add_argument("version", help="<Required> Version", type = str)
+parser.add_argument('-tiles', nargs='+', help='<Optional> Subset list of input tiles to run. (Example Usage: -tiles n60w162 n64w156')
+args = parser.parse_args()
+
 start_all = time.time()
 
 #Define input directories and filenames. Will need to be changed based on user needs.
-region = 'EU'
-fn_merge = region + '_Merge_v10.shp'
-out_dir = '../../outputs/Merged_Data/'+ region + '/'
+region = args.region
+version = args.version
+fn_merge = region + '_Merge_'+version+'.nc'
+data_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/'
+out_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL_temp/New_Merge/' + region + '/'
 
 # Global Paths.
-fn_grand = '../../inputs/GRAND/GRanD_dams_v1_1.shp'
-fn_deltas = '../../inputs/Deltas/global_map.shp'
-track_dir = '../../inputs/SWOT_Tracks/2020_orbits/'
+fn_grand = data_dir + 'GRAND/GRanD_dams_v1_1.shp'
+fn_deltas = data_dir + 'Deltas/global_map.shp'
+track_dir = data_dir + 'SWOT_Tracks/2020_orbits/'
 track_list = glob.glob(os.path.join(track_dir, 'ID_PASS*.shp'))
 
 # Regional Paths.
-fn_grod = '../../inputs/GROD/GROD_'+region+'.csv'
-fn_basins = '../../inputs/HydroBASINS/' + region + '/hybas_eu_lev08_v1c.shp'
-grwl_dir = '../../inputs/GRWL/Updates/' + region + '/'
-mh_facc_dir = '../../inputs/MERIT_Hydro/' + region + '/upa/'
-mh_elv_dir = '../../inputs/MERIT_Hydro/' + region + '/elv/'
-grwl_paths = [file for file in mgt.getListOfFiles(grwl_dir) if '.shp' in file]
-facc_paths = [file for file in mgt.getListOfFiles(mh_facc_dir) if '.tif' in file]
-elv_paths = [file for file in mgt.getListOfFiles(mh_elv_dir) if '.tif' in file]
-lake_dir = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/inputs/LakeDatabase/20200702_PLD/For_Merge/PLD_AS_SI_EU_AU.shp'
+fn_grod = data_dir + 'GROD/GROD_'+region+'.csv'
+fn_basins = data_dir + 'HydroBASINS/' + region + '/hybas_eu_lev08_v1c.shp'
+lake_dir = data_dir + 'LakeDatabase/20200702_PLD/For_Merge/PLD_AS_SI_EU_AU.shp'
+# grwl_dir = data_dir + 'GRWL/GRWL_Updates/' + region + '/'
+grwl_dir = data_dir + 'GRWL_temp/New_Updates/' + region + '/'
+mh_facc_dir = data_dir + 'MERIT_Hydro/' + region + '/upa/'
+mh_elv_dir = data_dir + 'MERIT_Hydro/' + region + '/elv/'
+grwl_paths = np.array([file for file in mgt.getListOfFiles(grwl_dir) if '.shp' in file])
+facc_paths = np.sort(np.array([file for file in mgt.getListOfFiles(mh_facc_dir) if '.tif' in file]))
+elv_paths = np.sort(np.array([file for file in mgt.getListOfFiles(mh_elv_dir) if '.tif' in file]))
+
+# Subset GRWL paths based on input tiles 
+if args.tiles:
+    matches = list(args.tiles)
+    grwl_paths = [file for file in grwl_paths if re.search('|'.join(matches), file)]
 
 # open global shapefiles for spatial intersections. 
 lake_db = gp.GeoDataFrame.from_file(lake_dir)
@@ -125,7 +140,18 @@ for ind in list(range(len(grwl_paths))):
 
     # Read in and format GRWL. "mgt.xxx" functions called from "Merge_Tools_vXX.py".
     fn_grwl = grwl_paths[ind]
+    
+    # Create outpath. 
+    # if os.path.exists(out_dir+'tiles/'+ region + '/'): 
+    if os.path.exists(out_dir): 
+        outpath =  out_dir + fn_grwl[-16:-9] + '_merge.shp'
+    else:
+        # os.makedirs(out_dir+'tiles/'+ region + '/')
+        os.makedirs(out_dir)
+        outpath =  out_dir + fn_grwl[-16:-9] + '_merge.shp'
+    
     outpath =  out_dir + fn_grwl[-16:-9] + '_merge.shp'
+    # grwl = mgt.open_merge_shp(fn_grwl)
     grwl = mgt.open_grwl(fn_grwl)
     grwl.lon[np.where(grwl.lon < -180)] = -180.0
     grwl.lon[np.where(grwl.lon > 180)] = 180.0
@@ -145,8 +171,8 @@ for ind in list(range(len(grwl_paths))):
     
     # Finding overlapping MERIT Hydro (mh) tiles with GRWL.
     overlap_ids = mgt.find_MH_tiles(grwl, facc_paths)
-    fn_mh_facc = map(lambda i: facc_paths[i], overlap_ids)
-    fn_mh_elv = map(lambda i: elv_paths[i], overlap_ids)
+    fn_mh_facc = facc_paths[overlap_ids]
+    fn_mh_elv = elv_paths[overlap_ids]
 
     # Reading in mh data.
     mhydro = mgt.MH_coords(fn_mh_facc, grwl_ext)
@@ -193,8 +219,11 @@ for ind in list(range(len(grwl_paths))):
     # Calculating segment flow distance.
     grwl.dist = mgt.calc_segDist(grwl)
 
+    # Subset Lake db to grwl extent.
+    lake_db_clip = lake_db.cx[grwl_ext[0]:grwl_ext[2], grwl_ext[1]:grwl_ext[3]]
+
     # Attach Prior Lake Database (PLD) IDs.
-    grwl.lake_id = mgt.add_lakedb(grwl, fn_grwl, lake_db)
+    grwl.lake_id = mgt.add_lakedb(grwl, fn_grwl, lake_db_clip)
     grwl.old_lakes = np.copy(grwl.lake)
 
     if np.max(np.unique(grwl.lake_id)) == 0:
@@ -233,32 +262,44 @@ for ind in list(range(len(grwl_paths))):
 ###################### Combining Individual Tiles #############################
 ###############################################################################
 
-merge_outfile = out_dir + fn_merge
-shp_file = merge_outfile
-nc_file = shp_file[:-4] + '.nc'
+if args.tiles:
+    end_all = time.time()
+    print('All Tiles Done: ' + str((end_all-start_all)/60) + ' min: ')
 
-# Filter Data.
-start = time.time()
-mgt.format_data(merged)
-#merged.lake_id = merged.lake_id.astype(long)
-end = time.time()
-print('Time to Filter Combined Data: ' + str((end-start)/60) + ' min')
+else:       
+    print('Writing Continental Data')
+    
+    # if os.path.exists(out_dir+version+'/'): 
+    #     nc_file = out_dir + fn_merge
+    # else:
+    #     os.makedirs(out_dir+version+'/')
+    #     nc_file = out_dir + fn_merge
+    
+    nc_file = out_dir + fn_merge
 
-# Save filtered data as netcdf file.
-start = time.time()
-mgt.save_merged_nc(merged, nc_file)
-end = time.time()
-print('Time to Write NetCDF: ' + str((end-start)/60) + ' min')
+    # Filter Data.
+    start = time.time()
+    mgt.format_data(merged)
+    #merged.lake_id = merged.lake_id.astype(long)
+    end = time.time()
+    print('Time to Filter Combined Data: ' + str((end-start)/60) + ' min')
 
-'''
-# Save continental scale data as shp file. This section is commented out
-# because it takes a long time. If a user thinks it would be helpful they
-# can uncomment this section. 
-start = time.time()
-mgt.save_filtered_shp(merged, shp_file)
-end = time.time()
-print('Time to Write Shp: ' + str((end-start)/60) + ' min: ' + merge_outfile)
-'''
+    # Save filtered data as netcdf file.
+    start = time.time()
+    mgt.save_merged_nc(merged, nc_file)
+    end = time.time()
+    print('Time to Write NetCDF: ' + str((end-start)/60) + ' min')
 
-end_all = time.time()
-print('Total Runtime: ' + str((end_all-start_all)/60) + ' min: ' + nc_file)
+    '''
+    # Save continental scale data as shp file. This section is commented out
+    # because it takes a long time. If a user thinks it would be helpful they
+    # can uncomment this section. 
+    start = time.time()
+    shp_file = nc_file[:-3] + '.shp'
+    mgt.save_filtered_shp(merged, shp_file)
+    end = time.time()
+    print('Time to Write Shp: ' + str((end-start)/60) + ' min: ')
+    '''
+
+    end_all = time.time()
+    print('Total Runtime: ' + str((end_all-start_all)/60) + ' min: ')

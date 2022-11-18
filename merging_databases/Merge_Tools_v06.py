@@ -37,7 +37,8 @@ import utm
 import sys
 from osgeo import ogr
 from osgeo import osr
-from pyproj import Proj
+# from pyproj import Proj
+from pyproj import Proj, transform
 import numpy as np
 from osgeo import gdal
 #import shapefile
@@ -957,11 +958,11 @@ def find_projection(latitude, longitude):
         # Set the projection
         if np.sum(latitude) > 0:
             myproj = Proj(
-			"+proj=utm +zone=" + str(int(unq_zones[idx])) + utm_let +
+			"+proj=utm +zone=" + str(int(unq_zones[idx])) +
 			" +ellips=WGS84 +datum=WGS84 +units=m")
         else:
             myproj = Proj(
-			"+proj=utm +south +zone=" + str(int(unq_zones[idx])) + utm_let +
+			"+proj=utm +south +zone=" + str(int(unq_zones[idx])) +
 			" +ellips=WGS84 +datum=WGS84 +units=m")
 
         # Convert all the lon/lat to the main UTM zone
@@ -1112,7 +1113,7 @@ def add_tracks(grwl, shp_file, list_files):
     for ind in list(range(len(list_files))):
         #print ind
         poly = gp.GeoDataFrame.from_file(list_files[ind])
-        intersect = gp.sjoin(poly, points, how="inner", op='intersects')
+        intersect = gp.sjoin(poly, points, how="inner")
         intersect = pd.DataFrame(intersect)
         intersect = intersect.drop_duplicates(subset='index_right', keep='first')
         ids = np.array(intersect.index_right)
@@ -1163,7 +1164,7 @@ def add_deltas(grwl, fn_grwl, delta_db):
     # Finding where delta shapefiles intersect the GRWL shapefile.
     points = gp.GeoDataFrame.from_file(fn_grwl)
     poly = delta_db
-    intersect = gp.sjoin(poly, points, how="inner", op='intersects')
+    intersect = gp.sjoin(poly, points, how="inner")
     intersect = pd.DataFrame(intersect)
     intersect = intersect.drop_duplicates(subset='index_right', keep='first')
 
@@ -1360,7 +1361,7 @@ def add_basins(grwl, fn_grwl, fn_basins):
     # Attaching basin codes
     points = gp.GeoDataFrame.from_file(fn_grwl)
     poly = gp.GeoDataFrame.from_file(fn_basins)
-    intersect = gp.sjoin(poly, points, how="inner", op='intersects')
+    intersect = gp.sjoin(poly, points, how="inner")
     intersect = pd.DataFrame(intersect)
     intersect = intersect.drop_duplicates(subset='index_right', keep='first')
 
@@ -1432,13 +1433,16 @@ def fill_zero_basins(grwl):
             eps_dist, eps_ind = kdt.query(z_pts, k = 25)
 
             #calculate mode of closest basin values.
-            close_basins = grwl.basins[seg[vpts[eps_ind]]].flatten()
+            if len(vpts) < len(zpts):
+                close_basins = grwl.basins[seg[vpts]].flatten()
+            else:
+                close_basins = grwl.basins[seg[vpts[eps_ind]]].flatten()
             basin_mode = max(set(list(close_basins)), key=list(close_basins).count)
             #basin_mode = max(grwl.basins[seg])
             #assign zero basin values the mode value.
             grwl.basins[seg[zpts]] = basin_mode
 
-        print(ind, basin_mode)
+        # print(ind, basin_mode)
 
 ###############################################################################
 
@@ -1460,7 +1464,7 @@ def add_lakedb(grwl, fn_grwl, lake_db):
 
     # Attaching PLD IDs
     points = gp.GeoDataFrame.from_file(fn_grwl)
-    intersect = gp.sjoin(lake_db, points, how="inner", op='intersects')
+    intersect = gp.sjoin(lake_db, points, how="inner")
     intersect = pd.DataFrame(intersect)
     intersect = intersect.drop_duplicates(subset='index_right', keep='first')
 
