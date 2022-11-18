@@ -11,14 +11,19 @@ import netCDF4 as nc
 import geopandas as gp
 from shapely.geometry import Point
 import pandas as pd
+import argparse 
 
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-region = 'AF'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="continental region", type = str)
+args = parser.parse_args()
+
+region = args.region
 version = 'v14'
-outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 # fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v14/netcdf/na_sword_v14_subset.nc'
@@ -89,7 +94,8 @@ nodes.rename(
 nodes = nodes.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
 geom = gp.GeoSeries(map(Point, zip(data.groups['nodes'].variables['x'][:], data.groups['nodes'].variables['y'][:])))
 nodes['geometry'] = geom
-nodes.set_geometry(col='geometry', inplace=True)
+nodes = gp.GeoDataFrame(nodes)
+nodes.set_geometry(col='geometry')
 nodes = nodes.set_crs(4326, allow_override=True)
 
 print('Writing GeoPackage File')

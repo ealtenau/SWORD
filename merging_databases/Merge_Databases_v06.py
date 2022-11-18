@@ -66,6 +66,7 @@ VERSION UPDATES since v05:
 from __future__ import division
 import os
 os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/merging_databases/') #path to scripts will need updating. 
+os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/merging_databases/') #path to scripts will need updating. 
 import Merge_Tools_v06 as mgt
 import time
 import numpy as np
@@ -102,9 +103,9 @@ track_list = glob.glob(os.path.join(track_dir, 'ID_PASS*.shp'))
 
 # Regional Paths.
 fn_grod = data_dir + 'GROD/GROD_'+region+'.csv'
-fn_basins = data_dir + 'HydroBASINS/' + region + '/NA_HydroBASINS.shp'
-lake_dir = data_dir + 'LakeDatabase/20200702_PLD/For_Merge/PLD_NA_AR_GR.shp'
-# grwl_dir = data_dir + 'GRWL/Updates/' + region + '/'
+fn_basins = data_dir + 'HydroBASINS/' + region + '/hybas_eu_lev08_v1c.shp'
+lake_dir = data_dir + 'LakeDatabase/20200702_PLD/For_Merge/PLD_AS_SI_EU_AU.shp'
+# grwl_dir = data_dir + 'GRWL/GRWL_Updates/' + region + '/'
 grwl_dir = data_dir + 'GRWL_temp/New_Updates/' + region + '/'
 mh_facc_dir = data_dir + 'MERIT_Hydro/' + region + '/upa/'
 mh_elv_dir = data_dir + 'MERIT_Hydro/' + region + '/elv/'

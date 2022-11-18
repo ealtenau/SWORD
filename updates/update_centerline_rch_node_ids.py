@@ -293,8 +293,7 @@ args = parser.parse_args()
 start_all = time.time()
 
 #read in data. 
-# sword_dir = args.filepath
-sword_dir="/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v14/netcdf/na_sword_v14.nc"
+sword_dir = args.filepath
 centerlines, nodes, reaches = read_data(sword_dir)
 
 #redo centerline ids for nodes and reaches. 
