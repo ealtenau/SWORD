@@ -94,6 +94,15 @@ plt.scatter(mh.lon, mh.lat, c=np.log(mh.facc), edgecolors='none', s = 5)
 plt.scatter(grwl.lon, grwl.lat, c='red', edgecolors='none', s = 3)
 #plt.colorbar()
 
+plt.figure(10, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('MH vs. GRWL', fontsize=16)
+plt.xlabel('x', fontsize=14)
+plt.ylabel('y', fontsize=14)
+plt.scatter(mh.x, mh.y, c='blue', edgecolors='none', s = 5)
+plt.scatter(grwl.x, grwl.y, c='red', edgecolors='none', s = 3)
+plt.show()
 
 count = 1
 bid = np.zeros(len(grwl_id))

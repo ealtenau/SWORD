@@ -1,16 +1,24 @@
+#### this file will be to preprocess global centerline edits. 
+
+
 from __future__ import division
-import numpy as np
-from scipy import spatial as sp
-import netCDF4 as nc
-from pyproj import Proj
+import os
 import time
-import geopy.distance
+import utm
+from osgeo import ogr
+from osgeo import osr
+from osgeo import gdal
+import numpy as np
 import pandas as pd
-import argparse
-import re
-import os 
-import geopandas as gp
+from scipy import spatial as sp
 from shapely.geometry import Point
+import sys
+import geopandas as gp
+from pyproj import Proj
+import rasterio
+import warnings
+from shapely.errors import ShapelyDeprecationWarning
+warnings.filterwarnings("ignore", category=ShapelyDeprecationWarning) 
 import matplotlib.pyplot as plt
 
 ###############################################################################
@@ -298,152 +306,211 @@ def cut_edit_segments(edits, start_seg):
 ###############################  MAIN CODE  ###################################
 ###############################################################################
 
-grwl_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/EDITS/'
-grwl_paths = np.sort(getListOfFiles(grwl_dir))
+outdir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/EDITS/'
+grwl_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/GRWL_Masks_V01.01_LatLonNames/'
+grwl_paths = np.sort([file for file in getListOfFiles(grwl_dir) if '.tif' in file])
+fn_cl = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL_temp/EDITS/gpkg/global_cl_updates_Nov2022.gpkg'
 
 # Read centerline points.
-ind = 119
-cls = gp.read_file(grwl_paths[ind])
-pattern = grwl_paths[ind][-17:-10]
-outpath =  grwl_dir+ pattern + '_edit.gpkg'
+cls = gp.read_file(fn_cl)
 
-edits = Object()
-edits.x = np.array(cls['x'])
-edits.y = np.array(cls['y'])
-edits.lat = np.array(cls['lat'])
-edits.lon = np.array(cls['lon'])
-edits.seg = np.array(cls['seg'])
+# Loop through and find which points are associated with a tile. 
+for ind in list(range(len(grwl_paths))): 
 
-#len(np.unique(edits.seg))
+    # Find tile name. 
+    pattern = grwl_paths[ind][-11:-4]
 
-# Finding endpoints and indexes. 
-edits.eps = find_edit_endpoints(edits, edits.seg)
-edits.ind = order_edits(edits, edits.seg, edits.eps)
+    # Remove after tile runs. 
+    if pattern in ['n56w114','n56e078','n60e066','n60e072']:
+        print(ind, pattern, '- Skipping')
+        continue 
 
-# Cutting existing segments at tributary junctions.
-edits.tribs = find_edit_tributary_junctions(edits)
-start_seg = np.max(edits.seg)+1
-edits.new_seg = cut_edit_segments(edits, start_seg)
-edits.new_eps = find_edit_endpoints(edits, edits.new_seg)
-edits.new_ind = order_edits(edits, edits.new_seg, edits.new_eps)
+    # Create outpath. 
+    if os.path.exists(outdir): 
+        outpath =  outdir+ pattern + '_edit.gpkg'
+    else:
+        os.makedirs(outdir)
+        outpath = outdir + pattern + '_edit.gpkg'
 
-#len(np.unique(edits.seg))
+    # Read in grwl tile.     
+    raster = gdal.Open(grwl_paths[ind])
+    prj=raster.GetProjection()
+    srs=osr.SpatialReference(wkt=prj)
+    utm_val = srs.GetAttrValue('projcs')
+    if len(utm_val) < 12:
+        zone = utm_val[-2:-1]
+    else:
+        zone = utm_val[-3:-1]
+    let = utm_val[-1]
 
-# Create filler variable for lake flag. 
-edits.lake = np.repeat(1,len(edits.seg))
+    # Defining GRWL tile extent and convert to lat lon.
+    left,xres,__,top,__,yres  = raster.GetGeoTransform()
+    right = left + (raster.RasterXSize * xres)
+    bottom = top + (raster.RasterYSize * yres)
+    if top > 10000000:
+        top = 10000000.0
 
-# Create geodatabase to write.
-new_gdb = gp.GeoDataFrame([
-    edits.lat,
-    edits.lon,
-    edits.x,
-    edits.y,
-    edits.new_seg,
-    edits.lake
-    ]).T
+    # Setting hemisphere to converto to lat lon. 
+    if pattern[0] == 's':
+        hemi = False
+    else:
+        hemi = True
+    ymin,xmin = utm.to_latlon(left, bottom, int(zone), northern=hemi)  
+    ymax,xmax = utm.to_latlon(right, top, int(zone), northern=hemi)
+    xmin = round(xmin)
+    xmax = round(xmax)
+    ymin = round(ymin)
+    ymax = round(ymax)
+    
+    # Delete raster.
+    raster = None
 
-# Rename columns.
-new_gdb.rename(
-    columns={
-        0:"lat",
-        1:"lon",
-        2:"x",
-        3:"y",
-        4:"seg",
-        5:"lakeflag",
-        },inplace=True)
+    # Subset global points to tile extent. 
+    cls_tile = cls.cx[xmin:xmax, ymin:ymax]
 
-# Create geometry column.
-new_gdb = new_gdb.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
-geom = gp.GeoSeries(map(Point, zip(new_gdb['lon'], new_gdb['lat'])))
-new_gdb['geometry'] = geom
-new_gdb = gp.GeoDataFrame(new_gdb)
-new_gdb.set_geometry(col='geometry')
-new_gdb = new_gdb.set_crs(4326, allow_override=True)
+    # Skip if there are no points. 
+    if cls_tile.shape[0] == 0:
+        print(ind, pattern, '- No GRWL Edits')
+        continue
 
-# Save edits. 
-new_gdb.to_file(outpath, driver='GPKG')
-print('***', ind, pattern, '- EDITS SAVED ***')
+    else:
+        edits = Object()
+        edits.lat = np.array([np.array(cls_tile.geometry[i])[1] for i in cls_tile.index])
+        edits.lon = np.array([np.array(cls_tile.geometry[i])[0] for i in cls_tile.index])
+        east = []
+        north = []
+        for idx in list(range(len(edits.lat))):
+            east.append(utm.from_latlon(edits.lat[idx], edits.lon[idx])[0])
+            north.append(utm.from_latlon(edits.lat[idx], edits.lon[idx])[1])    
+        edits.x = np.array(east)
+        edits.y = np.array(north)
+        edits.seg = np.array(cls_tile['fid'])
+        edits.segInd = cls_tile.index
 
+        # Finding endpoints and indexes. 
+        edits.eps = find_edit_endpoints(edits, edits.seg)
+        edits.ind = order_edits(edits, edits.seg, edits.eps)
+
+        # Cutting existing segments at tributary junctions.
+        edits.tribs = find_edit_tributary_junctions(edits)
+        start_seg = np.max(edits.seg)+1
+        edits.new_seg = cut_edit_segments(edits, start_seg)
+        edits.new_eps = find_edit_endpoints(edits, edits.new_seg)
+        edits.new_ind = order_edits(edits, edits.new_seg, edits.new_eps)
+
+        # Create filler variable for lake flag. 
+        edits.lake = np.repeat(1,len(edits.seg))
+
+        # Create geodatabase to write.
+        new_gdb = gp.GeoDataFrame([
+            edits.lat,
+            edits.lon,
+            edits.x,
+            edits.y,
+            edits.new_seg,
+            edits.lake
+            ]).T
+
+        # Rename columns.
+        new_gdb.rename(
+            columns={
+                0:"lat",
+                1:"lon",
+                2:"x",
+                3:"y",
+                4:"seg",
+                5:"lakeflag",
+                },inplace=True)
+
+        # Create geometry column.
+        new_gdb = new_gdb.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
+        geom = gp.GeoSeries(map(Point, zip(new_gdb['lon'], new_gdb['lat'])))
+        new_gdb['geometry'] = geom
+        new_gdb = gp.GeoDataFrame(new_gdb)
+        new_gdb.set_geometry(col='geometry')
+        new_gdb = new_gdb.set_crs(4326, allow_override=True)
+
+        # Save edits. 
+        new_gdb.to_file(outpath, driver='GPKG')
+        print('***', ind, pattern, '- EDITS SAVED ***')
+
+        # Delete subset of global centelrine edits. 
+        cls_tile = None
 
 ###############################################################################
 
-# parser = argparse.ArgumentParser()
-# parser.add_argument("region", help="<Required> Region", type = str)
-# parser.add_argument("version", help="<Required> Version", type = str)
-# parser.add_argument('-tiles', nargs='+', help='<Optional> List of tiles to run.')
-# args = parser.parse_args()
+'''
+---
+Figures for checking output.
+---
 
-# region = args.region
-# version = args.version
-# fn_merge = region + '_Merge_'+version+'.nc'
-# data_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/'
-
-# grwl_dir = data_dir + 'GRWL_temp/New_Updates/' + region + '/'
-# grwl_paths = np.array([file for file in getListOfFiles(grwl_dir) if '.shp' in file])
-
-# if args.tiles:
-#     matches = list(args.tiles)
-#     grwl_paths = [file for file in grwl_paths if re.search('|'.join(matches), file)]
-#     print(grwl_paths)
-# else:
-#     print(grwl_paths)
-
-#########################################################################################
-# def write_cl_iceflag_nc(centerlines, outfile):
-
-#     start = time.time()
-
-#     # global attributes
-#     root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
-#     root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
-#     #root_grp.history = 'Created ' + time.ctime(time.time())
-
-#     # groups
-#     cl_grp = root_grp.createGroup('centerlines')
-
-#     # dimensions
-#     #root_grp.createDimension('d1', 2)
-#     cl_grp.createDimension('num_points', len(centerlines.cl_id))
-#     cl_grp.createDimension('num_domains', 4)
-#     cl_grp.createDimension('julian_day', 366)
-
-#     # centerline variables
-#     cl_id = cl_grp.createVariable(
-#         'cl_id', 'i8', ('num_points',), fill_value=-9999.)
-#     cl_x = cl_grp.createVariable(
-#         'x', 'f8', ('num_points',), fill_value=-9999.)
-#     cl_x.units = 'degrees east'
-#     cl_y = cl_grp.createVariable(
-#         'y', 'f8', ('num_points',), fill_value=-9999.)
-#     cl_y.units = 'degrees north'
-#     reach_id = cl_grp.createVariable(
-#         'reach_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
-#     reach_id.format = 'CBBBBBRRRRT'
-#     node_id = cl_grp.createVariable(
-#         'node_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
-#     node_id.format = 'CBBBBBRRRRNNNT'
-#     cl_iceflag = cl_grp.createVariable(
-#         'iceflag', 'i4', ('julian_day','num_points'), fill_value=-9999.)
-
-#     # saving data
-#     print("saving nc")
-#     # centerline data
-#     cl_id[:] = centerlines.cl_id
-#     cl_x[:] = centerlines.x
-#     cl_y[:] = centerlines.y
-#     reach_id[:,:] = centerlines.reach_id
-#     node_id[:,:] = centerlines.node_id
-#     cl_iceflag[:,:] = centerlines.ice_flag
-
-#     root_grp.close()
-#     end = time.time()
-#     print("Ended Saving Main NetCDF in: ", str(np.round((end-start)/60, 2)), " min")
-
-#     return outfile
-
-# outfile = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
-#     'SWOT_Coverage_Ice/v14/netcdf/na_centerline_iceflag.nc'
-# write_cl_iceflag_nc(centerlines, outfile)
+unq_id = np.unique(edits.seg)
+number_of_colors = len(unq_id)+5
+color = ["#"+''.join([random.choice('0123456789ABCDEF') for j in range(6)])
+             for i in range(number_of_colors)]
+plt.figure(1, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Edit Segments',  fontsize=16)
+plt.xlabel('x', fontsize=14)
+plt.ylabel('y', fontsize=14)
+for i in list(range(len(unq_id))):
+    seg = np.where(edits.seg == unq_id[i])
+    plt.scatter(edits.lon[seg], edits.lat[seg], c=color[i], s = 5, edgecolors = 'None')
+w = np.where(edits.eps > 0)[0]
+plt.scatter(edits.lon[w], edits.lat[w], c='black', s= 20, edgecolors = None)
+plt.show()
 
 
+unq_id2 = np.unique(edits.new_seg)
+number_of_colors2 = len(unq_id2)+5
+color2 = ["#"+''.join([random.choice('0123456789ABCDEF') for j in range(6)])
+             for i in range(number_of_colors2)]
+plt.figure(2, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Edit New Segments',  fontsize=16)
+plt.xlabel('x', fontsize=14)
+plt.ylabel('y', fontsize=14)
+for i in list(range(len(unq_id2))):
+    seg = np.where(edits.new_seg == unq_id2[i])
+    plt.scatter(edits.lon[seg], edits.lat[seg], c=color2[i], s = 5, edgecolors = 'None')
+w2 = np.where(edits.new_eps > 0)[0]
+plt.scatter(edits.lon[w2], edits.lat[w2], c='black', s= 20, edgecolors = None)
+plt.show()
+
+###
+
+plt.figure(3, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Segments', fontsize=16)
+plt.xlabel('x (m)', fontsize=14)
+plt.ylabel('y (m)', fontsize=14)
+plt.scatter(edits.lon, edits.lat, c=edits.segInd, edgecolors='none', s = 5)
+plt.colorbar()
+plt.show()
+
+plt.figure(4, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Segments', fontsize=16)
+plt.xlabel('x (m)', fontsize=14)
+plt.ylabel('y (m)', fontsize=14)
+plt.scatter(edits.lon, edits.lat, c=edits.ind, edgecolors='none', s = 5)
+plt.colorbar()
+plt.show()
+
+eps = np.where(edits.eps > 0)[0]
+plt.figure(5, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Segments', fontsize=16)
+plt.xlabel('x (m)', fontsize=14)
+plt.ylabel('y (m)', fontsize=14)
+plt.scatter(edits.lon, edits.lat, c=edits.seg, edgecolors='none', s = 5)
+plt.scatter(edits.lon[eps], edits.lat[eps], c='black', edgecolors='none', s = 8)
+plt.colorbar()
+plt.show()
+
+'''

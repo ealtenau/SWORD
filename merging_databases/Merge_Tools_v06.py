@@ -1273,12 +1273,12 @@ def add_dams(grwl, fn_grand, fn_grod):
 
     # Assign numbers to GROD dam types.
     grod_id[np.where(grod_names == 'Dam')] = 1
-    grod_id[np.where(grod_names == 'Channel_Dams')] = 2
-    grod_id[np.where(grod_names == 'Locks')] = 3
-    grod_id[np.where(grod_names == 'Low_Permeable_Dams')] = 4
-    grod_id[np.where(grod_names == 'Waterfall')] = 5
-    grod_id[np.where(grod_names == 'Partial_Dams_gte50')] = 6
-    grod_id[np.where(grod_names == 'Partial_Dams_lt50')] = 7
+    grod_id[np.where(grod_names == 'Locks')] = 2
+    grod_id[np.where(grod_names == 'Low_Permeable_Dams')] = 3
+    grod_id[np.where(grod_names == 'Waterfall')] = 4
+    grod_id[np.where(grod_names == 'Partial_Dams_gte50')] = 5
+    grod_id[np.where(grod_names == 'Partial_Dams_lt50')] = 6
+    grod_id[np.where(grod_names == 'Channel_Dams')] = 7 #was 2 before excluding.
 
     # narrowing down points in GRWL bounding box.
     pts = np.array([grod_lon, grod_lat]).T
@@ -1335,8 +1335,8 @@ def add_dams(grwl, fn_grand, fn_grod):
         grod_ID[grod_locs] = grod_id_clip[grod_dist_thresh[grod_locs_idx]]
         grod_FID[grod_locs] = grod_fid_clip[grod_dist_thresh[grod_locs_idx]]
         hfalls_FID[grod_locs] = grod_fid_clip[grod_dist_thresh[grod_locs_idx]]
-        grod_FID[np.where(grod_ID == 5)] = 0
-        hfalls_FID[np.where(grod_ID != 5)] = 0
+        grod_FID[np.where(grod_ID == 4)] = 0
+        hfalls_FID[np.where(grod_ID != 4)] = 0
 
     return grand_ID, grod_ID, grod_FID, hfalls_FID
 
@@ -1430,8 +1430,11 @@ def fill_zero_basins(grwl):
             z_pts = np.vstack((grwl.x[seg[zpts]], grwl.y[seg[zpts]])).T
             v_pts = np.vstack((grwl.x[seg[vpts]], grwl.y[seg[vpts]])).T
             kdt = sp.cKDTree(v_pts)
-            eps_dist, eps_ind = kdt.query(z_pts, k = 25)
-
+            __, eps_ind = kdt.query(z_pts, k = 25)
+            eps_ind = np.unique(eps_ind)
+            rmv = np.where(eps_ind == len(vpts))[0] 
+            eps_ind = np.delete(eps_ind, rmv)
+            
             #calculate mode of closest basin values.
             if len(vpts) < len(zpts):
                 close_basins = grwl.basins[seg[vpts]].flatten()

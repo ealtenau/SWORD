@@ -43,6 +43,7 @@ from scipy import spatial as sp
 import sys
 import geopandas as gp
 from pyproj import Proj
+import argparse
 
 ###############################################################################
 ################################# Functions ###################################
@@ -397,7 +398,7 @@ def read_grwl_merge(filename):
 
 ###############################################################################
 
-def read_edits_updated(filename, max_seg):
+def read_edits_gpkg(filename, max_seg):
 
     """
     FUNCTION:
@@ -453,7 +454,7 @@ def read_edits_updated(filename, max_seg):
 
 ###############################################################################   
 
-def read_edits(edit_files, max_seg):
+def read_edits_csv(edit_files, max_seg):
 
     """
     FUNCTION:
@@ -511,86 +512,6 @@ def read_edits(edit_files, max_seg):
         edits.seg = np.array(edit_fn.seg)
         edits.seg = edit_fn.seg+max_seg
         edits.lake = edit_fn.lakeFlag
-
-    # Editing new lake flag values.
-    edits.lake[np.where(edits.lake == 255)[0]] = 0
-    edits.lake[np.where(edits.lake == 250)[0]] = 0
-    edits.lake[np.where(edits.lake == 180)[0]] = 1
-    edits.lake[np.where(edits.lake == 181)[0]] = 1
-    edits.lake[np.where(edits.lake == 163)[0]] = 1
-    edits.lake[np.where(edits.lake == 126)[0]] = 3
-    edits.lake[np.where(edits.lake == 125)[0]] = 3
-    edits.lake[np.where(edits.lake == 86)[0]] = 2
-    edits.lake = np.asarray(edits.lake)
-
-    return edits
-
-###############################################################################
-
-def read_edits_special(edit_files, max_seg):
-
-    """
-    FUNCTION:
-        Opens edit file information to be added to GRWL shapefile and stores
-        it in an "edit" object.
-
-    INPUTS
-        edit_files -- List of Edit files (.csv format)
-        max_seg -- Max segment ID of orginial GRWL data.
-
-    OUTPUTS
-        edits.x = Easting (m, utm)
-        edits.y = Northing (m, utm)
-        edits.seg = Segment ID
-        edits.lake = Lake Flag
-    """
-
-    # Read in tile edits:
-    edits = Object()
-
-    # Read in and save information for multiple edit files per GRWL tile.
-    if len(edit_files) == 2:
-        e1 = pd.read_csv(edit_files[0], sep=',', delimiter=None, header='infer')
-        e1_x = np.array(e1.x)
-        e1_y = np.array(e1.y)
-        e1_seg = np.array(e1.seg)
-        e1_lake = np.array(e1.lakeFlag)
-
-        e2 = pd.read_csv(edit_files[1], sep=',', delimiter=None, header='infer')
-        e2_x = np.array(e2.x)
-        e2_y = np.array(e2.y)
-        e2_seg = np.array(e2.seg)
-        e2_lake = np.array(e2.lakeFlag)
-
-        if np.max(e1_seg) > np.max(e2_seg):
-            e2_seg = e2_seg+np.max(e1.seg)
-
-        if np.max(e2_seg) > np.max(e1_seg):
-            e1_seg = e1_seg+np.max(e2.seg)
-
-        if np.max(e1_seg) == np.max(e2_seg):
-            e2_seg = e2_seg+np.max(e1.seg)
-
-        edits.x = np.insert(e1_x, len(e1_x), e2_x)
-        edits.y = np.insert(e1_y, len(e1_y), e2_y)
-        edits.seg = np.insert(e1_seg, len(e1_seg), e2_seg)
-        edits.seg = edits.seg+max_seg
-        edits.lake = np.insert(e1_lake, len(e1_lake), e2_lake)
-
-    # Read in and save information for one edit file per GRWL tile.
-    if len(edit_files) == 1:
-        edit_fn = pd.read_csv(edit_files[0], sep=',', delimiter=None, header='infer')
-        edits.x = np.array(edit_fn.x)
-        edits.y = np.array(edit_fn.y)
-        edits.seg = np.array(edit_fn.seg)
-        edits.seg = edit_fn.seg
-        edits.lake = edit_fn.lakeFlag
-
-        cnt=max_seg
-        unq_rch = np.unique(edits.seg)
-        for ind in list(range(len(unq_rch))):
-            vals = np.where(edits.seg == unq_rch[ind])[0]
-            edits.seg[vals] = cnt=cnt+1
 
     # Editing new lake flag values.
     edits.lake[np.where(edits.lake == 255)[0]] = 0
@@ -1322,18 +1243,20 @@ and set the appropriate grwl_dir to the updated files.
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 '''
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Region", type = str)
+args = parser.parse_args()
 
 # True = Use updated GRWL files; False = Use original GRWL files.
 use_updated_grwl = True
 use_edit_updated = True
  
-region = 'AS'
-grwl_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL_temp/Updates/' + region + '/'
-edits_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL_temp/EDITS/gpkg/' + region + '/'
-outdir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL_temp/New_Updates/' + region + '/'
-grwl_paths = [file for file in getListOfFiles(grwl_dir) if '.shp' in file]
-#If only running a single file could comment this out and point directly to specific file.
-edit_paths = [file for file in getListOfFiles(edits_dir) if 'geom' in file]
+region = args.region
+grwl_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/tiles/' + region + '/'
+edits_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/EDITS/'
+outdir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/GRWL_Updates/' + region + '/'
+grwl_paths = np.sort([file for file in getListOfFiles(grwl_dir) if '.shp' in file])
+edit_paths = np.sort([file for file in getListOfFiles(edits_dir) if '.gpkg' in file])
 
 start_all = time.time()
 for ind in list(range(len(grwl_paths))):
@@ -1348,10 +1271,10 @@ for ind in list(range(len(grwl_paths))):
     
     #Can choose a new path or overwrite existing files.
     if os.path.exists(outdir): 
-        outpath = outdir + pattern + '_edit.shp'
+        outpath = outdir + pattern + '_update.shp'
     else:
         os.makedirs(outdir)
-        outpath = outdir + pattern + '_edit.shp'
+        outpath = outdir + pattern + '_update.shp'
            
     '''
     Read in and format original GRWL data.
@@ -1429,7 +1352,7 @@ for ind in list(range(len(grwl_paths))):
     Read in and format GRWL edits.
     '''
     max_seg = np.max(grwl.newID)+1
-    edits = read_edits_updated(edit_files[0], max_seg)   
+    edits = read_edits_gpkg(edit_files[0], max_seg)   
     
     #formating coordinates. If the edits are in lat lon then convert to utm, 
     #or vice versa. 
@@ -1513,7 +1436,8 @@ for ind in list(range(len(grwl_paths))):
     save_grwl_edits(grwl, outpath)
     end = time.time()
     print(ind, pattern + ': Edits Combined in: ' \
-          + str(np.round((end-start), 2)) + ' sec')
+        + str(np.round((end-start), 2)) + ' sec (' \
+            'tribs = '+str(len(np.where(grwl.tribs > 0)[0]))+')')
 
 end_all = time.time()
 print('All GRWL Edits Combined in: ' \

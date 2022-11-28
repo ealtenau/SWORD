@@ -43,7 +43,7 @@ INPUTS:
     out_dir -- Directory to put the outputs.
     region -- Continent directory name (ex: "NA")
     fn_merge -- Filename of the mosaicked output file.
-    lake_dir -- Prior Lake Database file directory (.shp)
+    lake_path -- Prior Lake Database file directory (.shp)
 
 OUTPUTS:
     Individual Shapefiles -- Shapefile containing all the merged
@@ -65,8 +65,7 @@ VERSION UPDATES since v05:
 
 from __future__ import division
 import os
-os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/merging_databases/') #path to scripts will need updating. 
-os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/merging_databases/') #path to scripts will need updating. 
+# os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/merging_databases/') #path to scripts will need updating. 
 import Merge_Tools_v06 as mgt
 import time
 import numpy as np
@@ -93,7 +92,7 @@ region = args.region
 version = args.version
 fn_merge = region + '_Merge_'+version+'.nc'
 data_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/'
-out_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL_temp/New_Merge/' + region + '/'
+out_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/' + version + '/'
 
 # Global Paths.
 fn_grand = data_dir + 'GRAND/GRanD_dams_v1_1.shp'
@@ -103,15 +102,17 @@ track_list = glob.glob(os.path.join(track_dir, 'ID_PASS*.shp'))
 
 # Regional Paths.
 fn_grod = data_dir + 'GROD/GROD_'+region+'.csv'
-fn_basins = data_dir + 'HydroBASINS/' + region + '/hybas_eu_lev08_v1c.shp'
-lake_dir = data_dir + 'LakeDatabase/20200702_PLD/For_Merge/PLD_AS_SI_EU_AU.shp'
-# grwl_dir = data_dir + 'GRWL/GRWL_Updates/' + region + '/'
-grwl_dir = data_dir + 'GRWL_temp/New_Updates/' + region + '/'
+fn_basins = data_dir + 'HydroBASINS/' + region + '/' + region + '_hb_lev08.shp'
+grwl_dir = data_dir + 'GRWL/GRWL_Updates/' + region + '/'
 mh_facc_dir = data_dir + 'MERIT_Hydro/' + region + '/upa/'
 mh_elv_dir = data_dir + 'MERIT_Hydro/' + region + '/elv/'
-grwl_paths = np.array([file for file in mgt.getListOfFiles(grwl_dir) if '.shp' in file])
+mh_wth_dir = data_dir + 'MERIT_Hydro/' + region + '/wth/'
+lake_dir = data_dir + 'LakeDatabase/20200702_PLD/For_Merge/' + region + '/'
+lake_path = np.array(np.array([file for file in mgt.getListOfFiles(lake_dir) if '.shp' in file]))
+grwl_paths = np.sort(np.array([file for file in mgt.getListOfFiles(grwl_dir) if '.shp' in file]))
 facc_paths = np.sort(np.array([file for file in mgt.getListOfFiles(mh_facc_dir) if '.tif' in file]))
 elv_paths = np.sort(np.array([file for file in mgt.getListOfFiles(mh_elv_dir) if '.tif' in file]))
+wth_paths = np.sort(np.array([file for file in mgt.getListOfFiles(mh_wth_dir) if '.tif' in file]))
 
 # Subset GRWL paths based on input tiles 
 if args.tiles:
@@ -119,7 +120,7 @@ if args.tiles:
     grwl_paths = [file for file in grwl_paths if re.search('|'.join(matches), file)]
 
 # open global shapefiles for spatial intersections. 
-lake_db = gp.GeoDataFrame.from_file(lake_dir)
+lake_db = gp.GeoDataFrame.from_file(lake_path[0])
 delta_db = gp.GeoDataFrame.from_file(fn_deltas)
 
 ###############################################################################
@@ -144,14 +145,13 @@ for ind in list(range(len(grwl_paths))):
     
     # Create outpath. 
     # if os.path.exists(out_dir+'tiles/'+ region + '/'): 
-    if os.path.exists(out_dir): 
-        outpath =  out_dir + fn_grwl[-16:-9] + '_merge.shp'
+    if os.path.exists(out_dir+'tiles/'+region+'/'): 
+        outpath =  out_dir+'tiles/'+region+'/'+fn_grwl[-18:-11] + '_merge.shp'
     else:
         # os.makedirs(out_dir+'tiles/'+ region + '/')
-        os.makedirs(out_dir)
-        outpath =  out_dir + fn_grwl[-16:-9] + '_merge.shp'
+        os.makedirs(out_dir+'tiles/'+region+'/')
+        outpath =  out_dir+'tiles/'+region+'/'+fn_grwl[-18:-11]+'_merge.shp'
     
-    outpath =  out_dir + fn_grwl[-16:-9] + '_merge.shp'
     # grwl = mgt.open_merge_shp(fn_grwl)
     grwl = mgt.open_grwl(fn_grwl)
     grwl.lon[np.where(grwl.lon < -180)] = -180.0
@@ -159,11 +159,11 @@ for ind in list(range(len(grwl_paths))):
             
     # Condition to skip file if it does not contain any data.
     if len(grwl.seg) == 0:
-        print(fn_grwl[-16:-9] + ": No GRWL Data - Skipped")
+        print(fn_grwl[-18:-11] + ": No GRWL Data - Skipped")
         continue
     
     # Creating GRWL tile name array.
-    tile =  fn_grwl[-16:-9]
+    tile =  fn_grwl[-18:-11]
     grwl.tile = np.repeat(tile, len(grwl.seg))
 
     # Defining GRWL tile extent.
@@ -174,11 +174,13 @@ for ind in list(range(len(grwl_paths))):
     overlap_ids = mgt.find_MH_tiles(grwl, facc_paths)
     fn_mh_facc = facc_paths[overlap_ids]
     fn_mh_elv = elv_paths[overlap_ids]
+    fn_mh_wth = wth_paths[overlap_ids]
 
     # Reading in mh data.
     mhydro = mgt.MH_coords(fn_mh_facc, grwl_ext)
     mhydro.facc = mgt.MH_vals(fn_mh_facc, grwl_ext)
     mhydro.elv = mgt.MH_vals(fn_mh_elv, grwl_ext)
+    mhydro.wth = mgt.MH_vals(fn_mh_wth, grwl_ext)
 
     # Threshold determines extent of mh rivers.
     if tile in flagged_tiles: #used a slightly larger thresh for large anabranching rivers (Amazon, Ob, Lena).
@@ -194,6 +196,7 @@ for ind in list(range(len(grwl_paths))):
     mh.lat = mhydro.lat[idx]
     mh.elv = mhydro.elv[idx]
     mh.facc = mhydro.facc[idx]
+    mh.wth = mhydro.wth[idx]
 
     # Re-project mh coordinates into UTM.
     mh.x, mh.y,__,__ = mgt.find_projection(mh.lat, mh.lon)
@@ -205,7 +208,13 @@ for ind in list(range(len(grwl_paths))):
     pt_dist, pt_ind = kdt.query(grwl_pts, k = 20)
     grwl.elv = np.median(mh.elv[pt_ind[:]], axis = 1)
     grwl.facc = np.median(mh.facc[pt_ind[:]], axis = 1)
+    grwl.mh_wth = np.median(mh.wth[pt_ind[:]], axis = 1)
     nn_dist = pt_dist[:,1] #only taking shortest distance.
+
+    # Insert merit hydro widths for manual centerline additions.
+    cl_add = np.where(grwl.manual == 1)[0]
+    grwl.wth[cl_add] = grwl.mh_wth[cl_add] 
+    grwl.wth[np.where(grwl.wth == 0)] = 1
 
     # Condition that pulls the larget flow accumulation value for minimum
     # distances greater than 100. This is useful in cases where grwl is
@@ -267,18 +276,15 @@ if args.tiles:
     end_all = time.time()
     print('All Tiles Done: ' + str((end_all-start_all)/60) + ' min: ')
 
-else:       
-    print('Writing Continental Data')
+else:        
+    if os.path.exists(out_dir): 
+        nc_file = out_dir + fn_merge
+    else:
+        os.makedirs(out_dir)
+        nc_file = out_dir + fn_merge
     
-    # if os.path.exists(out_dir+version+'/'): 
-    #     nc_file = out_dir + fn_merge
-    # else:
-    #     os.makedirs(out_dir+version+'/')
-    #     nc_file = out_dir + fn_merge
-    
-    nc_file = out_dir + fn_merge
-
     # Filter Data.
+    print('Filtering Continental Data')
     start = time.time()
     mgt.format_data(merged)
     #merged.lake_id = merged.lake_id.astype(long)
@@ -286,6 +292,7 @@ else:
     print('Time to Filter Combined Data: ' + str((end-start)/60) + ' min')
 
     # Save filtered data as netcdf file.
+    print('Writing Continental Data')
     start = time.time()
     mgt.save_merged_nc(merged, nc_file)
     end = time.time()

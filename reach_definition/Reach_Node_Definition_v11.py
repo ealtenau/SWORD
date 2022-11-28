@@ -35,21 +35,27 @@ import Reach_Definition_Tools_v11 as rdt
 import Write_Database_Files as wf
 import time
 import numpy as np
-#from scipy import spatial as sp
-#import pandas as pd
+import argparse
 
 ###############################################################################
 ##################### Defining Reach and Node Locations #######################
 ###############################################################################
+
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Region", type = str)
+parser.add_argument("version", help="<Required> Version", type = str)
+args = parser.parse_args()
+
 start_all = time.time()
+region = args.region
+version = args.version
 
-region = 'EU'
-
-# Input file.
-nc_file = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/Merged_Data/'+region+'/'+region+'_Merge_v10.nc'
+# Input file(s).
+main_dir = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/'
+nc_file = main_dir+'Merged_Data/'+region+'/'+region+'_Merge_v10.nc'
 # Output files.
-nc_outpath = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/Reaches_Nodes/netcdf/'+region.lower()+'_sword_v12.nc'
-swot_outpath = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/SWOT_Coverage/'+region.lower()+'_swot_obs_v12.nc'
+nc_outpath = main_dir+'Reaches_Nodes/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+swot_outpath = main_dir+'SWOT_Coverage/'+region.lower()+'_swot_obs_'+version+'.nc'
 
 # Reading in data.
 data = rdt.read_merge_netcdf(nc_file)

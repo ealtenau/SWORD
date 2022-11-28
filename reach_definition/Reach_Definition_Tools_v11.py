@@ -706,7 +706,7 @@ def find_all_bounds(subcls, radius):
             lakes = lake_coast_flag[basin[seg]]
             orbs = subcls.orbits[basin[seg]]
             grod = subcls.grod[basin[seg]]
-            dams = np.where((grod > 0) & (grod <= 5))[0]
+            dams = np.where((grod > 0) & (grod <= 4))[0]
 
             # Lake boundaries.
             lb, li, ld = find_lake_bounds(seg, lakes, ID, dist, lake_cnt)
@@ -4532,13 +4532,13 @@ def basin_node_attributes(node_id, node_dist, height, width, facc, nchan, lon,
         node_lake_id[ind] = max(set(list(lake_id[nodes])), key=list(lake_id[nodes]).count)
 
         GROD = np.copy(grod_id[nodes])
-        GROD[np.where(GROD > 5)] = 0
+        GROD[np.where(GROD > 4)] = 0
         node_grod_id[ind] = np.max(GROD)
         # Assign grod and hydrofalls ids to nodes.
         ID = np.where(GROD == np.max(GROD))[0][0]
         if np.max(GROD) == 0:
             node_grod_fid[ind] = 0
-        elif np.max(GROD) == 5:
+        elif np.max(GROD) == 4:
             node_hfalls_fid[ind] = hfalls_fid[nodes[ID]]
         else:
             node_grod_fid[ind] = grod_fid[nodes[ID]]
@@ -4925,13 +4925,13 @@ def reach_attributes(subcls):
 
         # Find grod type per reach.
         GROD = np.copy(subcls.grod[reach])
-        GROD[np.where(GROD > 5)] = 0
+        GROD[np.where(GROD > 4)] = 0
         rch_grod_id[ind] = np.max(GROD)
         # Assign grod and hydrofalls ids to reach.
         ID = np.where(GROD == np.max(GROD))[0][0]
         if np.max(GROD) == 0:
             rch_grod_fid[ind] = 0
-        elif np.max(GROD) == 5:
+        elif np.max(GROD) == 4:
             rch_hfalls_fid[ind] = subcls.hfalls_fid[reach[ID]]
         else:
             rch_grod_fid[ind] = subcls.grod_fid[reach[ID]]
