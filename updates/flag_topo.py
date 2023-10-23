@@ -24,7 +24,7 @@ def get_ngh_info(data):
             nghs1 = nghs1.split()
             nghs1 =  [int(n) for n in nghs1]
             for idx in list(range(len(nghs1))):
-                n1 = np.where(data.reach_id == str(nghs1[idx]))[0] #remove string condition if reaches were written using python
+                n1 = np.where(data.reach_id == nghs1[idx])[0] #remove string condition if reaches were written using python
                 if len(n1) == 0:
                     continue
                 else:
@@ -37,7 +37,7 @@ def get_ngh_info(data):
             nghs2 = nghs2.split()
             nghs2 =  [int(n) for n in nghs2]
             for idy in list(range(len(nghs2))):
-                n2 = np.where(data.reach_id == str(nghs2[idy]))[0] #remove string condition if reaches were written using python
+                n2 = np.where(data.reach_id == nghs2[idy])[0] #remove string condition if reaches were written using python
                 if len(n2) == 0:
                     continue
                 else:
@@ -57,9 +57,9 @@ def get_ngh_info(data):
         
 #########################################################################################################################
 
-region = 'AS'
-file_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v13/shp/'+region+'/'
-files = [f for f in os.listdir(file_dir) if 'shp' in f and 'reaches' in f]
+region = 'NA'
+file_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15/shp/'+region+'/'
+files = np.sort(np.array([f for f in os.listdir(file_dir) if 'shp' in f and 'reaches' in f]))
 
 ### in larger loop 
 for f in list(range(len(files))):
@@ -112,7 +112,7 @@ for f in list(range(len(files))):
     del(data)
 
 data_all = gp.GeoDataFrame(data_all)
-data_all.to_file('/Users/ealteanau/Documents/SWORD_Dev/outputs/rch_edits/'+region.lower()+'_sword_v13.gpkg', driver='GPKG', layer='reaches')
+data_all.to_file('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/TopoFlag/'+region.lower()+'_sword_v15.gpkg', driver='GPKG', layer='reaches')
 flag = np.where(data_all['topo_flag'] == 1)[0]
 flag2 = np.where((data_all['topo_flag'] == 1) & (data_all['type'] != 5))[0]
 print('DONE', np.round(((len(flag)/len(data_all.reach_id))*100),3), np.round(((len(flag2)/len(data_all.reach_id))*100),3))

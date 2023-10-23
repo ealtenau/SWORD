@@ -12,9 +12,9 @@ import pandas as pd
 
 region = 'OC'
 
-fn_sword_new = 'F:/SWORD/Development_Files/outputs/Reaches_Nodes_v12/netcdf/'+region.lower()+'_sword_v12.nc'
-fn_sword_old = 'F:/SWORD/Development_Files/outputs/Reaches_Nodes_v09/netcdf/'+region.lower()+'_apriori_rivers_v09.nc'
-outpath = 'F:/SWORD/Development_Files/outputs/Version_Differences/'+region+'_ReachID_v12_vs_v09.csv'
+fn_sword_new = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/'+region.lower()+'_sword_v16.nc'
+fn_sword_old = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15b/netcdf/'+region.lower()+'_sword_v15b.nc'
+outpath = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Version_Differences/'+region+'_ReachID_v16_vs_v15b.csv'
 
 # read in global data
 new = nc.Dataset(fn_sword_new)
@@ -40,16 +40,26 @@ kdt = sp.cKDTree(old_pts)
 eps_dist, eps_ind = kdt.query(new_pts, k = 2) 
 
 indexes = eps_ind[:,0]
+dist = eps_dist[:,0]
 old_node_ids = oid[indexes]
 old_reach_ids = orch_id[indexes]
 
+# Flag any nodes with a previous version node greater than 500 m away (i.e. new centerline channel).
+new_cls = np.where(dist > 0.005)[0]
+old_node_ids[new_cls] = 0
+old_reach_ids[new_cls] = 0
+
 # output reach differences in csv format. 
 data2 = pd.DataFrame(np.array([nlon, nlat, nid, nrch_id, old_node_ids, old_reach_ids])).T
-data2.columns = ['lon', 'lat', 'v12_node_id', 'v12_reach_id', 'v09_node_id', 'v09_reach_id']
+data2.columns = ['lon', 'lat', 'v16_node_id', 'v16_reach_id', 'v15b_node_id', 'v15b_reach_id']
 data2.to_csv(outpath)
 
 print('DONE')
 
+'''
+import matplotlib.pyplot as plt
 
-
-
+plt.scatter(nlon, nlat, c='blue', s=3)
+plt.scatter(nlon[new_cls], nlat[new_cls], c='red', s=3)
+plt.show()
+'''

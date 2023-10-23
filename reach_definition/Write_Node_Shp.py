@@ -12,21 +12,29 @@ import geopandas as gp
 from shapely.geometry import Point
 import pandas as pd
 import argparse 
+import os
 
-###############################################################################
+#########################################################NA######################
 ###############################################################################
 ###############################################################################
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="continental region", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("local_processing", help="'True' for local machine, 'False' for server", type = str)
 args = parser.parse_args()
 
 region = args.region
-version = 'v14'
-outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
+version = args.version
+
+if args.local_processing == 'True':
+    outdir  = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+else:
+    outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
+
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v14/netcdf/na_sword_v14_subset.nc'
+# fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/na_sword_v16.nc'
 
 # read originial data.
 data = nc.Dataset(fn)
@@ -58,7 +66,7 @@ nodes = gp.GeoDataFrame([
     node_type,
     np.array(data.groups['nodes'].variables['river_name'][:]),
     np.array(data.groups['nodes'].variables['edit_flag'][:]),
-    # np.array(data.groups['nodes'].variables['lake_id'][:]),
+    np.array(data.groups['nodes'].variables['trib_flag'][:]),
 ]).T
 
 #rename columns.
@@ -87,8 +95,8 @@ nodes.rename(
         20:"sinuosity",
         21:"type",
         22:"river_name",
-        23:"edit_flag"
-        # 24:"lake_id",
+        23:"edit_flag",
+        24:"trib_flag",
         },inplace=True)
 
 nodes = nodes.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
@@ -99,22 +107,34 @@ nodes.set_geometry(col='geometry')
 nodes = nodes.set_crs(4326, allow_override=True)
 
 print('Writing GeoPackage File')
-start = time.time()
+
 #write geopackage (continental scale)
-outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_nodes_' + version + '.gpkg'
+if os.path.exists(outpath+'gpkg/'):
+    outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_nodes_' + version + '.gpkg'
+else:
+    os.makedirs(outpath+'gpkg/')
+    outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_nodes_' + version + '.gpkg'
+
+start = time.time()
 nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
 #write as shapefile per level2 basin.
 print('Writing Shapefiles')
+if os.path.exists(outpath + 'shp/' + region + '/'):
+    shpdir = outpath + 'shp/' + region + '/'
+else:
+    os.makedirs(outpath + 'shp/' + region + '/')
+    shpdir = outpath + 'shp/' + region + '/'
+
 start = time.time()
 level2 = np.array([int(str(n)[0:2]) for n in nodes['node_id']])
 unq_l2 = np.unique(level2)
 nodes_cp = nodes.copy(); nodes_cp['level2'] = level2
 for lvl in list(range(len(unq_l2))):
     print(unq_l2[lvl])
-    outshp = outpath + 'shp/' + region + '/' + region.lower() + "_sword_nodes_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
+    outshp = shpdir + region.lower() + "_sword_nodes_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
     subset = nodes_cp[nodes_cp['level2'] == unq_l2[lvl]]
     subset = subset.drop(columns=['level2'])
     subset.to_file(outshp)

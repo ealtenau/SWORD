@@ -177,7 +177,7 @@ def attach_ext_dist(fn_ext_dist, fn_sword):
     
     new_indexes = eps_ind[:,0]
     new_ext_dist = odist[new_indexes]
-    new_ext_dist[np.where(lakeflag == 1)] = 20
+    new_ext_dist[np.where(lakeflag == 1)] = 5 #changed from 20 to 5 on 4/19/2023.
     
     check = np.where(new_ext_dist == 1)[0]
     not_single = np.where(nchan[check] > 1)[0]    
@@ -190,14 +190,14 @@ def attach_ext_dist(fn_ext_dist, fn_sword):
         val = np.around(max_wth[update[ind]]/wth[update[ind]])
         if val <= 1:
             new_ext_dist[update[ind]] = 2
-        elif val >= 20:
-            new_ext_dist[update[ind]] = 20
+        elif val >= 5: #changed from 20 to 5 on 4/19/2023.
+            new_ext_dist[update[ind]] = 5 #changed from 20 to 5 on 4/19/2023.
         else:
             new_ext_dist[update[ind]] = val
     
     
     # In the case where ext_dist_coef values are greater than 20 bring them back to 20. 
-    new_ext_dist[np.where(new_ext_dist > 20)] = 20
+    new_ext_dist[np.where(new_ext_dist > 5)] = 5 #changed from 20 to 5 on 4/19/2023.
                  
     # assign new coeficients.
     new.groups['nodes'].variables['ext_dist_coef'][:] = new_ext_dist
@@ -241,7 +241,7 @@ def attach_river_names(names_dir, fn_sword):
     rch_id = sword.groups['reaches'].variables['reach_id'][:]
     rch_names = sword.groups['reaches'].variables['river_name'][:]
     
-    level2 = np.array([np.int(np.str(ind)[0:2]) for ind in nid])
+    level2 = np.array([int(str(ind)[0:2]) for ind in nid])
     
     for ind in list(range(len(names_basin))):
         
@@ -253,10 +253,13 @@ def attach_river_names(names_dir, fn_sword):
         node_pts = np.vstack((nlon[sword_subset], nlat[sword_subset])).T
         kdt = sp.cKDTree(name_pts)
         eps_dist, eps_ind = kdt.query(node_pts, k = 2) 
-        
+
         new_indexes = eps_ind[:,0]
-        node_names[sword_subset] = shp.name[new_indexes]
+        node_names[sword_subset] = shp.name[new_indexes]        
         
+        nan = np.where(node_names == 'NaN')[0]
+        node_names[nan] = 'NODATA'
+
         #assigning reach names based on nodes
         unq_rch = np.unique(nrch_id[sword_subset])
         for idx in list(range(len(unq_rch))):
@@ -390,14 +393,18 @@ def attach_max_wth(max_wth_dir, raster_dir, fn_sword):
         #assign max width of closest points to new vector
         cl_max_wth = np.max(csv_max_wth[eps_ind[:]], axis = 1)
         
+        #if points don't have sword points within 500 m assign value of 1 and give max width below (lines 442-447). 
+        too_far = np.where(eps_dist[:,0] > 0.0005)[0]
+        cl_max_wth[too_far] = 1
+
         #assign max width per unique reach to node locations. 
         uniq_rch = np.unique(cl_rch_id_clip)
         for idx in list(range(len(uniq_rch))):
             rch = np.where(cl_rch_id_clip == uniq_rch[idx])[0]
-            max_wth1 = np.max(cl_max_wth[rch])
             assign1 = np.where(rch_id == uniq_rch[idx])[0]
-            rch_max_wth[assign1] = max_wth1
             assign2 = np.where(n_rch_id == uniq_rch[idx])[0]
+            max_wth1 = np.max(cl_max_wth[rch])
+            rch_max_wth[assign1] = max_wth1
             node_max_wth[assign2] = max_wth1
                  
     # filling in reach wth = 1 values. 
@@ -498,26 +505,27 @@ def attach_sinuosity(sin_dir, fn_sword):
 ################################# Main Code ###################################
 ###############################################################################
     
-region = 'NA'
+region = 'OC'
+version = 'v15'
 
 #Paths will need to be replaced.
-fn_sword = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/Reaches_Nodes/netcdf/'+region.lower()+'_sword_v12.nc'
+fn_sword = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 #paths for "attach_ice_flag". Will need to be replaced.
-fn_iceflag = 'E:/Users/Elizabeth Humphries/Documents/SWORD/For_Server/inputs/Ice_Flag/SWOT_river_ice_flag_v11.csv'
+fn_iceflag = '/Users/ealteanau/Documents/SWORD_Dev/inputs/IceFlag/SWOT_river_ice_flag_v15.csv'
 #paths for "attach_ext_dist". Will need to be replaced.
-fn_ext_dist = 'E:/Users/Elizabeth Humphries/Documents/SWORD/lakes_near_rivers/extdist_csv/'+region.lower()+'_dist_thresh_testing.csv'
+fn_ext_dist = '/Users/ealteanau/Documents/SWORD_Dev/inputs/ExtremeDist_Nodes/'+region.lower()+'_extdist_nodes.csv'
 #paths for "attach_river_names". Will need to be replaced.
-names_dir = 'E:/Users/Elizabeth Humphries/Documents/SWORD/For_Server/inputs/RiverNames/SWORD_Node_Names/'+region+'/'
+names_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/RiverNames/SWORD_Node_Names/'+region+'/'
 #paths for "attach_max_wth". Will need to be replaced.
-max_wth_dir = 'F:/SWORD/Development_Files/inputs/GRWL/Other/Max_Widths_Nodes/'+region+'/'
-raster_dir = 'F:/SWORD/Development_Files/inputs/GRWL/Other/GRWL_Masks/GRWL_mask_V01.01_LatLonNames/'
+max_wth_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/MaxWidth_Nodes/'+region+'/'
+raster_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/GRWL_Masks_V01.01_LatLonNames/'
 #path for meander_length and sinuosity.
-sin_dir = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/inputs/Sinuosity_Files/netcdf/'+region.lower()+'_sword_v12_sinuosity.nc'
+sin_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/Sinuosity_Files/netcdf/'+region.lower()+'_sword_v15output.nc'
 
 
 #functions for fill variables.
 attach_ice_flag(fn_iceflag, fn_sword)
-attach_river_names(names_dir, fn_sword)
-attach_max_wth(max_wth_dir, raster_dir, fn_sword)
+# attach_river_names(names_dir, fn_sword)
+# attach_max_wth(max_wth_dir, raster_dir, fn_sword)
 attach_sinuosity(sin_dir, fn_sword)
-attach_ext_dist(fn_ext_dist, fn_sword)
+# attach_ext_dist(fn_ext_dist, fn_sword)

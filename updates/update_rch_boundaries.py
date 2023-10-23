@@ -935,13 +935,13 @@ def reach_attributes(subcls):
 
         # Find grod type per reach.
         GROD = np.copy(subcls.grod[reach])
-        GROD[np.where(GROD > 5)] = 0
+        GROD[np.where(GROD > 4)] = 0
         rch_grod_id[ind] = np.max(GROD)
         # Assign grod and hydrofalls ids to reach.
         ID = np.where(GROD == np.max(GROD))[0][0]
         if np.max(GROD) == 0:
             rch_grod_fid[ind] = 0
-        elif np.max(GROD) == 5:
+        elif np.max(GROD) == 4:
             rch_hfalls_fid[ind] = subcls.hfalls_fid[reach[ID]]
         else:
             rch_grod_fid[ind] = subcls.grod_fid[reach[ID]]
@@ -2076,16 +2076,16 @@ def add_fill_vars(reaches):
 start_all = time.time()
 
 write_custom = True
-version = 'v14'
-region = 'OC'
+version = 'v15'
+region = 'NA'
 sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
-    +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+    +version+'/netcdf/before_edits/'+region.lower()+'_sword_'+version+'.nc'
 sub_outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'  
-fn_merge = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/Merged_Data_v9/OC/OC_Merge_v09.nc'
-rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/Waimak_SWORD_changes_101922.csv'
+fn_merge = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/v12/NA_Merge_v12.nc'
+rch_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v14/basin822810_edits.xlsx'
 
 #read in data. 
-new_ids = pd.read_csv(rch_fn)
+new_ids = pd.read_excel(rch_fn)
 centerlines, nodes, reaches = read_data(sword_dir)
 
 #create new attribute at node level with updated rch ids. 
@@ -2217,7 +2217,7 @@ add_fill_vars(reaches)
 # centerlines.node_id = centerlines.node_id[0:4,:]
 
 # write new netcdf.
-write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+# write_database_nc(centerlines, reaches, nodes, region, sword_dir)
 
 ######## !!!!!!!!!!!!!!!! SAVING SUBSETS FOR LATER UPDATES !!!!!!!!!!!!!!!!!!!! #########
 if write_custom == True:

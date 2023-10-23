@@ -1,8 +1,15 @@
 from __future__ import division
+# import sys
+# sys.path.append('../reach_definition/')
+# from reach_definition import Reach_Definition_Tools_v11 as rdt
 import numpy as np
 import time
 import netCDF4 as nc
 import pandas as pd
+from scipy import spatial as sp
+import geopy.distance
+import utm 
+import os 
 
 ###############################################################################
 ###############################################################################
@@ -57,7 +64,6 @@ def read_data(filename):
     nodes.manual_add = data.groups['nodes'].variables['manual_add'][:]
     nodes.sinuosity = data.groups['nodes'].variables['sinuosity'][:]
     nodes.edit_flag = data.groups['nodes'].variables['edit_flag'][:]
-    nodes.trib_flag = data.groups['nodes'].variables['trib_flag'][:]
 
     reaches.id = data.groups['reaches'].variables['reach_id'][:]
     reaches.cl_id = data.groups['reaches'].variables['cl_ids'][:]
@@ -93,13 +99,197 @@ def read_data(filename):
     reaches.river_name = data.groups['reaches'].variables['river_name'][:]
     reaches.low_slope = data.groups['reaches'].variables['low_slope_flag'][:]
     reaches.edit_flag= data.groups['reaches'].variables['edit_flag'][:]
-    reaches.trib_flag = data.groups['reaches'].variables['trib_flag'][:]
 
     data.close()    
 
     return centerlines, nodes, reaches
+
+###############################################################################
+
+def append_reaches(reaches, subreaches):
     
-###############################################################################    
+    reaches.id = np.insert(reaches.id, len(reaches.id), np.copy(subreaches.id))
+    reaches.cl_id = np.append(reaches.cl_id, subreaches.cl_id, axis=1)
+    reaches.x = np.insert(reaches.x, len(reaches.x), np.copy(subreaches.x))
+    reaches.x_min = np.insert(reaches.x_min, len(reaches.x_min), np.copy(subreaches.x_min))
+    reaches.x_max = np.insert(reaches.x_max, len(reaches.x_max), np.copy(subreaches.x_max))
+    reaches.y = np.insert(reaches.y, len(reaches.y), np.copy(subreaches.y))
+    reaches.y_min = np.insert(reaches.y_min, len(reaches.y_min), np.copy(subreaches.y_min))
+    reaches.y_max = np.insert(reaches.y_max, len(reaches.y_max), np.copy(subreaches.y_max))
+    reaches.len = np.insert(reaches.len, len(reaches.len), np.copy(subreaches.len))
+    reaches.wse = np.insert(reaches.wse, len(reaches.wse), np.copy(subreaches.wse))
+    reaches.wse_var = np.insert(reaches.wse_var, len(reaches.wse_var), np.copy(subreaches.wse_var))
+    reaches.wth = np.insert(reaches.wth, len(reaches.wth), np.copy(subreaches.wth))
+    reaches.wth_var = np.insert(reaches.wth_var, len(reaches.wth_var), np.copy(subreaches.wth_var))
+    reaches.slope = np.insert(reaches.slope, len(reaches.slope), np.copy(subreaches.slope))
+    reaches.rch_n_nodes = np.insert(reaches.rch_n_nodes, len(reaches.rch_n_nodes), np.copy(subreaches.rch_n_nodes))
+    reaches.grod = np.insert(reaches.grod, len(reaches.grod), np.copy(subreaches.grod))
+    reaches.grod_fid = np.insert(reaches.grod_fid, len(reaches.grod_fid), np.copy(subreaches.grod_fid))
+    reaches.hfalls_fid = np.insert(reaches.hfalls_fid, len(reaches.hfalls_fid), np.copy(subreaches.hfalls_fid))
+    reaches.nchan_max = np.insert(reaches.nchan_max, len(reaches.nchan_max), np.copy(subreaches.nchan_max))
+    reaches.nchan_mod = np.insert(reaches.nchan_mod, len(reaches.nchan_mod), np.copy(subreaches.nchan_mod))
+    reaches.dist_out = np.insert(reaches.dist_out, len(reaches.dist_out), np.copy(subreaches.dist_out))
+    reaches.n_rch_up = np.insert(reaches.n_rch_up, len(reaches.n_rch_up), np.copy(subreaches.n_rch_up))
+    reaches.n_rch_down = np.insert(reaches.n_rch_down, len(reaches.n_rch_down), np.copy(subreaches.n_rch_down))
+    reaches.rch_id_up = np.append(reaches.rch_id_up, subreaches.rch_id_up, axis=1)
+    reaches.rch_id_down = np.append(reaches.rch_id_down, subreaches.rch_id_down, axis=1)
+    reaches.lakeflag = np.insert(reaches.lakeflag, len(reaches.lakeflag), np.copy(subreaches.lakeflag))
+    reaches.facc = np.insert(reaches.facc, len(reaches.facc), np.copy(subreaches.facc))
+    reaches.max_obs = np.insert(reaches.max_obs, len(reaches.max_obs), np.copy(subreaches.max_obs))
+    reaches.iceflag = np.append(reaches.iceflag, subreaches.iceflag, axis=1)
+    reaches.max_wth = np.insert(reaches.max_wth, len(reaches.max_wth), np.copy(subreaches.max_wth))
+    reaches.orbits = np.append(reaches.orbits, subreaches.orbits, axis=1)
+    reaches.river_name = np.insert(reaches.river_name, len(reaches.river_name), np.copy(subreaches.river_name))
+    reaches.low_slope = np.insert(reaches.low_slope, len(reaches.low_slope), np.copy(subreaches.low_slope))
+    reaches.edit_flag = np.insert(reaches.edit_flag, len(reaches.edit_flag), np.copy(subreaches.edit_flag))
+
+###############################################################################
+
+def append_nodes(nodes, subnodes):
+
+    """
+    FUNCTION:
+        Appends sub-attributes within a loop to an object containing the final
+        SWORD node attributes for an entire specified region
+        (in most cases a continent).
+
+    INPUTS
+        nodes -- Object to be appended with sub-attribute data.
+        subnodes -- Object containing current attribute information for a
+            single level 2 Pfafstetter basin at the node loctions.
+        cnt -- Specifies the current loop iteration.
+    """
+    # Copy the very first sub-attributes.
+    nodes.id = np.insert(nodes.id, len(nodes.id), np.copy(subnodes.id))
+    nodes.cl_id = np.append(nodes.cl_id, subnodes.cl_id, axis=1)
+    nodes.x = np.insert(nodes.x, len(nodes.x), np.copy(subnodes.x))
+    nodes.y = np.insert(nodes.y, len(nodes.y), np.copy(subnodes.y))
+    nodes.len = np.insert(nodes.len, len(nodes.len), np.copy(subnodes.len))
+    nodes.wse = np.insert(nodes.wse, len(nodes.wse), np.copy(subnodes.wse))
+    nodes.wse_var = np.insert(nodes.wse_var, len(nodes.wse_var), np.copy(subnodes.wse_var))
+    nodes.wth = np.insert(nodes.wth, len(nodes.wth), np.copy(subnodes.wth))
+    nodes.wth_var = np.insert(nodes.wth_var, len(nodes.wth_var), np.copy(subnodes.wth_var))
+    nodes.grod = np.insert(nodes.grod, len(nodes.grod), np.copy(subnodes.grod))
+    nodes.grod_fid = np.insert(nodes.grod_fid, len(nodes.grod_fid), np.copy(subnodes.grod_fid))
+    nodes.hfalls_fid = np.insert(nodes.hfalls_fid, len(nodes.hfalls_fid), np.copy(subnodes.hfalls_fid))
+    nodes.nchan_max = np.insert(nodes.nchan_max, len(nodes.nchan_max), np.copy(subnodes.nchan_max))
+    nodes.nchan_mod = np.insert(nodes.nchan_mod, len(nodes.nchan_mod), np.copy(subnodes.nchan_mod))
+    nodes.dist_out = np.insert(nodes.dist_out, len(nodes.dist_out), np.copy(subnodes.dist_out))
+    nodes.reach_id = np.insert(nodes.reach_id, len(nodes.reach_id), np.copy(subnodes.reach_id))
+    nodes.wth_coef = np.insert(nodes.wth_coef, len(nodes.wth_coef), np.copy(subnodes.wth_coef))
+    nodes.lakeflag = np.insert(nodes.lakeflag, len(nodes.lakeflag), np.copy(subnodes.lakeflag))
+    nodes.facc = np.insert(nodes.facc, len(nodes.facc), np.copy(subnodes.facc))
+    nodes.ext_dist_coef = np.insert(nodes.ext_dist_coef, len(nodes.ext_dist_coef), np.copy(subnodes.ext_dist_coef))
+    nodes.edit_flag = np.insert(nodes.edit_flag, len(nodes.edit_flag), np.copy(subnodes.edit_flag))
+    nodes.max_wth = np.insert(nodes.max_wth, len(nodes.max_wth), np.copy(subnodes.max_wth))
+    nodes.meand_len = np.insert(nodes.meand_len, len(nodes.meand_len), np.copy(subnodes.meand_len))
+    nodes.sinuosity = np.insert(nodes.sinuosity, len(nodes.sinuosity), np.copy(subnodes.sinuosity))
+    nodes.river_name = np.insert(nodes.river_name, len(nodes.river_name), np.copy(subnodes.river_name))
+    nodes.manual_add = np.insert(nodes.manual_add, len(nodes.manual_add), np.copy(subnodes.manual_add))
+
+###############################################################################
+
+def append_centerlines(centerlines, subcls):
+
+    """
+    FUNCTION:
+        Appends sub-attributes within a loop to an object containing the final
+        SWORD high-resolution centerline attributes for an entire specified
+        region (in most cases a continent).
+
+    INPUTS
+        centerlines -- Object to be appended with sub-attribute data.
+        subcls -- Object containing current attribute information for a single
+            level 2 Pfafstetter basin at the high-resolution centerline loctions.
+        cnt -- Specifies the current loop iteration.
+    """
+    # centerlines.id = np.insert(centerlines.id, len(centerlines.id), np.copy(subcls.id))
+    centerlines.cl_id = np.insert(centerlines.cl_id, len(centerlines.cl_id), np.copy(subcls.cl_id))
+    centerlines.x = np.insert(centerlines.x, len(centerlines.x), np.copy(subcls.x))
+    centerlines.y = np.insert(centerlines.y, len(centerlines.y), np.copy(subcls.y))
+    centerlines.reach_id = np.append(centerlines.reach_id, subcls.reach_id, axis=1)
+    centerlines.node_id = np.append(centerlines.node_id, subcls.node_id, axis=1)
+
+###############################################################################
+
+def delete_rchs(reaches, rmv):
+    
+    reaches.id = np.delete(reaches.id, rmv, axis = 0)
+    reaches.cl_id = np.delete(reaches.cl_id, rmv, axis = 1)
+    reaches.x = np.delete(reaches.x, rmv, axis = 0)
+    reaches.x_min = np.delete(reaches.x_min, rmv, axis = 0)
+    reaches.x_max = np.delete(reaches.x_max, rmv, axis = 0)
+    reaches.y = np.delete(reaches.y, rmv, axis = 0)
+    reaches.y_min = np.delete(reaches.y_min, rmv, axis = 0)
+    reaches.y_max = np.delete(reaches.y_max, rmv, axis = 0)
+    reaches.len = np.delete(reaches.len, rmv, axis = 0)
+    reaches.wse = np.delete(reaches.wse, rmv, axis = 0)
+    reaches.wse_var = np.delete(reaches.wse_var, rmv, axis = 0)
+    reaches.wth = np.delete(reaches.wth, rmv, axis = 0)
+    reaches.wth_var = np.delete(reaches.wth_var, rmv, axis = 0)
+    reaches.slope = np.delete(reaches.slope, rmv, axis = 0)
+    reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rmv, axis = 0)
+    reaches.grod = np.delete(reaches.grod, rmv, axis = 0)
+    reaches.grod_fid = np.delete(reaches.grod_fid, rmv, axis = 0)
+    reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rmv, axis = 0)
+    reaches.lakeflag = np.delete(reaches.lakeflag, rmv, axis = 0)
+    reaches.nchan_max = np.delete(reaches.nchan_max, rmv, axis = 0)
+    reaches.nchan_mod = np.delete(reaches.nchan_mod, rmv, axis = 0)
+    reaches.dist_out = np.delete(reaches.dist_out, rmv, axis = 0)
+    reaches.n_rch_up = np.delete(reaches.n_rch_up, rmv, axis = 0)
+    reaches.n_rch_down = np.delete(reaches.n_rch_down, rmv, axis = 0)
+    reaches.rch_id_up = np.delete(reaches.rch_id_up, rmv, axis = 1)
+    reaches.rch_id_down = np.delete(reaches.rch_id_down, rmv, axis = 1)
+    reaches.max_obs = np.delete(reaches.max_obs, rmv, axis = 0)
+    reaches.orbits = np.delete(reaches.orbits, rmv, axis = 1)
+    reaches.facc = np.delete(reaches.facc, rmv, axis = 0)
+    reaches.iceflag = np.delete(reaches.iceflag, rmv, axis = 1)
+    reaches.max_wth = np.delete(reaches.max_wth, rmv, axis = 0)
+    reaches.river_name = np.delete(reaches.river_name, rmv, axis = 0)
+    reaches.low_slope = np.delete(reaches.low_slope, rmv, axis = 0)
+    reaches.edit_flag = np.delete(reaches.edit_flag, rmv, axis = 0)
+
+###############################################################################
+
+def delete_nodes(nodes, rmv):
+    nodes.id = np.delete(nodes.id, rmv, axis = 0)
+    nodes.cl_id = np.delete(nodes.cl_id, rmv, axis = 1)
+    nodes.x = np.delete(nodes.x, rmv, axis = 0)
+    nodes.y = np.delete(nodes.y, rmv, axis = 0)
+    nodes.len = np.delete(nodes.len, rmv, axis = 0)
+    nodes.wse = np.delete(nodes.wse, rmv, axis = 0)
+    nodes.wse_var = np.delete(nodes.wse_var, rmv, axis = 0)
+    nodes.wth = np.delete(nodes.wth, rmv, axis = 0)
+    nodes.wth_var = np.delete(nodes.wth_var, rmv, axis = 0)
+    nodes.grod = np.delete(nodes.grod, rmv, axis = 0)
+    nodes.grod_fid = np.delete(nodes.grod_fid, rmv, axis = 0)
+    nodes.hfalls_fid = np.delete(nodes.hfalls_fid, rmv, axis = 0)
+    nodes.nchan_max = np.delete(nodes.nchan_max, rmv, axis = 0)
+    nodes.nchan_mod = np.delete(nodes.nchan_mod, rmv, axis = 0)
+    nodes.dist_out = np.delete(nodes.dist_out, rmv, axis = 0)
+    nodes.reach_id = np.delete(nodes.reach_id, rmv, axis = 0)
+    nodes.wth_coef = np.delete(nodes.wth_coef, rmv, axis = 0)
+    nodes.lakeflag = np.delete(nodes.lakeflag, rmv, axis = 0)
+    nodes.facc = np.delete(nodes.facc, rmv, axis = 0)
+    nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, rmv, axis = 0)
+    nodes.edit_flag = np.delete(nodes.edit_flag, rmv, axis = 0)
+    nodes.max_wth = np.delete(nodes.max_wth, rmv, axis = 0)
+    nodes.meand_len = np.delete(nodes.meand_len, rmv, axis = 0)
+    nodes.sinuosity = np.delete(nodes.sinuosity, rmv, axis = 0)
+    nodes.river_name = np.delete(nodes.river_name, rmv, axis = 0)
+    nodes.manual_add = np.delete(nodes.manual_add, rmv, axis = 0)
+
+###############################################################################
+
+def delete_centerlines(centerlines, rmv):
+    # centerlines.id = np.delete(centerlines.id, rmv, axis = 0)
+    centerlines.cl_id = np.delete(centerlines.cl_id, rmv, axis = 0)
+    centerlines.x = np.delete(centerlines.x, rmv, axis = 0)
+    centerlines.y = np.delete(centerlines.y, rmv, axis = 0)
+    centerlines.reach_id = np.delete(centerlines.reach_id, rmv, axis = 1)
+    centerlines.node_id = np.delete(centerlines.node_id, rmv, axis = 1)
+
+###############################################################################
 
 def write_database_nc(centerlines, reaches, nodes, region, outfile):
 
@@ -262,8 +452,6 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     node_edit_flag = node_grp.createVariable(
         'edit_flag',  'S50', ('num_nodes',))
     node_edit_flag._Encoding = 'ascii'
-    node_trib_flag = node_grp.createVariable(
-        'trib_flag', 'i4', ('num_nodes',), fill_value=-9999.)
 
     # reach variables
     Reach_ID = rch_grp.createVariable(
@@ -354,8 +542,6 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_edit_flag = rch_grp.createVariable(
         'edit_flag', 'S50', ('num_reaches',), fill_value=-9999.)
     rch_edit_flag._Encoding = 'ascii'
-    rch_trib_flag = rch_grp.createVariable(
-        'trib_flag', 'i4', ('num_reaches',), fill_value=-9999.)
     # subgroup 1 - 'area_fits'
     h_break = sub_grp1.createVariable(
         'h_break', 'f8', ('num_domains','num_reaches'), fill_value=-9999.)
@@ -567,7 +753,6 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     node_river_name[:] = nodes.river_name
     node_manual_add[:] = nodes.manual_add
     node_edit_flag[:] = nodes.edit_flag
-    node_trib_flag[:] = nodes.trib_flag
 
     # reach data
     Reach_ID[:] = reaches.id
@@ -605,7 +790,6 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_max_wth[:] = reaches.max_wth
     rch_low_slope[:] = reaches.low_slope
     rch_edit_flag[:] = reaches.edit_flag
-    rch_trib_flag[:] = reaches.trib_flag
     # subgroup1 - area fits
     h_break[:,:] = reaches.h_break
     w_break[:,:] = reaches.w_break
@@ -693,183 +877,101 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     return outfile
 
 ###############################################################################
+
+def add_fill_vars(reaches):
+    reaches.h_break = np.full((4,len(reaches.id)), -9999.0)
+    reaches.w_break = np.full((4,len(reaches.id)), -9999.0)
+    reaches.hw_covariance = np.repeat(-9999., len(reaches.id))
+    reaches.h_err_stdev = np.repeat(-9999., len(reaches.id))
+    reaches.w_err_stdev = np.repeat(-9999., len(reaches.id))
+    reaches.h_w_nobs = np.repeat(-9999., len(reaches.id))
+    reaches.fit_coeffs = np.zeros((2, 3, len(reaches.id)))
+    reaches.fit_coeffs[np.where(reaches.fit_coeffs == 0)] = -9999.0
+    reaches.med_flow_area = np.repeat(-9999., len(reaches.id))
+    #MetroMan
+    reaches.metroman_ninf = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_p = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_abar = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_abar_stdev = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_ninf_stdev = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_p_stdev = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_ninf_p_cor = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_ninf_abar_cor = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_p_abar_cor = np.repeat(-9999, len(reaches.id))
+    reaches.metroman_sbQ_rel = np.repeat(-9999, len(reaches.id))
+    #HiDVI
+    reaches.hivdi_abar = np.repeat(-9999, len(reaches.id))
+    reaches.hivdi_alpha = np.repeat(-9999, len(reaches.id))
+    reaches.hivdi_beta = np.repeat(-9999, len(reaches.id))
+    reaches.hivdi_sbQ_rel = np.repeat(-9999, len(reaches.id))
+    #MOMMA
+    reaches.momma_b = np.repeat(-9999, len(reaches.id))
+    reaches.momma_h = np.repeat(-9999, len(reaches.id))
+    reaches.momma_save = np.repeat(-9999, len(reaches.id))
+    reaches.momma_sbQ_rel = np.repeat(-9999, len(reaches.id))
+    #SADS
+    reaches.sads_abar = np.repeat(-9999, len(reaches.id))
+    reaches.sads_n = np.repeat(-9999, len(reaches.id))
+    reaches.sads_sbQ_rel = np.repeat(-9999, len(reaches.id))
+    #BAM
+    reaches.bam_abar = np.repeat(-9999, len(reaches.id))
+    reaches.bam_n = np.repeat(-9999, len(reaches.id))
+    reaches.bam_sbQ_rel = np.repeat(-9999, len(reaches.id))
+    #SIC4DVar
+    reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
+    reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
+    reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
+
+###############################################################################
 ###############################################################################
 ###############################################################################
 
-region = 'AS'
-version = 'v16'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-rch_dir = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/'+version+'/'+region.lower()+'_'+version+'_single_pt_rchs.csv'
+start_all = time.time()
 
-rm_rch_df = pd.read_csv(rch_dir)
-rm_rch = np.array(rm_rch_df.reach_id)
+version = 'v15'
+region = 'NA'
+sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
+    +version+'/netcdf/before_edits/'+region.lower()+'_sword_'+version+'.nc'
+sword_outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
+    +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+subset_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/Custom_CalVal_Rchs/'
+subset_fn = os.listdir(subset_dir)
+subset_files = [f for f in subset_fn if region.lower() in f]
+
+#read in data. 
 centerlines, nodes, reaches = read_data(sword_dir)
-rch_check = reaches.id
 
-#### LOOP
-for ind in list(range(len(rm_rch))):
-    print(ind, len(rm_rch))
-    rch_ind = np.where(reaches.id == rm_rch[ind])[0]
-    node_ind = np.where(nodes.reach_id == rm_rch[ind])[0]
-    cl_ind = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
+for ind in list(range(len(subset_files))):
+    print(ind, subset_files[ind])
+    subcls, subnodes, subreaches = read_data(subset_dir+subset_files[ind])
 
-    centerlines.cl_id = np.delete(centerlines.cl_id, cl_ind, axis=0)
-    centerlines.x = np.delete(centerlines.x, cl_ind, axis=0)
-    centerlines.y = np.delete(centerlines.y, cl_ind, axis=0)
-    centerlines.reach_id = np.delete(centerlines.reach_id, cl_ind, axis=1)
-    centerlines.node_id = np.delete(centerlines.node_id, cl_ind, axis=1)
+    #delete existing reaches in level6 basin.
+    rch_level6 = np.array([str(r)[0:6] for r in reaches.id])
+    rch_l6 = np.where(rch_level6 == str(subset_files[ind][3:9]))[0]
+    nodes_level6 = np.array([str(n)[0:6] for n in nodes.id])
+    nds_l6 = np.where(nodes_level6 == str(subset_files[ind][3:9]))[0]
+    cls_level6 = np.array([str(c)[0:6] for c in centerlines.reach_id[0,:]])
+    cl_l6 = np.where(cls_level6 == str(subset_files[ind][3:9]))[0]
 
-    nodes.id = np.delete(nodes.id, node_ind, axis = 0)
-    nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
-    nodes.x = np.delete(nodes.x, node_ind, axis = 0)
-    nodes.y = np.delete(nodes.y, node_ind, axis = 0)
-    nodes.len = np.delete(nodes.len, node_ind, axis = 0)
-    nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
-    nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
-    nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
-    nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
-    nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
-    nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
-    nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
-    nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
-    nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
-    nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
-    nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
-    nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
-    nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
-    nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
-    nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
-    nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
-    nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
-    nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
-    nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
-    nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
-    nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
-    nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
+    # Custom Asia reach removal 
+    # rch_l6 = np.where(reaches.id == 31247900011)[0]
+    # nds_l6 = np.where(nodes.reach_id == 31247900011)[0]
+    # cl_l6 = np.where(centerlines.reach_id[0,:] == 31247900011)[0]
 
-    reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
-    reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
-    reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
-    reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
-    reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
-    reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
-    reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
-    reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
-    reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
-    reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
-    reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
-    reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
-    reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
-    reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
-    reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
-    reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
-    reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
-    reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
-    reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
-    reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
-    reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
-    reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
-    reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
-    reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
-    reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
-    reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
-    reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
-    reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
-    reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
-    reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
-    reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
-    reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
-    reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
-    reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
-    reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
+    delete_rchs(reaches, rch_l6)
+    delete_nodes(nodes, nds_l6)
+    delete_centerlines(centerlines, cl_l6)
 
-    #removing residual neighbors with deleted reach id in centerline and reach groups. 
-    cl_ind1 = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
-    cl_ind2 = np.where(centerlines.reach_id[1,:] == rm_rch[ind])[0]
-    cl_ind3 = np.where(centerlines.reach_id[2,:] == rm_rch[ind])[0]
-    cl_ind4 = np.where(centerlines.reach_id[3,:] == rm_rch[ind])[0]
-    if len(cl_ind1) > 0:
-        centerlines.reach_id[0,cl_ind1] = 0
-    if len(cl_ind2) > 0:
-        centerlines.reach_id[1,cl_ind2] = 0
-    if len(cl_ind3) > 0:
-        centerlines.reach_id[2,cl_ind3] = 0
-    if len(cl_ind4) > 0:
-        centerlines.reach_id[3,cl_ind4] = 0
+    #append new reaches
+    append_reaches(reaches, subreaches)
+    append_nodes(nodes, subnodes)
+    append_centerlines(centerlines, subcls)
 
-    rch_up_ind1 = np.where(reaches.rch_id_up[0,:] == rm_rch[ind])[0]
-    rch_up_ind2 = np.where(reaches.rch_id_up[1,:] == rm_rch[ind])[0]
-    rch_up_ind3 = np.where(reaches.rch_id_up[2,:] == rm_rch[ind])[0]
-    rch_up_ind4 = np.where(reaches.rch_id_up[3,:] == rm_rch[ind])[0]
-    if len(rch_up_ind1) > 0:
-        reaches.rch_id_up[0,rch_up_ind1] = 0
-    if len(rch_up_ind2) > 0:
-        reaches.rch_id_up[1,rch_up_ind2] = 0
-    if len(rch_up_ind3) > 0:
-        reaches.rch_id_up[2,rch_up_ind3] = 0
-    if len(rch_up_ind4) > 0:
-        reaches.rch_id_up[3,rch_up_ind4] = 0
+#add fill variables for reaches
+add_fill_vars(reaches)
 
-    rch_dn_ind1 = np.where(reaches.rch_id_down[0,:] == rm_rch[ind])[0]
-    rch_dn_ind2 = np.where(reaches.rch_id_down[1,:] == rm_rch[ind])[0]
-    rch_dn_ind3 = np.where(reaches.rch_id_down[2,:] == rm_rch[ind])[0]
-    rch_dn_ind4 = np.where(reaches.rch_id_down[3,:] == rm_rch[ind])[0]
-    if len(rch_dn_ind1) > 0:
-        reaches.rch_id_down[0,rch_dn_ind1] = 0
-    if len(rch_dn_ind2) > 0:
-        reaches.rch_id_down[1,rch_dn_ind2] = 0
-    if len(rch_dn_ind3) > 0:
-        reaches.rch_id_down[2,rch_dn_ind3] = 0
-    if len(rch_dn_ind4) > 0:
-        reaches.rch_id_down[3,rch_dn_ind4] = 0
+# write new netcdf.
+write_database_nc(centerlines, reaches, nodes, region, sword_outdir)
 
-
-###############################################################################
-### Filler variables
-# discharge subgroup 1
-reaches.h_break = np.full((4,len(reaches.id)), -9999.0)
-reaches.w_break = np.full((4,len(reaches.id)), -9999.0)
-reaches.hw_covariance = np.repeat(-9999., len(reaches.id))
-reaches.h_err_stdev = np.repeat(-9999., len(reaches.id))
-reaches.w_err_stdev = np.repeat(-9999., len(reaches.id))
-reaches.h_w_nobs = np.repeat(-9999., len(reaches.id))
-reaches.fit_coeffs = np.zeros((2, 3, len(reaches.id)))
-reaches.fit_coeffs[np.where(reaches.fit_coeffs == 0)] = -9999.0
-reaches.med_flow_area = np.repeat(-9999., len(reaches.id))
-#MetroMan
-reaches.metroman_ninf = np.repeat(-9999, len(reaches.id))
-reaches.metroman_p = np.repeat(-9999, len(reaches.id))
-reaches.metroman_abar = np.repeat(-9999, len(reaches.id))
-reaches.metroman_abar_stdev = np.repeat(-9999, len(reaches.id))
-reaches.metroman_ninf_stdev = np.repeat(-9999, len(reaches.id))
-reaches.metroman_p_stdev = np.repeat(-9999, len(reaches.id))
-reaches.metroman_ninf_p_cor = np.repeat(-9999, len(reaches.id))
-reaches.metroman_ninf_abar_cor = np.repeat(-9999, len(reaches.id))
-reaches.metroman_p_abar_cor = np.repeat(-9999, len(reaches.id))
-reaches.metroman_sbQ_rel = np.repeat(-9999, len(reaches.id))
-#HiDVI
-reaches.hivdi_abar = np.repeat(-9999, len(reaches.id))
-reaches.hivdi_alpha = np.repeat(-9999, len(reaches.id))
-reaches.hivdi_beta = np.repeat(-9999, len(reaches.id))
-reaches.hivdi_sbQ_rel = np.repeat(-9999, len(reaches.id))
-#MOMMA
-reaches.momma_b = np.repeat(-9999, len(reaches.id))
-reaches.momma_h = np.repeat(-9999, len(reaches.id))
-reaches.momma_save = np.repeat(-9999, len(reaches.id))
-reaches.momma_sbQ_rel = np.repeat(-9999, len(reaches.id))
-#SADS
-reaches.sads_abar = np.repeat(-9999, len(reaches.id))
-reaches.sads_n = np.repeat(-9999, len(reaches.id))
-reaches.sads_sbQ_rel = np.repeat(-9999, len(reaches.id))
-#BAM
-reaches.bam_abar = np.repeat(-9999, len(reaches.id))
-reaches.bam_n = np.repeat(-9999, len(reaches.id))
-reaches.bam_sbQ_rel = np.repeat(-9999, len(reaches.id))
-#SIC4DVar
-reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
-reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
-reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
-
-new_rch_num = len(rch_check) - len(rm_rch)
-if len(reaches.id) == new_rch_num:
-    write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+end_all = time.time()
+print('Done in: ' + str(np.round((end_all-start_all)/60, 2)) + ' min')

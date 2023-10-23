@@ -8,31 +8,29 @@ import netCDF4 as nc
 import numpy as np
 import time
 
-region = 'NA'
-fn_sword = '/Users/ealteanau/Documents/SWORD_Dev/outputs/v14/netcdf/'+region.lower()+'_sword_v14.nc'
-
+region = 'OC'
+fn_sword = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/'+region.lower()+'_sword_v16.nc'
 sword = nc.Dataset(fn_sword, 'r+')
 
-n_lon = sword.groups['nodes'].variables['x'][:]
-r_lon = sword.groups['reaches'].variables['x'][:]
+# n_lon = sword.groups['nodes'].variables['x'][:]
+# r_lon = sword.groups['reaches'].variables['x'][:]
 
-sword.groups['reaches'].createVariable('edit_flag', 'S50', ('num_reaches',))
-sword.groups['reaches'].variables['edit_flag']._Encoding = 'ascii'
-sword.groups['nodes'].createVariable('edit_flag', 'S50', ('num_nodes',))
-sword.groups['nodes'].variables['edit_flag']._Encoding = 'ascii'
+# sword.groups['reaches'].createVariable('edit_flag', 'S50', ('num_reaches',))
+# sword.groups['reaches'].variables['edit_flag']._Encoding = 'ascii'
+# sword.groups['nodes'].createVariable('edit_flag', 'S50', ('num_nodes',))
+# sword.groups['nodes'].variables['edit_flag']._Encoding = 'ascii'
 
-sword.groups['reaches'].variables['edit_flag'][:] = np.repeat('NaN', len(r_lon))
-sword.groups['nodes'].variables['edit_flag'][:] = np.repeat('NaN', len(n_lon))
+# sword.groups['reaches'].variables['edit_flag'][:] = np.repeat('NaN', len(r_lon))
+# sword.groups['nodes'].variables['edit_flag'][:] = np.repeat('NaN', len(n_lon))
 
-sword.close()
+# sword.close()
 
 ### Update date and time stamp
-# sword.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime())
-# sword.updates = "Added SIC4D discharge algorithm group and associated parameters. \
-#                     Added low_slopw_flag variable to reaches group. Changed a few Yukon \
-#                     River reaches extreme distance coeficient from 1 to 20."
-#sword.production_date
-#sword.updates
+sword.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime())
+sword.updates = "Continued topology improvements in high priority level 2 basins. Reach ID corrections at level 6 basin scale (~5 percent of Reach IDs changed). Removed reaches consisting of a single 30 m centerline point. Updated ext_dist_coef values to be static for all nodes within reaches that have many water bodies near the river edge."
+sword.production_date
+sword.updates
+sword.close()
 
 ### Create New Variable(s)
 

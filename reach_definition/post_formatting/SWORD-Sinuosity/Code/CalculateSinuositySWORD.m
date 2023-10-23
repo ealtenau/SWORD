@@ -2,13 +2,13 @@
 %main function performing the calculations (SinuosityMinAreaVarMinReach) and
 %saves the output
 clear
-inputfilelocation='C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/Reaches_Nodes/netcdf/';
-outputlocation='C:/Users/ealtenau/Documents/Research/SWAG/For_Server/inputs/Sinuosity_Files/mat/';
+inputfilelocation='/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15/netcdf/';
+outputlocation='/Users/ealteanau/Documents/SWORD_Dev/inputs/Sinuosity_Files/mat/';
 debugPlot=0; %1 will make plots of each reach showing the locations of the meanders
 Files=dir([inputfilelocation '*.nc']);
 NumbFiles=size(Files,1);
 %for countfiles=1:NumbFiles
-for countfiles=3:3
+for countfiles=6:6
     disp('count files=')
     disp(countfiles)
     filename=Files(countfiles).name;

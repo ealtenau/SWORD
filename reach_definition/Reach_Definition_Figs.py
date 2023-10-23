@@ -25,7 +25,7 @@ class Object(object):
 region = 'NA'
 
 #fn1 = 'E:/Users/Elizabeth Humphries/Documents/SWORD/For_Server/outputs/Reaches_Nodes_v10/netcdf/'+region.lower()+'_sword_v10.nc'
-fn1 = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/Reaches_Nodes/netcdf/'+region.lower()+'_sword_v12.nc'
+fn1 = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15/netcdf/'+region.lower()+'_sword_v15.nc'
 #fn2 = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/'+region+'_swot_coverage.csv'
 data1 = nc.Dataset(fn1)
 #data2 = pd.read_csv(fn2)
@@ -88,7 +88,7 @@ np.min(reaches_len[rivers]/1000)
 np.median(reaches_len[rivers]/1000)
 
 
-(len(np.where(reaches_len[All] == 0)[0])/len(reaches_len[All]))*100 # 0%
+# (len(np.where(reaches_len[All] == 0)[0])/len(reaches_len[All]))*100 # 0%
 #(len(np.where(reaches_len[All] < 8000)[0])/len(reaches_len[All]))*100 # 16.6%
 (len(np.where(reaches_len[All] < 5000)[0])/len(reaches_len[All]))*100 # 16.6%
 (len(np.where((reaches_len[All] >= 5000) & (reaches_len[All] < 10000))[0])/len(reaches_len[All]))*100 # 34.2%
@@ -97,7 +97,7 @@ np.median(reaches_len[rivers]/1000)
 #(len(np.where(reaches_len[All] < 20000)[0])/len(reaches_len[All]))*100 # 98.9%
 (len(np.where(reaches_len[All] > 20000)[0])/len(reaches_len[All]))*100 # 0.03%
 
-(len(np.where(reaches_len[rivers] == 0)[0])/len(reaches_len[rivers]))*100 # 0%
+# (len(np.where(reaches_len[rivers] == 0)[0])/len(reaches_len[rivers]))*100 # 0%
 (len(np.where(reaches_len[rivers] < 5000)[0])/len(reaches_len[rivers]))*100 # 7.7%
 (len(np.where((reaches_len[rivers] >= 5000) & (reaches_len[rivers] < 10000))[0])/len(reaches_len[rivers]))*100 # 46.1%
 (len(np.where((reaches_len[rivers] >= 10000) & (reaches_len[rivers] <= 20000))[0])/len(reaches_len[rivers]))*100 # 7.8%

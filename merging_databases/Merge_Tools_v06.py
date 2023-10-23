@@ -1511,7 +1511,39 @@ def renumber_grwl_segs(grwl_segs, grwl_tile):
 
 ###############################################################################
 
-def edit_basins(basin_code, grwl_id):
+# def edit_basins(basin_code, grwl_id):
+
+#     """
+#     FUNCTION:
+#         Creates a 1-D array of updated basin code ids to be consistent along
+#         a GRWL segment. This function Fixes locations where GRWL centerlines
+#         and HydroBASINS boundaries don't line up perfectly.
+
+#     INPUTS
+#         basin_code -- Pfafstetter basin code along the GRWL centerline.
+#         grwl_id -- GRWL segment id.
+
+#     OUTPUTS
+#         new_basins -- Filtered Pfafstetter basin codes.
+#     """
+
+#     # Assigns the basin code mode within a GRWL segment to the entire segment.
+#     uniq_id = np.unique(grwl_id)
+#     new_basins = np.copy(basin_code)
+#     for ind in list(range(len(uniq_id))):
+#         seg = np.where(grwl_id == uniq_id[ind])[0]
+#         bcs = np.unique(basin_code[seg])
+#         if len(bcs) == 1:
+#             continue
+#         if len(bcs) > 1:
+#             mode = max(set(list(basin_code[seg])), key=list(basin_code[seg]).count)
+#             new_basins[seg] = mode
+
+#     return new_basins
+
+###############################################################################
+
+def edit_basins(basin_code, grwl_id, x, y):
 
     """
     FUNCTION:
@@ -1532,12 +1564,26 @@ def edit_basins(basin_code, grwl_id):
     new_basins = np.copy(basin_code)
     for ind in list(range(len(uniq_id))):
         seg = np.where(grwl_id == uniq_id[ind])[0]
+        seg_basins = basin_code[seg]
+        seg_x = x[seg]
+        seg_y = y[seg]
         bcs = np.unique(basin_code[seg])
+
         if len(bcs) == 1:
             continue
         if len(bcs) > 1:
-            mode = max(set(list(basin_code[seg])), key=list(basin_code[seg]).count)
-            new_basins[seg] = mode
+            for b in list(range(len(bcs))):
+                basin_pts = np.where(seg_basins == bcs[b])[0]
+                if len(basin_pts) < 15:
+                    other_pts = np.where(seg_basins != bcs[b])[0]
+                    b_pts = np.vstack((seg_x[basin_pts], seg_y[basin_pts])).T
+                    o_pts = np.vstack((seg_x[other_pts], seg_y[other_pts])).T
+                    kdt = sp.cKDTree(o_pts)
+                    __, eps_ind = kdt.query(b_pts, k = 10)
+                    mode = max(set(list(seg_basins[eps_ind[:,0]])), key=list(seg_basins[eps_ind[:,0]]).count)
+                    new_basins[seg[basin_pts]] = mode
+                else:
+                    continue
 
     return new_basins
 
@@ -1674,8 +1720,8 @@ def format_data(merged):
     old_new_lakes[np.where(merged.old_lakeflag==87)] = 2
 
     # Basin junction filter
-    basins = np.array([int(float(np.str(ind)[0:6])) for ind in merged.basins])
-    level3 = np.array([np.int(np.str(ind)[0:3]) for ind in basins])
+    basins = np.array([int(str(ind)[0:6]) for ind in merged.basins])
+    level3 = np.array([int(str(ind)[0:3]) for ind in basins])
     new_basins = np.zeros(len(merged.Ind))
 
     uniq_basins = np.unique(level3)
@@ -1687,7 +1733,9 @@ def format_data(merged):
         pts = np.where(level3 == uniq_basins[ind])[0]
         new_id = new_segs[pts]
         subbasins = basins[pts]
-        basin_edits = edit_basins(subbasins, new_id)
+        sub_x = merged.lon
+        sub_y = merged.lat    
+        basin_edits = edit_basins(subbasins, new_id, sub_x, sub_y)
         new_basins[pts] = basin_edits
 
     # Assigning filtered values to merged object attributes.

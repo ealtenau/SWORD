@@ -30,7 +30,10 @@ OUTPUTS:
 
 from __future__ import division
 import os
-os.chdir('C:/Users/ealtenau/Documents/Research/SWAG/For_Server/scripts/reach_definition/')
+if os.path.exists('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/reach_definition/'):
+    os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/reach_definition/')
+else:
+    os.chdir('/afs/cas.unc.edu/users/e/a/ealtenau/SWORD/reach_definition/')
 import Reach_Definition_Tools_v11 as rdt
 import Write_Database_Files as wf
 import time
@@ -44,6 +47,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Region", type = str)
 parser.add_argument("version", help="<Required> Version", type = str)
+parser.add_argument("local_processing", help="'True' for local machine, 'False' for server", type = str)
 args = parser.parse_args()
 
 start_all = time.time()
@@ -51,8 +55,12 @@ region = args.region
 version = args.version
 
 # Input file(s).
-main_dir = 'C:/Users/ealtenau/Documents/Research/SWAG/For_Server/outputs/'
-nc_file = main_dir+'Merged_Data/'+region+'/'+region+'_Merge_v10.nc'
+if args.local_processing == 'True':
+    main_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
+else:
+    main_dir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/'
+nc_file = main_dir+'Merged_Data/v12/'+region+'_Merge_v12.nc'
+
 # Output files.
 nc_outpath = main_dir+'Reaches_Nodes/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 swot_outpath = main_dir+'SWOT_Coverage/'+region.lower()+'_swot_obs_'+version+'.nc'
@@ -69,7 +77,7 @@ reaches = rdt.Object()
 nodes = rdt.Object()
 
 # Loop through each level 2 basin. Subsetting per level 2 basin speeds up the script.
-level2_basins = np.array([np.int(np.str(ind)[0:2]) for ind in data.basins])
+level2_basins = np.array([int(str(ind)[0:2]) for ind in data.basins])
 uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
 cnt = 0
@@ -149,7 +157,7 @@ for ind in list(range(len(uniq_level2))):
     subcls.rch_id2, subcls.rch_len2,\
      subcls.type2 = rdt.aggregate_rivers(subcls, river_min_dist)
     # Updating reach indexes.
-    subcls.rch_ind2, __ = rdt.update_rch_indexes(subcls, subcls.rch_id2)
+    subcls.rch_ind2, subcls.rch_eps2 = rdt.update_rch_indexes(subcls, subcls.rch_id2)
 
     print('Aggregating Lake Reaches')
     # Aggregating lake reach types.
@@ -166,6 +174,11 @@ for ind in list(range(len(uniq_level2))):
      subcls.type4 = rdt.aggregate_dams(subcls, dam_min_dist)
     # Updating reache indexes.
     subcls.rch_ind4, __ = rdt.update_rch_indexes(subcls, subcls.rch_id4)
+    
+    
+    #### add filter for weird reaches?????
+    
+    
     # Updating reach flow distance.
     subcls.rch_dist4 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.rch_id4,
                                         subcls.facc, subcls.rch_ind4)
@@ -296,7 +309,7 @@ reaches.nchan_max[np.where(reaches.nchan_max == 0)] = 1
 
 # Creating filler variables for nodes.
 nodes.wth_coef = np.repeat(0.5, len(nodes.id))
-nodes.ext_dist_coef = np.repeat(20, len(nodes.id))
+nodes.ext_dist_coef = np.repeat(5, len(nodes.id)) #changed from 20 to 5 on 4/19/2023.
 nodes.max_wth = np.zeros(len(nodes.id))
 nodes.meand_len = np.zeros(len(nodes.id))
 nodes.sinuosity = np.zeros(len(nodes.id))

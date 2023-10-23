@@ -1,6 +1,6 @@
 clear
-inputfilelocation='C:/Users/ealtenau/Documents/Research/SWAG/For_Server/inputs/Sinuosity_Files/mat/';
-outputlocation='C:/Users/ealtenau/Documents/Research/SWAG/For_Server/inputs/Sinuosity_Files/netcdf/';
+inputfilelocation='/Users/ealteanau/Documents/SWORD_Dev/inputs/Sinuosity_Files/mat/';
+outputlocation='/Users/ealteanau/Documents/SWORD_Dev/inputs/Sinuosity_Files/netcdf/';
 debugPlot=0; %1 will make plots of each reach showing the locations of the meanders
 Files=dir([inputfilelocation '*.mat']);
 NumbFiles=size(Files,1);

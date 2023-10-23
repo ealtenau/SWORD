@@ -10,6 +10,7 @@ import numpy as np
 def apply_updates(rpt_sub, sword):
     rpt_sub = rpt_sub.fillna(0)
     for r in list(range(len(rpt_sub))):  
+        print(r, len(rpt_sub)-1)
         row = rpt_sub.index[r]
         flag = rpt_sub['report_index'][row]
         try:
@@ -95,6 +96,7 @@ def apply_updates(rpt_sub, sword):
                 n_rch_up = sword.groups['reaches'].variables['n_rch_up'][rch]
                 n_rch_dn = sword.groups['reaches'].variables['n_rch_down'][rch]
                 nodes_rch = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                cl_node_inds = np.where(sword.groups['centerlines'].variables['reach_id'][0,:] == rpt_sub['reach_id'][row])[0]
                 if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
                     edit_val = str(flag)
                 else:
@@ -103,8 +105,10 @@ def apply_updates(rpt_sub, sword):
                 #create new variables
                 node_ids = sword.groups['nodes'].variables['node_id'][nodes_rch] 
                 dist_out = sword.groups['nodes'].variables['dist_out'][nodes_rch]
+                cl_nodes = sword.groups['centerlines'].variables['node_id'][0,cl_node_inds]
                 new_node_ids = node_ids[::-1]
                 new_dist_out = dist_out[::-1]  
+                new_cl_nodes = cl_nodes[::-1]
                 #update variables in netcdf
                 sword.groups['nodes'].variables['node_id'][nodes_rch] = new_node_ids
                 sword.groups['nodes'].variables['dist_out'][nodes_rch] = new_dist_out
@@ -114,24 +118,12 @@ def apply_updates(rpt_sub, sword):
                 sword.groups['reaches'].variables['n_rch_up'][rch] = n_rch_dn
                 sword.groups['reaches'].variables['n_rch_down'][rch] = n_rch_up
                 sword.groups['reaches'].variables['edit_flag'][rch] = edit_val
-                for n in list(range(len(node_ids))):
-                    cl_n1 = np.where(sword.groups['centerlines'].variables['node_id'][0,:] == node_ids[n])[0]
-                    cl_n2 = np.where(sword.groups['centerlines'].variables['node_id'][1,:] == node_ids[n])[0]
-                    cl_n3 = np.where(sword.groups['centerlines'].variables['node_id'][2,:] == node_ids[n])[0]
-                    cl_n4 = np.where(sword.groups['centerlines'].variables['node_id'][3,:] == node_ids[n])[0]
-                    if len(cl_n1) > 0:
-                        sword.groups['centerlines'].variables['node_id'][0,cl_n1] = new_node_ids[n]
-                    if len(cl_n2) > 0:
-                        sword.groups['centerlines'].variables['node_id'][1,cl_n2] = new_node_ids[n]
-                    if len(cl_n3) > 0:
-                        sword.groups['centerlines'].variables['node_id'][2,cl_n3] = new_node_ids[n]
-                    if len(cl_n4) > 0:
-                        sword.groups['centerlines'].variables['node_id'][3,cl_n4] = new_node_ids[n]
+                sword.groups['centerlines'].variables['node_id'][0,cl_node_inds] = new_cl_nodes
 
             # Neighbor Change
             elif flag == 3: 
-                rch = np.where(sword.groups['reaches'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
-                nodes = np.where(sword.groups['nodes'].variables['reach_id'] == rpt_sub['reach_id'][row])[0]
+                rch = np.where(sword.groups['reaches'].variables['reach_id'][:] == rpt_sub['reach_id'][row])[0]
+                nodes = np.where(sword.groups['nodes'].variables['reach_id'][:] == rpt_sub['reach_id'][row])[0]
                 # if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
                 #     edit_val = str(flag)
                 # else:
@@ -230,10 +222,10 @@ def apply_updates(rpt_sub, sword):
 ##############################################################################################################################
 ##############################################################################################################################
 
-version = 'v14'
+version = 'v16'
 sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 # fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/src/other_src/sword_app/user_reports.csv'
-fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v13/user_reports3.csv'
+fn_reports = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v16/user_reports_node_reversals3.csv'
 
 rpt = pd.read_csv(fn_reports)
 not_completed = np.where(rpt['updated'] == 0)[0]
@@ -243,6 +235,7 @@ if len(rpt_update) == 0:
 
 else:
     cont = np.array([int(str(r)[0:1]) for r in rpt_update['reach_id']])
+    # cont = np.array([int(str(r)[1]) for r in rpt_update['reach_id']])
     NA = np.where(cont >= 7)[0]
     AS = np.where((cont == 3) | (cont == 4))[0]
     EU = np.where(cont == 2)[0]

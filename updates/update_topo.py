@@ -322,79 +322,85 @@ def local_topology(subcls, subnodes, subreaches, subset = True):
                     ngh1_facc = np.max(ep1_nghs[:,1])
                     ngh2_wse = np.min(ep2_nghs[:,2])
                     ngh2_facc = np.max(ep2_nghs[:,1])
-                    if ngh1_facc < ngh2_facc:
+                    if ngh1_wse > ngh2_wse:
                         check = node1 > node2
                         if check == False:
                             update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                             print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
-                    elif ngh1_facc > ngh2_facc:
+                    elif ngh1_wse < ngh2_wse:
                         check = node1 < node2
                         if check == False:
                             update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                             print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
                     else:
-                        if ngh1_wse > ngh2_wse:
+                        if ngh1_facc < ngh2_facc:
                             check = node1 > node2
                             if check == False:
                                 update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                                 print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
-                        else:
+                        elif ngh1_facc > ngh2_facc:
                             check = node1 < node2
                             if check == False:
                                 update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                                 print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
+                        else:
+                            continue
 
                 if len(ep1_nghs[:,0]) > 0 and len(ep2_nghs[:,0]) == 0:
                     ngh1_wse = np.min(ep1_nghs[:,2])
                     ngh1_facc = np.max(ep1_nghs[:,1])
-                    if ngh1_facc < rch_facc:
+                    if ngh1_wse > rch_wse:
                         check = node1 > node2
                         if check == False:
                             update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                             print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
-                    elif ngh1_facc > rch_facc:
+                    elif ngh1_wse < rch_wse:
                         check = node1 < node2
                         if check == False:
                             update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                             print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
                     else:
-                        if ngh1_wse > rch_wse:
+                        if ngh1_facc > rch_facc:
+                            check = node1 < node2
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
+                        elif ngh1_facc < rch_facc:
                             check = node1 > node2
                             if check == False:
                                 update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                                 print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
                         else:
-                            check = node1 < node2
-                            if check == False:
-                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
-                                print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
+                            continue
                 
                 if len(ep1_nghs[:,0]) == 0 and len(ep2_nghs[:,0]) > 0:
                     ngh2_wse = np.min(ep2_nghs[:,2])
                     ngh2_facc = np.max(ep2_nghs[:,1])
-                    if ngh2_facc < rch_facc:
+                    if ngh2_wse > rch_wse:
                         check = node2 > node1
                         if check == False:
                             update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                             print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
-                    elif ngh2_facc > rch_facc:
+                    elif ngh2_wse < rch_wse:
                         check = node2 < node1
                         if check == False:
                             update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                             print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
                     else:
-                        if ngh2_wse > rch_wse:
+                        if ngh2_facc > rch_facc:
+                            check = node2 < node1
+                            if check == False:
+                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
+                                print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
+                        elif ngh2_facc < rch_facc:
                             check = node2 > node1
                             if check == False:
                                 update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
                                 print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
                         else:
-                            check = node2 < node1
-                            if check == False:
-                                update_node_order(subcls, subnodes, subreaches, subreaches.id[ind])
-                                print(subreaches.id[ind], subreaches.edit_flag[ind], 'nodes switched')
+                            continue
                 
-            ############################### NODE CHECK  END ##############################
+            ############################### NODE CHECK END ##############################
 
             #change dist to last option for updates...
             if len(ep1_nghs) > 0:
@@ -413,18 +419,18 @@ def local_topology(subcls, subnodes, subreaches, subset = True):
                     end_col = start_col + len(ep1_nghs)
                     rch_id_up[ind,start_col:end_col] = ep1_nghs[:,0]
                 else:
-                    if max_facc > rch_facc:
+                    if min_wse < rch_wse:
                         ### assign to downstream end
                         start_col = np.min(np.where(rch_id_down[ind,:] == 0)[0])
                         end_col = start_col + len(ep1_nghs)
                         rch_id_down[ind,start_col:end_col] = ep1_nghs[:,0]
-                    elif max_facc < rch_facc:
+                    elif min_wse > rch_wse:
                         ### assign to upstream end
                         start_col = np.min(np.where(rch_id_up[ind,:] == 0)[0])
                         end_col = start_col + len(ep1_nghs)
                         rch_id_up[ind,start_col:end_col] = ep1_nghs[:,0]
                     else:
-                        if min_wse > rch_wse:
+                        if max_facc < rch_facc:
                             ### assign to upstream end
                             start_col = np.min(np.where(rch_id_up[ind,:] == 0)[0])
                             end_col = start_col + len(ep1_nghs)
@@ -451,18 +457,18 @@ def local_topology(subcls, subnodes, subreaches, subset = True):
                     end_col = start_col + len(ep2_nghs)
                     rch_id_up[ind,start_col:end_col] = ep2_nghs[:,0]
                 else:
-                    if max_facc > rch_facc:
+                    if min_wse < rch_wse:
                         ### assign to downstream end
                         start_col = np.min(np.where(rch_id_down[ind,:] == 0)[0])
                         end_col = start_col + len(ep2_nghs)
                         rch_id_down[ind,start_col:end_col] = ep2_nghs[:,0]
-                    elif max_facc < rch_facc:
+                    elif min_wse > rch_wse:
                         ### assign to upstream end
                         start_col = np.min(np.where(rch_id_up[ind,:] == 0)[0])
                         end_col = start_col + len(ep2_nghs)
                         rch_id_up[ind,start_col:end_col] = ep2_nghs[:,0]
                     else:
-                        if min_wse > rch_wse:
+                        if max_facc < rch_facc:
                             ### assign to upstream end
                             start_col = np.min(np.where(rch_id_up[ind,:] == 0)[0])
                             end_col = start_col + len(ep2_nghs)
@@ -555,9 +561,9 @@ def filter_neighbors(subreaches):
 
 start_all = time.time()
 
-version = 'v14'
-region='OC'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
+version = 'v16'
+region='NA'
+sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/testing/'
 sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc', 'r+')
 
 #read in netcdf data. 
@@ -587,7 +593,7 @@ reaches.neighbors = all_nghs
 
 ### topo function
 reaches.n_rch_up, reaches.n_rch_down, \
-    reaches.rch_id_up, reaches.rch_id_down = local_topology(centerlines, nodes, reaches, subset = True)
+    reaches.rch_id_up, reaches.rch_id_down = local_topology(centerlines, nodes, reaches, subset = False)
 
 #filter neighbors
 reaches.rch_id_up_filt, reaches.n_rch_up_filt, \

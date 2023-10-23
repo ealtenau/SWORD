@@ -1280,7 +1280,7 @@ def update_rch_indexes(subcls, new_rch_id):
                 final_eps = real_eps2
 
             if len(final_eps) == 0 or len(final_eps) > 2:
-                print(ind, 'problem with indexes')
+                print(uniq_rch[ind], 'problem with indexes')
 
             # Re-ordering points based on updated endpoints.
             new_ind[final_eps[0]]=1
@@ -1353,7 +1353,7 @@ def aggregate_rivers(subcls, min_dist):
     new_rch_id = np.copy(subcls.rch_id1)
     new_rch_dist = np.copy(subcls.rch_len1)
     new_flag = np.copy(subcls.type1)
-    level4 = np.array([np.int(np.str(point)[0:4]) for point in subcls.basins])
+    level4 = np.array([int(str(point)[0:4]) for point in subcls.basins])
     uniq_basins = np.unique(level4) #np.unique(subcls.basins)
     for ind in list(range(len(uniq_basins))):
         #print(ind)
@@ -1387,7 +1387,7 @@ def aggregate_rivers(subcls, min_dist):
         loop = 1
         while len(small_rivers_dist) > 0:
             for idx in list(range(len(small_rivers))):
-                #print(idx)
+                # print(idx, small_rivers[idx])
 
                 if small_rivers[idx] == -9999:
                     continue
@@ -1424,7 +1424,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 if len(end1) == 0 and len(end2) == 0:
-                    #print(idx, 'cond 1 - no bordering reaches')
+                    # print(idx, 'cond 1 - no bordering reaches')
                     dummy_basin_rch[rch] = 0
                     dummy_basin_dist[rch] = 0
                     dummy_type[rch] = 0
@@ -1435,7 +1435,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) == 0 and len(end2) == 1:
-                    #print(idx, 'cond 2')
+                    # print(idx, 'cond 2')
                     # river
                     if end2[:,2] == 1:
                         #print('    subcond. 1 - river')
@@ -1537,7 +1537,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) == 0 and len(end2) > 1:
-                    #print(idx, 'cond 3 - short river with two tributaries')
+                    # print(idx, 'cond 3 - short river with two tributaries')
                     dummy_basin_rch[rch] = 0
                     dummy_basin_dist[rch] = 0
                     dummy_type[rch] = 0
@@ -1548,7 +1548,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) == 1 and len(end2) == 0:
-                    #print(idx, 'cond 4')
+                    # print(idx, 'cond 4')
                     # river
                     if end1[:,2] == 1:
                         #print('    subcond. 1 - river')
@@ -1649,7 +1649,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) == 1 and len(end2) == 1:
-                    #print(idx, 'cond 5')
+                    # print(idx, 'cond 5')
                     # two rivers bordering the reach.
                     if end1[:,2] == 1 and end2[:,2] == 1:
                         #print('    subcond. 1 -> 2 bordering rivers')
@@ -1683,7 +1683,7 @@ def aggregate_rivers(subcls, min_dist):
                             dummy_type[rch] = new_type
                             basin_rch[rch] = new_id
                             basin_dist[rch] = new_dist
-                            basin_flag[rch] =   new_type
+                            basin_flag[rch] = new_type
                             if new_id in small_rivers:
                                 update = np.where(small_rivers == new_id)[0]
                                 small_rivers[update] = -9999
@@ -2029,7 +2029,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) == 1 and len(end2) > 1:
-                    #print(idx, 'cond 6')
+                    # print(idx, 'cond 6')
                     if end1[:,2] == 1:
                         #print('    subcond 1 - river on single end.')
                         new_id = end1[:,0]
@@ -2078,7 +2078,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) > 1 and len(end2) == 0:
-                    #print(idx, 'cond 7 - short river with two tributaries')
+                    # print(idx, 'cond 7 - short river with two tributaries')
                     dummy_basin_rch[rch] = 0
                     dummy_basin_dist[rch] = 0
                     dummy_type[rch] = 0
@@ -2089,7 +2089,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) > 1 and len(end2) == 1:
-                    #print(idx, 'cond 8')
+                    # print(idx, 'cond 8')
                     if end2[:,2] == 1:
                         #print('    subcond 1 - river on single end.')
                         new_id = end2[:,0]
@@ -2137,7 +2137,7 @@ def aggregate_rivers(subcls, min_dist):
                 ###############################################################
 
                 elif len(end1) > 1 and len(end2) > 1:
-                    #print(idx, 'cond 9')
+                    # print(idx, 'cond 9')
                     if rch_len <= 100:
                         singles = np.unique(np.concatenate([end1[:,0], end2[:,0]]))
                         if len(singles) == 1:

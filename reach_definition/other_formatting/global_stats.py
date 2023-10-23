@@ -111,7 +111,7 @@ def append_data(reaches, subreaches, cnt):
 
 ###############################################################################
 #sword_rivers = np.sort(glob.glob('E:/Users/Elizabeth Humphries/Documents/SWORD/For_Server/outputs/Reaches_Nodes_v10/netcdf/*v10*'))
-sword_rivers = np.sort(glob.glob('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v14/netcdf/*v14*'))
+sword_rivers = np.sort(glob.glob('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/*v16*'))
 # sword_obs = np.sort(glob.glob('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/SWOT_Coverage_Ice/v14/netcdf/*v14*'))
 sword = Object()
 cnt = 0
@@ -125,7 +125,7 @@ for ind in list(range(len(sword_rivers))):
 
 sword.type = np.zeros(len(sword.id))
 for ind in list(range(len(sword.id))):
-    sword.type[ind] = np.int(np.str(sword.id[ind])[10:11])
+    sword.type[ind] = int(str(sword.id[ind])[10:11])
 All = np.where(sword.type != 6)[0]
 
 ghost = np.where(sword.type == 6)[0]

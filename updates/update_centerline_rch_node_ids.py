@@ -223,6 +223,12 @@ def format_cl_rch_ids(reaches, centerlines, verbose):
         # converting coordinates for centerlines points.
         cp1 = np.where(centerlines.cl_id == reaches.cl_id[0,ind])[0]
         cp2 = np.where(centerlines.cl_id == reaches.cl_id[1,ind])[0]
+
+        if len(cp1) > 1:
+            cp1 = np.array([cp1[0]])
+        if len(cp2) > 1:
+            cp2 = np.array([cp2[0]])
+        
         cp1_x, cp1_y, __, __ = utm.from_latlon(centerlines.y[cp1], centerlines.x[cp1])
         cp2_x, cp2_y, __, __ = utm.from_latlon(centerlines.y[cp2], centerlines.x[cp2])
         
@@ -236,7 +242,10 @@ def format_cl_rch_ids(reaches, centerlines, verbose):
 
             up_lon = reaches.x[np.where(reaches.id == reaches.rch_id_up[:,ind][up[0]])]
             up_lat = reaches.y[np.where(reaches.id == reaches.rch_id_up[:,ind][up[0]])]
-            up_x, up_y, __, __ = utm.from_latlon(up_lat, up_lon)
+            if len(up_lon) == 0 or len(up_lat) == 0:
+                continue
+            else:
+                up_x, up_y, __, __ = utm.from_latlon(up_lat, up_lon)
 
             d1 = np.sqrt(((cp1_x - up_x)**2 + (cp1_y - up_y)**2))
             d2 = np.sqrt(((cp2_x - up_x)**2 + (cp2_y - up_y)**2))
@@ -249,7 +258,10 @@ def format_cl_rch_ids(reaches, centerlines, verbose):
         if len(up) == 0 and len(down) > 0:
             dn_lon = reaches.x[np.where(reaches.id == reaches.rch_id_down[:,ind][down[0]])]
             dn_lat = reaches.y[np.where(reaches.id == reaches.rch_id_down[:,ind][down[0]])]
-            dn_x, dn_y, __, __ = utm.from_latlon(dn_lat, dn_lon)
+            if len(dn_lon) == 0 or len(dn_lat) == 0:
+                continue
+            else:
+                dn_x, dn_y, __, __ = utm.from_latlon(dn_lat, dn_lon)
 
             d1 = np.sqrt(((cp1_x - dn_x)**2 + (cp1_y - dn_y)**2))
             d2 = np.sqrt(((cp2_x - dn_x)**2 + (cp2_y - dn_y)**2))
@@ -263,11 +275,17 @@ def format_cl_rch_ids(reaches, centerlines, verbose):
 
             up_lon = reaches.x[np.where(reaches.id == reaches.rch_id_up[:,ind][up[0]])] #changed 0 to ind in rch_id_up rows.
             up_lat = reaches.y[np.where(reaches.id == reaches.rch_id_up[:,ind][up[0]])]
-            up_x, up_y, __, __ = utm.from_latlon(up_lat, up_lon)
+            if len(up_lon) == 0 or len(up_lat) == 0:
+                continue
+            else:
+                up_x, up_y, __, __ = utm.from_latlon(up_lat, up_lon)
 
             dn_lon = reaches.x[np.where(reaches.id == reaches.rch_id_down[:,ind][down[0]])]
             dn_lat = reaches.y[np.where(reaches.id == reaches.rch_id_down[:,ind][down[0]])]
-            dn_x, dn_y, __, __ = utm.from_latlon(dn_lat, dn_lon)
+            if len(dn_lon) == 0 or len(dn_lat) == 0:
+                continue
+            else:
+                dn_x, dn_y, __, __ = utm.from_latlon(dn_lat, dn_lon)
 
             d1 = np.sqrt(((cp1_x - up_x)**2 + (cp1_y - up_y)**2))
             d2 = np.sqrt(((cp1_x - dn_x)**2 + (cp1_y - dn_y)**2))
@@ -293,7 +311,8 @@ args = parser.parse_args()
 start_all = time.time()
 
 #read in data. 
-sword_dir = args.filepath
+# sword_dir = args.filepath
+sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/oc_sword_v16.nc'
 centerlines, nodes, reaches = read_data(sword_dir)
 
 #redo centerline ids for nodes and reaches. 
@@ -311,3 +330,10 @@ sword.close()
 
 end_all = time.time()
 print('Done Updating Centerline IDs in: ' + str(np.round((end_all-start_all)/60, 2)) + ' min')
+
+
+# np.where(sword.groups['reaches'].variables['reach_id'][:] == 82293300011)
+
+# sword.groups['reaches'].variables['reach_id'][32711]
+# sword.groups['reaches'].variables['rch_id_up'][:,32711]
+# sword.groups['reaches'].variables['rch_id_dn'][:,32711] = 82291000551

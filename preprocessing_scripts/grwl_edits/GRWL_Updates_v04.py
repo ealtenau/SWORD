@@ -1252,7 +1252,7 @@ use_updated_grwl = True
 use_edit_updated = True
  
 region = args.region
-grwl_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/tiles/' + region + '/'
+grwl_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Merged_Data/v11/tiles/' + region + '/'
 edits_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/EDITS/'
 outdir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/GRWL_Updates/' + region + '/'
 grwl_paths = np.sort([file for file in getListOfFiles(grwl_dir) if '.shp' in file])
@@ -1295,8 +1295,12 @@ for ind in list(range(len(grwl_paths))):
         grwl.manual = np.zeros(len(grwl.lon))
 
     #Correcting original segment errors.
-    grwl.newID = update_segID(grwl)
-    grwl.eps = label_grwl_endpoints(grwl)
+    if use_updated_grwl == True:
+        grwl.newID = np.copy(grwl.segID)
+        grwl.eps = np.copy(grwl.eps)
+    else:
+        grwl.newID = update_segID(grwl)
+        grwl.eps = label_grwl_endpoints(grwl)
 
     #Finding Tile UTM Zone Info.
     utm_zone = utm.from_latlon(grwl.lat[0], grwl.lon[0])[2]

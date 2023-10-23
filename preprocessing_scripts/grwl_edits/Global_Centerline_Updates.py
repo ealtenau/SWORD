@@ -361,6 +361,8 @@ for ind in list(range(len(grwl_paths))):
     xmax = round(xmax)
     ymin = round(ymin)
     ymax = round(ymax)
+    if xmax < 0 and xmin > 0:
+        xmax = xmax*-1
     
     # Delete raster.
     raster = None

@@ -13,437 +13,133 @@ import geopandas as gp
 from shapely.geometry import Point
 import matplotlib.pyplot as plt
 
-###############################################################################
-################################# Functions ###################################
-###############################################################################
-
-class Object(object):
-    """
-    FUNCTION:
-        Creates class object to assign attributes to.
-    """
-    pass
-
-###############################################################################
-
-def getListOfFiles(dirName):
-
-    """
-    FUNCTION:
-        For the given path, gets a recursive list of all files in the directory tree.
-
-    INPUTS
-        dirName -- Input directory
-
-    OUTPUTS
-        allFiles -- List of files under directory
-    """
-
-    listOfFile = os.listdir(dirName)
-    allFiles = list()
-    # Iterate over all the entries
-    for entry in listOfFile:
-        # Create full path
-        fullPath = os.path.join(dirName, entry)
-        # If entry is a directory then get the list of files in this directory
-        if os.path.isdir(fullPath):
-            allFiles = allFiles + getListOfFiles(fullPath)
-        else:
-            allFiles.append(fullPath)
-
-    return allFiles
-
-###############################################################################
-
-def find_edit_endpoints(edits, segments):
-
-    """
-    FUNCTION:
-        Creates a new 1-D array that contains the endpoints for each
-        edited centerline segment. 0 = not an endpoint, 1 = first endpoint,
-        2 = second endpoint.
-
-    INPUTS
-        edits -- Object containing attributes for the edited centerlines.
-
-    OUTPUTS
-        endpoints -- Endpoint locations for all edit segments.
-    """
-
-    # Loop through segments.
-    endpoints = np.zeros(len(segments))
-    uniq_segs = np.unique(segments)
-    for ind in list(range(len(uniq_segs))):
-        seg = np.where(segments == uniq_segs[ind])[0]
-        seg_x = edits.x[seg]
-        seg_y = edits.y[seg]
-
-        # Removing duplicate coordinates.
-        coords_df = pd.DataFrame(np.array([seg_x, seg_y]).T)
-        duplicates = np.where(pd.DataFrame.duplicated(coords_df))
-        if len(duplicates) > 0:
-            seg_x = np.delete(seg_x, duplicates)
-            seg_y = np.delete(seg_y, duplicates)
-            new_seg = np.delete(seg, duplicates)
-        else:
-            new_seg = np.copy(seg)
-
-        # For each segment calculate distance between points and identify the
-        # points with only two neighbors < 60 m away.
-        count = 1
-        for point in list(range(len(new_seg))):
-            dist = np.sqrt((seg_x[point]-seg_x)**2 + (seg_y[point]-seg_y)**2)
-            if len(np.where(dist < 60)[0]) < 3:
-                endpoints[new_seg[point]] = count
-                count = count+1
-
-        # Default to the min and max indexes if no endpoints are found.
-        eps = np.where(endpoints[seg] > 0)[0]
-        if len(eps) < 2:
-            mx = np.where(seg == np.max(seg))
-            mn = np.where(seg == np.min(seg))
-            endpoints[seg[eps]] = 0
-            endpoints[seg[mn]] = 1
-            endpoints[seg[mx]] = 2
-
-    return endpoints
-###############################################################################
-
-def find_new_eps(edits, segments):
-
-    # Loop through segments.
-    endpoints = np.zeros(len(segments))
-    uniq_segs = np.unique(segments)
-    for ind in list(range(len(uniq_segs))):
-        seg = np.where(segments == uniq_segs[ind])[0]
-        mx = np.where(edits.ind[seg] == np.max(edits.ind[seg]))
-        mn = np.where(edits.ind[seg] == np.min(edits.ind[seg]))
-        endpoints[seg] = 0
-        endpoints[seg[mn]] = 1
-        endpoints[seg[mx]] = 2
-
-    return endpoints
-
-###############################################################################
-
-def order_edits(edits, segments, endpoints):
-
-    """
-    FUNCTION:
-        Creates a new 1-D array that contains ordered point indexes
-        for each edited centerline segment.
-
-    INPUTS
-         edits -- Object containing attributes for the edited centerlines.
-
-    OUTPUTS
-        edits_segInd -- Ordered point index for each edited segment.
-    """
-
-    # Loop through edited segments.
-    edits_segInd = np.zeros(len(segments))
-    edits_segDist = np.zeros(len(segments))
-    uniq_segs = np.unique(segments)
-    for ind in list(range(len(uniq_segs))):
-        seg = np.where(segments == uniq_segs[ind])[0]
-        seg_x = edits.x[seg]
-        seg_y = edits.y[seg]
-        eps = np.where(endpoints[seg] > 0)[0]
-
-        # If no endpoints are found default to the first index value to start.
-        if len(eps) == 0: # condition added on 9/19/19.
-            eps = np.array([0])
-
-        edits_segInd[seg[eps[0]]]=1
-        edits_segDist[seg[eps[0]]]=0
-        idx = eps[0]
-
-        # Order points in a segment starting from the first endpoint.
-        count = 2
-        while np.min(edits_segInd[seg]) == 0:
-            d = np.sqrt((seg_x[idx]-seg_x)**2 + (seg_y[idx]-seg_y)**2)
-            dzero = np.where(edits_segInd[seg] == 0)[0]
-            next_pt = dzero[np.where(d[dzero] == np.min(d[dzero]))[0]][0]
-            edits_segInd[seg[next_pt]] = count
-            edits_segDist[seg[next_pt]] = d[next_pt]
-            count = count+1
-            idx = next_pt
-
-    return edits_segInd
-
-###############################################################################
-
-def find_edit_tributary_junctions(edits):
-
-    """
-    FUNCTION:
-        Creates a new 1-D that contains the locations of and edit
-        segments that need to be cut at a new tributary junction.
-
-    INPUTS
-        edits -- Object containing attributes for the edited centerlines.
-
-    OUTPUTS
-        tribs -- Locations along an edit segment where the segment should
-            be cut: 0 - no tributary, 1 - tributary.
-    """
-
-    # Loop through each edited segment and calculate closet GRWL points to the
-    # edited segment endpoints.
-    tribs = np.zeros(len(edits.seg))
-    uniq_segs = np.unique(edits.seg)
-    for ind in list(range(len(uniq_segs))):
-
-        # Don't include current segment in points to search. 
-        keep = np.where(edits.seg != uniq_segs[ind])[0]
-        edit_pts = np.vstack((edits.x[keep], edits.y[keep])).T
-
-        # Isolate endpoints for the edited segment.
-        seg = np.where(edits.seg == uniq_segs[ind])[0]
-        if len(seg) == 1:
-            eps = np.array([0,0])
-        else:
-            pt1 = np.where(edits.ind[seg] == np.min(edits.ind[seg]))[0]
-            pt2 = np.where(edits.ind[seg] == np.max(edits.ind[seg]))[0]
-            eps = np.array([pt1,pt2]).T
-
-        # Perform spatial query of closest GRWL points to the edited segment
-        # endpoints.
-        ep_pts = np.vstack((edits.x[seg[eps]], edits.y[seg[eps]])).T
-        kdt = sp.cKDTree(edit_pts)
-
-        if len(seg) < 3:
-            pt_dist, pt_ind = kdt.query(ep_pts, k = 4,
-                                        distance_upper_bound = 45.0)
-        elif 3 <= len(seg) and len(seg) <= 6:
-            pt_dist, pt_ind = kdt.query(ep_pts, k = 10,
-                                        distance_upper_bound = 100.0)
-        elif len(seg) > 6:
-            pt_dist, pt_ind = kdt.query(ep_pts, k = 10,
-                                        distance_upper_bound = 200.0)
-
-        ep1_ind = pt_ind[0,:]
-        ep1_dist = pt_dist[0,:]
-        na1 = np.where(ep1_ind == len(edit_pts))
-        ep1_dist = np.delete(ep1_dist, na1)
-        ep1_ind = np.delete(ep1_ind, na1)
-
-        ep2_ind = pt_ind[1,:]
-        ep2_dist = pt_dist[1,:]
-        na2 = np.where(ep2_ind == len(edit_pts))
-        ep2_dist = np.delete(ep2_dist, na2)
-        ep2_ind = np.delete(ep2_ind, na2)
-
-        ep1_segs = np.unique(edits.seg[ep1_ind])
-        ep2_segs = np.unique(edits.seg[ep2_ind])
-
-        # If there is only one neighboring GRWL segment, designate it as a
-        # tributary junction if the edited segment endpoint falls in the middle
-        # of the segment.
-        if len(ep1_segs) == 1:
-            ep1_min = np.min(edits.ind[np.where(edits.seg == ep1_segs[0])[0]])
-            ep1_max = np.max(edits.ind[np.where(edits.seg == ep1_segs[0])[0]])
-            if np.min(edits.ind[ep1_ind]) > ep1_min+5 and np.max(edits.ind[ep1_ind]) < ep1_max-5:
-                tribs[ep1_ind[0]] = 1
-
-        if len(ep2_segs) == 1:
-            ep2_min = np.min(edits.ind[np.where(edits.seg == ep2_segs[0])[0]])
-            ep2_max = np.max(edits.ind[np.where(edits.seg == ep2_segs[0])[0]])
-            if np.min(edits.ind[ep2_ind]) > ep2_min+5 and np.max(edits.ind[ep2_ind]) < ep2_max-5:
-                tribs[ep2_ind[0]] = 1
-
-    return tribs
-
-###############################################################################
-
-def cut_edit_segments(edits, start_seg):
-
-    """
-    FUNCTION:
-        Creates a new 1-D array that contains unique segment IDs for the GRWL
-        segments that need to be cut at tributary junctions.
-
-    INPUTS
-        grwl --  Object containing attributes for the GRWL centerlines.
-        start_seg -- Starting ID value to assign to the new cut segments. This
-            is typically assigned the max_seg value + 1.
-
-    OUTPUTS
-        new_segs -- Updated Segment IDs.
-    """
-
-    new_segs = np.copy(edits.seg)
-    cut = np.where(edits.tribs == 1)[0]
-    cut_segs = np.unique(edits.seg[cut])
-    seg_id = start_seg
-
-    # Loop through segments that contain tributary junctions and identify
-    # the new boundaries of the segment to cut and re-number.
-    for ind in list(range(len(cut_segs))):
-        seg = np.where(edits.seg == cut_segs[ind])[0]
-        num_tribs = np.where(edits.tribs[seg] == 1)[0]
-        max_ind = np.where(edits.ind[seg] == np.max(edits.ind[seg]))[0]
-        min_ind = np.where(edits.ind[seg] == np.min(edits.ind[seg]))[0]
-        bounds = np.insert(num_tribs, 0, min_ind)
-        bounds = np.insert(bounds, len(bounds), max_ind)
-        for idx in list(range(len(bounds)-1)):
-            id1 = bounds[idx]
-            id2 = bounds[idx+1]
-            new_segs[seg[id1:id2]] = seg_id
-            seg_id = seg_id+1
-
-    return new_segs
-
-###############################################################################
-###############################  MAIN CODE  ###################################
-###############################################################################
-
-grwl_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRWL/EDITS/'
-grwl_paths = np.sort(getListOfFiles(grwl_dir))
-
-# Read centerline points.
-ind = 119
-cls = gp.read_file(grwl_paths[ind])
-pattern = grwl_paths[ind][-17:-10]
-outpath =  grwl_dir+ pattern + '_edit.gpkg'
-
-edits = Object()
-edits.x = np.array(cls['x'])
-edits.y = np.array(cls['y'])
-edits.lat = np.array(cls['lat'])
-edits.lon = np.array(cls['lon'])
-edits.seg = np.array(cls['seg'])
-
-#len(np.unique(edits.seg))
-
-# Finding endpoints and indexes. 
-edits.eps = find_edit_endpoints(edits, edits.seg)
-edits.ind = order_edits(edits, edits.seg, edits.eps)
-
-# Cutting existing segments at tributary junctions.
-edits.tribs = find_edit_tributary_junctions(edits)
-start_seg = np.max(edits.seg)+1
-edits.new_seg = cut_edit_segments(edits, start_seg)
-edits.new_eps = find_edit_endpoints(edits, edits.new_seg)
-edits.new_ind = order_edits(edits, edits.new_seg, edits.new_eps)
-
-#len(np.unique(edits.seg))
-
-# Create filler variable for lake flag. 
-edits.lake = np.repeat(1,len(edits.seg))
-
-# Create geodatabase to write.
-new_gdb = gp.GeoDataFrame([
-    edits.lat,
-    edits.lon,
-    edits.x,
-    edits.y,
-    edits.new_seg,
-    edits.lake
-    ]).T
-
-# Rename columns.
-new_gdb.rename(
-    columns={
-        0:"lat",
-        1:"lon",
-        2:"x",
-        3:"y",
-        4:"seg",
-        5:"lakeflag",
-        },inplace=True)
-
-# Create geometry column.
-new_gdb = new_gdb.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
-geom = gp.GeoSeries(map(Point, zip(new_gdb['lon'], new_gdb['lat'])))
-new_gdb['geometry'] = geom
-new_gdb = gp.GeoDataFrame(new_gdb)
-new_gdb.set_geometry(col='geometry')
-new_gdb = new_gdb.set_crs(4326, allow_override=True)
-
-# Save edits. 
-new_gdb.to_file(outpath, driver='GPKG')
-print('***', ind, pattern, '- EDITS SAVED ***')
-
-
-###############################################################################
-
-# parser = argparse.ArgumentParser()
-# parser.add_argument("region", help="<Required> Region", type = str)
-# parser.add_argument("version", help="<Required> Version", type = str)
-# parser.add_argument('-tiles', nargs='+', help='<Optional> List of tiles to run.')
-# args = parser.parse_args()
-
-# region = args.region
-# version = args.version
-# fn_merge = region + '_Merge_'+version+'.nc'
-# data_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/'
-
-# grwl_dir = data_dir + 'GRWL_temp/New_Updates/' + region + '/'
-# grwl_paths = np.array([file for file in getListOfFiles(grwl_dir) if '.shp' in file])
-
-# if args.tiles:
-#     matches = list(args.tiles)
-#     grwl_paths = [file for file in grwl_paths if re.search('|'.join(matches), file)]
-#     print(grwl_paths)
-# else:
-#     print(grwl_paths)
-
-#########################################################################################
-# def write_cl_iceflag_nc(centerlines, outfile):
-
-#     start = time.time()
-
-#     # global attributes
-#     root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
-#     root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
-#     #root_grp.history = 'Created ' + time.ctime(time.time())
-
-#     # groups
-#     cl_grp = root_grp.createGroup('centerlines')
-
-#     # dimensions
-#     #root_grp.createDimension('d1', 2)
-#     cl_grp.createDimension('num_points', len(centerlines.cl_id))
-#     cl_grp.createDimension('num_domains', 4)
-#     cl_grp.createDimension('julian_day', 366)
-
-#     # centerline variables
-#     cl_id = cl_grp.createVariable(
-#         'cl_id', 'i8', ('num_points',), fill_value=-9999.)
-#     cl_x = cl_grp.createVariable(
-#         'x', 'f8', ('num_points',), fill_value=-9999.)
-#     cl_x.units = 'degrees east'
-#     cl_y = cl_grp.createVariable(
-#         'y', 'f8', ('num_points',), fill_value=-9999.)
-#     cl_y.units = 'degrees north'
-#     reach_id = cl_grp.createVariable(
-#         'reach_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
-#     reach_id.format = 'CBBBBBRRRRT'
-#     node_id = cl_grp.createVariable(
-#         'node_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
-#     node_id.format = 'CBBBBBRRRRNNNT'
-#     cl_iceflag = cl_grp.createVariable(
-#         'iceflag', 'i4', ('julian_day','num_points'), fill_value=-9999.)
-
-#     # saving data
-#     print("saving nc")
-#     # centerline data
-#     cl_id[:] = centerlines.cl_id
-#     cl_x[:] = centerlines.x
-#     cl_y[:] = centerlines.y
-#     reach_id[:,:] = centerlines.reach_id
-#     node_id[:,:] = centerlines.node_id
-#     cl_iceflag[:,:] = centerlines.ice_flag
-
-#     root_grp.close()
-#     end = time.time()
-#     print("Ended Saving Main NetCDF in: ", str(np.round((end-start)/60, 2)), " min")
-
-#     return outfile
-
-# outfile = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
-#     'SWOT_Coverage_Ice/v14/netcdf/na_centerline_iceflag.nc'
-# write_cl_iceflag_nc(centerlines, outfile)
+fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15/netcdf/na_sword_v15.nc'
+# fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/Custom_CalVal_Rchs/na_822810_calval_v15.nc'
+sword = nc.Dataset(fn, 'r+')
 
+rch = 82281000041
+cl_x = sword.groups['centerlines'].variables['x'][:]
+cl_y = sword.groups['centerlines'].variables['y'][:]
+cl_ids = sword.groups['centerlines'].variables['cl_id'][:]
+cl_rch_ids = sword.groups['centerlines'].variables['reach_id'][:]
+cl_node_ids = sword.groups['centerlines'].variables['node_id'][:]
 
+vals = np.where(cl_rch_ids[0,:] == rch)[0]
+# cl_ids[vals]
+# cl_node_ids[0,vals]
+
+# cl_ids[vals[208]]
+# cl_node_ids[0,vals[208]]
+
+# cl_ids[vals[209]]
+# cl_node_ids[0,vals[209]]
+
+
+new_vals = np.zeros(len(vals))
+new_vals[0:52] = cl_ids[vals[209:261]][::-1]
+new_vals[52:261] = cl_ids[vals[0:209]]
+
+cl_ids[vals] = new_vals
+sword.groups['centerlines'].variables['cl_id'][vals] = new_vals
+
+sword.close()
+
+plt.scatter(cl_x[vals], cl_y[vals], c=cl_ids[vals])
+plt.show()
+
+plt.scatter(cl_x[vals], cl_y[vals], c=new_vals)
+plt.show()
+
+
+region = 'OC'
+version = 'v15b'
+sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
+sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc', 'r+')
+
+node_lon = sword.groups['nodes'].variables['x'][:]
+node_lat = sword.groups['nodes'].variables['y'][:]
+node_extd = sword.groups['nodes'].variables['ext_dist_coef'][:]
+
+df = pd.DataFrame(np.array([node_lon, node_lat, node_extd]).T)
+df.to_csv('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/Temp/sa_ext_dist_coef.csv')
+
+sword.close()
+
+
+#####################################
+region = 'NA'
+fn_sword_v16 = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/'+region.lower()+'_sword_v16.nc'
+rch_changes_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v16/calval_reaches/'+region+'_rch_id_changes.csv'
+
+sword = nc.Dataset(fn_sword_v16)
+new_rchs = pd.read_csv(rch_changes_fn)
+unq_rch = np.array(new_rchs['new_rch_id'])
+old_rch = np.array(new_rchs['old_rch_id'])
+
+all_rchs = sword.groups['reaches'].variables['reach_id'][:] 
+check = sword.groups['reaches'].variables['reach_id'][:].shape
+for ind in list(range(len(old_rch))):
+    rch = np.where(all_rchs == old_rch[ind])[0]
+    all_rchs[rch] = unq_rch[ind]
+
+print('DONE', check, len(np.unique(all_rchs)))
+
+
+
+region = 'NA'
+sword = nc.Dataset('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/'+region.lower()+'_sword_v16.nc')
+cl_rch = np.array(sword.groups['centerlines'].variables['reach_id'][:])
+cl_id = np.array(sword.groups['centerlines'].variables['cl_id'][:])
+# nodes = np.array(sword.groups['nodes'].variables['node_id'][:])
+# reaches = np.array(sword.groups['reaches'].variables['reach_id'][:])
+len(np.unique(cl_id))
+cl_id.shape
+
+from collections import Counter
+d = Counter(cl_id)
+new_list = list([item for item in d if d[item]>1])
+print(new_list)
+
+dup = np.where(cl_id == 28294498)[0]
+cl_rch[0,dup]
+
+# rch = np.where(cl_rch == 82269100133)[0]
+# cl_rch[rch]
+# np.where(sword.groups['reaches'].variables['reach_id'][:] == 82269100133)[0]
+# sword.groups['reaches'].variables['reach_id'][32045]
+# sword.groups['reaches'].variables['reach_length'][32045]
+
+
+
+
+calval_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v16/type_updates_v16.csv'
+rch_changes_fn = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/v16/NA_rch_id_changes.csv'
+
+calval_rchs = pd.read_csv(calval_fn)
+new_rchs = pd.read_csv(rch_changes_fn)
+old_rch = np.array(new_rchs['old_rch_id'])
+
+all_rchs = np.unique(calval_rchs['reach_id']) 
+for ind in list(range(len(old_rch))):
+    rch = np.where(all_rchs == old_rch[ind])[0]
+    if len(rch) > 0:
+        print(old_rch[ind])
+print('DONE')
+
+
+
+region = 'OC'
+fn_sword1 = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15/netcdf/'+region.lower()+'_sword_v15.nc'
+fn_sword2 = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15b/netcdf/'+region.lower()+'_sword_v15b.nc'
+
+sword = nc.Dataset(fn_sword1)
+sword2 = nc.Dataset(fn_sword2)
+
+var1 = sword.groups['reaches'].variables['reach_id'][:]
+var2 = sword2.groups['reaches'].variables['reach_id'][:]
+print(len(var1), len(var2))
+print(np.unique(var1-var2))
+
+
+# plt.scatter(sword.groups['reaches'].variables['x'][:], sword.groups['reaches'].variables['y'][:], c=np.log(var1), s=2)
+# plt.show()
