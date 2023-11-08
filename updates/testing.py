@@ -143,3 +143,17 @@ print(np.unique(var1-var2))
 
 # plt.scatter(sword.groups['reaches'].variables['x'][:], sword.groups['reaches'].variables['y'][:], c=np.log(var1), s=2)
 # plt.show()
+
+
+
+region = 'AS'
+fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/shp/AS/'+region.lower()+'_sword_reaches_hb45_v16.shp'
+shp = gp.read_file(fn)
+
+coords = shp.geometry.apply(lambda geom: list(geom.coords))
+test = coords[3719]
+
+x = np.array([t[0] for t in test])
+y = np.array([t[1] for t in test])
+plt.plot(x,y)
+plt.show()

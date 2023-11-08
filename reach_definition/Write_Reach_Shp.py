@@ -11,9 +11,10 @@ import os
 
 #############################################################################################
 
-def define_geometry(unq_rch, reach_id, cl_x, cl_y, region):
+def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, region):
     geom = []
     rm_ind = []
+    connections = np.zeros(len(cl_id), dtype=int)
     for ind in list(range(len(unq_rch))):
         # print(ind)
         in_rch = np.where(reach_id[0,:] == unq_rch[ind])[0]
@@ -31,7 +32,6 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, region):
             for ct in list(range(len(in_rch_up_dn))):
                 x_pt = cl_x[in_rch_up_dn[ct]]
                 y_pt = cl_y[in_rch_up_dn[ct]]
-                
                 if region == 'AS' and x_pt < 0 and np.min([cl_x[sort_ind[0]], cl_x[sort_ind[-1]]]) > 0:
                     print(unq_rch[ind])
                     continue
@@ -52,9 +52,11 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, region):
                         if d1 < d2:
                             x_coords = np.insert(x_coords, 0, x_pt, axis=0)
                             y_coords = np.insert(y_coords, 0, y_pt, axis=0)
+                            connections[in_rch_up_dn[ct]] = 1
                         if d1 > d2: 
                             x_coords = np.insert(x_coords, len(x_coords), x_pt, axis=0)
                             y_coords = np.insert(y_coords, len(y_coords), y_pt, axis=0)
+                            connections[in_rch_up_dn[ct]] = 1
 
         pts = GeoSeries(map(Point, zip(x_coords, y_coords)))
         if len(pts) <= 1:
@@ -111,7 +113,7 @@ for ind in list(range(len(rch_type))):
 #create geometry for each reach. 
 print('Creating Reach Geometry')
 start = time.time()
-geom, rm_ind = define_geometry(unq_rch, reach_id, cl_x, cl_y, region)
+geom, rm_ind = define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, region)
 end = time.time()
 print('Finished Reach Geometry in: '+str(np.round((end-start)/60,2))+' min')
 
