@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import netCDF4 as nc
 import numpy as np
 import pandas as pd
+import random
 
 ###############################################################################
 
@@ -320,10 +321,19 @@ plt.scatter(subreaches.x[v], subreaches.y[v], c='gold', s=15, edgecolors = None)
 plt.scatter(subreaches.x[w], subreaches.y[w], c='cyan', s=15, edgecolors = None)
 plt.scatter(subreaches.x[q], subreaches.y[q], c='pink', s=15, edgecolors = None)
 
-b = np.where(subcls.rch_eps6 == 1)[0]
+
+
+
+
+
+
+
+
+
+b = np.where(subcls.rch_eps2 == 1)[0]
 plt.scatter(subcls.x, subcls.y, c = 'blue', s = 5, edgecolors= None)
 plt.scatter(subcls.x[b], subcls.y[b], c = 'red', s = 5, edgecolors= None)
-
+plt.show()
 
 plt.scatter(subcls.x, subcls.y, c = np.log(subcls.rch_ind6), s = 5, edgecolors= None)
 plt.scatter(subcls.x, subcls.y, c = np.log(subcls.rch_dist6), s = 5, edgecolors= None)
@@ -333,3 +343,29 @@ plt.scatter(subcls.x, subcls.y, c = np.log(subcls.facc), s = 5, edgecolors= None
 z = np.where(subcls.type6 == 3)[0]
 plt.scatter(subcls.x, subcls.y, c = 'blue', edgecolors = None)
 plt.scatter(subcls.x[z], subcls.y[z], c = 'cyan', edgecolors = None)
+
+
+
+### sub-basin reaches and endpoints
+
+reaches = subcls.rch_id2
+x = subcls.x
+y = subcls.y
+eps = np.where(subcls.rch_eps2 == 1)
+
+
+unq_rchs = np.unique(reaches)
+number_of_colors = len(unq_rchs)
+color = ["#"+''.join([random.choice('0123456789ABCDEF') for j in range(6)])
+             for i in range(number_of_colors)]
+
+plt.figure(11, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('North America Reaches',  fontsize=16)
+plt.xlabel('x', fontsize=14)
+plt.ylabel('y', fontsize=14)
+for i in list(range(len(unq_rchs))):
+    seg = np.where(reaches == unq_rchs[i])
+    plt.scatter(x[seg], y[seg], c=color[i], s = 5, edgecolors = 'None')
+plt.scatter(x[eps], y[eps], c='black', s = 10, edgecolors = 'None')

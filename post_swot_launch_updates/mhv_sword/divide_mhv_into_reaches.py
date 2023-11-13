@@ -1,9 +1,9 @@
 from __future__ import division
 import os
-if os.path.exists('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_launch_updates/'):
-    os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_launch_updates/')
+if os.path.exists('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_swot_launch_updates/mhv_sword/'):
+    os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_swot_launch_updates/mhv_sword/')
 else:
-    os.chdir('/afs/cas.unc.edu/users/e/a/ealtenau/SWORD/post_launch_updates/')
+    os.chdir('/afs/cas.unc.edu/users/e/a/ealtenau/SWORD/post_swot_launch_updates/mhv_sword/')
 import mhv_reach_def_tools as rdt
 # import Write_Database_Files as wf
 import time
@@ -22,18 +22,18 @@ args = parser.parse_args()
 
 start_all = time.time()
 region = args.region
-version = args.version
+# version = args.version
 
 # Input file(s).
 if args.local_processing == 'True':
-    main_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/'
+    main_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/'
 else:
-    main_dir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/'
-nc_file = main_dir+'Merged_Data/v12/'+region+'_Merge_v12.nc'
+    main_dir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/inputs/'
+nc_file = main_dir+'MHV_SWORD/'+region+'_mhv_sword.nc'
 
 # Output files.
-nc_outpath = main_dir+'Reaches_Nodes/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-swot_outpath = main_dir+'SWOT_Coverage/'+region.lower()+'_swot_obs_'+version+'.nc'
+# nc_outpath = main_dir+'Reaches_Nodes/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+# swot_outpath = main_dir+'SWOT_Coverage/'+region.lower()+'_swot_obs_'+version+'.nc'
 
 # Reading in data.
 data = rdt.read_merge_netcdf(nc_file)
@@ -86,6 +86,7 @@ for ind in list(range(len(uniq_level2))):
     subcls.num_obs = data.num_obs[level2]
     subcls.orbits = data.orbits[level2]
     subcls.lake_id = data.lake_id[level2]
+    subcls.strorder = data.strorder[level2]
     subcls.lon[np.where(subcls.lon < -180)] = -180.0
     subcls.lon[np.where(subcls.lon > 180)] = 180.0
     subcls.x = np.copy(subcls.lon)
@@ -161,8 +162,11 @@ for ind in list(range(len(uniq_level2))):
     subcls.rch_dist5 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.rch_id5,
                                         subcls.facc, subcls.rch_ind5)
 
-    # Creating Nodes.
+    # Creating Nodes. (STOPPED BEFORE HERE on Mon 11/13. "updating_indexes is kind of funky")
     print('Creating Nodes')
     node_length = 200
     subcls.node_id, subcls.node_len,\
      subcls.node_num = rdt.node_reaches(subcls, node_length)
+    
+
+### ultimatley add: reach_num, node_num, type, and endpoints(?) to netcdf
