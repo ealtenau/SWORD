@@ -63,3 +63,14 @@ for i in list(range(len(unq_rchs))):
     plt.scatter(x[seg], y[seg], c=color[i], s = 5, edgecolors = 'None')
 plt.scatter(x[eps], y[eps], c='black', s = 10, edgecolors = 'None')
 plt.show()
+
+eps = np.where(new_rch_eps[rch] > 0)[0]
+plt.figure(1, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Checking Reach Indexes',  fontsize=16)
+plt.xlabel('x', fontsize=14)
+plt.ylabel('y', fontsize=14)
+plt.scatter(rch_x, rch_y, c=new_rch_ind[rch], s = 10, edgecolors = 'None')
+plt.scatter(rch_x[eps], rch_y[eps], c='red', s = 20, edgecolors = 'None')
+plt.show()

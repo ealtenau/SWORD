@@ -913,13 +913,22 @@ def update_rch_indexes(subcls, new_rch_id):
         rch_x, rch_y, __, __ = reproject_utm(rch_lat, rch_lon)
         rch_pts = np.vstack((rch_x, rch_y)).T
         rch_segs = subcls.seg[rch]
-        segs = np.unique(subcls.seg[rch])
+        # segs = np.unique(subcls.seg[rch])
         new_ind = np.zeros(len(rch))
         eps = np.zeros(len(rch))
+        rch_dist = calc_segDist(rch_lon, rch_lat, new_rch_id[rch], subcls.facc[rch], subcls.ind[rch])
+
+        ### added on 11/14/2023 to try and fix issue with short segments that have overlapping points. 
+        if len(np.unique(rch_dist)) != len(rch_dist):
+            unq_ind = np.unique(rch_dist, return_index=True)[1]
+            segs = np.unique(subcls.seg[rch][unq_ind])
+        else:
+            segs = np.unique(subcls.seg[rch])
 
         # Reformat indexes if multiple segments are within a reach.
         if len(segs) > 1:
-            #print(ind)
+            # print(ind)
+            # break
             for idx in list(range(len(segs))):
                 s = np.where(subcls.seg[rch] == segs[idx])[0]
                 mn = np.where(subcls.ind[rch[s]] == np.min(subcls.ind[rch[s]]))[0]
@@ -933,9 +942,9 @@ def update_rch_indexes(subcls, new_rch_id):
             ep_pts = np.vstack((rch_x[eps_ind], rch_y[eps_ind])).T
             kdt = sp.cKDTree(rch_pts)
             if len(rch_segs) < 4: #use to be 5.
-                pt_dist, pt_ind = kdt.query(ep_pts, k = len(rch_segs))
+                pt_dist, pt_ind = kdt.query(ep_pts, k = len(rch_segs)) 
             else:
-                pt_dist, pt_ind = kdt.query(ep_pts, k = 4) #use to be 5
+                pt_dist, pt_ind = kdt.query(ep_pts, k = 4) 
 
             real_eps = []
             for idy in list(range(len(eps_ind))):
@@ -957,7 +966,8 @@ def update_rch_indexes(subcls, new_rch_id):
                 final_eps = real_eps2
 
             if len(final_eps) == 0 or len(final_eps) > 2:
-                print(uniq_rch[ind], len(final_eps), 'problem with indexes')
+                print(uniq_rch[ind], 'ind =', ind, len(final_eps), 'problem with indexes')
+                # break
 
             # Re-ordering points based on updated endpoints.
             new_ind[final_eps[0]]=1

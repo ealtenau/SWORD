@@ -162,11 +162,44 @@ for ind in list(range(len(uniq_level2))):
     subcls.rch_dist5 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.rch_id5,
                                         subcls.facc, subcls.rch_ind5)
 
-    # Creating Nodes. (STOPPED BEFORE HERE on Mon 11/13. "updating_indexes is kind of funky")
+    #########################################################################
+    #TOPOLOGY
+
+    print('Creating Reach ID')
+    subcls.reach_id, subcls.rch_topo = rdt.reach_topology(subcls)
+
+    # Creating Nodes.
     print('Creating Nodes')
     node_length = 200
     subcls.node_id, subcls.node_len,\
      subcls.node_num = rdt.node_reaches(subcls, node_length)
-    
 
-### ultimatley add: reach_num, node_num, type, and endpoints(?) to netcdf
+    print('Creating Ghost Reaches')
+    # Defining ghost reaches and nodes.
+    subcls.reach_id, subcls.node_id, subcls.rch_len6 = rdt.ghost_reaches(subcls)
+    # Updating reach indexes and type.
+    subcls.rch_ind6,\
+     subcls.rch_eps6 = rdt.update_rch_indexes(subcls, subcls.reach_id)
+    # Updating reach flow distance.
+    subcls.rch_dist6 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.reach_id,
+                                        subcls.facc, subcls.rch_ind6)
+    # Updating type information.
+    subcls.type6 = np.zeros(len(subcls.reach_id))
+    for j in list(range(len(subcls.reach_id))):
+        subcls.type6[j] = np.int(np.str(subcls.reach_id[j])[10:11])
+
+    print('Aggregating Data')
+    # Append current data to previous data.
+    rdt.append_centerlines(centerlines, subcls, cnt)
+    rdt.append_reaches(reaches, subreaches, cnt)
+    rdt.append_nodes(nodes, subnodes, cnt)
+    cnt = cnt+1
+
+    end=time.time()
+    print('Time to Create Reaches and Nodes: ' +
+          str(np.round((end-start)/60, 2)) + ' min')
+
+end_all=time.time()
+print('Time to Finish All Reaches and Nodes: ' +
+      str(np.round((end_all-start_all)/60, 2)) + ' min')
+
