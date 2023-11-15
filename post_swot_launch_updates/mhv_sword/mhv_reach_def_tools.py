@@ -820,12 +820,13 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
     ep_pts = np.vstack((rch_x[eps], rch_y[eps])).T
     kdt = sp.cKDTree(basin_pts)
 
-    if rch_len < 100:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 100.0)
-    elif 100 <= rch_len and rch_len <= 200:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 100.0)
-    elif rch_len > 200:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 200.0)
+    #for grwl the values were 100 and 200 
+    if rch_len < 300:
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 300.0)
+    elif 300 <= rch_len and rch_len <= 600:
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
+    elif rch_len > 600:
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 600.0)
 
     # Identifying endpoint neighbors.
     ep1_ind = pt_ind[0,:]
@@ -3504,3 +3505,500 @@ def aggregate_dams(subcls, min_dist):
     return new_rch_id, new_rch_dist, new_flag
 
 ###############################################################################
+##################### Topology and Attribute Functions ########################
+###############################################################################
+
+def order_reaches(basin, basin_rch, basin_acc, basin_wse, basin_dist, basin_flag,
+                  basin_lon, basin_lat, basin_x, basin_y, segInd, start_id):
+
+    """
+    FUNCTION:
+        Orders reaches within a basin based on flow accumulation and elevation.
+        Reach order will start at the downstream end and increase going
+        upstream. This is a sub-function of the "reach_topology" function.
+
+    INPUTS
+        basin -- Index locations for points within the basin.
+        basin_rch -- Reach IDs within the basin.
+        basin_dist -- Reach lengths for the reaches in the basin.
+        basin_flag -- Reach types for the basin.
+        basin_acc -- Flow accumulation values for the reaches in the basin.
+        basin_wse -- Elevation values for the reaches in the basin.
+        basin_lon -- Longitude values for all points in the basin.
+        basin_lat -- Latitude values for all points in the basin.
+        basin_x -- Easting values for all points in the basin.
+        basin_y -- Northing values for all points in the basin.
+        segInd -- Point indexes for all high-resolution centerline points.
+        start_id -- Starting value to start ordering the reaches.
+
+    OUTPUTS
+        basin_topo -- 1-D array of ordered reaches within a basin.
+    """
+
+    # Set variables.
+    basin_topo =  np.zeros(len(basin))
+    upa_topo = np.copy(basin_acc)
+    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+    start_id = start_id
+    loop = 1
+
+    # Loop that "walks" up the river based on flow accumulation until the
+    # headwaters are reached.
+    while np.max(upa_topo) > 0:
+
+        # Current reach information.
+        rch_id = np.unique(basin_rch[start_upa])[0]
+
+        rch = np.where(basin_rch == rch_id)[0]
+        basin_topo[rch] = start_id
+        start_id = start_id+1
+        upa_topo[rch] = 0
+
+        rch_ind = segInd[basin[rch]]
+        rch_x = basin_x[rch]
+        rch_y = basin_y[rch]
+        rch_len = np.unique(basin_dist[rch])
+        rch_acc = np.max(basin_acc[rch])
+        rch_wse = np.min(basin_wse[rch])
+
+        # Find upstream neighboring reaches.
+        ngh1, ngh2 = find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc,
+                          basin_wse, basin_x, basin_y, rch_x, rch_y, rch_ind, rch_len,
+                          rch_id, rch)
+
+        # No neighbors. Go to next reach with highest flow accumulation.
+        if len(ngh1) == 0 and len(ngh2) == 0:
+            start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+            continue
+        # One neighbor on one end.
+        elif len(ngh1) == 0 and len(ngh2) > 0:
+            # neighbor elevation is less than current reach.
+            if np.min(ngh2[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+            # neighbor elevation is equal to current reach.
+            elif np.min(ngh2[:,4]) == rch_wse:
+                if np.max(ngh2[:,3]) >= rch_acc:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+                else:
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+            # neighbor elevation is greater than current reach.
+            else:
+                ngh_rch = ngh2[:,0]
+                ngh_acc = ngh2[:,3]
+                ngh_wse = ngh2[:,4]
+
+        # One neighbor on one end.
+        elif len(ngh1) > 0 and len(ngh2) == 0:
+            # neighbor elevation is less than current reach.
+            if np.min(ngh1[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+            # neighbor elevation is equal to current reach.
+            elif np.min(ngh1[:,4]) == rch_wse:
+                if np.max(ngh1[:,3]) >= rch_acc:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+                else:
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+            # neighbor elevation is greater than current reach.
+            else:
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+
+        # One neighbor on each end.
+        elif len(ngh1) == 1 and len(ngh2) == 1:
+            if np.unique(ngh1[:,0]) == np.unique(ngh2[:,0]):
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+            else:
+                if np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+
+                elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+
+                elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+                elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+
+                elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+                elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+
+                elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+                elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                    if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                        ngh_rch = ngh2[:,0]
+                        ngh_acc = ngh2[:,3]
+                        ngh_wse = ngh2[:,4]
+                    elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                        ngh_rch = ngh1[:,0]
+                        ngh_acc = ngh1[:,3]
+                        ngh_wse = ngh1[:,4]
+                    else:
+                        start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                        continue
+
+                elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                    if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                        ngh_rch = ngh2[:,0]
+                        ngh_acc = ngh2[:,3]
+                        ngh_wse = ngh2[:,4]
+                    elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                        ngh_rch = ngh1[:,0]
+                        ngh_acc = ngh1[:,3]
+                        ngh_wse = ngh1[:,4]
+                    else:
+                        start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                        continue
+
+        # Multiple neighbors on one end and one neighbor on the other end.
+        elif len(ngh1) > 1 and len(ngh2) == 1:
+            if np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                ngh_rch = ngh2[:,0]
+                ngh_acc = ngh2[:,3]
+                ngh_wse = ngh2[:,4]
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                ngh_rch = ngh2[:,0]
+                ngh_acc = ngh2[:,3]
+                ngh_wse = ngh2[:,4]
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+                elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+                else:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+            elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+                elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+                else:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+        # Multiple neighbors on one end and one neighbor on the other end.
+        elif len(ngh1) == 1 and len(ngh2) > 1:
+            if np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                ngh_rch = ngh2[:,0]
+                ngh_acc = ngh2[:,3]
+                ngh_wse = ngh2[:,4]
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                ngh_rch = ngh2[:,0]
+                ngh_acc = ngh2[:,3]
+                ngh_wse = ngh2[:,4]
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+                elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+                else:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+            elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+                elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+                else:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+        # Multiple neighbors on both ends.
+        elif len(ngh1) > 1 and len(ngh2) > 1:
+            if np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                ngh_rch = ngh2[:,0]
+                ngh_acc = ngh2[:,3]
+                ngh_wse = ngh2[:,4]
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                ngh_rch = ngh2[:,0]
+                ngh_acc = ngh2[:,3]
+                ngh_wse = ngh2[:,4]
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                ngh_rch = ngh1[:,0]
+                ngh_acc = ngh1[:,3]
+                ngh_wse = ngh1[:,4]
+
+            elif np.min(ngh1[:,4]) < rch_wse and np.min(ngh2[:,4]) < rch_wse:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                continue
+
+            elif np.min(ngh1[:,4]) == rch_wse and np.min(ngh2[:,4]) == rch_wse:
+                if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+                elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+                else:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+            elif np.min(ngh1[:,4]) > rch_wse and np.min(ngh2[:,4]) > rch_wse:
+                if np.max(ngh1[:,3]) > np.max(ngh2[:,3]):
+                    ngh_rch = ngh2[:,0]
+                    ngh_acc = ngh2[:,3]
+                    ngh_wse = ngh2[:,4]
+                elif np.max(ngh1[:,3]) < np.max(ngh2[:,3]):
+                    ngh_rch = ngh1[:,0]
+                    ngh_acc = ngh1[:,3]
+                    ngh_wse = ngh1[:,4]
+                else:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+                    continue
+
+       ##################################################################
+
+        # Assign next reach based on upstream neighbors.
+
+        # No upstream neighbors - go to reach with highest flow accumulation.
+        if len(np.where(ngh_rch > 0)[0]) == 0:
+            start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+        # One upstream neighbor.
+        elif len(np.where(ngh_rch > 0)[0]) == 1:
+            if ngh_wse > rch_wse:
+                val = np.where(ngh_rch[:] > 0)[0]
+                start_upa = np.where(basin_rch == ngh_rch[val])[0]
+            elif ngh_wse == rch_wse:
+                if ngh_acc < rch_acc:
+                    val = np.where(ngh_rch[:] > 0)[0]
+                    start_upa = np.where(basin_rch == ngh_rch[val])[0]
+                else:
+                    start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+            else:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+        # Multiple upstream neighbors.
+        elif len(np.where(ngh_rch > 0)[0]) > 1:
+            val = np.where(ngh_wse > rch_wse)[0]
+
+            if len(val) == 0:
+                start_upa = np.where(upa_topo == np.max(upa_topo))[0]
+            elif len(val) == 1:
+                start_upa = np.where(basin_rch == ngh_rch[val])[0]
+            elif len(val) > 1:
+                val2 = np.where(ngh_acc[val] == np.max(ngh_acc[val]))[0]
+                if len(val2) == 1:
+                    start_upa = np.where(basin_rch == ngh_rch[val[val2]])[0]
+                else:
+                    val2 = val[val2[0]]
+                    start_upa = np.where(basin_rch == ngh_rch[val2])[0]
+
+        #print(np.unique(basin_rch[start_upa]), loop)
+        loop = loop+1
+        if loop == 5000:
+            print('LOOP STUCK')
+
+    return basin_topo
+
+###############################################################################
+
+def reach_topology(subcls):
+
+    """
+    FUNCTION:
+        Orders reaches within a basin and constructs the final Reach ID.
+
+    INPUTS
+        subcls -- Object that contains attributes along the high-resolution
+            centerline locations.
+            [attributes used]:
+                lon -- Longitude values for the high-resolution centerline.
+                lat -- Latitude values for the high-resolution centerline.
+                rch_id5 -- Reach numbers along the high-resolution centerline.
+                rch_len5 -- Reach length along the high-resolution centerline.
+                rch_ind5 -- Point indexes for each reach along the
+                    high-resolution centerline.
+                type5 -- Type flag for each point in the high-resolution
+                    centerline (1 = river, 2 = lake, 3 = lake on river,
+                    4 = dam, 5 = no topology).
+                elv -- Elevations along the high-resolution centerline (meters).
+                facc -- Flow accumulation along the high-resolution ceterline
+                    (km^2).
+                basins -- Pfafstetter basin codes along the high-resolution
+                    centerline.
+
+    OUTPUTS
+        reach_id -- 1-D array of reach IDs within a basin. Reach ID format is
+            CBBBBBRRRRT (C = Continent, B = Pfafstetter Basin Code,
+            R = Reach Number, T = Type).
+        rch_topo -- 1-D array of ordered reach values within a basin.
+    """
+
+    # Calculate flow accmulation and elevation values for each reach.
+    rch_acc = np.zeros(len(subcls.rch_id5))
+    rch_wse = np.zeros(len(subcls.rch_id5))
+    uniq_rch_id = np.unique(subcls.rch_id5)
+    for ind in list(range(len(uniq_rch_id))):
+        rch = np.where(subcls.rch_id5 == uniq_rch_id[ind])
+        rch_acc[rch] = np.max(subcls.facc[rch])
+        rch_wse[rch] = np.median(subcls.elv[rch])
+
+    # Set variables.
+    rch_topo = np.zeros(len(subcls.rch_id5))
+    uniq_basins = np.unique(subcls.basins)
+
+    # Loop through each basin and order the reaches.
+    for ind in list(range(len(uniq_basins))):
+        #print(ind)
+        basin = np.where(subcls.basins == uniq_basins[ind])[0]
+        basin_rch = subcls.rch_id5[basin]
+        basin_acc = rch_acc[basin]
+        basin_wse = rch_wse[basin]
+        basin_dist = subcls.rch_len5[basin]
+        basin_flag = subcls.type5[basin]
+        basin_lon = subcls.lon[basin]
+        basin_lat = subcls.lat[basin]
+        basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+
+        basin_rivers = np.where(basin_flag < 5)[0]
+        basin_notopo = np.where(basin_flag == 5)[0]
+        basin_acc_rivers = np.copy(basin_acc)
+        basin_acc_notopo = np.copy(basin_acc)
+        basin_wse_rivers = np.copy(basin_wse)
+        basin_wse_notopo = np.copy(basin_wse)
+        basin_acc_rivers[basin_notopo] = 0
+        basin_acc_notopo[basin_rivers] = 0
+
+        # Order the reaches that are not in deltas.
+        start_id = 1
+        river_order = order_reaches(basin, basin_rch, basin_acc_rivers, basin_wse_rivers,\
+                                    basin_dist, basin_flag, basin_lon, basin_lat, basin_x,\
+                                    basin_y, subcls.rch_ind5, start_id)
+
+        # Order the reaches with difficult topology (i.e. deltas).
+        start_id = np.max(river_order)+1
+        notopo_order = order_reaches(basin, basin_rch, basin_acc_notopo, basin_wse_notopo,\
+                                     basin_dist, basin_flag, basin_lon, basin_lat, basin_x,\
+                                     basin_y, subcls.rch_ind5, start_id)
+
+        rch_topo[basin[np.where(river_order > 0)]] = river_order[np.where(river_order > 0)]
+        rch_topo[basin[np.where(notopo_order > 0)]] = notopo_order[np.where(notopo_order > 0)]
+
+    # Create formal reach id.
+    reach_id = np.zeros(len(rch_topo), dtype = np.int64)
+    for ind in list(range(len(rch_topo))):
+        if len(np.str(np.int(rch_topo[ind]))) == 1:
+            fill = '000'
+            reach_id[ind] = np.int(np.str(subcls.basins[ind])+fill+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
+        if len(np.str(np.int(rch_topo[ind]))) == 2:
+            fill = '00'
+            reach_id[ind] = np.int(np.str(subcls.basins[ind])+fill+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
+        if len(np.str(np.int(rch_topo[ind]))) == 3:
+            fill = '0'
+            reach_id[ind] = np.int(np.str(subcls.basins[ind])+fill+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
+        if len(np.str(np.int(rch_topo[ind]))) == 4:
+            reach_id[ind] = np.int(np.str(subcls.basins[ind])+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
+
+    return reach_id, rch_topo
+
+ ###############################################################################
