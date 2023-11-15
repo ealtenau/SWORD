@@ -40,6 +40,8 @@ data = rdt.read_merge_netcdf(nc_file)
 
 # Making sure flow accumulation minimum isn't zero.
 data.facc[np.where(data.facc == 0)[0]] = 0.001
+# Cutting basins to 6 digits.
+data.basins = np.array([int(str(ind)[0:6]) for ind in data.basins])
 
 # Creating empty objects to fill with attributes.
 centerlines = rdt.Object()
@@ -52,7 +54,7 @@ uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
 cnt = 0
 start_id = 0
-for ind in list(range(len(uniq_level2))):
+for ind in list(range(5,6)): #len(uniq_level2)
 
     print('STARTING BASIN: ' + str(uniq_level2[ind]))
 
@@ -161,6 +163,9 @@ for ind in list(range(len(uniq_level2))):
     # Updating reach flow distance.
     subcls.rch_dist5 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.rch_id5,
                                         subcls.facc, subcls.rch_ind5)
+
+    ###function to fix endpoints
+    
 
     #########################################################################
     #TOPOLOGY

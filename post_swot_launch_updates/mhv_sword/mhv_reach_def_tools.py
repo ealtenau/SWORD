@@ -4002,3 +4002,450 @@ def reach_topology(subcls):
     return reach_id, rch_topo
 
  ###############################################################################
+
+def node_reaches(subcls, node_len):
+
+    """
+    FUNCTION:
+        Divides reaches up into nodes based on the specified node length and
+        constructs the final Node IDs. Node IDs increase going upstream within
+        a reach.
+
+    INPUTS
+        subcls -- Object that contains attributes along the high-resolution
+            centerline locations.
+            [attributes used]:
+                reach_id -- Reach IDs for along the high-resolution centerline.
+                rch_id5 -- Reach numbers along the high-resolution centerline.
+                rch_len5 -- Reach length along the high-resolution centerline.
+                rch_dist5 -- Flow distance along the high-resolution centerline
+                    (meters).
+                facc -- Flow accumulation along the high-resolution ceterline
+                    (km^2).
+        node_len -- Desired node length (meters).
+
+    OUTPUTS
+        node_id -- 1-D array of node IDs within a basin. Node ID format is
+            CBBBBBRRRRNNNT (C = Continent, B = Pfafstetter Basin Code,
+            R = Reach Number, N - Node Number, T = Type).
+        node_dist -- Node lengths (meters).
+        node_num -- 1-D array of ordered node values within a basin.
+    """
+
+    # Set variables.
+    node_num = np.zeros(len(subcls.rch_id5))
+    node_dist = np.zeros(len(subcls.rch_id5), dtype = 'f8')
+    node_id = np.zeros(len(subcls.rch_id5), dtype = np.int64)
+    uniq_rch = np.unique(subcls.rch_id5)
+
+    # Loop through each reach and divide it up based on the specified node
+    # length, then number the nodes in order of flow accumulation.
+    for ind in list(range(len(uniq_rch))):
+
+        # Current reach information.
+        rch = np.where(subcls.rch_id5 == uniq_rch[ind])[0]
+        distance = subcls.rch_dist5[rch]
+
+        ID = subcls.rch_ind5[rch]
+
+        # Temporary fill variables.
+        temp_node_id = np.zeros(len(rch))
+        temp_node_dist = np.zeros(len(rch))
+
+        # Find node division points along the reach.
+        d = np.unique(subcls.rch_len5[rch])
+        if d <= node_len:
+            divs = 1
+        else:
+            divs = np.round(d/node_len)
+
+        divs_dist = d/divs
+
+        break_index = np.zeros(np.int(divs-1))
+        for idx in range(int(divs)-1):
+            dist = divs_dist*(range(int(divs)-1)[idx]+1)+np.min(distance)
+            cut = np.where(abs(distance - dist) == np.min(abs(distance - dist)))[0][0]
+            break_index[idx] = cut
+
+        div_ends = np.array([np.where(ID == np.min(ID))[0][0],np.where(ID == np.max(ID))[0][0]])
+        borders = np.insert(div_ends, 0, break_index)
+        border_ids = ID[borders]
+        borders = borders[np.argsort(border_ids)]
+
+        # Assign and order nodes.
+        cnt = 1
+        for idy in list(range(len(borders)-1)):
+            index1 = borders[idy]
+            index2 = borders[idy+1]
+
+            ID1 = ID[index1]
+            ID2 = ID[index2]
+
+            if ID1 > ID2:
+                vals = np.where((ID2 <= ID) &  (ID <= ID1))[0]
+            else:
+                vals = np.where((ID1 <= ID) &  (ID <= ID2))[0]
+
+            temp_node_dist[vals] = abs(np.max(distance[vals])-np.min(distance[vals]))
+            temp_node_id[vals] = cnt
+            cnt=cnt+1
+
+        first_node = np.where(temp_node_id == np.min(temp_node_id))[0]
+        last_node = np.where(temp_node_id == np.max(temp_node_id))[0]
+
+        if np.median(subcls.facc[rch[first_node]]) < np.median(subcls.facc[rch[last_node]]):
+            node_num[rch] = abs(temp_node_id - np.max(temp_node_id))+1
+            node_dist[rch] = temp_node_dist
+        else:
+            node_num[rch] = temp_node_id
+            node_dist[rch] = temp_node_dist
+
+        #if np.max(node_dist[rch])>node_len*2:
+            #print(ind, 'max distance too long - likely an index problem')
+
+        # Create formal Node ID.
+        for inz in list(range(len(rch))):
+            #if len(np.str(np.int(node_num[rch[inz]]))) > 3:
+                #print(ind)
+            if len(np.str(np.int(node_num[rch[inz]]))) == 1:
+                fill = '00'
+                node_id[rch[inz]] = np.int(np.str(subcls.reach_id[rch[inz]])[:-1]+fill+np.str(np.int(node_num[rch[inz]]))+np.str(subcls.reach_id[rch[inz]])[10:11])
+            if len(np.str(np.int(node_num[rch[inz]]))) == 2:
+                fill = '0'
+                node_id[rch[inz]] = np.int(np.str(subcls.reach_id[rch[inz]])[:-1]+fill+np.str(np.int(node_num[rch[inz]]))+np.str(subcls.reach_id[rch[inz]])[10:11])
+            if len(np.str(np.int(node_num[rch[inz]]))) == 3:
+                node_id[rch[inz]] = np.int(np.str(subcls.reach_id[rch[inz]])[:-1]+np.str(np.int(node_num[rch[inz]]))+np.str(subcls.reach_id[rch[inz]])[10:11])
+
+    return node_id, node_dist, node_num
+
+###############################################################################
+
+def basin_node_attributes(node_id, node_dist, height, width, facc, nchan, lon,
+                          lat, reach_id, grod_id, lakes, grod_fid, hfalls_fid,
+                          lake_id):
+
+    """
+    FUNCTION:
+        Creates node locations and attributes from the high-resolution
+        centerline points within an individual basin. This is a sub-function
+        of the "node_attributes" function.
+
+    INPUTS
+        node_id -- Node IDs along the high-resolution centerline within a
+            single basin.
+        node_dist -- Node lengths along the high-resolution centerline within
+            a single basin.
+        height -- Elevations along the high-resolution centerline within a
+            single basin (meters).
+        width -- Widths along the high_resolution centerline within a single
+            basin (meters).
+        nchan -- Number of channels along the high_resolution centerline within
+            a single basin.
+        lon -- Longitude values within a single basin.
+        lat -- Latitude values within a single basin.
+        reach_id -- Reach IDs along the high-resolution centerline within a
+            single basin.
+        grod_id -- GROD dam locations along the high-resolution centerline within a
+            single basin.
+        lakes -- Lakeflag IDs along the high_resolution centerline within a
+            single basin.
+        grod_fid -- GROD IDs along the high_resolution centerline.
+        hfalls_fid -- HydroFALLS IDs along the high_resolution centerline.
+        lake_id -- Prior Lake Databse IDs along the high_resolution centerline.
+        facc -- Flow accumulation values along the high_resolution centerline.
+
+    OUTPUTS
+        Node_ID -- Node ID respresenting a single node location.
+        node_x -- Average longitude value calculated from the
+            high-resolution centerline points associated with a node.
+        node_y -- Average latitude value calculated from the
+            high-resolution centerline points associated with a node.
+        node_len -- Node length for a single node (meters).
+        node_wse -- Average water surface elevation value calculated from the
+            high-resolution centerlines points assosicated with a node (meters).
+        node_wse_var -- Water surface elevation variablity calculated from the
+            high-resolution centerlines points assosicated with a node (meters).
+        node_wth -- Average width value calculated from the high-resolution
+            centerlines points assosicated with a node ID (meters).
+        node_wth_var -- Width variablity calculated from the high-resolution
+            centerlines points assosicated with a node (meters).
+        node_nchan_max -- Maximum number of channels calculated from
+            the high-resolution centerline points associated with a node.
+        node_nchan_mod -- Mode of the number of channels calculated from the
+            high-resolution centerline points associated with a node.
+        node_rch_id --  Reach ID that a particular node belongs to.
+        node_grod_id -- GROD dam locations associated with a node.
+        node_lakeflag -- GRWL lakeflag associated with a node.
+        node_lake_id = Prior Lake Database ID associated with a node.
+        node_facc = Flow Accumulation value associated with a node.
+        node_grod_fid = GROD ID associated with a node.
+        node_hfalls_fid = HydroFALLS ID associated with a node.
+    """
+
+    # Set variables.
+    Node_ID = np.zeros(len(np.unique(node_id)))
+    node_x = np.zeros(len(np.unique(node_id)))
+    node_y = np.zeros(len(np.unique(node_id)))
+    node_wse = np.zeros(len(np.unique(node_id)))
+    node_wse_var = np.zeros(len(np.unique(node_id)))
+    node_wth = np.zeros(len(np.unique(node_id)))
+    node_wth_var = np.zeros(len(np.unique(node_id)))
+    node_len = np.zeros(len(np.unique(node_id)))
+    node_nchan_max = np.zeros(len(np.unique(node_id)))
+    node_nchan_mod = np.zeros(len(np.unique(node_id)))
+    node_rch_id = np.zeros(len(np.unique(node_id)))
+    node_grod_id = np.zeros(len(np.unique(node_id)))
+    node_lakeflag = np.zeros(len(np.unique(node_id)))
+    node_lake_id = np.zeros(len(np.unique(node_id)))
+    node_facc = np.zeros(len(np.unique(node_id)))
+    node_grod_fid = np.zeros(len(np.unique(node_id)))
+    node_hfalls_fid = np.zeros(len(np.unique(node_id)))
+
+    uniq_nodes = np.unique(node_id)
+    # Loop through each node ID to create location and attribute information.
+    for ind in list(range(len(uniq_nodes))):
+        nodes = np.where(node_id == uniq_nodes[ind])[0]
+        Node_ID[ind] = int(np.unique(node_id[nodes])[0])
+        node_rch_id[ind] = np.unique(reach_id[nodes])[0]
+        node_x[ind] = np.mean(lon[nodes])
+        node_y[ind] = np.mean(lat[nodes])
+        node_len[ind] = np.unique(node_dist[nodes])[0]
+        node_wse[ind] = np.median(height[nodes])
+        node_wse_var[ind] = np.var(height[nodes])
+        node_wth[ind] = np.median(width[nodes])
+        node_wth_var[ind] = np.var(width[nodes])
+        node_facc[ind] = np.max(facc[nodes])
+        node_nchan_max[ind] = np.max(nchan[nodes])
+        node_nchan_mod[ind] = max(set(list(nchan[nodes])), key=list(nchan[nodes]).count)
+        node_lakeflag[ind] = max(set(list(lakes[nodes])), key=list(lakes[nodes]).count)
+        node_lake_id[ind] = max(set(list(lake_id[nodes])), key=list(lake_id[nodes]).count)
+
+        GROD = np.copy(grod_id[nodes])
+        GROD[np.where(GROD > 4)] = 0
+        node_grod_id[ind] = np.max(GROD)
+        # Assign grod and hydrofalls ids to nodes.
+        ID = np.where(GROD == np.max(GROD))[0][0]
+        if np.max(GROD) == 0:
+            node_grod_fid[ind] = 0
+        elif np.max(GROD) == 4:
+            node_hfalls_fid[ind] = hfalls_fid[nodes[ID]]
+        else:
+            node_grod_fid[ind] = grod_fid[nodes[ID]]
+
+    return(Node_ID, node_x, node_y, node_len, node_wse, node_wse_var, node_wth,
+           node_wth_var, node_facc, node_nchan_max, node_nchan_mod, node_rch_id,
+           node_grod_id, node_lakeflag, node_grod_fid, node_hfalls_fid, node_lake_id)
+
+###############################################################################
+
+def ghost_reaches(subcls):
+
+    """
+    FUNCTION:
+        Determines "ghost" reaches and nodes which are located at the headwaters
+        and outlets of all river systems.
+
+    INPUTS
+        subcls -- Object containing attributes for the high-resolution centerline.
+            [attributes used]:
+                reach_id -- Reach IDs along the high-resolution centerline.
+                lon -- Longitude (wgs84) for the high-resolution centerline points.
+                lat -- Latitude (wgs84) for the high-resolution centerline points.
+                node_id -- Node IDs along the high-resolution centerline.
+                node_num -- 1-D array of ordered node values within a basin.
+                basin -- Pfafstetter level 6 basin codes along the
+                         high-resolution centerline.
+                rch_topo -- 1-D array of ordered reach values within a basin.
+                rch_dist5 -- Flow distance along the high-resolution centerline
+                             (meters).
+                rch_len5 -- Reach length along the high-resolution centerline.
+                rch_ind5 -- Point indexes for each reach along the
+                    high-resolution centerline.
+                rch_eps5 -- List of indexes for all reach endpoints.
+
+    OUTPUTS
+        new_reaches -- Updated reach definitions and IDs including ghost reaches.
+        new_nodes -- Updated node definitions and IDs including ghost nodes.
+        new_len -- Updated reach lengths including ghost reaches.
+    """
+
+    # Pre-defining all reach endpoint neighbors.
+    x, y, __, __ = reproject_utm(subcls.lat, subcls.lon)
+    rch_eps = np.where(subcls.rch_eps5 == 1)[0]
+    all_pts = np.vstack((x, y)).T
+    eps_pts = np.vstack((x[rch_eps], y[rch_eps])).T
+    kdt = sp.cKDTree(all_pts)
+    eps_dist, eps_ind = kdt.query(eps_pts, k = 10, distance_upper_bound = 500)
+    #actual ghost node identification.
+    ghost_dist = np.copy(eps_dist)
+    ghost_dist[np.where(ghost_dist[:,1] == 0),2] = ghost_dist[np.where(ghost_dist[:,1] == 0),3]
+    ghost_ids = eps_ind[np.where(ghost_dist[:,2] >= 120)[0],0] #changed to 180 on 11/15/2023 for mhv. 
+    #added to attempt to filter out unnecessary ghost nodes.
+    ghost_pts = np.vstack((x[ghost_ids], y[ghost_ids])).T
+    gst_dist, gst_ind = kdt.query(ghost_pts, k = 5, distance_upper_bound = 1000)
+    gst_dist[np.where(gst_dist[:,1] == 0),1] = gst_dist[np.where(gst_dist[:,1] == 0),2]
+    rmv_ids = gst_ind[np.where(gst_dist[:,4] < 120)[0]]
+    #creating binary ghost node array.
+    subcls.ghost = np.zeros(len(subcls.id))
+    subcls.ghost[ghost_ids] = 1
+    #removes unnecessary ghost nodes from original list.
+    subcls.ghost[rmv_ids] = 0
+
+    # Renumbering/Reformating ghost reaches and node ids.
+    new_reaches = np.copy(subcls.reach_id)
+    new_nodes = np.copy(subcls.node_id)
+    new_len = np.copy(subcls.rch_len5)
+    uniq_basins = np.unique(subcls.basins[np.where(subcls.ghost == 1)[0]])
+    for idy in list(range(len(uniq_basins))):
+        basin = np.where(subcls.basins == uniq_basins[idy])[0]
+        max_node = np.max(subcls.node_num[basin])
+        max_rch = np.max(subcls.rch_topo[basin])
+        rch_num = int(max_rch+1)
+        nd_num = int(max_node+1)
+        uniq_nodes = np.unique(new_nodes[basin[np.where(subcls.ghost[basin] == 1)[0]]])
+        for ind in list(range(len(uniq_nodes))):
+            ghost = np.where(new_nodes == uniq_nodes[ind])[0]
+            for idx in list(range(len(ghost))):
+                #new_nodes[ghost[idx]] = np.int(np.str(new_nodes[ghost[idx]])[:-1]+str(6))
+                #new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+str(6))
+
+                #new reach id
+                if len(np.str(rch_num)) == 1:
+                    fill = '000'
+                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
+                if len(np.str(rch_num)) == 2:
+                    fill = '00'
+                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
+                if len(np.str(rch_num)) == 3:
+                    fill = '0'
+                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
+                if len(np.str(rch_num)) == 4:
+                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+str(rch_num)+str(6))
+
+                #new node id
+                if len(np.str(nd_num)) == 1:
+                    fill = '00'
+                    new_nodes[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+fill+str(nd_num)+str(6))
+                if len(np.str(nd_num)) == 2:
+                    fill = '0'
+                    new_nodes[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+fill+str(nd_num)+str(6))
+                if len(np.str(nd_num)) == 3:
+                    new_nodes[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+str(nd_num)+str(6))
+
+                #updating length
+                old_rch_id = np.where(new_reaches == np.unique(subcls.reach_id[ghost[idx]]))[0]
+                new_rch_id = np.where(new_reaches == np.unique(new_reaches[ghost[idx]]))[0]
+                if len(old_rch_id) == 0:
+                    new_len[new_rch_id] = np.max(subcls.rch_dist5[new_rch_id])-np.min(subcls.rch_dist5[new_rch_id])
+                else:
+                    new_len[old_rch_id] = np.max(subcls.rch_dist5[old_rch_id])-np.min(subcls.rch_dist5[old_rch_id])
+                    new_len[new_rch_id] = np.max(subcls.rch_dist5[new_rch_id])-np.min(subcls.rch_dist5[new_rch_id])
+
+            rch_num = rch_num+1
+            nd_num = nd_num+1
+
+    return new_reaches, new_nodes, new_len
+
+###############################################################################
+
+def append_centerlines(centerlines, subcls, cnt):
+
+    """
+    FUNCTION:
+        Appends sub-attributes within a loop to an object containing the final
+        SWORD high-resolution centerline attributes for an entire specified
+        region (in most cases a continent).
+
+    INPUTS
+        centerlines -- Object to be appended with sub-attribute data.
+        subcls -- Object containing current attribute information for a single
+            level 2 Pfafstetter basin at the high-resolution centerline loctions.
+        cnt -- Specifies the current loop iteration.
+    """
+
+    # Copy the very first sub-attributes.
+    if cnt == 0:
+        centerlines.id = np.copy(subcls.id)
+        centerlines.cl_id = np.copy(subcls.cl_id)
+        centerlines.x = np.copy(subcls.lon)
+        centerlines.y = np.copy(subcls.lat)
+        centerlines.reach_id = np.copy(subcls.reach_id)
+        centerlines.node_id = np.copy(subcls.node_id)
+
+    # Otherwise, append the sub-attributes.
+    else:
+        centerlines.id = np.insert(centerlines.id, len(centerlines.id), np.copy(subcls.id))
+        centerlines.cl_id = np.insert(centerlines.cl_id, len(centerlines.cl_id), np.copy(subcls.cl_id))
+        centerlines.x = np.insert(centerlines.x, len(centerlines.x), np.copy(subcls.lon))
+        centerlines.y = np.insert(centerlines.y, len(centerlines.y), np.copy(subcls.lat))
+        centerlines.reach_id = np.insert(centerlines.reach_id, len(centerlines.reach_id), np.copy(subcls.reach_id), axis = 0)
+        centerlines.node_id = np.insert(centerlines.node_id, len(centerlines.node_id), np.copy(subcls.node_id), axis = 0)
+
+###############################################################################
+
+# def find_edit_endpoints(edits):
+
+#     """
+#     FUNCTION:
+#         Creates a new 1-D array that contains the endpoints for each
+#         edited centerline segment. 0 = not an endpoint, 1 = first endpoint,
+#         2 = second endpoint.
+
+#     INPUTS
+#         edits -- Object containing attributes for the edited centerlines.
+
+#     OUTPUTS
+#         endpoints -- Endpoint locations for all edit segments.
+#     """
+
+#     # Loop through segments.
+#     endpoints = np.zeros(len(edits.reach_id))
+#     uniq_segs = np.unique(edits.reach_id)
+#     for ind in list(range(len(uniq_segs))):
+#         seg = np.where(edits.reach_id == uniq_segs[ind])[0]
+#         # seg_lon = edits.x[seg]
+#         # seg_lat = edits.y[seg]
+#         seg_x, seg_y, __, __ = reproject_utm(edits.y[seg], edits.x[seg])
+
+#         # Removing duplicate coordinates.
+#         coords_df = pd.DataFrame(np.array([seg_x, seg_y]).T)
+#         duplicates = np.where(pd.DataFrame.duplicated(coords_df))
+#         if len(duplicates) > 0:
+#             seg_x = np.delete(seg_x, duplicates)
+#             seg_y = np.delete(seg_y, duplicates)
+#             new_seg = np.delete(seg, duplicates)
+#         else:
+#             new_seg = np.copy(seg)
+
+#         # For each segment calculate distance between points and identify the
+#         # points with only two neighbors < 60 m away.
+#         count = 1
+#         for point in list(range(len(new_seg))):
+#             dist = np.sqrt((seg_x[point]-seg_x)**2 + (seg_y[point]-seg_y)**2)
+#             if len(np.where(dist < 200)[0]) < 3:
+#                 endpoints[new_seg[point]] = count
+#                 count = count+1
+
+#         # Default to the min and max indexes if no endpoints are found.
+#         eps = np.where(endpoints[seg] > 0)[0]
+#         if len(eps) < 2:
+#             mx = np.where(seg == np.max(seg))
+#             mn = np.where(seg == np.min(seg))
+#             endpoints[seg[eps]] = 0
+#             endpoints[seg[mn]] = 1
+#             endpoints[seg[mx]] = 2
+        
+#         #updating indexes
+#         new_ind = np.zeros(len(seg))
+#         idz = np.where(endpoints[seg] == 1)[0]
+#         new_ind[idz] = 1
+#         count = 2
+#         while np.min(new_ind) == 0:
+#             d = np.sqrt((seg_x[idz]-seg_x)**2 + (seg_y[idz]-seg_y)**2)
+#             dzero = np.where(new_ind == 0)[0]
+#             next_pt = dzero[np.where(d[dzero] == np.min(d[dzero]))[0]][0]
+#             new_ind[next_pt] = count
+#             count = count+1
+#             idz = next_pt
+
+#     return endpoints

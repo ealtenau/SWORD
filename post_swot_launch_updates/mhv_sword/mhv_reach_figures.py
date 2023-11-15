@@ -9,8 +9,8 @@ import random
 ###############################################################################
 ###############################################################################
 
-reaches_len = np.copy(subcls.rch_len5)
-Type = np.copy(subcls.type5)
+reaches_len = np.copy(subcls.rch_len6)
+Type = np.copy(subcls.type6)
 
 np.mean(reaches_len)/1000
 np.median(reaches_len)/1000
@@ -42,10 +42,10 @@ np.median(reaches_len[rivers]/1000)
 
 
 ### sub-basin reaches and endpoints
-reaches = subcls.rch_id2[0:1000]
-x = subcls.x[0:1000]
-y = subcls.y[0:1000]
-eps = np.where(subcls.rch_eps2[0:1000] == 1)
+reaches = subcls.reach_id
+x = subcls.x
+y = subcls.y
+eps = np.where(subcls.rch_eps6 == 1)
 
 unq_rchs = np.unique(reaches)
 number_of_colors = len(unq_rchs)
@@ -61,7 +61,7 @@ plt.ylabel('y', fontsize=14)
 for i in list(range(len(unq_rchs))):
     seg = np.where(reaches == unq_rchs[i])
     plt.scatter(x[seg], y[seg], c=color[i], s = 5, edgecolors = 'None')
-plt.scatter(x[eps], y[eps], c='black', s = 10, edgecolors = 'None')
+# plt.scatter(x[eps], y[eps], c='black', s = 10, edgecolors = 'None')
 plt.show()
 
 eps = np.where(new_rch_eps[rch] > 0)[0]
@@ -73,4 +73,24 @@ plt.xlabel('x', fontsize=14)
 plt.ylabel('y', fontsize=14)
 plt.scatter(rch_x, rch_y, c=new_rch_ind[rch], s = 10, edgecolors = 'None')
 plt.scatter(rch_x[eps], rch_y[eps], c='red', s = 20, edgecolors = 'None')
+plt.show()
+
+
+eps = np.where(Type==6)[0]
+plt.figure(1, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Ghost Reaches',  fontsize=16)
+plt.xlabel('x', fontsize=14)
+plt.ylabel('y', fontsize=14)
+plt.scatter(subcls.x, subcls.y, c='blue', s = 10, edgecolors = 'None')
+plt.scatter(subcls.x[eps], subcls.y[eps], c='red', s = 20, edgecolors = 'None')
+plt.show()
+
+
+nodes = np.where(subcls.node_id == 76300000090871)[0]
+rch = np.where(subcls.reach_id == 76300000091)[0]
+
+
+plt.scatter(subcls.x[rch], subcls.y[rch], c=subcls.rch_ind6[rch], s = 10, edgecolors = 'None')
 plt.show()
