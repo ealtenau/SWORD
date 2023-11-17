@@ -24,22 +24,35 @@ class_qual = np.array(pixc.groups['pixel_cloud'].variables['classification_qual'
 geo_qual = np.array(pixc.groups['pixel_cloud'].variables['geolocation_qual'][:])
 frac = np.array(pixc.groups['pixel_cloud'].variables['water_frac'][:])
 
-pixc_all = gp.GeoDataFrame([
-    ht,
-    geoid,
-    lat,
-    lon,
-    type,
-    power,
-    sig0,
-    sig0_qual,
-    class_qual,
-    geo_qual,
-    frac,
+water = np.where(type == 4)[0]
+ht_water = ht[water]
+geoid_water = geoid[water]
+lat_water = lat[water]
+lon_water = lon[water]
+type_water = type[water]
+power_water = power[water]
+sig0_water = sig0[water]
+sig0_qual_water = sig0_qual[water]
+class_qual_water = class_qual[water]
+geo_qual_water = geo_qual[water]
+frac_water = frac[water]
+
+pixc_water = gp.GeoDataFrame([
+    ht_water,
+    geoid_water,
+    lat_water,
+    lon_water,
+    type_water,
+    power_water,
+    sig0_water,
+    sig0_qual_water,
+    class_qual_water,
+    geo_qual_water,
+    frac_water,
 ]).T
 
 #rename columns.
-pixc_all.rename(
+pixc_water.rename(
     columns={
         0:"ht",
         1:"geoid",
@@ -54,15 +67,15 @@ pixc_all.rename(
         10:"frac",
         },inplace=True)
 
-pixc_all = pixc_all.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
-geom = gp.GeoSeries(map(Point, zip(lon, lat)))
-pixc_all['geometry'] = geom
-pixc_all = gp.GeoDataFrame(pixc_all)
-pixc_all.set_geometry(col='geometry')
-pixc_all = pixc_all.set_crs(4326, allow_override=True)
+pixc_water = pixc_water.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
+geom = gp.GeoSeries(map(Point, zip(lon_water, lat_water)))
+pixc_water['geometry'] = geom
+pixc_water = gp.GeoDataFrame(pixc_water)
+pixc_water.set_geometry(col='geometry')
+pixc_water = pixc_water.set_crs(4326, allow_override=True)
 
-outgpkg = fn_dir + 'gis_files/pixel_cloud_'+tile+'.gpkg'
-pixc_all.to_file(outgpkg, driver='GPKG', layer='pixc')
+outgpkg = fn_dir + 'gis_files/pixel_cloud_'+tile+'_water.gpkg'
+pixc_water.to_file(outgpkg, driver='GPKG', layer='pixc')
 
 end = time.time()
 print('Time to Finish Files: ' + str(np.round((end-start)/60, 2)) + ' min')
