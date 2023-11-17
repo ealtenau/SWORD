@@ -15,6 +15,9 @@ Type = np.copy(subcls.type6)
 np.mean(reaches_len)/1000
 np.median(reaches_len)/1000
 
+np.mean(subcls.node_len)/1000
+np.median(subcls.node_len)/1000
+
 dams = np.where(Type == 4)[0]
 lakes = np.where(Type == 3)[0]
 coast = np.where(Type == 5)[0]
@@ -90,7 +93,11 @@ plt.show()
 
 nodes = np.where(subcls.node_id == 76300000090871)[0]
 rch = np.where(subcls.reach_id == 76300000091)[0]
-
-
 plt.scatter(subcls.x[rch], subcls.y[rch], c=subcls.rch_ind6[rch], s = 10, edgecolors = 'None')
+plt.show()
+
+
+t = np.where(tribs == 1)[0]
+plt.scatter(subcls.x, subcls.y, c='blue', s = 10, edgecolors = 'None')
+plt.scatter(subcls.x[t], subcls.y[t], c='red', s = 20, edgecolors = 'None')
 plt.show()

@@ -8,6 +8,9 @@ import mhv_reach_def_tools as rdt
 # import Write_Database_Files as wf
 import time
 import numpy as np
+import geopandas as gp
+from shapely.geometry import Point
+import pandas as pd
 import argparse
 
 ###############################################################################
@@ -54,7 +57,7 @@ uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
 cnt = 0
 start_id = 0
-for ind in list(range(5,6)): #len(uniq_level2)
+for ind in list(range(3,4)): #len(uniq_level2)
 
     print('STARTING BASIN: ' + str(uniq_level2[ind]))
 
@@ -195,10 +198,10 @@ for ind in list(range(5,6)): #len(uniq_level2)
 
     print('Aggregating Data')
     # Append current data to previous data.
-    rdt.append_centerlines(centerlines, subcls, cnt)
-    rdt.append_reaches(reaches, subreaches, cnt)
-    rdt.append_nodes(nodes, subnodes, cnt)
-    cnt = cnt+1
+    # rdt.append_centerlines(centerlines, subcls, cnt)
+    # rdt.append_reaches(reaches, subreaches, cnt)
+    # rdt.append_nodes(nodes, subnodes, cnt)
+    # cnt = cnt+1
 
     end=time.time()
     print('Time to Create Reaches and Nodes: ' +
@@ -208,3 +211,38 @@ end_all=time.time()
 print('Time to Finish All Reaches and Nodes: ' +
       str(np.round((end_all-start_all)/60, 2)) + ' min')
 
+'''
+nodes = gp.GeoDataFrame([
+    subcls.x,
+    subcls.y,
+    subcls.reach_id,
+    subcls.rch_len6,
+    subcls.node_num,
+    subcls.node_len,
+    subcls.rch_eps6,
+    subcls.type6
+]).T
+
+#rename columns.
+nodes.rename(
+    columns={
+        0:"x",
+        1:"y",
+        2:"reach_id",
+        3:"reach_len",
+        4:"node_num",
+        5:"node_len",
+        6:"rch_endpts",
+        7:"type",
+        },inplace=True)
+
+nodes = nodes.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
+geom = gp.GeoSeries(map(Point, zip(subcls.x, subcls.y)))
+nodes['geometry'] = geom
+nodes = gp.GeoDataFrame(nodes)
+nodes.set_geometry(col='geometry')
+nodes = nodes.set_crs(4326, allow_override=True)
+
+outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/inputs/MHV_SWORD/hb74_mhv_sword_test.gpkg'
+nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
+'''
