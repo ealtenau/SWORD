@@ -97,7 +97,24 @@ plt.scatter(subcls.x[rch], subcls.y[rch], c=subcls.rch_ind6[rch], s = 10, edgeco
 plt.show()
 
 
-t = np.where(tribs == 1)[0]
-plt.scatter(subcls.x, subcls.y, c='blue', s = 10, edgecolors = 'None')
-plt.scatter(subcls.x[t], subcls.y[t], c='red', s = 20, edgecolors = 'None')
+plt.scatter(rch_x, rch_y, c = subcls.seg[rch])
+plt.show()
+
+
+plt.scatter(rch_x, rch_y, c = new_rch_ind[rch])
+plt.show()
+
+eps = np.where(rch_eps_all == 1)[0]
+plt.scatter(rch_x, rch_y, c = subcls.seg[rch])
+plt.scatter(rch_x[eps], rch_y[eps], c = 'red')
+plt.show()
+
+
+r1 = np.where(subcls.rch_id1 == 56)[0]
+r2 = np.where(subcls.rch_id1 == 61)[0]
+r3 = np.where(subcls.rch_id1 == 62)[0]
+
+plt.scatter(subcls.x[r1], subcls.y[r1], c = 'red')
+plt.scatter(subcls.x[r2], subcls.y[r2], c = 'blue')
+plt.scatter(subcls.x[r3], subcls.y[r3], c = 'cyan')
 plt.show()

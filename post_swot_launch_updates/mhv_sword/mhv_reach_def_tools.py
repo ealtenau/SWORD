@@ -32,32 +32,32 @@ def read_merge_netcdf(filename):
 
     data = Object()
     new = nc.Dataset(filename)
-    data.lon = new.groups['centerlines'].variables['x'][:]
-    data.lat = new.groups['centerlines'].variables['y'][:]
-    data.x = new.groups['centerlines'].variables['easting'][:]
-    data.y = new.groups['centerlines'].variables['northing'][:]
-    data.seg = new.groups['centerlines'].variables['segID'][:]
-    data.ind = new.groups['centerlines'].variables['segInd'][:]
-    data.id = new.groups['centerlines'].variables['cl_id'][:]
-    data.segDist = new.groups['centerlines'].variables['segDist'][:]
-    data.wth = new.groups['centerlines'].variables['p_width'][:]
-    data.elv = new.groups['centerlines'].variables['p_height'][:]
-    data.facc = new.groups['centerlines'].variables['flowacc'][:]
-    data.lake = new.groups['centerlines'].variables['lakeflag'][:]
-    data.delta = new.groups['centerlines'].variables['deltaflag'][:]
-    data.nchan = new.groups['centerlines'].variables['nchan'][:]
-    data.grand = new.groups['centerlines'].variables['grand_id'][:]
-    data.grod = new.groups['centerlines'].variables['grod_id'][:]
-    data.grod_fid = new.groups['centerlines'].variables['grod_fid'][:]
-    data.hfalls_fid = new.groups['centerlines'].variables['hfalls_fid'][:]
-    data.basins = new.groups['centerlines'].variables['basin_code'][:]
-    data.manual = new.groups['centerlines'].variables['manual_add'][:]
-    data.num_obs = new.groups['centerlines'].variables['number_obs'][:]
-    data.orbits = new.groups['centerlines'].variables['orbits'][:]
-    data.tile = new.groups['centerlines'].variables['mh_tile'][:]
-    data.eps = new.groups['centerlines'].variables['endpoints'][:]
-    data.lake_id = new.groups['centerlines'].variables['lake_id'][:]
-    data.strorder = new.groups['centerlines'].variables['strmorder'][:]
+    data.lon = np.array(new.groups['centerlines'].variables['x'][:])
+    data.lat = np.array(new.groups['centerlines'].variables['y'][:])
+    data.x = np.array(new.groups['centerlines'].variables['easting'][:])
+    data.y = np.array(new.groups['centerlines'].variables['northing'][:])
+    data.seg = np.array(new.groups['centerlines'].variables['segID'][:])
+    data.ind = np.array(new.groups['centerlines'].variables['segInd'][:])
+    data.id = np.array(new.groups['centerlines'].variables['cl_id'][:])
+    data.segDist = np.array(new.groups['centerlines'].variables['segDist'][:])
+    data.wth = np.array(new.groups['centerlines'].variables['p_width'][:])
+    data.elv = np.array(new.groups['centerlines'].variables['p_height'][:])
+    data.facc = np.array(new.groups['centerlines'].variables['flowacc'][:])
+    data.lake = np.array(new.groups['centerlines'].variables['lakeflag'][:])
+    data.delta = np.array(new.groups['centerlines'].variables['deltaflag'][:])
+    data.nchan = np.array(new.groups['centerlines'].variables['nchan'][:])
+    data.grand = np.array(new.groups['centerlines'].variables['grand_id'][:])
+    data.grod = np.array(new.groups['centerlines'].variables['grod_id'][:])
+    data.grod_fid = np.array(new.groups['centerlines'].variables['grod_fid'][:])
+    data.hfalls_fid = np.array(new.groups['centerlines'].variables['hfalls_fid'][:])
+    data.basins = np.array(new.groups['centerlines'].variables['basin_code'][:])
+    data.manual = np.array(new.groups['centerlines'].variables['manual_add'][:])
+    data.num_obs = np.array(new.groups['centerlines'].variables['number_obs'][:])
+    data.orbits = np.array(new.groups['centerlines'].variables['orbits'][:])
+    data.tile = np.array(new.groups['centerlines'].variables['mh_tile'][:])
+    data.eps = np.array(new.groups['centerlines'].variables['endpoints'][:])
+    data.lake_id = np.array(new.groups['centerlines'].variables['lake_id'][:])
+    data.strorder = np.array(new.groups['centerlines'].variables['strmorder'][:])
     new.close()
 
     return data
@@ -823,10 +823,10 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
     #for grwl the values were 100 and 200 
     if rch_len < 300:
         pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 300.0)
-    elif 300 <= rch_len and rch_len <= 600:
+    # elif 300 <= rch_len and rch_len <= 600:
+    #     pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
+    else:#elif rch_len > 600:
         pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
-    elif rch_len > 600:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 600.0)
 
     # Identifying endpoint neighbors.
     ep1_ind = pt_ind[0,:]
@@ -879,28 +879,6 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
 ###############################################################################
 
 def update_rch_indexes(subcls, new_rch_id):
-
-    """
-    FUNCTION:
-        Re-orders the point indexes within a reach and defines reach endpoints.
-
-    INPUTS
-        subcls -- Object containing attributes for the high-resolution
-            centerline.
-            [attributes used]:
-                lon -- Longitude values along the high-resolution centerline.
-                lat -- Latitude values along the high-resolution centerline.
-                seg -- GRWL segment values along the high-resolution centerline.
-                ind -- Point indexes for each GRWL segment along the
-                    high-resolution centerline.
-        new_rch_id -- 1-D array of the reach IDs to re-format the point
-            indexes.
-
-    OUTPUTS
-        new_rch_ind -- Updated reach indexes (1-D array).
-        new_rch_eps -- Updated reach endpoints (1-D array).
-    """
-
     # Set variables and find unique reaches.
     uniq_rch = np.unique(new_rch_id)
     new_rch_ind = np.zeros(len(subcls.ind))
@@ -913,64 +891,46 @@ def update_rch_indexes(subcls, new_rch_id):
         rch_lat = subcls.lat[rch]
         rch_x, rch_y, __, __ = reproject_utm(rch_lat, rch_lon)
         rch_pts = np.vstack((rch_x, rch_y)).T
-        rch_segs = subcls.seg[rch]
-        # segs = np.unique(subcls.seg[rch])
-        new_ind = np.zeros(len(rch))
-        eps = np.zeros(len(rch))
-        rch_dist = calc_segDist(rch_lon, rch_lat, new_rch_id[rch], subcls.facc[rch], subcls.ind[rch])
-
-        ### added on 11/14/2023 to try and fix issue with short segments that have overlapping points. 
-        if len(np.unique(rch_dist)) != len(rch_dist):
-            unq_ind = np.unique(rch_dist, return_index=True)[1]
-            segs = np.unique(subcls.seg[rch][unq_ind])
+        rch_segs = np.unique(subcls.seg[rch])
+        rch_eps_all = np.zeros(len(rch))
+        if len(rch_segs) == 1:
+            new_rch_ind[rch] = subcls.ind[rch]
+            ep1 = np.where(subcls.ind[rch] == np.min(subcls.ind[rch]))[0]
+            ep2 = np.where(subcls.ind[rch] == np.max(subcls.ind[rch]))[0]
+            new_rch_eps[rch[ep1]] = 1
+            new_rch_eps[rch[ep2]] = 1
+            #reverse index order to have indexes increasing in the upstream direction.
+            if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
+                new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))
+            
         else:
-            segs = np.unique(subcls.seg[rch])
+            for r in list(range(len(rch_segs))):
+                seg = np.where(subcls.seg[rch] == rch_segs[r])[0]
+                mn = np.where(subcls.ind[rch[seg]] == np.min(subcls.ind[rch[seg]]))[0]
+                mx = np.where(subcls.ind[rch[seg]] == np.max(subcls.ind[rch[seg]]))[0]
+                rch_eps_all[seg[mn]] = 1
+                rch_eps_all[seg[mx]] = 1
 
-        # Reformat indexes if multiple segments are within a reach.
-        if len(segs) > 1:
-            # print(ind)
-            # break
-            for idx in list(range(len(segs))):
-                s = np.where(subcls.seg[rch] == segs[idx])[0]
-                mn = np.where(subcls.ind[rch[s]] == np.min(subcls.ind[rch[s]]))[0]
-                mx = np.where(subcls.ind[rch[s]] == np.max(subcls.ind[rch[s]]))[0]
-                eps[s[mn]] = 1
-                eps[s[mx]] = 1
-
-            # Finding true endpoints from orginal GRWL segment extents within
-            # the new reach extent.
-            eps_ind = np.where(eps>0)[0]
+            eps_ind = np.where(rch_eps_all>0)[0]
             ep_pts = np.vstack((rch_x[eps_ind], rch_y[eps_ind])).T
             kdt = sp.cKDTree(rch_pts)
-            if len(rch_segs) < 4: #use to be 5.
+            if len(rch) < 4: #use to be 5.
                 pt_dist, pt_ind = kdt.query(ep_pts, k = len(rch_segs)) 
             else:
-                pt_dist, pt_ind = kdt.query(ep_pts, k = 4) 
+                pt_dist, pt_ind = kdt.query(ep_pts, k = 4)
+            row_sums = np.sum(rch_eps_all[pt_ind], axis = 1)
+            final_eps = np.where(row_sums == 1)[0]
+            if len(final_eps) == 0:
+                print(ind, uniq_rch[ind], len(rch), 'index issue - short reach')
+                # final_eps = np.where(rch_eps_all == 1)[0]
+                final_eps = np.array([0,len(rch)-1])
 
-            real_eps = []
-            for idy in list(range(len(eps_ind))):
-                neighbors = len(np.unique(rch_segs[pt_ind[idy,:]]))
-                if neighbors == 1:
-                    real_eps.append(eps_ind[idy])
-            real_eps = np.array(real_eps)
-
-            if len(real_eps) == 1 or len(real_eps) == 2:
-                final_eps = real_eps
-
-            else:
-                kdt2 = sp.cKDTree(ep_pts)
-                if len(ep_pts) < 4:
-                    pt_dist2, pt_ind2 = kdt2.query(ep_pts, k = len(ep_pts))
-                else:
-                    pt_dist2, pt_ind2 = kdt2.query(ep_pts, k = 4)
-                real_eps2 = np.where(pt_dist2== np.max(pt_dist2))[0]
-                final_eps = real_eps2
-
-            if len(final_eps) == 0 or len(final_eps) > 2:
-                print(uniq_rch[ind], 'ind =', ind, len(final_eps), 'problem with indexes')
+            elif len(final_eps) > 2:
+                print(ind, uniq_rch[ind], len(rch), 'index issue - possible tributary')
                 # break
 
             # Re-ordering points based on updated endpoints.
+            new_ind = np.zeros(len(rch))
             new_ind[final_eps[0]]=1
             idz = final_eps[0]
             count = 2
@@ -992,18 +952,136 @@ def update_rch_indexes(subcls, new_rch_id):
             if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
                 new_rch_ind[rch] = abs(new_ind - np.max(new_ind))
 
-        # If there are no combined segments within reach keep current indexes.
-        else:
-            new_rch_ind[rch] = subcls.ind[rch]
-            ep1 = np.where(subcls.ind[rch] == np.min(subcls.ind[rch]))[0]
-            ep2 = np.where(subcls.ind[rch] == np.max(subcls.ind[rch]))[0]
-            new_rch_eps[rch[ep1]] = 1
-            new_rch_eps[rch[ep2]] = 1
-            #reverse index order to have indexes increasing in the upstream direction.
-            if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
-                new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))
-
     return new_rch_ind, new_rch_eps
+
+###############################################################################
+
+# def update_rch_indexes(subcls, new_rch_id):
+
+#     """
+#     FUNCTION:
+#         Re-orders the point indexes within a reach and defines reach endpoints.
+
+#     INPUTS
+#         subcls -- Object containing attributes for the high-resolution
+#             centerline.
+#             [attributes used]:
+#                 lon -- Longitude values along the high-resolution centerline.
+#                 lat -- Latitude values along the high-resolution centerline.
+#                 seg -- GRWL segment values along the high-resolution centerline.
+#                 ind -- Point indexes for each GRWL segment along the
+#                     high-resolution centerline.
+#         new_rch_id -- 1-D array of the reach IDs to re-format the point
+#             indexes.
+
+#     OUTPUTS
+#         new_rch_ind -- Updated reach indexes (1-D array).
+#         new_rch_eps -- Updated reach endpoints (1-D array).
+#     """
+
+#     # Set variables and find unique reaches.
+#     uniq_rch = np.unique(new_rch_id)
+#     new_rch_ind = np.zeros(len(subcls.ind))
+#     new_rch_eps = np.zeros(len(subcls.ind))
+
+#     # Loop through each reach and re-order indexes.
+#     for ind in list(range(len(uniq_rch))):
+#         rch = np.where(new_rch_id == uniq_rch[ind])[0]
+#         rch_lon = subcls.lon[rch]
+#         rch_lat = subcls.lat[rch]
+#         rch_x, rch_y, __, __ = reproject_utm(rch_lat, rch_lon)
+#         rch_pts = np.vstack((rch_x, rch_y)).T
+#         rch_segs = subcls.seg[rch]
+#         # segs = np.unique(subcls.seg[rch])
+#         new_ind = np.zeros(len(rch))
+#         eps = np.zeros(len(rch))
+#         rch_dist = calc_segDist(rch_lon, rch_lat, new_rch_id[rch], subcls.facc[rch], subcls.ind[rch])
+
+#         ### added on 11/14/2023 to try and fix issue with short segments that have overlapping points. 
+#         if len(np.unique(rch_dist)) != len(rch_dist):
+#             unq_ind = np.unique(rch_dist, return_index=True)[1]
+#             segs = np.unique(subcls.seg[rch][unq_ind])
+#         else:
+#             segs = np.unique(subcls.seg[rch])
+
+#         # Reformat indexes if multiple segments are within a reach.
+#         if len(segs) > 1:
+#             # print(ind)
+#             # break
+#             for idx in list(range(len(segs))):
+#                 s = np.where(subcls.seg[rch] == segs[idx])[0]
+#                 mn = np.where(subcls.ind[rch[s]] == np.min(subcls.ind[rch[s]]))[0]
+#                 mx = np.where(subcls.ind[rch[s]] == np.max(subcls.ind[rch[s]]))[0]
+#                 eps[s[mn]] = 1
+#                 eps[s[mx]] = 1
+
+#             # Finding true endpoints from orginal GRWL segment extents within
+#             # the new reach extent.
+#             eps_ind = np.where(eps>0)[0]
+#             ep_pts = np.vstack((rch_x[eps_ind], rch_y[eps_ind])).T
+#             kdt = sp.cKDTree(rch_pts)
+#             if len(rch_segs) < 4: #use to be 5.
+#                 pt_dist, pt_ind = kdt.query(ep_pts, k = len(rch_segs)) 
+#             else:
+#                 pt_dist, pt_ind = kdt.query(ep_pts, k = 4) 
+
+#             real_eps = []
+#             for idy in list(range(len(eps_ind))):
+#                 neighbors = len(np.unique(rch_segs[pt_ind[idy,:]]))
+#                 if neighbors == 1:
+#                     real_eps.append(eps_ind[idy])
+#             real_eps = np.array(real_eps)
+
+#             if len(real_eps) == 1 or len(real_eps) == 2:
+#                 final_eps = real_eps
+
+#             else:
+#                 kdt2 = sp.cKDTree(ep_pts)
+#                 if len(ep_pts) < 4:
+#                     pt_dist2, pt_ind2 = kdt2.query(ep_pts, k = len(ep_pts))
+#                 else:
+#                     pt_dist2, pt_ind2 = kdt2.query(ep_pts, k = 4)
+#                 real_eps2 = np.where(pt_dist2== np.max(pt_dist2))[0]
+#                 final_eps = real_eps2
+
+#             if len(final_eps) == 0 or len(final_eps) > 2:
+#                 print(uniq_rch[ind], 'ind =', ind, len(final_eps), 'problem with indexes')
+#                 # break
+
+#             # Re-ordering points based on updated endpoints.
+#             new_ind[final_eps[0]]=1
+#             idz = final_eps[0]
+#             count = 2
+#             while np.min(new_ind) == 0:
+#                 d = np.sqrt((rch_x[idz]-rch_x)**2 + (rch_y[idz]-rch_y)**2)
+#                 dzero = np.where(new_ind == 0)[0]
+#                 #vals = np.where(edits_segInd[dzero] eq 0)
+#                 next_pt = dzero[np.where(d[dzero] == np.min(d[dzero]))[0]][0]
+#                 new_ind[next_pt] = count
+#                 count = count+1
+#                 idz = next_pt
+
+#             new_rch_ind[rch] = new_ind
+#             ep1 = np.where(new_ind == np.min(new_ind))[0]
+#             ep2 = np.where(new_ind == np.max(new_ind))[0]
+#             new_rch_eps[rch[ep1]] = 1
+#             new_rch_eps[rch[ep2]] = 1
+#             #reverse index order to have indexes increasing in the upstream direction.
+#             if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
+#                 new_rch_ind[rch] = abs(new_ind - np.max(new_ind))
+
+#         # If there are no combined segments within reach keep current indexes.
+#         else:
+#             new_rch_ind[rch] = subcls.ind[rch]
+#             ep1 = np.where(subcls.ind[rch] == np.min(subcls.ind[rch]))[0]
+#             ep2 = np.where(subcls.ind[rch] == np.max(subcls.ind[rch]))[0]
+#             new_rch_eps[rch[ep1]] = 1
+#             new_rch_eps[rch[ep2]] = 1
+#             #reverse index order to have indexes increasing in the upstream direction.
+#             if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
+#                 new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))
+
+#     return new_rch_ind, new_rch_eps
 
 ###############################################################################
 

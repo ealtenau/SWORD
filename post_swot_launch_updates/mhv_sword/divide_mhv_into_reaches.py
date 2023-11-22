@@ -57,7 +57,7 @@ uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
 cnt = 0
 start_id = 0
-for ind in list(range(3,4)): #len(uniq_level2)
+for ind in list(range(5,6)): #len(uniq_level2)
 
     print('STARTING BASIN: ' + str(uniq_level2[ind]))
 
@@ -92,6 +92,7 @@ for ind in list(range(3,4)): #len(uniq_level2)
     subcls.orbits = data.orbits[level2]
     subcls.lake_id = data.lake_id[level2]
     subcls.strorder = data.strorder[level2]
+    subcls.eps = data.eps[level2]
     subcls.lon[np.where(subcls.lon < -180)] = -180.0
     subcls.lon[np.where(subcls.lon > 180)] = 180.0
     subcls.x = np.copy(subcls.lon)
