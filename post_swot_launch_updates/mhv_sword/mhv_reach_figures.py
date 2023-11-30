@@ -79,7 +79,8 @@ plt.scatter(rch_x[eps], rch_y[eps], c='red', s = 20, edgecolors = 'None')
 plt.show()
 
 
-eps = np.where(Type==6)[0]
+eps = np.where(subcls.type6 == 6)[0]
+eps = np.where(subcls.ghost == 1)[0]
 plt.figure(1, figsize=(11,8))
 plt.rcParams['axes.linewidth'] = 1.5
 plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
@@ -117,4 +118,7 @@ r3 = np.where(subcls.rch_id1 == 62)[0]
 plt.scatter(subcls.x[r1], subcls.y[r1], c = 'red')
 plt.scatter(subcls.x[r2], subcls.y[r2], c = 'blue')
 plt.scatter(subcls.x[r3], subcls.y[r3], c = 'cyan')
+plt.show()
+
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_ind5[rch])
 plt.show()

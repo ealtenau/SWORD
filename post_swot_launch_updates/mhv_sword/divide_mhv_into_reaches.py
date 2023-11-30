@@ -19,13 +19,11 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Region", type = str)
-parser.add_argument("version", help="<Required> Version", type = str)
 parser.add_argument("local_processing", help="'True' for local machine, 'False' for server", type = str)
 args = parser.parse_args()
 
 start_all = time.time()
 region = args.region
-# version = args.version
 
 # Input file(s).
 if args.local_processing == 'True':
@@ -57,7 +55,7 @@ uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
 cnt = 0
 start_id = 0
-for ind in list(range(5,6)): #len(uniq_level2)
+for ind in list(range(len(uniq_level2))):
 
     print('STARTING BASIN: ' + str(uniq_level2[ind]))
 
@@ -168,9 +166,6 @@ for ind in list(range(5,6)): #len(uniq_level2)
     subcls.rch_dist5 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.rch_id5,
                                         subcls.facc, subcls.rch_ind5)
 
-    ###function to fix endpoints
-    
-
     #########################################################################
     #TOPOLOGY
 
@@ -195,18 +190,20 @@ for ind in list(range(5,6)): #len(uniq_level2)
     # Updating type information.
     subcls.type6 = np.zeros(len(subcls.reach_id))
     for j in list(range(len(subcls.reach_id))):
-        subcls.type6[j] = np.int(np.str(subcls.reach_id[j])[10:11])
+        subcls.type6[j] = int(str(subcls.reach_id[j])[10:11])
 
     print('Aggregating Data')
     # Append current data to previous data.
-    # rdt.append_centerlines(centerlines, subcls, cnt)
-    # rdt.append_reaches(reaches, subreaches, cnt)
-    # rdt.append_nodes(nodes, subnodes, cnt)
-    # cnt = cnt+1
+    rdt.append_centerlines(centerlines, subcls, cnt)
+    cnt = cnt+1
 
     end=time.time()
     print('Time to Create Reaches and Nodes: ' +
           str(np.round((end-start)/60, 2)) + ' min')
+
+# Update NetCDF File.
+print('Updating NetCDF')
+rdt.update_netcdf(nc_file, subcls)
 
 end_all=time.time()
 print('Time to Finish All Reaches and Nodes: ' +
@@ -246,4 +243,9 @@ nodes = nodes.set_crs(4326, allow_override=True)
 
 outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/inputs/MHV_SWORD/hb74_mhv_sword_test.gpkg'
 nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
+
+end_all=time.time()
+print('Time to Write Test Basin: ' +
+      str(np.round((end_all-start_all)/60, 2)) + ' min')
+
 '''

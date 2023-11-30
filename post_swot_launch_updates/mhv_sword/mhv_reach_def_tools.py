@@ -4348,21 +4348,24 @@ def ghost_reaches(subcls):
     """
 
     # Pre-defining all reach endpoint neighbors.
-    x, y, __, __ = reproject_utm(subcls.lat, subcls.lon)
+    # x, y, __, __ = reproject_utm(subcls.lat, subcls.lon)
+    x = np.copy(subcls.lon)
+    y = np.copy(subcls.lat)
     rch_eps = np.where(subcls.rch_eps5 == 1)[0]
     all_pts = np.vstack((x, y)).T
     eps_pts = np.vstack((x[rch_eps], y[rch_eps])).T
     kdt = sp.cKDTree(all_pts)
-    eps_dist, eps_ind = kdt.query(eps_pts, k = 10, distance_upper_bound = 500)
+    eps_dist, eps_ind = kdt.query(eps_pts, k = 5, distance_upper_bound = 0.005)
     #actual ghost node identification.
     ghost_dist = np.copy(eps_dist)
+    #replacing duplicate points with neighbor distance
     ghost_dist[np.where(ghost_dist[:,1] == 0),2] = ghost_dist[np.where(ghost_dist[:,1] == 0),3]
-    ghost_ids = eps_ind[np.where(ghost_dist[:,2] >= 120)[0],0] #changed to 180 on 11/15/2023 for mhv. 
+    ghost_ids = eps_ind[np.where(ghost_dist[:,2] >= 0.0013)[0],0] #changed to 180 on 11/15/2023 for mhv. 
     #added to attempt to filter out unnecessary ghost nodes.
     ghost_pts = np.vstack((x[ghost_ids], y[ghost_ids])).T
-    gst_dist, gst_ind = kdt.query(ghost_pts, k = 5, distance_upper_bound = 1000)
+    gst_dist, gst_ind = kdt.query(ghost_pts, k = 5, distance_upper_bound = 0.01)
     gst_dist[np.where(gst_dist[:,1] == 0),1] = gst_dist[np.where(gst_dist[:,1] == 0),2]
-    rmv_ids = gst_ind[np.where(gst_dist[:,4] < 120)[0]]
+    rmv_ids = gst_ind[np.where(gst_dist[:,4] < 0.0013)[0]]
     #creating binary ghost node array.
     subcls.ghost = np.zeros(len(subcls.id))
     subcls.ghost[ghost_ids] = 1
@@ -4443,87 +4446,55 @@ def append_centerlines(centerlines, subcls, cnt):
 
     # Copy the very first sub-attributes.
     if cnt == 0:
-        centerlines.id = np.copy(subcls.id)
-        centerlines.cl_id = np.copy(subcls.cl_id)
-        centerlines.x = np.copy(subcls.lon)
-        centerlines.y = np.copy(subcls.lat)
         centerlines.reach_id = np.copy(subcls.reach_id)
         centerlines.node_id = np.copy(subcls.node_id)
+        centerlines.rch_len = np.copy(subcls.rch_len6)
+        centerlines.node_num = np.copy(subcls.node_num)
+        centerlines.node_len = np.copy(subcls.node_len)
+        centerlines.rch_eps = np.copy(subcls.rch_eps6)
+        centerlines.type = np.copy(subcls.type6)
+        centerlines.rch_ind = np.copy(subcls.rch_ind6)
+        centerlines.rch_num = np.copy(subcls.rch_topo)
+        centerlines.rch_dist = np.copy(subcls.rch_dist6)
 
     # Otherwise, append the sub-attributes.
     else:
-        centerlines.id = np.insert(centerlines.id, len(centerlines.id), np.copy(subcls.id))
-        centerlines.cl_id = np.insert(centerlines.cl_id, len(centerlines.cl_id), np.copy(subcls.cl_id))
-        centerlines.x = np.insert(centerlines.x, len(centerlines.x), np.copy(subcls.lon))
-        centerlines.y = np.insert(centerlines.y, len(centerlines.y), np.copy(subcls.lat))
         centerlines.reach_id = np.insert(centerlines.reach_id, len(centerlines.reach_id), np.copy(subcls.reach_id), axis = 0)
         centerlines.node_id = np.insert(centerlines.node_id, len(centerlines.node_id), np.copy(subcls.node_id), axis = 0)
+        centerlines.rch_len = np.insert(centerlines.rch_len, len(centerlines.rch_len), np.copy(subcls.rch_len6), axis = 0)
+        centerlines.node_num = np.insert(centerlines.node_num, len(centerlines.node_num), np.copy(subcls.node_num), axis = 0)
+        centerlines.node_len = np.insert(centerlines.node_len, len(centerlines.node_len), np.copy(subcls.node_len), axis = 0)
+        centerlines.rch_eps = np.insert(centerlines.rch_eps, len(centerlines.rch_eps), np.copy(subcls.rch_eps6), axis = 0)
+        centerlines.type = np.insert(centerlines.type, len(centerlines.type), np.copy(subcls.type6), axis = 0)
+        centerlines.rch_ind = np.insert(centerlines.rch_ind, len(centerlines.rch_ind), np.copy(subcls.rch_ind6), axis = 0)
+        centerlines.rch_num = np.insert(centerlines.rch_num, len(centerlines.rch_num), np.copy(subcls.rch_topo), axis = 0)
+        centerlines.rch_dist = np.insert(centerlines.rch_dist, len(centerlines.rch_dist), np.copy(subcls.rch_dist6), axis = 0)
 
 ###############################################################################
 
-# def find_edit_endpoints(edits):
+def update_netcdf(nc_file, centerlines):
+    data = nc.Dataset(nc_file, 'r+')
+    data.groups['centerlines'].createVariable('reach_id', 'i8', ('num_points',))
+    data.groups['centerlines'].createVariable('rch_len', 'f8', ('num_points',))
+    data.groups['centerlines'].createVariable('node_num', 'i8', ('num_points',))
+    data.groups['centerlines'].createVariable('rch_eps', 'i4', ('num_points',))
+    data.groups['centerlines'].createVariable('type', 'i4', ('num_points',))
+    data.groups['centerlines'].createVariable('rch_ind', 'i8', ('num_points',))
+    data.groups['centerlines'].createVariable('rch_num', 'i8', ('num_points',))
+    data.groups['centerlines'].createVariable('node_id', 'i8', ('num_points',))
+    data.groups['centerlines'].createVariable('rch_dist', 'f8', ('num_points',))
+    data.groups['centerlines'].createVariable('node_len', 'f8', ('num_points',))
 
-#     """
-#     FUNCTION:
-#         Creates a new 1-D array that contains the endpoints for each
-#         edited centerline segment. 0 = not an endpoint, 1 = first endpoint,
-#         2 = second endpoint.
+    data.groups['centerlines'].variables['reach_id'][:] = centerlines.reach_id
+    data.groups['centerlines'].variables['rch_len'][:] = centerlines.rch_len
+    data.groups['centerlines'].variables['node_num'][:] = centerlines.node_num
+    data.groups['centerlines'].variables['rch_eps'][:] = centerlines.rch_eps
+    data.groups['centerlines'].variables['type'][:] = centerlines.type
+    data.groups['centerlines'].variables['rch_ind'][:] = centerlines.rch_ind
+    data.groups['centerlines'].variables['rch_num'][:] = centerlines.rch_num
+    data.groups['centerlines'].variables['node_id'][:] = centerlines.node_id
+    data.groups['centerlines'].variables['rch_dist'][:] = centerlines.rch_dist
+    data.groups['centerlines'].variables['node_len'][:] = centerlines.node_len
+    data.close()
 
-#     INPUTS
-#         edits -- Object containing attributes for the edited centerlines.
-
-#     OUTPUTS
-#         endpoints -- Endpoint locations for all edit segments.
-#     """
-
-#     # Loop through segments.
-#     endpoints = np.zeros(len(edits.reach_id))
-#     uniq_segs = np.unique(edits.reach_id)
-#     for ind in list(range(len(uniq_segs))):
-#         seg = np.where(edits.reach_id == uniq_segs[ind])[0]
-#         # seg_lon = edits.x[seg]
-#         # seg_lat = edits.y[seg]
-#         seg_x, seg_y, __, __ = reproject_utm(edits.y[seg], edits.x[seg])
-
-#         # Removing duplicate coordinates.
-#         coords_df = pd.DataFrame(np.array([seg_x, seg_y]).T)
-#         duplicates = np.where(pd.DataFrame.duplicated(coords_df))
-#         if len(duplicates) > 0:
-#             seg_x = np.delete(seg_x, duplicates)
-#             seg_y = np.delete(seg_y, duplicates)
-#             new_seg = np.delete(seg, duplicates)
-#         else:
-#             new_seg = np.copy(seg)
-
-#         # For each segment calculate distance between points and identify the
-#         # points with only two neighbors < 60 m away.
-#         count = 1
-#         for point in list(range(len(new_seg))):
-#             dist = np.sqrt((seg_x[point]-seg_x)**2 + (seg_y[point]-seg_y)**2)
-#             if len(np.where(dist < 200)[0]) < 3:
-#                 endpoints[new_seg[point]] = count
-#                 count = count+1
-
-#         # Default to the min and max indexes if no endpoints are found.
-#         eps = np.where(endpoints[seg] > 0)[0]
-#         if len(eps) < 2:
-#             mx = np.where(seg == np.max(seg))
-#             mn = np.where(seg == np.min(seg))
-#             endpoints[seg[eps]] = 0
-#             endpoints[seg[mn]] = 1
-#             endpoints[seg[mx]] = 2
-        
-#         #updating indexes
-#         new_ind = np.zeros(len(seg))
-#         idz = np.where(endpoints[seg] == 1)[0]
-#         new_ind[idz] = 1
-#         count = 2
-#         while np.min(new_ind) == 0:
-#             d = np.sqrt((seg_x[idz]-seg_x)**2 + (seg_y[idz]-seg_y)**2)
-#             dzero = np.where(new_ind == 0)[0]
-#             next_pt = dzero[np.where(d[dzero] == np.min(d[dzero]))[0]][0]
-#             new_ind[next_pt] = count
-#             count = count+1
-#             idz = next_pt
-
-#     return endpoints
+###############################################################################

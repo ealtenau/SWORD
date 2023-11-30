@@ -7,6 +7,7 @@ import os
 import geopandas as gp
 import pandas as pd
 from shapely.geometry import Point
+import argparse 
 
 ###############################################################################
 
@@ -30,9 +31,9 @@ def find_neighbors(basin_rch, basin_flag, basin_x, basin_y,
 
     #for grwl the values were 100 and 200 
     if len(rch) <= 4:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 300.0)
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 0.003) #distance upper bound = 300.0 for meters 
     else:#elif rch_len > 600:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 0.003) #distance upper bound = 300.0 for meters 
 
     # Identifying endpoint neighbors.
     ep1_ind = pt_ind[0,:]
@@ -74,10 +75,21 @@ def find_neighbors(basin_rch, basin_flag, basin_x, basin_y,
 ###############################################################################
 ###############################################################################
 
-region = 'na'
-mhv_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/MHV_SWORD/'+region+'_mhv_sword.nc'
-mhv = nc.Dataset(mhv_dir)
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Region", type = str)
+parser.add_argument("local_processing", help="'True' for local machine, 'False' for server", type = str)
+args = parser.parse_args()
 
+start_all = time.time()
+region = args.region
+
+if args.local_processing == 'True':
+    main_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/'
+else:
+    main_dir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/inputs/'
+mhv_file = main_dir+'MHV_SWORD/'+region+'_mhv_sword.nc'
+
+mhv = nc.Dataset(mhv_file, 'r+')
 flag_all = np.array(mhv.groups['centerlines'].variables['swordflag'][:])
 lon_all = np.array(mhv.groups['centerlines'].variables['x'][:])
 lat_all = np.array(mhv.groups['centerlines'].variables['y'][:])
@@ -92,7 +104,7 @@ unq_l2 = np.unique(l2)
 unq_l2 = np.delete(unq_l2, 0)
 
 start_all = time.time()
-for ind in list(range(8,9)): #len(unq_l2))):
+for ind in list(range(len(unq_l2))):
     print('STARTING BASIN: '+ str(unq_l2[ind]))
     subset = np.where(l2 == unq_l2[ind])[0]
     flag = flag_all[subset]
@@ -110,31 +122,78 @@ for ind in list(range(8,9)): #len(unq_l2))):
         line = np.where(seg == check[s])[0]
         seg_x = x[line]
         seg_y = y[line]
+        seg_lon = lon[line]
+        seg_lat = lat[line]
         seg_ind = index[line]
-        
-        end1, end2 = find_neighbors(seg, flag, x, y, seg_x, 
-                                    seg_y, seg_ind, check[s], line)
-        
+        end1, end2 = find_neighbors(seg, flag, lon, lat, seg_lon, 
+                                    seg_lat, seg_ind, check[s], line)
         if len(end1) == 0:
             continue
-
-        if len(end2) == 0:
+        elif len(end2) == 0:
             continue
-        
-        if np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 1:
-            print(s, check[s])
-            flag_all[subset[line]] = 1
-            flag[line] = 1
-            cnt.append(check[s])
+        else:
+            # Cond. 1: end 1 has SWORD flag, but end 2 does not. 
+            if np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 0:
+                for n in list(range(len(end2))):
+                    line2 = np.where(seg == end2[0,0])[0]
+                    seg_lon2 = lon[line2]
+                    seg_lat2 = lat[line2]
+                    seg_ind2 = index[line2]
+                    ngh_end1, ngh_end2 = find_neighbors(seg, flag, lon, lat, seg_lon2, 
+                                        seg_lat2, seg_ind2, check[s], line2)
+                    if n == 0:
+                        ngh_end1_all = np.copy(ngh_end1)
+                        ngh_end2_all = np.copy(ngh_end2)
+                    else:
+                        ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
+                        ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
+                if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
+                    print(s, check[s], 'cond.1')
+                    flag_all[subset[line]] = 1
+                    flag[line] = 1
+                    cnt.append(check[s])
+                else:
+                    continue
+            # Cond. 2: end 2 has SWORD flag, but end 1 does not.
+            elif np.max(end1[:,1]) == 0 and np.max(end2[:,1]) == 1:
+                for n in list(range(len(end1))):
+                    line2 = np.where(seg == end1[0,0])[0]
+                    seg_lon2 = lon[line2]
+                    seg_lat2 = lat[line2]
+                    seg_ind2 = index[line2]
+                    ngh_end1, ngh_end2 = find_neighbors(seg, flag, lon, lat, seg_lon2, 
+                                        seg_lat2, seg_ind2, check[s], line2)
+                    if n == 0:
+                        ngh_end1_all = np.copy(ngh_end1)
+                        ngh_end2_all = np.copy(ngh_end2)
+                    else:
+                        ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
+                        ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
+                if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
+                    print(s, check[s], 'cond.2')
+                    flag_all[subset[line]] = 1
+                    flag[line] = 1
+                    cnt.append(check[s])
+                else:
+                    continue
+            # Cond. 3: Both ends have SWORD flag. 
+            elif np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 1:
+                print(s, check[s], 'cond.3')
+                flag_all[subset[line]] = 1
+                # flag[line] = 1
+                cnt.append(check[s])
 
-### update netcdf if it seems to work. 
-# mhv.groups['centerlines'].variables['swordflag'][:] = flag_all
+            else:
+                continue
+
+### update netcdf. 
+mhv.groups['centerlines'].createVariable('swordflag_filt', 'i4', ('num_points',))
+mhv.groups['centerlines'].variables['swordflag_filt'][:] = flag_all
+mhv.close()
 
 end_all=time.time()
 print('Time to Finish: ' +str(np.round((end_all-start_all)/60, 2)) + 
       ' min. Segments corrected: ' + str(len(cnt)))
-
-
 
 '''
 pts = gp.GeoDataFrame([
@@ -159,6 +218,9 @@ pts = gp.GeoDataFrame(pts)
 pts.set_geometry(col='geometry')
 pts = pts.set_crs(4326, allow_override=True)
 
-outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/inputs/MHV_SWORD/hb81_mhv_swordflag_filt_test.gpkg'
+outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/inputs/MHV_SWORD/hb81_mhv_swordflag_filt_test3.gpkg'
 pts.to_file(outgpkg, driver='GPKG', layer='pts')
 '''
+
+
+
