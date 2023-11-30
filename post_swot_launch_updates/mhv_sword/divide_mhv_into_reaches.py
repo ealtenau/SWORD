@@ -203,7 +203,7 @@ for ind in list(range(len(uniq_level2))):
 
 # Update NetCDF File.
 print('Updating NetCDF')
-rdt.update_netcdf(nc_file, subcls)
+rdt.update_netcdf(nc_file, centerlines)
 
 end_all=time.time()
 print('Time to Finish All Reaches and Nodes: ' +
