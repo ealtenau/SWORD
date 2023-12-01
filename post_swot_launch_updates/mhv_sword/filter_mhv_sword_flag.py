@@ -104,6 +104,7 @@ unq_l2 = np.unique(l2)
 unq_l2 = np.delete(unq_l2, 0)
 
 start_all = time.time()
+cnt=[]
 for ind in list(range(len(unq_l2))):
     print('STARTING BASIN: '+ str(unq_l2[ind]))
     subset = np.where(l2 == unq_l2[ind])[0]
@@ -115,7 +116,6 @@ for ind in list(range(len(unq_l2))):
     seg = seg_all[subset]
     index = index_all[subset]
 
-    cnt=[]
     check = np.unique(seg[np.where(flag == 0)[0]])
     for s in list(range(len(check))):
         # print(s, len(check)-1)
@@ -148,7 +148,7 @@ for ind in list(range(len(unq_l2))):
                         ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
                         ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
                 if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
-                    print(s, check[s], 'cond.1')
+                    # print(s, check[s], 'cond.1')
                     flag_all[subset[line]] = 1
                     flag[line] = 1
                     cnt.append(check[s])
@@ -170,7 +170,7 @@ for ind in list(range(len(unq_l2))):
                         ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
                         ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
                 if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
-                    print(s, check[s], 'cond.2')
+                    # print(s, check[s], 'cond.2')
                     flag_all[subset[line]] = 1
                     flag[line] = 1
                     cnt.append(check[s])
@@ -178,7 +178,7 @@ for ind in list(range(len(unq_l2))):
                     continue
             # Cond. 3: Both ends have SWORD flag. 
             elif np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 1:
-                print(s, check[s], 'cond.3')
+                # print(s, check[s], 'cond.3')
                 flag_all[subset[line]] = 1
                 # flag[line] = 1
                 cnt.append(check[s])
