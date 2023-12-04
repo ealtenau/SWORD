@@ -122,3 +122,10 @@ plt.show()
 
 plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_ind5[rch])
 plt.show()
+
+
+plt.scatter(basin_lon, basin_lat, c = 'blue', s=10)
+plt.show()
+
+plt.scatter(east, north, c = 'blue', s=10)
+plt.show()

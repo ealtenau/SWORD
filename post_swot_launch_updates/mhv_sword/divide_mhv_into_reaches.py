@@ -63,8 +63,6 @@ for ind in list(range(len(uniq_level2))):
 
     # Define objects to assign attributes.
     subcls = rdt.Object()
-    subreaches = rdt.Object()
-    subnodes = rdt.Object()
 
     # Subset data.
     level2 = np.where(level2_basins == uniq_level2[ind])[0]

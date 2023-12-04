@@ -95,8 +95,7 @@ def reproject_utm(latitude, longitude):
 
     for ind in list(range(len(latitude))):
         (east_int[ind], north_int[ind],
-	 zone_num[ind], zone_let_int) = utm.from_latlon(latitude[ind],
-	                                                longitude[ind])
+         zone_num[ind], zone_let_int) = utm.from_latlon(latitude[ind],longitude[ind])
         zone_let.append(zone_let_int)
 
     # Finds the unique UTM zones and converts the lat/lon pairs to UTM.
@@ -112,12 +111,12 @@ def reproject_utm(latitude, longitude):
 
     if np.sum(latitude) > 0:
         myproj = Proj(
-		"+proj=utm +zone=" + str(int(unq_zones[idx])) + utm_let +
-		" +ellips=WGS84 +datum=WGS84 +units=m")
+            "+proj=utm +zone=" + str(int(unq_zones[idx])) +
+            " +ellips=WGS84 +datum=WGS84 +units=m")
     else:
         myproj = Proj(
-		"+proj=utm +south +zone=" + str(int(unq_zones[idx])) + utm_let +
-		" +ellips=WGS84 +datum=WGS84 +units=m")
+            "+proj=utm +south +zone=" + str(int(unq_zones[idx])) +
+            " +ellips=WGS84 +datum=WGS84 +units=m")
 
     # Convert all the lon/lat to the main UTM zone
     (east, north) = myproj(longitude, latitude)
