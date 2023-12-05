@@ -17,17 +17,17 @@ sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netc
 pixc_files = os.listdir(pixc_dir)
 pixc_files = [f for f in pixc_files if '.nc' in f]
 
-for ind in list(range(len(pixc_files))):
+for ind in list(range(0,1)):#len(pixc_files))):
     # need to automatically be able to find mhv and sword files based on pixel cloud tile. 
     pixc_fn = pixc_dir+pixc_files[ind]
     pixc = nc.Dataset(pixc_fn)
     pixc_lat = ma.getdata(pixc.groups['pixel_cloud'].variables['latitude'][:])
     pixc_lon = ma.getdata(pixc.groups['pixel_cloud'].variables['longitude'][:])
     pixc_class = ma.getdata(pixc.groups['pixel_cloud'].variables['classification'][:])
-    # pixc_lat = pixc_lat[np.where(pixc_class == 4)]
-    # pixc_lon = pixc_lon[np.where(pixc_class == 4)]
-    pixc_lat = pixc_lat[np.where((pixc_class > 2) & (pixc_class < 5))]
-    pixc_lon = pixc_lon[np.where((pixc_class > 2) & (pixc_class < 5))]
+    pixc_lat = pixc_lat[np.where(pixc_class == 4)]
+    pixc_lon = pixc_lon[np.where(pixc_class == 4)]
+    # pixc_lat = pixc_lat[np.where((pixc_class > 2) & (pixc_class < 5))]
+    # pixc_lon = pixc_lon[np.where((pixc_class > 2) & (pixc_class < 5))]
     pixc.close()
 
     xmin = np.min(pixc_lon)

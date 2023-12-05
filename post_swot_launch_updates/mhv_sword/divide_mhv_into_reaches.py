@@ -46,8 +46,16 @@ data.basins = np.array([int(str(ind)[0:6]) for ind in data.basins])
 
 # Creating empty objects to fill with attributes.
 centerlines = rdt.Object()
-reaches = rdt.Object()
-nodes = rdt.Object()
+centerlines.reach_id = np.zeros(len(data.seg))
+centerlines.node_id = np.zeros(len(data.seg))
+centerlines.rch_len = np.zeros(len(data.seg))
+centerlines.node_num = np.zeros(len(data.seg))
+centerlines.node_len = np.zeros(len(data.seg))
+centerlines.rch_eps = np.zeros(len(data.seg))
+centerlines.type = np.zeros(len(data.seg))
+centerlines.rch_ind = np.zeros(len(data.seg))
+centerlines.rch_num = np.zeros(len(data.seg))
+centerlines.rch_dist = np.zeros(len(data.seg))
 
 # Loop through each level 2 basin. Subsetting per level 2 basin speeds up the script.
 level2_basins = np.array([int(str(ind)[0:2]) for ind in data.basins])
@@ -192,8 +200,16 @@ for ind in list(range(len(uniq_level2))):
 
     print('Aggregating Data')
     # Append current data to previous data.
-    rdt.append_centerlines(centerlines, subcls, cnt)
-    cnt = cnt+1
+    centerlines.reach_id[level2] = subcls.reach_id
+    centerlines.node_id[level2] = subcls.node_id
+    centerlines.rch_len[level2] = subcls.rch_len6
+    centerlines.node_num[level2] = subcls.node_num
+    centerlines.node_len[level2] = subcls.node_len
+    centerlines.rch_eps[level2] = subcls.rch_eps6
+    centerlines.type[level2] = subcls.type6
+    centerlines.rch_ind[level2] = subcls.rch_ind6
+    centerlines.rch_num[level2] = subcls.rch_topo
+    centerlines.rch_dist[level2] = subcls.rch_dist6
 
     end=time.time()
     print('Time to Create Reaches and Nodes: ' +

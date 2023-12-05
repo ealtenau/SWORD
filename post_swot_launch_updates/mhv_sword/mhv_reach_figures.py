@@ -129,3 +129,24 @@ plt.show()
 
 plt.scatter(east, north, c = 'blue', s=10)
 plt.show()
+
+
+
+##########################
+unq_rchs = np.unique(new_segs)
+number_of_colors = len(unq_rchs)
+color = ["#"+''.join([random.choice('0123456789ABCDEF') for j in range(6)])
+             for i in range(number_of_colors)]
+
+zeros = np.where(new_segs == 0)[0]
+plt.figure(1, figsize=(11,8))
+plt.rcParams['axes.linewidth'] = 1.5
+plt.tick_params(width=1.5, direction='out', length=5, top = 'off', right = 'off')
+plt.title('Segments',  fontsize=16)
+plt.xlabel('x', fontsize=14)
+plt.ylabel('y', fontsize=14)
+for i in list(range(len(unq_rchs))):
+    seg = np.where(new_segs == unq_rchs[i])
+    plt.scatter(subcls.lon[seg], subcls.lat[seg], c=color[i], s = 5, edgecolors = 'None')
+plt.scatter(subcls.lon[zeros], subcls.lat[zeros], c='black', s = 15, edgecolors = 'None')
+plt.show()

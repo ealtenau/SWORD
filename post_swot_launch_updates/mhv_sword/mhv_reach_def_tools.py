@@ -116,7 +116,7 @@ def reproject_utm(latitude, longitude):
     else:
         myproj = Proj(
             "+proj=utm +south +zone=" + str(int(unq_zones[idx])) +
-            " +ellips=WGS84 +datum=WGS84 +units=m")
+           " +ellips=WGS84 +datum=WGS84 +units=m")
 
     # Convert all the lon/lat to the main UTM zone
     (east, north) = myproj(longitude, latitude)
@@ -4425,49 +4425,6 @@ def ghost_reaches(subcls):
             nd_num = nd_num+1
 
     return new_reaches, new_nodes, new_len
-
-###############################################################################
-
-def append_centerlines(centerlines, subcls, cnt):
-
-    """
-    FUNCTION:
-        Appends sub-attributes within a loop to an object containing the final
-        SWORD high-resolution centerline attributes for an entire specified
-        region (in most cases a continent).
-
-    INPUTS
-        centerlines -- Object to be appended with sub-attribute data.
-        subcls -- Object containing current attribute information for a single
-            level 2 Pfafstetter basin at the high-resolution centerline loctions.
-        cnt -- Specifies the current loop iteration.
-    """
-
-    # Copy the very first sub-attributes.
-    if cnt == 0:
-        centerlines.reach_id = np.copy(subcls.reach_id)
-        centerlines.node_id = np.copy(subcls.node_id)
-        centerlines.rch_len = np.copy(subcls.rch_len6)
-        centerlines.node_num = np.copy(subcls.node_num)
-        centerlines.node_len = np.copy(subcls.node_len)
-        centerlines.rch_eps = np.copy(subcls.rch_eps6)
-        centerlines.type = np.copy(subcls.type6)
-        centerlines.rch_ind = np.copy(subcls.rch_ind6)
-        centerlines.rch_num = np.copy(subcls.rch_topo)
-        centerlines.rch_dist = np.copy(subcls.rch_dist6)
-
-    # Otherwise, append the sub-attributes.
-    else:
-        centerlines.reach_id = np.insert(centerlines.reach_id, len(centerlines.reach_id), np.copy(subcls.reach_id), axis = 0)
-        centerlines.node_id = np.insert(centerlines.node_id, len(centerlines.node_id), np.copy(subcls.node_id), axis = 0)
-        centerlines.rch_len = np.insert(centerlines.rch_len, len(centerlines.rch_len), np.copy(subcls.rch_len6), axis = 0)
-        centerlines.node_num = np.insert(centerlines.node_num, len(centerlines.node_num), np.copy(subcls.node_num), axis = 0)
-        centerlines.node_len = np.insert(centerlines.node_len, len(centerlines.node_len), np.copy(subcls.node_len), axis = 0)
-        centerlines.rch_eps = np.insert(centerlines.rch_eps, len(centerlines.rch_eps), np.copy(subcls.rch_eps6), axis = 0)
-        centerlines.type = np.insert(centerlines.type, len(centerlines.type), np.copy(subcls.type6), axis = 0)
-        centerlines.rch_ind = np.insert(centerlines.rch_ind, len(centerlines.rch_ind), np.copy(subcls.rch_ind6), axis = 0)
-        centerlines.rch_num = np.insert(centerlines.rch_num, len(centerlines.rch_num), np.copy(subcls.rch_topo), axis = 0)
-        centerlines.rch_dist = np.insert(centerlines.rch_dist, len(centerlines.rch_dist), np.copy(subcls.rch_dist6), axis = 0)
 
 ###############################################################################
 
