@@ -4430,27 +4430,42 @@ def ghost_reaches(subcls):
 
 def update_netcdf(nc_file, centerlines):
     data = nc.Dataset(nc_file, 'r+')
-    data.groups['centerlines'].createVariable('reach_id', 'i8', ('num_points',))
-    data.groups['centerlines'].createVariable('rch_len', 'f8', ('num_points',))
-    data.groups['centerlines'].createVariable('node_num', 'i8', ('num_points',))
-    data.groups['centerlines'].createVariable('rch_eps', 'i4', ('num_points',))
-    data.groups['centerlines'].createVariable('type', 'i4', ('num_points',))
-    data.groups['centerlines'].createVariable('rch_ind', 'i8', ('num_points',))
-    data.groups['centerlines'].createVariable('rch_num', 'i8', ('num_points',))
-    data.groups['centerlines'].createVariable('node_id', 'i8', ('num_points',))
-    data.groups['centerlines'].createVariable('rch_dist', 'f8', ('num_points',))
-    data.groups['centerlines'].createVariable('node_len', 'f8', ('num_points',))
-
-    data.groups['centerlines'].variables['reach_id'][:] = centerlines.reach_id
-    data.groups['centerlines'].variables['rch_len'][:] = centerlines.rch_len
-    data.groups['centerlines'].variables['node_num'][:] = centerlines.node_num
-    data.groups['centerlines'].variables['rch_eps'][:] = centerlines.rch_eps
-    data.groups['centerlines'].variables['type'][:] = centerlines.type
-    data.groups['centerlines'].variables['rch_ind'][:] = centerlines.rch_ind
-    data.groups['centerlines'].variables['rch_num'][:] = centerlines.rch_num
-    data.groups['centerlines'].variables['node_id'][:] = centerlines.node_id
-    data.groups['centerlines'].variables['rch_dist'][:] = centerlines.rch_dist
-    data.groups['centerlines'].variables['node_len'][:] = centerlines.node_len
-    data.close()
+    # check to see if variables have been created already. If not create them.
+    if 'reach_id' in data.groups['centerlines'].variables:
+        data.groups['centerlines'].variables['reach_id'][:] = centerlines.reach_id
+        data.groups['centerlines'].variables['rch_len'][:] = centerlines.rch_len
+        data.groups['centerlines'].variables['node_num'][:] = centerlines.node_num
+        data.groups['centerlines'].variables['rch_eps'][:] = centerlines.rch_eps
+        data.groups['centerlines'].variables['type'][:] = centerlines.type
+        data.groups['centerlines'].variables['rch_ind'][:] = centerlines.rch_ind
+        data.groups['centerlines'].variables['rch_num'][:] = centerlines.rch_num
+        data.groups['centerlines'].variables['node_id'][:] = centerlines.node_id
+        data.groups['centerlines'].variables['rch_dist'][:] = centerlines.rch_dist
+        data.groups['centerlines'].variables['node_len'][:] = centerlines.node_len
+        data.close()
+    else:
+        # create variables. 
+        data.groups['centerlines'].createVariable('reach_id', 'i8', ('num_points',))
+        data.groups['centerlines'].createVariable('rch_len', 'f8', ('num_points',))
+        data.groups['centerlines'].createVariable('node_num', 'i8', ('num_points',))
+        data.groups['centerlines'].createVariable('rch_eps', 'i4', ('num_points',))
+        data.groups['centerlines'].createVariable('type', 'i4', ('num_points',))
+        data.groups['centerlines'].createVariable('rch_ind', 'i8', ('num_points',))
+        data.groups['centerlines'].createVariable('rch_num', 'i8', ('num_points',))
+        data.groups['centerlines'].createVariable('node_id', 'i8', ('num_points',))
+        data.groups['centerlines'].createVariable('rch_dist', 'f8', ('num_points',))
+        data.groups['centerlines'].createVariable('node_len', 'f8', ('num_points',))
+        # populate variables. 
+        data.groups['centerlines'].variables['reach_id'][:] = centerlines.reach_id
+        data.groups['centerlines'].variables['rch_len'][:] = centerlines.rch_len
+        data.groups['centerlines'].variables['node_num'][:] = centerlines.node_num
+        data.groups['centerlines'].variables['rch_eps'][:] = centerlines.rch_eps
+        data.groups['centerlines'].variables['type'][:] = centerlines.type
+        data.groups['centerlines'].variables['rch_ind'][:] = centerlines.rch_ind
+        data.groups['centerlines'].variables['rch_num'][:] = centerlines.rch_num
+        data.groups['centerlines'].variables['node_id'][:] = centerlines.node_id
+        data.groups['centerlines'].variables['rch_dist'][:] = centerlines.rch_dist
+        data.groups['centerlines'].variables['node_len'][:] = centerlines.node_len
+        data.close()
 
 ###############################################################################
