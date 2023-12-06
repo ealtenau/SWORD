@@ -120,7 +120,9 @@ plt.scatter(subcls.x[r2], subcls.y[r2], c = 'blue')
 plt.scatter(subcls.x[r3], subcls.y[r3], c = 'cyan')
 plt.show()
 
-plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_ind5[rch])
+
+rch = np.where(subcls.rch_id5 == 6133)[0]
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.seg[rch])
 plt.show()
 
 

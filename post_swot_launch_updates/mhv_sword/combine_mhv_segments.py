@@ -326,7 +326,7 @@ centerlines.new_dist = np.zeros(len(data.lon))
 level2_basins = np.array([int(str(ind)[0:2]) for ind in data.basins])
 uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
-for ind in list(range(3,4)):#len(uniq_level2))):
+for ind in list(range(len(uniq_level2))):
 
     print('STARTING BASIN: ' + str(uniq_level2[ind]))
 
