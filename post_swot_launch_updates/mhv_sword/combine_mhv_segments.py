@@ -382,7 +382,7 @@ for ind in list(range(len(uniq_level2))):
         new_segs[seg] = cnt
 
         seg_eps = np.where(subcls.eps[seg] > 0)[0]
-        if len(seg_eps) == 1:
+        if len(seg_eps) <= 1:
             pt1 = np.where(subcls.ind[seg] == np.min(subcls.ind[seg]))[0]
             pt2 = np.where(subcls.ind[seg] == np.max(subcls.ind[seg]))[0]
             seg_eps = np.array([pt1,pt2])

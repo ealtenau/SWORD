@@ -157,3 +157,39 @@ x = np.array([t[0] for t in test])
 y = np.array([t[1] for t in test])
 plt.plot(x,y)
 plt.show()
+
+
+
+region = 'NA'
+fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/'+region.lower()+'_sword_v16.nc'
+sword = nc.Dataset(fn)
+reach_id = sword.groups['centerlines'].variables['reach_id'][0,:]
+index = sword.groups['centerlines'].variables['cl_id'][:]
+x = sword.groups['centerlines'].variables['x'][:]
+y = sword.groups['centerlines'].variables['y'][:]
+
+rch1 = np.where(reach_id == 74222900443)[0]
+rch2 = np.where(reach_id == 74222900411)[0]
+rch3 = np.where(reach_id == 74222900433)[0]
+
+plt.scatter(x[rch1], y[rch1], c=index[rch1])
+plt.scatter(x[rch2], y[rch2], c=index[rch2])
+plt.scatter(x[rch3], y[rch3], c=index[rch3])
+plt.show()
+
+
+plt.scatter(x[rch1], y[rch1], c='red')
+plt.scatter(x[rch2], y[rch2], c='blue')
+plt.scatter(x[rch3], y[rch3], c='green')
+plt.show()
+
+# converting meters to decimal degree distance.
+latitude = np.array([0,10,20,30,40,50,60,70,75,80,85])
+meters = 45
+for lat in enumerate(latitude):
+    print(np.round(meters/(111.32 * 1000 * math.cos(lat[1] * (math.pi / 180))),5))
+
+
+river_min_dist = 10000
+subcls.rch_id2, subcls.rch_len2,\
+    subcls.type2 = aggregate_rivers(subcls, river_min_dist)

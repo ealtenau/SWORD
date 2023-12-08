@@ -126,13 +126,9 @@ plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.seg[rch])
 plt.show()
 
 
-plt.scatter(basin_lon, basin_lat, c = 'blue', s=10)
+rch = np.where(subcls.reach_id == 74252100181)[0]
+plt.plot(subcls.x[rch], subcls.y[rch])
 plt.show()
-
-plt.scatter(east, north, c = 'blue', s=10)
-plt.show()
-
-
 
 ##########################
 unq_rchs = np.unique(new_segs)
@@ -151,4 +147,29 @@ for i in list(range(len(unq_rchs))):
     seg = np.where(new_segs == unq_rchs[i])
     plt.scatter(subcls.lon[seg], subcls.lat[seg], c=color[i], s = 5, edgecolors = 'None')
 # plt.scatter(subcls.lon[zeros], subcls.lat[zeros], c='black', s = 15, edgecolors = 'None')
+plt.show()
+
+
+
+rch1 = np.where(subcls.rch_id1 == 7875)[0]
+rch2 = np.where(subcls.rch_id1 == 36365)[0]
+rch3 = np.where(subcls.rch_id1 == 7861)[0]
+rch4 = np.where(subcls.rch_id1 == 7874)[0]
+plt.scatter(subcls.x[rch1], subcls.y[rch1], c = 'black')
+plt.scatter(subcls.x[rch2], subcls.y[rch2], c = 'red')
+plt.scatter(subcls.x[rch3], subcls.y[rch3], c = 'blue')
+plt.scatter(subcls.x[rch4], subcls.y[rch4], c = 'cyan')
+plt.show()
+
+
+plt.scatter(subcls.x[rch1], subcls.y[rch1], c = 'black')
+plt.scatter(subcls.x[rch2], subcls.y[rch2], c = 'red')
+plt.scatter(subcls.x[rch3], subcls.y[rch3], c = 'blue')
+plt.scatter(subcls.x[rch4], subcls.y[rch4], c = 'cyan')
+plt.scatter(subcls.x[test], subcls.y[test], c = subcls.rch_ind2[test])
+plt.show()
+
+
+plt.scatter(basin_lon[rch], basin_lat[rch], c = 'cyan')
+plt.scatter(basin_lon[rch2], basin_lat[rch2], c = 'red')
 plt.show()

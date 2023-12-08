@@ -32,10 +32,6 @@ else:
     main_dir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/inputs/'
 nc_file = main_dir+'MHV_SWORD/'+region+'_mhv_sword.nc'
 
-# Output files.
-# nc_outpath = main_dir+'Reaches_Nodes/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# swot_outpath = main_dir+'SWOT_Coverage/'+region.lower()+'_swot_obs_'+version+'.nc'
-
 # Reading in data.
 data = rdt.read_merge_netcdf(nc_file)
 
@@ -63,7 +59,7 @@ uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
 cnt = 0
 start_id = 0
-for ind in list(range(len(uniq_level2))):
+for ind in list(range(3,4)):#len(uniq_level2))):
 
     print('STARTING BASIN: ' + str(uniq_level2[ind]))
 

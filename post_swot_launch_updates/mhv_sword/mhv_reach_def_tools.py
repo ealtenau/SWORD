@@ -4,6 +4,7 @@ import numpy as np
 from scipy import spatial as sp
 import netCDF4 as nc
 from pyproj import Proj
+import math
 
 ###############################################################################
 
@@ -13,6 +14,12 @@ class Object(object):
         Creates class object to assign attributes to.
     """
     pass
+
+###############################################################################
+
+def meters_to_degrees(meters, latitude):
+    deg = np.round(meters/(111.32 * 1000 * math.cos(latitude * (math.pi / 180))),5)
+    return deg
 
 ###############################################################################
 
@@ -759,7 +766,7 @@ def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
 ###############################################################################
 
 def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
-                   basin_x, basin_y, rch_x, rch_y, rch_ind, rch_len, rch_id, rch):
+                   basin_x, basin_y, rch_x, rch_y, rch_ind, rch_id, rch):
 
     """
     FUNCTION:
@@ -803,7 +810,8 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
             size would be [2,5], and if the segment endpoint only has one
             neighbor the array size would be [1,5]).
     """
-
+    #getting radius for finding neighbors.
+    radius = meters_to_degrees(128, np.median(basin_y))
     # Formatting all basin coordinate values.
     basin_pts = np.vstack((basin_x, basin_y)).T
     # Formatting the current reach's endpoint coordinates.
@@ -820,12 +828,10 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
     kdt = sp.cKDTree(basin_pts)
 
     #for grwl the values were 100 and 200 
-    if rch_len < 300:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 300.0)
-    # elif 300 <= rch_len and rch_len <= 600:
-    #     pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
-    else:#elif rch_len > 600:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
+    if len(rch) < 10:
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = radius)
+    else:
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = radius)
 
     # Identifying endpoint neighbors.
     ep1_ind = pt_ind[0,:]
@@ -874,6 +880,125 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
     ep2 = np.array([ep2_ngb, ep2_len, ep2_flg, ep2_acc, ep2_wse]).T
 
     return ep1, ep2
+
+###############################################################################
+
+# def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
+#                    basin_x, basin_y, rch_x, rch_y, rch_ind, rch_len, rch_id, rch):
+
+#     """
+#     FUNCTION:
+#         Finds neighboring reaches that are within the current reach's basin.
+#         This is a sub-function used in the following functions:
+#         "aggregate_rivers", "aggregate_lakes", "aggregate_dams", and
+#         "order_reaches."
+
+#     INPUTS
+#         basin_rch -- All reach IDs within the basin.
+#         basin_dist -- All reach lengths for the reaches in the basin.
+#         basin_flag -- All reach types for the basin.
+#         basin_acc -- All flow accumulation values for the reaches in the basin.
+#         basin_wse -- All elevation values for the reaches in the basin.
+#         basin_x -- Easting values for all points in the basin.
+#         basin_y -- Northing values for all points in the basin.
+#         rch_x -- Easting values for the current reach.
+#         rch_y -- Northing values for the current reach.
+#         rch_ind -- Point indexes for the current reach.
+#         rch_len -- Reach length for the current reach.
+#         rch_id -- ID of the current reach.
+#         rch -- Index locations for the current reach.
+
+#     OUTPUTS
+#         ep1 -- Array of neighboring reach attributes. for the first segment
+#             endpoint. The array row dimensions will depend on the number of
+#             neighbors for that endpoint, while the column dimension will always
+#             be equal to five and contain following attributes for each
+#             neighbor: (1) reach ID, (2) reach length, (3) reach type,
+#             (4) reach flow accumulation, and (5) reach water surface elevation).
+#             For example, if the segment endpoint has two neighbors the array
+#             size would be [2,5], and if the segment endpoint only has one
+#             neighbor the array size would be [1,5]).
+#         ep2 -- Array of neighboring reach attributes for the second segment
+#             endpoint. The array row dimensions will depend on the number of
+#             neighbors for that endpoint, while the column dimension will always
+#             be equal to five and contain following attributes for each
+#             neighbor: (1) reach ID, (2) reach length, (3) reach type,
+#             (4) reach flow accumulation, and (5) reach water surface elevation).
+#             For example, if the segment endpoint has two neighbors the array
+#             size would be [2,5], and if the segment endpoint only has one
+#             neighbor the array size would be [1,5]).
+#     """
+
+#     # Formatting all basin coordinate values.
+#     basin_pts = np.vstack((basin_x, basin_y)).T
+#     # Formatting the current reach's endpoint coordinates.
+#     if len(rch) == 1:
+#         eps = np.array([0,0])
+#     else:
+#         pt1 = np.where(rch_ind == np.min(rch_ind))[0][0]
+#         pt2 = np.where(rch_ind == np.max(rch_ind))[0][0]
+#         eps = np.array([pt1,pt2]).T
+
+#     # Performing a spatial query to get the closest points within the basin
+#     # to the current reach's endpoints.
+#     ep_pts = np.vstack((rch_x[eps], rch_y[eps])).T
+#     kdt = sp.cKDTree(basin_pts)
+
+#     #for grwl the values were 100 and 200 
+#     if rch_len < 300:
+#         pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 300.0)
+#     # elif 300 <= rch_len and rch_len <= 600:
+#     #     pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
+#     else:#elif rch_len > 600:
+#         pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
+
+#     # Identifying endpoint neighbors.
+#     ep1_ind = pt_ind[0,:]
+#     ep1_dist = pt_dist[0,:]
+#     na1 = np.where(ep1_ind == len(basin_rch))
+#     ep1_dist = np.delete(ep1_dist, na1)
+#     ep1_ind = np.delete(ep1_ind, na1)
+#     s1 = np.where(basin_rch[ep1_ind] == rch_id)
+#     ep1_dist = np.delete(ep1_dist, s1)
+#     ep1_ind = np.delete(ep1_ind, s1)
+#     ep1_ngb = np.unique(basin_rch[ep1_ind])
+
+#     ep2_ind = pt_ind[1,:]
+#     ep2_dist = pt_dist[1,:]
+#     na2 = np.where(ep2_ind == len(basin_rch))
+#     ep2_dist = np.delete(ep2_dist, na2)
+#     ep2_ind = np.delete(ep2_ind, na2)
+#     s2 = np.where(basin_rch[ep2_ind] == rch_id)
+#     ep2_dist = np.delete(ep2_dist, s2)
+#     ep2_ind = np.delete(ep2_ind, s2)
+#     ep2_ngb = np.unique(basin_rch[ep2_ind])
+
+#     # Pulling attribute information for the endpoint neighbors.
+#     ep1_len = np.zeros(len(ep1_ngb))
+#     ep1_flg = np.zeros(len(ep1_ngb))
+#     ep1_acc = np.zeros(len(ep1_ngb))
+#     ep1_wse = np.zeros(len(ep1_ngb))
+#     for idy in list(range(len(ep1_ngb))):
+#         ep1_len[idy] = np.unique(basin_dist[np.where(basin_rch == ep1_ngb[idy])])
+#         ep1_flg[idy] = np.max(basin_flag[np.where(basin_rch == ep1_ngb[idy])])
+#         ep1_acc[idy] = np.median(basin_acc[np.where(basin_rch == ep1_ngb[idy])])
+#         ep1_wse[idy] = np.median(basin_wse[np.where(basin_rch == ep1_ngb[idy])])
+
+#     ep2_len = np.zeros(len(ep2_ngb))
+#     ep2_flg = np.zeros(len(ep2_ngb))
+#     ep2_acc = np.zeros(len(ep2_ngb))
+#     ep2_wse = np.zeros(len(ep2_ngb))
+#     for idy in list(range(len(ep2_ngb))):
+#         ep2_len[idy] = np.unique(basin_dist[np.where(basin_rch == ep2_ngb[idy])])
+#         ep2_flg[idy] = np.max(basin_flag[np.where(basin_rch == ep2_ngb[idy])])
+#         ep2_acc[idy] = np.median(basin_acc[np.where(basin_rch == ep2_ngb[idy])])
+#         ep2_wse[idy] = np.median(basin_wse[np.where(basin_rch == ep2_ngb[idy])])
+
+#     # Creating final arrays.
+#     ep1 = np.array([ep1_ngb, ep1_len, ep1_flg, ep1_acc, ep1_wse]).T
+#     ep2 = np.array([ep2_ngb, ep2_len, ep2_flg, ep2_acc, ep2_wse]).T
+
+#     return ep1, ep2
 
 ###############################################################################
 
@@ -1121,7 +1246,7 @@ def aggregate_rivers(subcls, min_dist):
     level4 = np.array([int(str(point)[0:4]) for point in subcls.basins])
     uniq_basins = np.unique(level4) #np.unique(subcls.basins)
     for ind in list(range(len(uniq_basins))):
-        #print(ind)
+        # print(ind, 'BASIN = ', uniq_basins[ind])
         basin = np.where(level4 == uniq_basins[ind])[0]
         basin_l6 =  subcls.basins[basin]
         basin_rch = subcls.rch_id1[basin]
@@ -1132,7 +1257,7 @@ def aggregate_rivers(subcls, min_dist):
         basin_lon = subcls.lon[basin]
         basin_lat = subcls.lat[basin]
         basin_ind = subcls.ind[basin]
-        basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+        # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
 
         # creating dummy vectors to help keep track of changes.
         dummy_basin_rch = np.copy(basin_rch)
@@ -1153,7 +1278,6 @@ def aggregate_rivers(subcls, min_dist):
         while len(small_rivers_dist) > 0:
             for idx in list(range(len(small_rivers))):
                 # print(idx, small_rivers[idx])
-
                 if small_rivers[idx] == -9999:
                     continue
 
@@ -1162,12 +1286,14 @@ def aggregate_rivers(subcls, min_dist):
                 rch_len = np.unique(basin_dist[rch])
                 rch_l6 = np.unique(basin_l6[rch])[0]
                 #rch_flag = np.unique(basin_flag[rch])
-                rch_x = basin_x[rch]
-                rch_y = basin_y[rch]
+                rch_lat = basin_lat[rch]
+                rch_lon = basin_lon[rch]
+                # rch_x = basin_x[rch]
+                # rch_y = basin_y[rch]
                 rch_ind = basin_ind[rch]
                 end1, end2 = find_neighbors(basin_rch, basin_dist, basin_flag,
-                                            basin_acc, basin_wse, basin_x, basin_y, rch_x,
-                                            rch_y, rch_ind, rch_len, rch_id, rch)
+                                            basin_acc, basin_wse, basin_lon, basin_lat, 
+                                            rch_lon, rch_lat, rch_ind, rch_id, rch)
 
                 # filtering out single neighbors that cross level 6 basin lines.
                 if len(end1) == 1:
@@ -2073,7 +2199,7 @@ def aggregate_lakes(subcls, min_dist):
         basin_lon = subcls.lon[basin]
         basin_lat = subcls.lat[basin]
         basin_ind = subcls.rch_ind2[basin]
-        basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+        # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
 
         #creating dummy vectors to help keep track of changes.
         dummy_basin_rch = np.copy(basin_rch)
@@ -2103,12 +2229,14 @@ def aggregate_lakes(subcls, min_dist):
                 rch_len = np.unique(basin_dist[rch])
                 rch_l6 = np.unique(basin_l6[rch])[0]
                 rch_flag = np.max(np.unique(basin_flag[rch]))
-                rch_x = basin_x[rch]
-                rch_y = basin_y[rch]
+                rch_lat = basin_lat[rch]
+                rch_lon = basin_lon[rch]
+                # rch_x = basin_x[rch]
+                # rch_y = basin_y[rch]
                 rch_ind = basin_ind[rch]
                 end1, end2 = find_neighbors(basin_rch, basin_dist, basin_flag,
-                                            basin_acc, basin_wse, basin_x, basin_y, rch_x,
-                                            rch_y, rch_ind, rch_len, rch_id, rch)
+                                            basin_acc, basin_wse, basin_lon, basin_lat, 
+                                            rch_lon, rch_lat, rch_ind, rch_id, rch)
 
                 # filtering out single neighbors that cross level 6 basin lines.
                 if len(end1) == 1:
@@ -2876,7 +3004,7 @@ def aggregate_dams(subcls, min_dist):
         basin_lon = subcls.lon[basin]
         basin_lat = subcls.lat[basin]
         basin_ind = subcls.rch_ind3[basin]
-        basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+        # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
 
         #creating dummy vectors to help keep track of changes.
         dummy_basin_rch = np.copy(basin_rch)
@@ -2906,12 +3034,14 @@ def aggregate_dams(subcls, min_dist):
                 rch_len = np.unique(basin_dist[rch])
                 rch_l6 = np.unique(basin_l6[rch])[0]
                 rch_flag = np.max(np.unique(basin_flag[rch]))
-                rch_x = basin_x[rch]
-                rch_y = basin_y[rch]
+                rch_lat = basin_lat[rch]
+                rch_lon = basin_lon[rch]
+                # rch_x = basin_x[rch]
+                # rch_y = basin_y[rch]
                 rch_ind = basin_ind[rch]
                 end1, end2 = find_neighbors(basin_rch, basin_dist, basin_flag,
-                                            basin_acc, basin_wse, basin_x, basin_y, rch_x,
-                                            rch_y, rch_ind, rch_len, rch_id, rch)
+                                            basin_acc, basin_wse, basin_lon, basin_lat, 
+                                            rch_lon, rch_lat, rch_ind, rch_id, rch)
 
                 # filtering out single neighbors that cross level 6 basin lines.
                 if len(end1) == 1:
@@ -3634,13 +3764,15 @@ def order_reaches(basin, basin_rch, basin_acc, basin_wse, basin_dist, basin_flag
         rch_ind = segInd[basin[rch]]
         rch_x = basin_x[rch]
         rch_y = basin_y[rch]
+        rch_lon = basin_lon[rch]
+        rch_lat = basin_lat[rch]
         rch_len = np.unique(basin_dist[rch])
         rch_acc = np.max(basin_acc[rch])
         rch_wse = np.min(basin_wse[rch])
 
         # Find upstream neighboring reaches.
         ngh1, ngh2 = find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc,
-                          basin_wse, basin_x, basin_y, rch_x, rch_y, rch_ind, rch_len,
+                          basin_wse, basin_lon, basin_lat, rch_lon, rch_lat, rch_ind,
                           rch_id, rch)
 
         # No neighbors. Go to next reach with highest flow accumulation.
@@ -4469,3 +4601,4 @@ def update_netcdf(nc_file, centerlines):
         data.close()
 
 ###############################################################################
+
