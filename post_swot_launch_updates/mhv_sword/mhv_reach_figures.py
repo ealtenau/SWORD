@@ -169,7 +169,11 @@ plt.scatter(subcls.x[rch4], subcls.y[rch4], c = 'cyan')
 plt.scatter(subcls.x[test], subcls.y[test], c = subcls.rch_ind2[test])
 plt.show()
 
+# plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_ind2[rch])
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
+plt.scatter(subcls.x[rch[eps_ind[final_eps]]], subcls.y[rch[eps_ind[final_eps]]], c = 'red')
+plt.show()
 
-plt.scatter(basin_lon[rch], basin_lat[rch], c = 'cyan')
-plt.scatter(basin_lon[rch2], basin_lat[rch2], c = 'red')
+rch = np.where(subcls.rch_id2 == 19791)[0]
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_ind2[rch])
 plt.show()

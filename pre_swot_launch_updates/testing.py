@@ -193,3 +193,36 @@ for lat in enumerate(latitude):
 river_min_dist = 10000
 subcls.rch_id2, subcls.rch_len2,\
     subcls.type2 = aggregate_rivers(subcls, river_min_dist)
+
+
+
+
+fn = '/Users/ealteanau/Documents/SWORD_Dev/inputs/GRIT/gis_files/GRIT_hb31.gpkg'
+grit = gp.read_file(fn)
+
+
+
+
+
+
+plt.scatter(x_coords, y_coords, c='blue')
+plt.scatter(ngh_x, ngh_y, c='red')
+plt.scatter(ngh_x[0], ngh_y[0], c='gold')
+plt.show()
+
+
+coords_1 = (y_pt, x_pt)
+
+#end 1 would use coords_2, end 2 would use coords_3
+ngh_x = cl_x[np.where(reach_id[0,:] == reach_id[0,end1_pt])]
+ngh_y = cl_y[np.where(reach_id[0,:] == reach_id[0,end1_pt])]
+d=[]
+for c in list(range(len(ngh_x))):
+    temp_coords = (ngh_y[c], ngh_x[c])
+    d.append(geopy.distance.geodesic(coords_2, temp_coords).m)
+append_x = ngh_x[np.where(d == np.min(d))]
+append_y = ngh_y[np.where(d == np.min(d))]
+x_coords = np.insert(x_coords, 0, append_x, axis=0)
+y_coords = np.insert(y_coords, 0, append_y, axis=0)
+
+    

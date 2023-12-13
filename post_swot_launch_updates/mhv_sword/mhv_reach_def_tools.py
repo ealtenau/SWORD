@@ -1055,8 +1055,8 @@ def update_rch_indexes(subcls, new_rch_id):
 
             # Re-ordering points based on updated endpoints.
             new_ind = np.zeros(len(rch))
-            new_ind[final_eps[0]]=1
-            idz = final_eps[0]
+            new_ind[eps_ind[final_eps[0]]]=1
+            idz = eps_ind[final_eps[0]]
             count = 2
             while np.min(new_ind) == 0:
                 d = np.sqrt((rch_x[idz]-rch_x)**2 + (rch_y[idz]-rch_y)**2)
