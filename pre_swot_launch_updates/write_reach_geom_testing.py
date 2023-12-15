@@ -159,17 +159,14 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, region):
 #############################################################################################
 
 #read in netcdf data. 
-# parser = argparse.ArgumentParser()
-# parser.add_argument("region", help="continental region", type = str)
-# parser.add_argument("version", help="version", type = str)
-# parser.add_argument("local_processing", help="'True' for local machine, 'False' for server", type = str)
-# args = parser.parse_args()
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="continental region", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("local_processing", help="'True' for local machine, 'False' for server", type = str)
+args = parser.parse_args()
 
-# region = args.region
-# version = args.version
-
-region = 'NA'
-version = 'v16'
+region = args.region
+version = args.version
 
 if args.local_processing == 'True':
     outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
@@ -178,7 +175,6 @@ else:
 
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/testing/na_sword_v16.nc'
 
 data = nc.Dataset(fn)
 
@@ -286,7 +282,7 @@ reaches = gp.GeoDataFrame(reaches)
 reaches.set_geometry(col='geometry') #removed "inplace=True" option on leopold. 
 reaches = reaches.set_crs(4326, allow_override=True)
 
-#write geopackage (continental scale)
+# write geopackage (continental scale)
 print('Writing GeoPackage File')
 if os.path.exists(outpath+'gpkg/'):
     outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_reaches_' + version + '.gpkg'
@@ -299,23 +295,23 @@ reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
-#write as shapefile per level2 basin.
-# print('Writing Shapefiles')
-# if os.path.exists(outpath + 'shp/' + region + '/'):
-#     shpdir = outpath + 'shp/' + region + '/'
-# else:
-#     os.makedirs(outpath + 'shp/' + region + '/')
-#     shpdir = outpath + 'shp/' + region + '/'
+# write as shapefile per level2 basin.
+print('Writing Shapefiles')
+if os.path.exists(outpath + 'shp/' + region + '/'):
+    shpdir = outpath + 'shp/' + region + '/'
+else:
+    os.makedirs(outpath + 'shp/' + region + '/')
+    shpdir = outpath + 'shp/' + region + '/'
 
-# start = time.time()
-# level2 = np.array([int(str(r)[0:2]) for r in reaches['reach_id']])
-# unq_l2 = np.unique(level2)
-# rch_cp = reaches.copy(); rch_cp['level2'] = level2
-# for lvl in list(range(len(unq_l2))):
-#     outshp = shpdir + region.lower() + "_sword_reaches_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
-#     subset = rch_cp[rch_cp['level2'] == unq_l2[lvl]]
-#     subset = subset.drop(columns=['level2'])
-#     subset.to_file(outshp)
-#     del(subset)
+start = time.time()
+level2 = np.array([int(str(r)[0:2]) for r in reaches['reach_id']])
+unq_l2 = np.unique(level2)
+rch_cp = reaches.copy(); rch_cp['level2'] = level2
+for lvl in list(range(len(unq_l2))):
+    outshp = shpdir + region.lower() + "_sword_reaches_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
+    subset = rch_cp[rch_cp['level2'] == unq_l2[lvl]]
+    subset = subset.drop(columns=['level2'])
+    subset.to_file(outshp)
+    del(subset)
 end = time.time()
 print('Finished SHPs in: '+str(np.round((end-start)/60,2))+' min')
