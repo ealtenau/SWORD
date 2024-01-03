@@ -829,7 +829,7 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
 
     #for grwl the values were 100 and 200 
     if len(rch) < 10:
-        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = radius)
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 6, distance_upper_bound = radius)
     else:
         pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = radius)
 

@@ -121,8 +121,8 @@ plt.scatter(subcls.x[r3], subcls.y[r3], c = 'cyan')
 plt.show()
 
 
-rch = np.where(subcls.rch_id5 == 6133)[0]
-plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.seg[rch])
+rch = np.where(subcls.rch_id2 == 25516)[0]
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
 plt.show()
 
 
@@ -151,9 +151,9 @@ plt.show()
 
 
 
-rch1 = np.where(subcls.rch_id1 == 7875)[0]
-rch2 = np.where(subcls.rch_id1 == 36365)[0]
-rch3 = np.where(subcls.rch_id1 == 7861)[0]
+rch1 = np.where(subcls.rch_id1 == 25498)[0]
+rch2 = np.where(subcls.rch_id1 == 25516)[0]
+rch3 = np.where(subcls.rch_id1 == 25526)[0]
 rch4 = np.where(subcls.rch_id1 == 7874)[0]
 plt.scatter(subcls.x[rch1], subcls.y[rch1], c = 'black')
 plt.scatter(subcls.x[rch2], subcls.y[rch2], c = 'red')
@@ -174,6 +174,25 @@ plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
 plt.scatter(subcls.x[rch[eps_ind[final_eps]]], subcls.y[rch[eps_ind[final_eps]]], c = 'red')
 plt.show()
 
-rch = np.where(subcls.rch_id2 == 19791)[0]
-plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_ind2[rch])
+rch = np.where(subcls.rch_id2 ==  1152)[0]
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
+plt.show()
+
+rch = np.where(basin_rch == 25500)[0]
+rch2 = np.where(basin_rch == 25516)[0]
+rch3 = np.where(basin_rch == 25526)[0]
+rch4 = np.where(basin_rch == 37374)[0]
+
+plt.scatter(basin_lon[rch], basin_lat[rch], c = 'black')
+plt.scatter(basin_lon[rch2], basin_lat[rch2], c = 'red')
+plt.scatter(basin_lon[rch3], basin_lat[rch3], c = 'blue')
+plt.scatter(basin_lon[rch4], basin_lat[rch4], c = 'gold')
+plt.scatter(basin_lon[rch3], basin_lat[rch3], c = subcls.ind[rch3])
+plt.show()
+
+
+#try removing duplicate rows/indexes of x-y before finding endpoints. There seem to be overlapping points a lot.
+
+
+plt.scatter(rch_x, rch_y, c = rch_segs)
 plt.show()
