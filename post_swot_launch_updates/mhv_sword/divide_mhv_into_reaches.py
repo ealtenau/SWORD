@@ -59,7 +59,7 @@ uniq_level2 = np.unique(level2_basins)
 uniq_level2 = np.delete(uniq_level2, 0)
 cnt = 0
 start_id = 0
-for ind in list(range(2,4)):#len(uniq_level2))):
+for ind in list(range(len(uniq_level2))):
 
     print('STARTING BASIN: ' + str(uniq_level2[ind]))
 
