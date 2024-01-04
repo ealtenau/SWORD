@@ -174,7 +174,7 @@ plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
 plt.scatter(subcls.x[rch[eps_ind[final_eps]]], subcls.y[rch[eps_ind[final_eps]]], c = 'red')
 plt.show()
 
-rch = np.where(subcls.rch_id2 ==  1152)[0]
+rch = np.where(subcls.rch_id4 ==  2351)[0]
 plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
 plt.show()
 
