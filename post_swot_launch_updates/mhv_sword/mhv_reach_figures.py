@@ -175,7 +175,7 @@ plt.scatter(subcls.x[rch[eps_ind[final_eps]]], subcls.y[rch[eps_ind[final_eps]]]
 plt.show()
 
 rch = np.where(subcls.rch_id4 ==  2351)[0]
-plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_ind4[rch])
 plt.show()
 
 rch = np.where(basin_rch == 25500)[0]
@@ -194,5 +194,18 @@ plt.show()
 #try removing duplicate rows/indexes of x-y before finding endpoints. There seem to be overlapping points a lot.
 
 
-plt.scatter(rch_x, rch_y, c = rch_segs)
+plt.scatter(subcls.x[rch], subcls.y[rch], c = rch_ind_temp)
+plt.scatter(subcls.x[rch[divs]], subcls.y[rch[divs]], c = 'red')
+plt.show()
+
+r = np.where(subcls.reach_id == 74249400181)[0]
+
+plt.scatter(subcls.x[r], subcls.y[r], c = subcls.rch_ind6[r])
+plt.plot(subcls.x[r], subcls.y[r])
+plt.show()
+
+plt.scatter(subcls.x[r], subcls.y[r], c = subcls.seg[r])
+plt.show()
+
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.seg[rch])
 plt.show()

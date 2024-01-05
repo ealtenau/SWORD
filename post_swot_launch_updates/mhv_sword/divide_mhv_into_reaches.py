@@ -168,6 +168,11 @@ for ind in list(range(len(uniq_level2))):
     subcls.rch_dist5 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.rch_id5,
                                         subcls.facc, subcls.rch_ind5)
 
+    print('Checking Reaches')
+    #Check and correct reaches with odd index problems. 
+    issues = rdt.check_rchs(subcls.rch_id5, subcls.rch_dist5)
+    rdt.correct_rchs(subcls, issues)
+
     #########################################################################
     #TOPOLOGY
 
@@ -194,6 +199,9 @@ for ind in list(range(len(uniq_level2))):
     for j in list(range(len(subcls.reach_id))):
         subcls.type6[j] = int(str(subcls.reach_id[j])[10:11])
 
+    # Checking Reaches again for final percentage of issues.
+    issues_final = rdt.check_rchs(subcls.reach_id, subcls.rch_dist6)
+
     print('Aggregating Data')
     # Append current data to previous data.
     centerlines.reach_id[level2] = subcls.reach_id
@@ -209,7 +217,8 @@ for ind in list(range(len(uniq_level2))):
 
     end=time.time()
     print('Time to Create Reaches and Nodes: ' +
-          str(np.round((end-start)/60, 2)) + ' min')
+          str(np.round((end-start)/60, 2)) + ' min. Percent issues: ' 
+          + str(np.round(len(issues_final)/len(np.unique(subcls.reach_id))*100,2)))
 
 # Update NetCDF File.
 print('Updating NetCDF')
