@@ -159,7 +159,7 @@ def calc_segDist(subcls_lon, subcls_lat, subcls_rch_id, subcls_facc,
     uniq_segs = np.unique(subcls_rch_id)
     for ind in list(range(len(uniq_segs))):
         #for a single reach, reproject lat-lon coordinates to utm.
-        print(ind, uniq_segs[ind])
+        # print(ind, uniq_segs[ind])
         seg = np.where(subcls_rch_id == uniq_segs[ind])[0]
         seg_lon = subcls_lon[seg]
         seg_lat = subcls_lat[seg]
