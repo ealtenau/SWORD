@@ -93,8 +93,8 @@ for ind in list(range(len(uniq_level2))):
     subcls.lake_id = data.lake_id[level2]
     subcls.strorder = data.strorder[level2]
     subcls.eps = data.eps[level2]
-    subcls.lon[np.where(subcls.lon < -180)] = -180.0
-    subcls.lon[np.where(subcls.lon > 180)] = 180.0
+    subcls.lon[np.where(subcls.lon <= -180)] = -179.9999
+    subcls.lon[np.where(subcls.lon >= 180)] = 179.9999
     subcls.x = np.copy(subcls.lon)
     subcls.y = np.copy(subcls.lat)
 
