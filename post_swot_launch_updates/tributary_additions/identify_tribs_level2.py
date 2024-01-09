@@ -1,3 +1,10 @@
+from __future__ import division
+import os
+if os.path.exists('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_swot_launch_updates/tributary_additions/'):
+    os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_swot_launch_updates/tributary_additions/')
+else:
+    os.chdir('/afs/cas.unc.edu/users/e/a/ealtenau/SWORD/post_swot_launch_updates/tributary_additions/')
+import tributary_addition_functions as tfs
 import requests
 import json
 import geopandas as gp
@@ -12,7 +19,10 @@ import earthaccess
 from earthaccess import Auth, DataCollections, DataGranules, Store
 import numpy as np
 
-folder = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/temp_data/'
+sourceFile = open('/Users/ealteanau/Documents/SWORD_Dev/swot_data/temp_data/out_messages.txt', 'w')
+print('Hello, Python!', file = sourceFile)
+
+folder = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/temp_data/tiles/'
 if not os.path.exists(folder):
     os.makedirs(folder)
 
@@ -33,13 +43,15 @@ for ind in list(range(len(subset))):
     tfs.download_data(granule, start_date, end_date, folder)
 
     if len(os.listdir(folder)) == 0:
-        print ('no SWOT data for tile')
+        print(str(tiles.pass_tile[subset[ind]]) + ' - no SWOT data for tile', file = sourceFile)
         continue
     
     else:
         #read in / aggregate data
+        print(str(tiles.pass_tile[subset[ind]]) + ' - ' + str(len(os.listdir(folder))) + 'tiles', file = sourceFile)
         pixc_lon, pixc_lat = tfs.read_pixc_data(folder)
-        # delete files in folder.
+        # for f in os.listdir(folder):
+        #     os.remove(folder+f) 
 
         #read in format sword
         sword_lon, sword_lat, sword_tribs = tfs.read_sword(sword_dir, pixc_lon, pixc_lat, cont)
@@ -87,3 +99,4 @@ for ind in list(range(len(subset))):
         plt.show()
 
 
+sourceFile.close()
