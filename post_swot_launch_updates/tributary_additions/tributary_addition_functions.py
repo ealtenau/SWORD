@@ -88,3 +88,21 @@ def read_mhv(mhv_dir, pixc_lon, pixc_lat, cont):
     ur = np.array([xmax, ymax])
 
     mhv_fn = mhv_dir+cont+'_mhv_sword.nc'
+    mhv = nc.Dataset(mhv_fn)
+    mhv_lon_all = mhv.groups['centerlines'].variables['x'][:]
+    mhv_lat_all = mhv.groups['centerlines'].variables['y'][:]
+    mhv_flag_all =  mhv.groups['centerlines'].variables['swordflag'][:]
+    mhv_seg_all =  mhv.groups['centerlines'].variables['segID'][:]
+    mhv_dist_all = mhv.groups['centerlines'].variables['segDist'][:]
+    mhv_points = [(mhv_lon_all[i], mhv_lat_all[i]) for i in range(len(mhv_lon_all))]
+    mhv_pts = np.array(mhv_points)
+    mhv_idx = np.all(np.logical_and(ll <= mhv_pts, mhv_pts <= ur), axis=1)
+    mhv_lon = mhv_lon_all[mhv_idx]
+    mhv_lat = mhv_lat_all[mhv_idx]
+    mhv_flag = mhv_flag_all[mhv_idx]
+    mhv_seg = mhv_seg_all[mhv_idx]
+    mhv_dist = mhv_dist_all[mhv_idx]
+
+    return mhv_lon, mhv_lat, mhv_flag, mhv_seg, mhv_dist
+
+#############################################################################################
