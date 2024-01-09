@@ -24,17 +24,16 @@ tiles = pd.read_csv(tile_fn)
 
 start_date = "2023-01-01 12:00:00"
 end_date = "2023-12-30 19:43:00"
-granule = '*007_153R*'
 
-results = earthaccess.search_data(short_name = 'SWOT_L2_HR_PIXC_1.1' ,
-                                  temporal = (start_date, end_date),
-                                  granule_name = granule)
+subset = np.where(tiles.PFAF_ID == 12)[0]
 
-downloads = []
-for g in results:
-    for l in earthaccess.results.DataGranule.data_links(g):
-        if 'archive.swot.podaac.earthdata.nasa.gov/podaac-swot-ops-cumulus-protected/' in l:
-            downloads.append(l)            
-print(len(downloads))
+for ind in list(range(len(subset))):
+    print(ind, len(subset)-1)
+    granule = '*'+str(tiles.pass_tile[subset[ind]])+'*' 
+    tfs.download_data(granule, start_date, end_date, folder)
+    
+    #read in / aggregate data
 
-earthaccess.download(downloads, folder)
+    #read in format sword
+
+    #spatial query
