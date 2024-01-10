@@ -25,7 +25,9 @@ def download_data(granule, start_date, end_date, folder):
         for g in results:
             for l in earthaccess.results.DataGranule.data_links(g):
                 if 'archive.swot.podaac.earthdata.nasa.gov/podaac-swot-ops-cumulus-protected/' in l:
-                    downloads.append(l)            
+                    downloads.append(l)
+        if len(downloads) > 4:
+            downloads = downloads[0:4]            
         earthaccess.download(downloads, folder)
 
 #############################################################################################
@@ -33,9 +35,7 @@ def download_data(granule, start_date, end_date, folder):
 def read_pixc_data(folder):
     files = os.listdir(folder)
     for f in list(range(len(files))):
-        pixc_df = nc.Dataset(files[f])
-        
-        pixc = nc.Dataset(pixc_fn)
+        pixc = nc.Dataset(folder+files[f])
         pixc_lat = ma.getdata(pixc.groups['pixel_cloud'].variables['latitude'][:])
         pixc_lon = ma.getdata(pixc.groups['pixel_cloud'].variables['longitude'][:])
         pixc_class = ma.getdata(pixc.groups['pixel_cloud'].variables['classification'][:])
@@ -43,10 +43,12 @@ def read_pixc_data(folder):
         pixc_lon = pixc_lon[np.where(pixc_class == 4)]
         # pixc_lat = pixc_lat[np.where((pixc_class > 2) & (pixc_class < 5))]
         # pixc_lon = pixc_lon[np.where((pixc_class > 2) & (pixc_class < 5))]
+        # print(np.min(pixc.groups['pixel_cloud'].variables['latitude'][:]), np.max(pixc.groups['pixel_cloud'].variables['latitude'][:]))
+        # print(np.min(pixc.groups['pixel_cloud'].variables['longitude'][:]), np.max(pixc.groups['pixel_cloud'].variables['longitude'][:]))
         pixc.close()
         if f == 0:
-            pixc_x = np.array(pixc_lat)
-            pixc_y = np.array(pixc_lon)
+            pixc_x = np.array(pixc_lon)
+            pixc_y = np.array(pixc_lat)
         else:
             pixc_x = np.append(pixc_x, pixc_lon)
             pixc_y = np.append(pixc_y, pixc_lat)
@@ -55,7 +57,7 @@ def read_pixc_data(folder):
 
 #############################################################################################
 
-def read_sword(sword_dir, pixc_lon, pixc_lat, cont):
+def subset_sword(sword, pixc_lon, pixc_lat):
     xmin = np.min(pixc_lon)
     xmax = np.max(pixc_lon)
     ymin = np.min(pixc_lat)
@@ -63,8 +65,6 @@ def read_sword(sword_dir, pixc_lon, pixc_lat, cont):
     ll = np.array([xmin, ymin])  # lower-left
     ur = np.array([xmax, ymax])
     
-    sword_fn = sword_dir+cont+'_sword_v16.nc'
-    sword = nc.Dataset(sword_fn)
     sword_lon_all = sword.groups['nodes'].variables['x'][:]
     sword_lat_all =sword.groups['nodes'].variables['y'][:]
     sword_tribs_all =sword.groups['nodes'].variables['trib_flag'][:]
@@ -74,12 +74,12 @@ def read_sword(sword_dir, pixc_lon, pixc_lat, cont):
     sword_lon = sword_lon_all[sword_idx]
     sword_lat = sword_lat_all[sword_idx]
     sword_tribs = sword_tribs_all[sword_idx]
-
+    
     return sword_lon, sword_lat, sword_tribs
 
 #############################################################################################
 
-def read_mhv(mhv_dir, pixc_lon, pixc_lat, cont):
+def subset_mhv(mhv, pixc_lon, pixc_lat):
     xmin = np.min(pixc_lon)
     xmax = np.max(pixc_lon)
     ymin = np.min(pixc_lat)
@@ -87,8 +87,6 @@ def read_mhv(mhv_dir, pixc_lon, pixc_lat, cont):
     ll = np.array([xmin, ymin])  # lower-left
     ur = np.array([xmax, ymax])
 
-    mhv_fn = mhv_dir+cont+'_mhv_sword.nc'
-    mhv = nc.Dataset(mhv_fn)
     mhv_lon_all = mhv.groups['centerlines'].variables['x'][:]
     mhv_lat_all = mhv.groups['centerlines'].variables['y'][:]
     mhv_flag_all =  mhv.groups['centerlines'].variables['swordflag'][:]
@@ -103,6 +101,6 @@ def read_mhv(mhv_dir, pixc_lon, pixc_lat, cont):
     mhv_seg = mhv_seg_all[mhv_idx]
     mhv_dist = mhv_dist_all[mhv_idx]
 
-    return mhv_lon, mhv_lat, mhv_flag, mhv_seg, mhv_dist
+    return mhv_lon, mhv_lat, mhv_flag, mhv_seg, mhv_dist, mhv_idx
 
 #############################################################################################
