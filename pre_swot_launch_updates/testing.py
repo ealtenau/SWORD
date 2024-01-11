@@ -225,4 +225,10 @@ append_y = ngh_y[np.where(d == np.min(d))]
 x_coords = np.insert(x_coords, 0, append_x, axis=0)
 y_coords = np.insert(y_coords, 0, append_y, axis=0)
 
-    
+fn='/Users/ealteanau/Documents/SWORD_Dev/swot_data/temp_data/tiles/SWOT_L2_HR_PIXC_501_014_215L_20230425T052849_20230425T052900_PIB0_01.nc'
+data=nc.Dataset(fn)
+data.geospatial_lon_min
+data.geospatial_lon_max
+data.geospatial_lat_min
+data.geospatial_lat_max
+data.close()

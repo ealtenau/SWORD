@@ -21,14 +21,16 @@ def download_data(granule, start_date, end_date, folder):
                                             temporal = (start_date, end_date),
                                             granule_name = granule)
     if len(results) > 0:
-        downloads = []
+        downloads_all = []
         for g in results:
             for l in earthaccess.results.DataGranule.data_links(g):
                 if 'archive.swot.podaac.earthdata.nasa.gov/podaac-swot-ops-cumulus-protected/' in l:
-                    downloads.append(l)
-        if len(downloads) > 4:
-            downloads = downloads[0:4]            
+                    downloads_all.append(l)
+        if len(downloads_all) > 4:
+            downloads = downloads_all[0:4]            
         earthaccess.download(downloads, folder)
+    
+    return(len(downloads_all))
 
 #############################################################################################
 
@@ -104,3 +106,44 @@ def subset_mhv(mhv, pixc_lon, pixc_lat):
     return mhv_lon, mhv_lat, mhv_flag, mhv_seg, mhv_dist, mhv_idx
 
 #############################################################################################
+
+def update_mhv(mhv, index, add_points):
+    if 'sword_add' in mhv.groups['centerlines'].variables:
+        mhv.groups['centerlines'].variables['sword_add'][index[add_points]] = 1
+    else:
+        mhv.groups['centerlines'].createVariable('sword_add', 'i8', ('num_points',))
+        mhv.groups['centerlines'].variables['sword_add'][index[add_points]] = 1
+
+#############################################################################################
+
+def filter_l2_flags(mhv, basin):
+    
+    segs = mhv.groups['centerlines'].variables['new_segs'][:]
+    add = mhv.groups['centerlines'].variables['sword_add'][:]
+    flag = mhv.groups['centerlines'].variables['swordflag_filt'][:]
+
+    mhv_l2 = np.array([int(str(ind)[0:2]) for ind in 
+                   mhv.groups['centerlines'].variables['basin_code'][:]])
+    l2_pts = np.where(mhv_l2 == basin)[0]
+    l2_segs = segs[l2_pts]
+    l2_add = add[l2_pts]
+    l2_flag = flag[l2_pts]
+
+    new_flag = np.zeros(len(l2_segs))
+    unq_segs = np.unique(l2_segs)
+    for ind in list(range(len(unq_segs))):
+        pts = np.where(l2_segs == unq_segs[ind])[0]
+        valid = np.where(l2_flag[pts] == 0)[0]
+        flagged = np.where(l2_add[pts] == 1)[0]
+        perc = (flagged/valid)*100
+        num_pts = len(flagged)
+        if perc > 70 or num_pts > 100:
+            new_flag[pts] = 1
+
+    
+    #find points that are not sword
+    #find points that are flagged to add
+    #find percentage and number of those points
+    #decide whether to add the entire segment or not 
+    #save as new 'sword_add_filt' variable
+    #save geopackage file?
