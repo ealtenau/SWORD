@@ -16,7 +16,7 @@ import netCDF4 as nc
 
 #############################################################################################
 
-def download_data(granule, start_date, end_date, folder):
+def download_data_verbose(granule, start_date, end_date, folder):
     results = earthaccess.search_data(short_name = 'SWOT_L2_HR_PIXC_1.1' ,
                                             temporal = (start_date, end_date),
                                             granule_name = granule)
@@ -30,7 +30,24 @@ def download_data(granule, start_date, end_date, folder):
             downloads = downloads_all[0:4]            
         earthaccess.download(downloads, folder)
     
-    return(len(downloads_all))
+    return(len(results))
+
+#############################################################################################
+
+def download_data(auth, granule, start_date, end_date, folder):
+    Query = DataGranules(auth).short_name("SWOT_L2_HR_PIXC_1.1").temporal(start_date, end_date).granule_name(granule)
+    num_hits = Query.hits()
+    results = Query.get()
+    if num_hits > 0:
+        downloads_all = []
+        for g in list(range(num_hits)):
+            for l in results[g].data_links():
+                if 'archive.swot.podaac.earthdata.nasa.gov/podaac-swot-ops-cumulus-protected/' in l:
+                    downloads_all.append(l)
+        if len(downloads_all) > 4:
+            downloads = downloads_all[0:4]            
+        earthaccess.download(downloads, folder)
+    return(num_hits)
 
 #############################################################################################
 
@@ -116,7 +133,7 @@ def update_mhv(mhv, index, add_points):
 
 #############################################################################################
 
-def filter_l2_flags(mhv, basin):
+def filter_l2_flags(mhv, basin, outfile):
     
     segs = mhv.groups['centerlines'].variables['new_segs'][:]
     add = mhv.groups['centerlines'].variables['sword_add'][:]
@@ -130,20 +147,89 @@ def filter_l2_flags(mhv, basin):
     l2_flag = flag[l2_pts]
 
     new_flag = np.zeros(len(l2_segs))
-    unq_segs = np.unique(l2_segs)
+    unq_segs = np.unique(l2_segs[np.where(l2_add > 0)[0]])
     for ind in list(range(len(unq_segs))):
         pts = np.where(l2_segs == unq_segs[ind])[0]
         valid = np.where(l2_flag[pts] == 0)[0]
         flagged = np.where(l2_add[pts] == 1)[0]
-        perc = (flagged/valid)*100
+        perc = (len(flagged)/len(valid))*100
         num_pts = len(flagged)
-        if perc > 70 or num_pts > 100:
-            new_flag[pts] = 1
+        if len(pts) < 100: #less than ~10 km
+            if perc > 90:
+                new_flag[pts] = 1
+        elif 100 <= len(pts) <= 1000: #between ~10 km and ~100 km 
+            if perc > 70:
+                new_flag[pts] = 1
+        else: # greater than ~100 km
+            if perc > 50:
+                new_flag[pts] = 1
 
-    
-    #find points that are not sword
-    #find points that are flagged to add
-    #find percentage and number of those points
-    #decide whether to add the entire segment or not 
-    #save as new 'sword_add_filt' variable
-    #save geopackage file?
+    #update MHV netcdf. 
+    if 'sword_add_filt' in mhv.groups['centerlines'].variables:
+        mhv.groups['centerlines'].variables['sword_add_filt'][l2_pts] = new_flag
+    else:
+        mhv.groups['centerlines'].createVariable('sword_add_filt', 'i8', ('num_points',))
+        mhv.groups['centerlines'].variables['sword_add_filt'][l2_pts] = new_flag
+
+    #save data as geopackage file.
+    gpkg = gp.GeoDataFrame([
+        mhv.groups['centerlines'].variables['x'][l2_pts],
+        mhv.groups['centerlines'].variables['y'][l2_pts],
+        mhv.groups['centerlines'].variables['cl_id'][l2_pts],
+        mhv.groups['centerlines'].variables['segID'][l2_pts],
+        mhv.groups['centerlines'].variables['strmorder'][l2_pts],
+        mhv.groups['centerlines'].variables['segInd'][l2_pts],
+        mhv.groups['centerlines'].variables['segDist'][l2_pts],
+        mhv.groups['centerlines'].variables['p_width'][l2_pts],
+        mhv.groups['centerlines'].variables['p_height'][l2_pts],
+        mhv.groups['centerlines'].variables['flowacc'][l2_pts],
+        mhv.groups['centerlines'].variables['swordflag_filt'][l2_pts],
+        mhv.groups['centerlines'].variables['new_segs'][l2_pts],
+        mhv.groups['centerlines'].variables['new_segs_ind'][l2_pts],
+        mhv.groups['centerlines'].variables['new_segs_dist'][l2_pts],
+        mhv.groups['centerlines'].variables['new_segs_eps'][l2_pts],
+        mhv.groups['centerlines'].variables['reach_id'][l2_pts],
+        mhv.groups['centerlines'].variables['rch_len'][l2_pts],
+        mhv.groups['centerlines'].variables['node_id'][l2_pts],
+        mhv.groups['centerlines'].variables['node_len'][l2_pts],
+        mhv.groups['centerlines'].variables['sword_add'][l2_pts],
+        mhv.groups['centerlines'].variables['sword_add_filt'][l2_pts]
+    ]).T 
+
+    gpkg.rename(
+        columns={
+            0:"x",
+            1:"y",
+            2:"cl_id",
+            3:"segID",
+            4:"strmorder",
+            5:"segInd",
+            6:"segDist",
+            7:"p_width",
+            8:"p_height",
+            9:"flowacc",
+            10:"swordflag_filt",
+            11:"new_segs",
+            12:"new_segs_ind",
+            13:"new_segs_dist",
+            14:"new_segs_eps",
+            15:"reach_id",
+            16:"rch_len",
+            17:"node_id",
+            18:"node_len",
+            19:"sword_add",
+            20:"sword_add_filt",
+            },inplace=True)
+
+    gpkg = gpkg.apply(pd.to_numeric, errors='ignore') 
+    geom = gp.GeoSeries(map(Point, zip(mhv.groups['centerlines'].variables['x'][l2_pts], 
+                                       mhv.groups['centerlines'].variables['y'][l2_pts])))
+    gpkg['geometry'] = geom
+    gpkg = gp.GeoDataFrame(gpkg)
+    gpkg.set_geometry(col='geometry')
+    gpkg = gpkg.set_crs(4326, allow_override=True)
+    #save data.
+    outgpkg = outfile
+    gpkg.to_file(outgpkg, driver='GPKG', layer='points')           
+
+#############################################################################################

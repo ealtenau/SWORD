@@ -13,15 +13,6 @@ import matplotlib.pyplot as plt
 from scipy import spatial as sp
 import argparse
 import earthaccess
-# from earthaccess import Auth, DataCollections, DataGranules, Store
-# import requests
-# import json
-# import geopandas as gp
-# import glob
-# from pathlib import Path
-# import zipfile
-# from urllib.request import urlretrieve
-# from json import dumps
 
 parser = argparse.ArgumentParser()
 parser.add_argument("basin", help="<Required> HYDROBASINS Level 2 Basin", type = int)
@@ -45,8 +36,7 @@ if not os.path.exists(folder):
     os.makedirs(folder)
 
 # Log into EarthData.
-# auth = earthaccess.login(strategy="interactive", persist=True) #if you do not have a netrc created, this line will do so with your credentials
-auth = earthaccess.login(strategy="netrc")  #if you have created a netrc prior with your NASA Earthdata credentials, use strategy="netrc" to login
+auth = earthaccess.login(strategy="netrc")  
 
 # Read in tile information.
 basin = args.basin
@@ -69,12 +59,12 @@ print('Starting Basin ' + str(basin))
 print('Starting Basin ' + str(basin) + ': ' + time.strftime("%d-%b-%Y %H:%M:%S"), file = sourceFile) 
 for ind in list(range(len(tiles))):
     start = time.time()
-    print(ind, len(tiles)-1, tiles[ind])
 
     # Search and download tiles. 
     granule = '*'+str(tiles[ind])+'*' 
-    num_files = tfs.download_data(granule, start_date, end_date, folder)
-        
+    num_files = tfs.download_data_verbose(granule, start_date, end_date, folder)
+    print(ind, len(tiles)-1, tiles[ind], num_files)
+       
     if len(os.listdir(folder)) == 0:
         print(str(ind) + ', ' + str(tiles[ind]) + 
                 ' - no SWOT data for tile', file = sourceFile)
@@ -115,11 +105,11 @@ for ind in list(range(len(tiles))):
             flagged = np.where(keep_array[seg] == 1)[0]
             perc = (len(flagged)/len(seg))*100
             if len(flagged) > 55 or perc > 90:
-                keep_channels.append(add_channels[idx])
-                
-        ### will need to set length or # of points criteria for adding.
+                keep_channels.append(add_channels[idx])         
         add_points = np.where(np.in1d(mhv_seg, keep_channels))[0]
-        # update_mhv(mhv, index, add_points)
+        
+        #update mhv netcdf file. 
+        tfs.update_mhv(mhv, index, add_points)
 
         if len(add_points) > 0:
             plt.figure(figsize=(7,7))
@@ -136,15 +126,11 @@ for ind in list(range(len(tiles))):
     end = time.time()
     print('Time Finish Tile: ' + str(np.round((end-start)/60, 2)))
 
-'''
-### need to filter at level two basin scale. 
-mhv_l2 = np.array([int(str(ind)[0:2]) for ind in 
-                   mhv.groups['centerlines'].variables['basin_code'][:]])
-l2_pts = np.where(mhv_l2 == basin)[0]
-l2_lon = mhv.groups['centerlines'].variables['basin_code'][l2_pts]
-l2_lat = mhv.groups['centerlines'].variables['basin_code'][l2_pts]
-#create filter... 
-'''
+
+#filter flag at level two basin scale. 
+outfile = main_dir+mhv_dir+'gpkg/level2/'+str(basin)+'_mhv_sword_add.gpkg'
+tfs.filter_l2_flags(mhv, basin, outfile)
+
 
 #close mhv and log file. 
 mhv.close()
@@ -153,22 +139,3 @@ sourceFile.close()
 end_all = time.time()
 print('Time Finish Basin '+str(basin)+
       ': '+str(np.round((end_all-start_all)/3600, 2))+' hrs')
-
-'''
-# test_channels = [47953]
-# test_pts = np.where(np.in1d(mhv_seg, test_channels))[0]
-
-plt.figure(figsize=(7,7))
-plt.scatter(pixc_lon, pixc_lat, s = 5, c='lightgrey')
-plt.scatter(mhv_lon, mhv_lat, s = 1, c='black')
-plt.scatter(sword_lon, sword_lat, s = 3, c='deepskyblue')
-plt.scatter(mhv_lon[add_points], mhv_lat[add_points], s = 3, c='crimson')
-# plt.scatter(mhv_lon[test_pts], mhv_lat[test_pts], s = 3, c='gold')
-plt.title(tiles[subset[ind]])
-plt.xlabel('x')
-plt.ylabel('y')
-plt.savefig('test_plots/'+tiles[subset[ind]]+'.png')
-plt.close()
-# plt.show()
-
-'''
