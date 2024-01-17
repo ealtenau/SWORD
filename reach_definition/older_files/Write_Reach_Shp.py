@@ -14,7 +14,7 @@ import os
 def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, region):
     geom = []
     rm_ind = []
-    connections = np.zeros([reach_id.shape[0], reach_id.shape[1]], dtype=int)
+    connections = np.zeros(len(cl_id), dtype=int)
     for ind in list(range(len(unq_rch))):
         # print(ind)
         in_rch = np.where(reach_id[0,:] == unq_rch[ind])[0]
@@ -25,17 +25,10 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, region):
         #appending neighboring reach endpoints to coordinates
         in_rch_up_dn = []
         for ngh in list(range(1,4)):
-            neighbors = np.where(reach_id[ngh,:]==unq_rch[ind])[0]
-            keep = np.where(connections[ngh,neighbors] == 0)[0]
-            in_rch_up_dn.append(neighbors[keep])
-        #formating into single list.
-        in_rch_up_dn = np.unique([j for sub in in_rch_up_dn for j in sub]) #reach_id[0,in_rch_up_dn]
-        #loop through and find what ends each point belong to.
+            in_rch_up_dn.append(np.where(reach_id[ngh,:]==unq_rch[ind])[0])
+
+        in_rch_up_dn = np.unique([j for sub in in_rch_up_dn for j in sub])
         if len(in_rch_up_dn) > 0:
-            end1_dist = []; end2_dist = []
-            end1_pt = []; end2_pt = []
-            end1_x = []; end2_x = []
-            end1_y = []; end2_y = []
             for ct in list(range(len(in_rch_up_dn))):
                 x_pt = cl_x[in_rch_up_dn[ct]]
                 y_pt = cl_y[in_rch_up_dn[ct]]
@@ -52,99 +45,18 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, region):
                     coords_3 = (cl_y[sort_ind[-1]], cl_x[sort_ind[-1]])
                     d1 = geopy.distance.geodesic(coords_1, coords_2).m
                     d2 = geopy.distance.geodesic(coords_1, coords_3).m
-                    
-            ##### NEW START
-                    if d1 < d2:
-                        end1_pt.append(in_rch_up_dn[ct])
-                        end1_dist.append(d1)
-                        end1_x.append(x_pt)
-                        end1_y.append(y_pt)
-                    if d1 > d2:
-                        end2_pt.append(in_rch_up_dn[ct])
-                        end2_dist.append(d2)
-                        end2_x.append(x_pt)
-                        end2_y.append(y_pt)
-
-            #append coords to ends
-            if len(end1_pt) > 0: #reach_id[:,end1_pt]
-                end1_pt = np.array(end1_pt)
-                end1_dist = np.array(end1_dist)
-                end1_x = np.array(end1_x)
-                end1_y = np.array(end1_y)
-                sort_ind1 = np.argsort(end1_dist)
-                end1_pt = end1_pt[sort_ind1]
-                end1_dist = end1_dist[sort_ind1]
-                end1_x = end1_x[sort_ind1]
-                end1_y = end1_y[sort_ind1]
-                if np.min(end1_dist) <= 200:
-                    x_coords = np.insert(x_coords, 0, end1_x[0], axis=0)
-                    y_coords = np.insert(y_coords, 0, end1_y[0], axis=0)
-                if np.min(end1_dist) > 200:
-                    ngh_x = cl_x[np.where(reach_id[0,:] == reach_id[0,end1_pt[0]])]
-                    ngh_y = cl_y[np.where(reach_id[0,:] == reach_id[0,end1_pt[0]])]
-                    d=[]
-                    for c in list(range(len(ngh_x))):
-                        temp_coords = (ngh_y[c], ngh_x[c])
-                        d.append(geopy.distance.geodesic(coords_2, temp_coords).m)
-                    if np.min(d) <= 200:
-                        append_x = ngh_x[np.where(d == np.min(d))]
-                        append_y = ngh_y[np.where(d == np.min(d))]
-                        x_coords = np.insert(x_coords, 0, append_x[0], axis=0)
-                        y_coords = np.insert(y_coords, 0, append_y[0], axis=0)
-                #flag current reach for neighbors.
-                ngh1 = reach_id[0,end1_pt[0]]
-                col1 = np.where(reach_id[1,:]== ngh1)[0]
-                col2 = np.where(reach_id[2,:]== ngh1)[0]
-                col3 = np.where(reach_id[3,:]== ngh1)[0] 
-                if unq_rch[ind] in reach_id[0,col1]:
-                    c = np.where(reach_id[0,col1] == unq_rch[ind])[0]
-                    connections[1,col1[c]] = 1
-                if unq_rch[ind] in reach_id[0,col2]:
-                    c = np.where(reach_id[0,col2] == unq_rch[ind])[0]
-                    connections[2,col2[c]] = 1
-                if unq_rch[ind] in reach_id[0,col3]:
-                    c = np.where(reach_id[0,col3] == unq_rch[ind])[0]
-                    connections[3,col3[c]] = 1
-
-            if len(end2_pt) > 0: #reach_id[:,end2_pt]
-                end2_pt = np.array(end2_pt)
-                end2_dist = np.array(end2_dist)
-                end2_x = np.array(end2_x)
-                end2_y = np.array(end2_y)
-                sort_ind2 = np.argsort(end2_dist)
-                end2_pt = end2_pt[sort_ind2]
-                end2_dist = end2_dist[sort_ind2]
-                end2_x = end2_x[sort_ind2]
-                end2_y = end2_y[sort_ind2]
-                if np.min(end2_dist) < 200:
-                    x_coords = np.insert(x_coords, len(x_coords), end2_x[0], axis=0)
-                    y_coords = np.insert(y_coords, len(y_coords), end2_y[0], axis=0)
-                if np.min(end2_dist) > 200:
-                    ngh_x = cl_x[np.where(reach_id[0,:] == reach_id[0,end2_pt[0]])]
-                    ngh_y = cl_y[np.where(reach_id[0,:] == reach_id[0,end2_pt[0]])]
-                    d=[]
-                    for c in list(range(len(ngh_x))):
-                        temp_coords = (ngh_y[c], ngh_x[c])
-                        d.append(geopy.distance.geodesic(coords_3, temp_coords).m)
-                    if np.min(d) <= 200:
-                        append_x = ngh_x[np.where(d == np.min(d))]
-                        append_y = ngh_y[np.where(d == np.min(d))]
-                        x_coords = np.insert(x_coords, len(x_coords), append_x[0], axis=0)
-                        y_coords = np.insert(y_coords, len(y_coords), append_y[0], axis=0)
-                #flag current reach for neighbors.
-                ngh2 = reach_id[0,end2_pt[0]]
-                col1 = np.where(reach_id[1,:]== ngh2)[0]
-                col2 = np.where(reach_id[2,:]== ngh2)[0]
-                col3 = np.where(reach_id[3,:]== ngh2)[0] 
-                if unq_rch[ind] in reach_id[0,col1]:
-                    c = np.where(reach_id[0,col1] == unq_rch[ind])[0]
-                    connections[1,col1[c]] = 1
-                if unq_rch[ind] in reach_id[0,col2]:
-                    c = np.where(reach_id[0,col2] == unq_rch[ind])[0]
-                    connections[2,col2[c]] = 1
-                if unq_rch[ind] in reach_id[0,col3]:
-                    c = np.where(reach_id[0,col3] == unq_rch[ind])[0]
-                    connections[3,col3[c]] = 1
+                    #if minimum distance is greater than 200 m then don't attach. 
+                    if np.min([d1,d2]) > 200:
+                        continue
+                    else:
+                        if d1 < d2:
+                            x_coords = np.insert(x_coords, 0, x_pt, axis=0)
+                            y_coords = np.insert(y_coords, 0, y_pt, axis=0)
+                            connections[in_rch_up_dn[ct]] = 1
+                        if d1 > d2: 
+                            x_coords = np.insert(x_coords, len(x_coords), x_pt, axis=0)
+                            y_coords = np.insert(y_coords, len(y_coords), y_pt, axis=0)
+                            connections[in_rch_up_dn[ct]] = 1
 
         pts = GeoSeries(map(Point, zip(x_coords, y_coords)))
         if len(pts) <= 1:
@@ -175,6 +87,7 @@ else:
 
 outpath = outdir+version+'/'
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+# fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/testing/na_sword_v16.nc'
 
 data = nc.Dataset(fn)
 
@@ -282,7 +195,7 @@ reaches = gp.GeoDataFrame(reaches)
 reaches.set_geometry(col='geometry') #removed "inplace=True" option on leopold. 
 reaches = reaches.set_crs(4326, allow_override=True)
 
-# write geopackage (continental scale)
+#write geopackage (continental scale)
 print('Writing GeoPackage File')
 if os.path.exists(outpath+'gpkg/'):
     outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_reaches_' + version + '.gpkg'
@@ -295,7 +208,7 @@ reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
-# write as shapefile per level2 basin.
+#write as shapefile per level2 basin.
 print('Writing Shapefiles')
 if os.path.exists(outpath + 'shp/' + region + '/'):
     shpdir = outpath + 'shp/' + region + '/'

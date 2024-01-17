@@ -232,3 +232,20 @@ data.geospatial_lon_max
 data.geospatial_lat_min
 data.geospatial_lat_max
 data.close()
+
+
+import earthaccess
+from earthaccess import Auth, DataCollections, DataGranules, Store
+
+
+auth = Auth()
+auth.login(strategy="netrc")
+# auth.authenticated
+
+Query = DataGranules(auth).short_name("SWOT_L2_HR_PIXC_1.1").temporal(start_date, end_date).granule_name(granule)
+results = Query.get()
+results[g].data_links()
+
+Query = DataCollections(auth).keyword('SWOT Pixel Cloud')
+print(f'Collections found: {Query.hits()}')
+collections = Query.fields(['ShortName','Version']).get(5)
