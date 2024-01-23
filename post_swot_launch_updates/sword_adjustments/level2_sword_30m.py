@@ -6,7 +6,10 @@ from shapely.geometry import Point
 
 ###############################################################################
 
-sword_fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/na_sword_v16.nc'
+region = 'NA'
+version = 'v17'
+sword_fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
+    +version+'/netcdf_beta/'+region.lower()+'_sword_'+version+'.nc'
 sword = nc.Dataset(sword_fn)
 
 #create variable with new_rch_id and neighbors populated with zeros for now. 
@@ -19,7 +22,9 @@ cl_id = sword.groups['centerlines'].variables['cl_id'][:]
 rch_id = sword.groups['centerlines'].variables['reach_id'][0,:]
 node_id = sword.groups['centerlines'].variables['node_id'][0,:]
 new_rch_id = np.repeat('NaN', len(x))
-new_nghs = np.repeat('NaN', len(x))
+new_up_nghs = np.repeat('NaN', len(x))
+new_dn_nghs = np.repeat('NaN', len(x))
+reverse_topo = np.repeat('NaN', len(x))
 
 level2_basins = np.array([int(str(ind)[0:2]) for ind in rch_id])
 unq_l2 = np.unique(level2_basins)
@@ -34,7 +39,9 @@ for ind in list(range(len(unq_l2))):
         rch_id[pts],
         node_id[pts],
         new_rch_id[pts],
-        new_nghs[pts],
+        new_up_nghs[pts],
+        new_dn_nghs[pts],
+        reverse_topo[pts],
     ]).T
 
     #rename columns.
@@ -46,7 +53,9 @@ for ind in list(range(len(unq_l2))):
             3:"reach_id",
             4:"node_id",
             5:"new_rch_id",
-            6:"new_nghs",
+            6:"new_up_nghs",
+            7:"new_dn_nghs",
+            8:"reverse_topo",
         },inplace=True)
 
     nodes = nodes.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
@@ -56,7 +65,7 @@ for ind in list(range(len(unq_l2))):
     nodes.set_geometry(col='geometry')
     nodes = nodes.set_crs(4326, allow_override=True)
 
-    outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg_30m/NA/hb' + \
-        str(unq_l2[ind])+'_centerlines.gpkg'
+    outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg_30m/'\
+        +region+'/hb'+str(unq_l2[ind])+'_centerlines_'+version+'.gpkg'
     nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
 

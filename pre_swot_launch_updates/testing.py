@@ -233,19 +233,19 @@ data.geospatial_lat_min
 data.geospatial_lat_max
 data.close()
 
+region = 'OC'
+fn17 = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf_beta/'+region.lower()+'_sword_v17.nc'
+fn16 = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/'+region.lower()+'_sword_v16.nc'
 
-import earthaccess
-from earthaccess import Auth, DataCollections, DataGranules, Store
+sword17 = nc.Dataset(fn17)
+sword16 = nc.Dataset(fn16)
 
+print(len(sword17.groups['centerlines'].variables['cl_id'][:]), len(np.unique(sword17.groups['centerlines'].variables['cl_id'][:])))
+print(len(sword16.groups['centerlines'].variables['cl_id'][:]), len(np.unique(sword16.groups['centerlines'].variables['cl_id'][:])))
+print(len(np.unique(sword17.groups['centerlines'].variables['reach_id'][0,:])), len(sword17.groups['reaches'].variables['reach_id'][:]))
+print(len(np.unique(sword16.groups['centerlines'].variables['reach_id'][0,:])), len(sword16.groups['reaches'].variables['reach_id'][:]))
+print(len(np.unique(sword17.groups['centerlines'].variables['node_id'][0,:])), len(sword17.groups['nodes'].variables['node_id'][:]))
+print(len(np.unique(sword16.groups['centerlines'].variables['node_id'][0,:])), len(sword16.groups['nodes'].variables['node_id'][:]))
 
-auth = Auth()
-auth.login(strategy="netrc")
-# auth.authenticated
-
-Query = DataGranules(auth).short_name("SWOT_L2_HR_PIXC_1.1").temporal(start_date, end_date).granule_name(granule)
-results = Query.get()
-results[g].data_links()
-
-Query = DataCollections(auth).keyword('SWOT Pixel Cloud')
-print(f'Collections found: {Query.hits()}')
-collections = Query.fields(['ShortName','Version']).get(5)
+sword17.close()
+sword16.close()
