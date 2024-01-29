@@ -249,3 +249,13 @@ print(len(np.unique(sword16.groups['centerlines'].variables['node_id'][0,:])), l
 
 sword17.close()
 sword16.close()
+
+
+
+x = [23.45, 24.56, 25.55, 25.55, 45.67, 89.07]
+y = [10.23, 11.45, 13.33, 13.33, 22.21, 67.53]
+
+ar = np.array([x,y]).T
+all_ind = np.array(list(range(ar.shape[0])))
+vals, keep_ind, count = np.unique(ar, return_counts=True, axis = 0, return_index=True)
+rmv = list(set(all_ind).difference(keep_ind))

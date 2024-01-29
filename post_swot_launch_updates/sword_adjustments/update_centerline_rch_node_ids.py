@@ -27,79 +27,82 @@ def read_data(filename):
     
     data = nc.Dataset(filename)
     
-    centerlines.cl_id = data.groups['centerlines'].variables['cl_id'][:]
-    centerlines.x = data.groups['centerlines'].variables['x'][:]
-    centerlines.y = data.groups['centerlines'].variables['y'][:]
-    centerlines.reach_id = data.groups['centerlines'].variables['reach_id'][:]
-    centerlines.node_id = data.groups['centerlines'].variables['node_id'][:]
+    centerlines.cl_id = np.array(data.groups['centerlines'].variables['cl_id'][:])
+    centerlines.x = np.array(data.groups['centerlines'].variables['x'][:])
+    centerlines.y = np.array(data.groups['centerlines'].variables['y'][:])
+    centerlines.reach_id = np.array(data.groups['centerlines'].variables['reach_id'][:])
+    centerlines.node_id = np.array(data.groups['centerlines'].variables['node_id'][:])
     
-    nodes.id = data.groups['nodes'].variables['node_id'][:]
-    nodes.cl_id = data.groups['nodes'].variables['cl_ids'][:]
-    nodes.x = data.groups['nodes'].variables['x'][:]
-    nodes.y = data.groups['nodes'].variables['y'][:]
-    nodes.len = data.groups['nodes'].variables['node_length'][:]
-    nodes.wse = data.groups['nodes'].variables['wse'][:]
-    nodes.wse_var = data.groups['nodes'].variables['wse_var'][:]
-    nodes.wth = data.groups['nodes'].variables['width'][:]
-    nodes.wth_var = data.groups['nodes'].variables['width_var'][:]
-    nodes.grod = data.groups['nodes'].variables['obstr_type'][:]
-    nodes.grod_fid = data.groups['nodes'].variables['grod_id'][:]
-    nodes.hfalls_fid = data.groups['nodes'].variables['hfalls_id'][:]
-    nodes.nchan_max = data.groups['nodes'].variables['n_chan_max'][:]
-    nodes.nchan_mod = data.groups['nodes'].variables['n_chan_mod'][:]
-    nodes.dist_out = data.groups['nodes'].variables['dist_out'][:]
-    nodes.reach_id = data.groups['nodes'].variables['reach_id'][:]
-    nodes.facc = data.groups['nodes'].variables['facc'][:]
-    nodes.lakeflag = data.groups['nodes'].variables['lakeflag'][:]
-    nodes.wth_coef = data.groups['nodes'].variables['wth_coef'][:]
-    nodes.ext_dist_coef = data.groups['nodes'].variables['ext_dist_coef'][:]
-    nodes.max_wth = data.groups['nodes'].variables['max_width'][:]
-    nodes.meand_len = data.groups['nodes'].variables['meander_length'][:]
-    nodes.river_name = data.groups['nodes'].variables['river_name'][:]
-    nodes.manual_add = data.groups['nodes'].variables['manual_add'][:]
-    nodes.sinuosity = data.groups['nodes'].variables['sinuosity'][:]
-    nodes.edit_flag = data.groups['nodes'].variables['edit_flag'][:]
+    nodes.id = np.array(data.groups['nodes'].variables['node_id'][:])
+    nodes.cl_id = np.array(data.groups['nodes'].variables['cl_ids'][:])
+    nodes.x = np.array(data.groups['nodes'].variables['x'][:])
+    nodes.y = np.array(data.groups['nodes'].variables['y'][:])
+    nodes.len = np.array(data.groups['nodes'].variables['node_length'][:])
+    nodes.wse = np.array(data.groups['nodes'].variables['wse'][:])
+    nodes.wse_var = np.array(data.groups['nodes'].variables['wse_var'][:])
+    nodes.wth = np.array(data.groups['nodes'].variables['width'][:])
+    nodes.wth_var = np.array(data.groups['nodes'].variables['width_var'][:])
+    nodes.grod = np.array(data.groups['nodes'].variables['obstr_type'][:])
+    nodes.grod_fid = np.array(data.groups['nodes'].variables['grod_id'][:])
+    nodes.hfalls_fid = np.array(data.groups['nodes'].variables['hfalls_id'][:])
+    nodes.nchan_max = np.array(data.groups['nodes'].variables['n_chan_max'][:])
+    nodes.nchan_mod = np.array(data.groups['nodes'].variables['n_chan_mod'][:])
+    nodes.dist_out = np.array(data.groups['nodes'].variables['dist_out'][:])
+    nodes.reach_id = np.array(data.groups['nodes'].variables['reach_id'][:])
+    nodes.facc = np.array(data.groups['nodes'].variables['facc'][:])
+    nodes.lakeflag = np.array(data.groups['nodes'].variables['lakeflag'][:])
+    nodes.wth_coef = np.array(data.groups['nodes'].variables['wth_coef'][:])
+    nodes.ext_dist_coef = np.array(data.groups['nodes'].variables['ext_dist_coef'][:])
+    nodes.max_wth = np.array(data.groups['nodes'].variables['max_width'][:])
+    nodes.meand_len = np.array(data.groups['nodes'].variables['meander_length'][:])
+    nodes.river_name = np.array(data.groups['nodes'].variables['river_name'][:])
+    nodes.manual_add = np.array(data.groups['nodes'].variables['manual_add'][:])
+    nodes.sinuosity = np.array(data.groups['nodes'].variables['sinuosity'][:])
+    nodes.edit_flag = np.array(data.groups['nodes'].variables['edit_flag'][:])
+    nodes.trib_flag = np.array(data.groups['nodes'].variables['trib_flag'][:])
 
-    reaches.id = data.groups['reaches'].variables['reach_id'][:]
-    reaches.cl_id = data.groups['reaches'].variables['cl_ids'][:]
-    reaches.x = data.groups['reaches'].variables['x'][:]
-    reaches.x_min = data.groups['reaches'].variables['x_min'][:]
-    reaches.x_max = data.groups['reaches'].variables['x_max'][:]
-    reaches.y = data.groups['reaches'].variables['y'][:]
-    reaches.y_min = data.groups['reaches'].variables['y_min'][:]
-    reaches.y_max = data.groups['reaches'].variables['y_max'][:]
-    reaches.len = data.groups['reaches'].variables['reach_length'][:]
-    reaches.wse = data.groups['reaches'].variables['wse'][:]
-    reaches.wse_var = data.groups['reaches'].variables['wse_var'][:]
-    reaches.wth = data.groups['reaches'].variables['width'][:]
-    reaches.wth_var = data.groups['reaches'].variables['width_var'][:]
-    reaches.slope = data.groups['reaches'].variables['slope'][:]
-    reaches.rch_n_nodes = data.groups['reaches'].variables['n_nodes'][:]
-    reaches.grod = data.groups['reaches'].variables['obstr_type'][:]
-    reaches.grod_fid = data.groups['reaches'].variables['grod_id'][:]
-    reaches.hfalls_fid = data.groups['reaches'].variables['hfalls_id'][:]
-    reaches.lakeflag = data.groups['reaches'].variables['lakeflag'][:]
-    reaches.nchan_max = data.groups['reaches'].variables['n_chan_max'][:]
-    reaches.nchan_mod = data.groups['reaches'].variables['n_chan_mod'][:]
-    reaches.dist_out = data.groups['reaches'].variables['dist_out'][:]
-    reaches.n_rch_up = data.groups['reaches'].variables['n_rch_up'][:]
-    reaches.n_rch_down = data.groups['reaches'].variables['n_rch_down'][:]
-    reaches.rch_id_up = data.groups['reaches'].variables['rch_id_up'][:]
-    reaches.rch_id_down = data.groups['reaches'].variables['rch_id_dn'][:]
-    reaches.max_obs = data.groups['reaches'].variables['swot_obs'][:]
-    reaches.orbits = data.groups['reaches'].variables['swot_orbits'][:]
-    reaches.facc = data.groups['reaches'].variables['facc'][:]
-    reaches.iceflag = data.groups['reaches'].variables['iceflag'][:]
-    reaches.max_wth = data.groups['reaches'].variables['max_width'][:]
-    reaches.river_name = data.groups['reaches'].variables['river_name'][:]
-    reaches.low_slope = data.groups['reaches'].variables['low_slope_flag'][:]
-    reaches.edit_flag= data.groups['reaches'].variables['edit_flag'][:]
+    reaches.id = np.array(data.groups['reaches'].variables['reach_id'][:])
+    reaches.cl_id = np.array(data.groups['reaches'].variables['cl_ids'][:])
+    reaches.x = np.array(data.groups['reaches'].variables['x'][:])
+    reaches.x_min = np.array(data.groups['reaches'].variables['x_min'][:])
+    reaches.x_max = np.array(data.groups['reaches'].variables['x_max'][:])
+    reaches.y = np.array(data.groups['reaches'].variables['y'][:])
+    reaches.y_min = np.array(data.groups['reaches'].variables['y_min'][:])
+    reaches.y_max = np.array(data.groups['reaches'].variables['y_max'][:])
+    reaches.len = np.array(data.groups['reaches'].variables['reach_length'][:])
+    reaches.wse = np.array(data.groups['reaches'].variables['wse'][:])
+    reaches.wse_var = np.array(data.groups['reaches'].variables['wse_var'][:])
+    reaches.wth = np.array(data.groups['reaches'].variables['width'][:])
+    reaches.wth_var = np.array(data.groups['reaches'].variables['width_var'][:])
+    reaches.slope = np.array(data.groups['reaches'].variables['slope'][:])
+    reaches.rch_n_nodes = np.array(data.groups['reaches'].variables['n_nodes'][:])
+    reaches.grod = np.array(data.groups['reaches'].variables['obstr_type'][:])
+    reaches.grod_fid = np.array(data.groups['reaches'].variables['grod_id'][:])
+    reaches.hfalls_fid = np.array(data.groups['reaches'].variables['hfalls_id'][:])
+    reaches.lakeflag = np.array(data.groups['reaches'].variables['lakeflag'][:])
+    reaches.nchan_max = np.array(data.groups['reaches'].variables['n_chan_max'][:])
+    reaches.nchan_mod = np.array(data.groups['reaches'].variables['n_chan_mod'][:])
+    reaches.dist_out = np.array(data.groups['reaches'].variables['dist_out'][:])
+    reaches.n_rch_up = np.array(data.groups['reaches'].variables['n_rch_up'][:])
+    reaches.n_rch_down = np.array(data.groups['reaches'].variables['n_rch_down'][:])
+    reaches.rch_id_up = np.array(data.groups['reaches'].variables['rch_id_up'][:])
+    reaches.rch_id_down = np.array(data.groups['reaches'].variables['rch_id_dn'][:])
+    reaches.max_obs = np.array(data.groups['reaches'].variables['swot_obs'][:])
+    reaches.orbits = np.array(data.groups['reaches'].variables['swot_orbits'][:])
+    reaches.facc = np.array(data.groups['reaches'].variables['facc'][:])
+    reaches.iceflag = np.array(data.groups['reaches'].variables['iceflag'][:])
+    reaches.max_wth = np.array(data.groups['reaches'].variables['max_width'][:])
+    reaches.river_name = np.array(data.groups['reaches'].variables['river_name'][:])
+    reaches.low_slope = np.array(data.groups['reaches'].variables['low_slope_flag'][:])
+    reaches.edit_flag= np.array(data.groups['reaches'].variables['edit_flag'][:])
+    reaches.trib_flag = np.array(data.groups['reaches'].variables['trib_flag'][:])
 
     data.close()    
 
     return centerlines, nodes, reaches
     
-############################################################################### 
+###############################################################################
+
 def format_cl_node_ids_pt2(nodes, centerlines):
 
     """
@@ -311,29 +314,22 @@ args = parser.parse_args()
 start_all = time.time()
 
 #read in data. 
-# sword_dir = args.filepath
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/oc_sword_v16.nc'
+sword_dir = args.filepath
+# sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17.nc'
 centerlines, nodes, reaches = read_data(sword_dir)
 
 #redo centerline ids for nodes and reaches. 
-cl_nodes_id = format_cl_node_ids(nodes, centerlines, verbose = True)
+# cl_nodes_id = format_cl_node_ids(nodes, centerlines, verbose = True)
 cl_rch_id = format_cl_rch_ids(reaches, centerlines, verbose = True)
 centerlines.reach_id = np.insert(cl_rch_id, 0, centerlines.reach_id[0,:], axis = 0)
 centerlines.reach_id = centerlines.reach_id[0:4,:]
-centerlines.node_id =  np.insert(cl_nodes_id, 0, centerlines.node_id[0,:], axis = 0)
-centerlines.node_id = centerlines.node_id[0:4,:]
+# centerlines.node_id =  np.insert(cl_nodes_id, 0, centerlines.node_id[0,:], axis = 0)
+# centerlines.node_id = centerlines.node_id[0:4,:]
 
 sword = nc.Dataset(sword_dir, 'r+')
 sword.groups['centerlines'].variables['reach_id'][:] = centerlines.reach_id[:]
-sword.groups['centerlines'].variables['node_id'][:] = centerlines.node_id[:]
+# sword.groups['centerlines'].variables['node_id'][:] = centerlines.node_id[:]
 sword.close()
 
 end_all = time.time()
 print('Done Updating Centerline IDs in: ' + str(np.round((end_all-start_all)/60, 2)) + ' min')
-
-
-# np.where(sword.groups['reaches'].variables['reach_id'][:] == 82293300011)
-
-# sword.groups['reaches'].variables['reach_id'][32711]
-# sword.groups['reaches'].variables['rch_id_up'][:,32711]
-# sword.groups['reaches'].variables['rch_id_dn'][:,32711] = 82291000551
