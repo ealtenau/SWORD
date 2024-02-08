@@ -6,10 +6,10 @@ from shapely.geometry import Point
 import time
 
 start=time.time()
-fn_dir = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/temp_data/tiles/'
-file = 'SWOT_L2_HR_PIXC_006_298_198L_20231113T043148_20231113T043159_PIB0_01.nc'
+fn_dir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Atchafalaya/v2.0/pixel_cloud/'
+file = 'SWOT_L2_HR_PIXC_009_550_102L_20240123T183544_20240123T183555_PIC0_01.nc'
 fn = fn_dir+file
-tile = '298_198L'
+tile = '550_102L'
 
 pixc = nc.Dataset(fn)
 ht = np.array(pixc.groups['pixel_cloud'].variables['height'][:])

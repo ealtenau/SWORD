@@ -120,11 +120,12 @@ region = args.region
 version = args.version
 
 if args.local_processing == 'True':
-    outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+    outdir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
 else:
     outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
 
 outpath = outdir+version+'/'
+sourceFile = open(outpath+'breaks_log_file.txt', 'w')
 fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 centerlines, nodes, reaches = read_data(fn)
 
@@ -138,6 +139,7 @@ kdt = sp.cKDTree(sword_pts)
 pt_dist, pt_ind = kdt.query(sword_pts, k = 6, distance_upper_bound=0.005)
 
 #loop through break reaches
+print(time.strftime("%d-%b-%Y %H:%M:%S"), file = sourceFile) 
 for ind in list(range(len(breaks))):
     r = np.where(reaches.id == breaks[ind])[0]
     if '3' in reaches.edit_flag[r][0]:
@@ -166,7 +168,7 @@ for ind in list(range(len(breaks))):
     # print(cl_nghs)
 
     if len(cl_nghs) > 0:
-        print('correcting nghs for reach:', ind, breaks[ind])
+        print('correcting nghs for reach:', ind, breaks[ind], file = sourceFile)
         for c in list(range(len(cl_nghs))):
             rch_facc = reaches.facc[np.where(reaches.id == cl_nghs[c])]
             ngh_facc = reaches.facc[np.where(reaches.id == breaks[ind])]
@@ -212,3 +214,4 @@ sword.close()
 # reaches.n_rch_up[r]
 # reaches.rch_id_down[:,r]
 # reaches.n_rch_down[r]
+

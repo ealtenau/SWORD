@@ -307,15 +307,24 @@ def format_cl_rch_ids(reaches, centerlines, verbose):
 ###############################################################################
 ###############################################################################
 
-parser = argparse.ArgumentParser()
-parser.add_argument("filepath", help="Input filepath to netcdf", type = str)
-args = parser.parse_args()
-
 start_all = time.time()
 
-#read in data. 
-sword_dir = args.filepath
-# sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17.nc'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="continental region", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("local_processing", help="'True' for local machine, 'False' for server", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+
+if args.local_processing == 'True':
+    outdir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+else:
+    outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
+
+outpath = outdir+version+'/'
+sword_dir = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 centerlines, nodes, reaches = read_data(sword_dir)
 
 #redo centerline ids for nodes and reaches. 

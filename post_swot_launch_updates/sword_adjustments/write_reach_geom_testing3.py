@@ -1,3 +1,9 @@
+'''
+This script uses an anxillary data set with pre identified common reaches 
+for junctions to try and allow for better connectivity and junctions 
+meeting at one point. 
+'''
+
 import numpy as np
 import netCDF4 as nc
 import geopandas as gp
@@ -16,11 +22,16 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, common, max_dist, regi
     rm_ind = []
     connections = np.zeros([reach_id.shape[0], reach_id.shape[1]], dtype=int)
     for ind in list(range(len(unq_rch))):
-        # print(ind)
+        # print(ind, len(unq_rch)-1)
         in_rch = np.where(reach_id[0,:] == unq_rch[ind])[0]
         sort_ind = in_rch[np.argsort(cl_id[in_rch])]
         x_coords = cl_x[sort_ind]
-        y_coords = cl_y[sort_ind]        
+        y_coords = cl_y[sort_ind]
+
+        #ultimatley don't want to have to use this...
+        # if len(in_rch) == 0:
+        #     print(unq_rch[ind], 'no centerline points')
+        #     continue
      
         #appending neighboring reach endpoints to coordinates
         in_rch_up_dn = []
@@ -60,13 +71,13 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, common, max_dist, regi
                         end1_dist.append(d1)
                         end1_x.append(x_pt)
                         end1_y.append(y_pt)
-                        end1_flag.append(common[np.where(unq_rch == reach_id[0,in_rch_up_dn[ct]])[0]])
+                        end1_flag.append(common[in_rch_up_dn[ct]])
                     if d1 > d2:
                         end2_pt.append(in_rch_up_dn[ct])
                         end2_dist.append(d2)
                         end2_x.append(x_pt)
                         end2_y.append(y_pt)
-                        end2_flag.append(common[np.where(unq_rch == reach_id[0,in_rch_up_dn[ct]])[0]])
+                        end2_flag.append(common[in_rch_up_dn[ct]])
 
             #append coords to ends
             if len(end1_pt) > 0: #reach_id[:,end1_pt]
@@ -200,35 +211,32 @@ region = args.region
 version = args.version
 
 if args.local_processing == 'True':
-    outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+    outdir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
 else:
     outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
 
 outpath = outdir+version+'/'
-fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+fn1 = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+fn2 = outpath+'reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 
-data = nc.Dataset(fn)
+data1 = nc.Dataset(fn1)
+data2 = nc.Dataset(fn2)
 
 #pull centerline level data. 
-reach_id = data.groups['centerlines'].variables['reach_id'][:]
-cl_id = data.groups['centerlines'].variables['cl_id'][:]
-cl_x = data.groups['centerlines'].variables['x'][:]
-cl_y = data.groups['centerlines'].variables['y'][:]
-
-reach_id_binary = np.copy(reach_id)
-reach_id_binary[np.where(reach_id > 0)] = 1
-row_sums = np.sum(reach_id_binary, axis = 0)
-common = np.zeros(len(row_sums))
-common[np.where(row_sums > 2)] = 1
+reach_id = data2.groups['centerlines'].variables['reach_id'][:]
+cl_id = data2.groups['centerlines'].variables['cl_id'][:]
+cl_x = data2.groups['centerlines'].variables['x'][:]
+cl_y = data2.groups['centerlines'].variables['y'][:]
+common = data2.groups['centerlines'].variables['common'][:]
 
 #identify unique reach ids. 
-unq_rch = data.groups['reaches'].variables['reach_id'][:]
+unq_rch = data1.groups['reaches'].variables['reach_id'][:]
 
 #reformat multi-dimensional variables
 rch_type = np.array([int(str(rch)[-1]) for rch in unq_rch])
-rch_up = np.array(data.groups['reaches'].variables['rch_id_up'][:]).T
-rch_dn = np.array(data.groups['reaches'].variables['rch_id_dn'][:]).T
-swot_orbs = np.array(data.groups['reaches'].variables['swot_orbits'][:]).T
+rch_up = np.array(data1.groups['reaches'].variables['rch_id_up'][:]).T
+rch_dn = np.array(data1.groups['reaches'].variables['rch_id_dn'][:]).T
+swot_orbs = np.array(data1.groups['reaches'].variables['swot_orbits'][:]).T
 rch_id_up = []; rch_id_dn = []; swot_orbits = []
 for ind in list(range(len(rch_type))):
     rch_id_up.append(str(rch_up[ind,np.where(rch_up[ind,:] > 0)[0]])[1:-1])
@@ -245,35 +253,35 @@ print('Finished Reach Geometry in: '+str(np.round((end-start)/60,2))+' min')
 
 #create initial GeoDataFrame.
 reaches = gp.GeoDataFrame([
-    np.array(data.groups['reaches'].variables['x'][:]),
-    np.array(data.groups['reaches'].variables['y'][:]),
-    np.array(data.groups['reaches'].variables['reach_id'][:]),
-    np.array(data.groups['reaches'].variables['reach_length'][:]),
-    np.array(data.groups['reaches'].variables['n_nodes'][:]),
-    np.array(data.groups['reaches'].variables['wse'][:]),
-    np.array(data.groups['reaches'].variables['wse_var'][:]),
-    np.array(data.groups['reaches'].variables['width'][:]),
-    np.array(data.groups['reaches'].variables['width_var'][:]),
-    np.array(data.groups['reaches'].variables['facc'][:]),
-    np.array(data.groups['reaches'].variables['n_chan_max'][:]),
-    np.array(data.groups['reaches'].variables['n_chan_mod'][:]),
-    np.array(data.groups['reaches'].variables['obstr_type'][:]),
-    np.array(data.groups['reaches'].variables['grod_id'][:]),
-    np.array(data.groups['reaches'].variables['hfalls_id'][:]),
-    np.array(data.groups['reaches'].variables['slope'][:]),
-    np.array(data.groups['reaches'].variables['dist_out'][:]),
-    np.array(data.groups['reaches'].variables['lakeflag'][:]),
-    np.array(data.groups['reaches'].variables['max_width'][:]),
-    np.array(data.groups['reaches'].variables['n_rch_up'][:]),
-    np.array(data.groups['reaches'].variables['n_rch_down'][:]),
+    np.array(data1.groups['reaches'].variables['x'][:]),
+    np.array(data1.groups['reaches'].variables['y'][:]),
+    np.array(data1.groups['reaches'].variables['reach_id'][:]),
+    np.array(data1.groups['reaches'].variables['reach_length'][:]),
+    np.array(data1.groups['reaches'].variables['n_nodes'][:]),
+    np.array(data1.groups['reaches'].variables['wse'][:]),
+    np.array(data1.groups['reaches'].variables['wse_var'][:]),
+    np.array(data1.groups['reaches'].variables['width'][:]),
+    np.array(data1.groups['reaches'].variables['width_var'][:]),
+    np.array(data1.groups['reaches'].variables['facc'][:]),
+    np.array(data1.groups['reaches'].variables['n_chan_max'][:]),
+    np.array(data1.groups['reaches'].variables['n_chan_mod'][:]),
+    np.array(data1.groups['reaches'].variables['obstr_type'][:]),
+    np.array(data1.groups['reaches'].variables['grod_id'][:]),
+    np.array(data1.groups['reaches'].variables['hfalls_id'][:]),
+    np.array(data1.groups['reaches'].variables['slope'][:]),
+    np.array(data1.groups['reaches'].variables['dist_out'][:]),
+    np.array(data1.groups['reaches'].variables['lakeflag'][:]),
+    np.array(data1.groups['reaches'].variables['max_width'][:]),
+    np.array(data1.groups['reaches'].variables['n_rch_up'][:]),
+    np.array(data1.groups['reaches'].variables['n_rch_down'][:]),
     rch_id_up,
     rch_id_dn,
     swot_orbits,
-    np.array(data.groups['reaches'].variables['swot_obs'][:]),
+    np.array(data1.groups['reaches'].variables['swot_obs'][:]),
     rch_type,
-    np.array(data.groups['reaches'].variables['river_name'][:]),
-    np.array(data.groups['reaches'].variables['edit_flag'][:]),
-    np.array(data.groups['reaches'].variables['trib_flag'][:]),
+    np.array(data1.groups['reaches'].variables['river_name'][:]),
+    np.array(data1.groups['reaches'].variables['edit_flag'][:]),
+    np.array(data1.groups['reaches'].variables['trib_flag'][:]),
 ]).T
 
 #rename columns.
@@ -354,3 +362,11 @@ for lvl in list(range(len(unq_l2))):
     del(subset)
 end = time.time()
 print('Finished SHPs in: '+str(np.round((end-start)/60,2))+' min')
+
+
+
+
+
+
+
+np.where(unq_rch == 81210500271)[0]

@@ -1,3 +1,8 @@
+'''
+This function connects single neighbors at a common point, but does not handle 
+connecting junctions at a single point.
+'''
+
 import numpy as np
 import netCDF4 as nc
 import geopandas as gp

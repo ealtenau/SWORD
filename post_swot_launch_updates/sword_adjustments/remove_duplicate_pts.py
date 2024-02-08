@@ -845,7 +845,7 @@ region = args.region
 version = args.version
 
 if args.local_processing == 'True':
-    outdir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+    outdir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
 else:
     outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
 
@@ -1006,7 +1006,7 @@ for ind in list(range(len(rch_updates))):
     reaches.y_min[rch_ind] = np.min(centerlines.y[cl_rch])
     reaches.cl_id[0,rch_ind] = np.min(centerlines.cl_id[cl_rch])
     reaches.cl_id[1,rch_ind] = np.max(centerlines.cl_id[cl_rch])
-    reaches.n_nodes[rch_ind] = len(np.unique(centerlines.node_id[0,cl_rch]))
+    reaches.rch_n_nodes[rch_ind] = len(np.unique(centerlines.node_id[0,cl_rch]))
     reaches.len[rch_ind] = np.max(dist)
     reaches.dist_out[rch_ind] = reaches.dist_out[rch_ind]-diff_len
 

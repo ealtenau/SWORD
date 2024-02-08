@@ -259,3 +259,26 @@ ar = np.array([x,y]).T
 all_ind = np.array(list(range(ar.shape[0])))
 vals, keep_ind, count = np.unique(ar, return_counts=True, axis = 0, return_index=True)
 rmv = list(set(all_ind).difference(keep_ind))
+
+
+
+
+fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17_dup_pts_rmv.nc'
+
+
+pkl_fn = '/Users/ealtenau/Desktop/lr_icesat2_binned_sword16_subset74.pkl'
+import pickle
+with open(pkl_fn, 'rb') as f:
+    data = pickle.load(f)
+
+
+pkl_rchs = np.unique(data.reach_id)
+
+
+shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_original/shp/NA/na_sword_reaches_hb74_v16.shp'
+sword = gp.read_file(shp_fn)
+
+sword_rchs = np.unique(sword.reach_id)
+
+len(sword_rchs)
+len(pkl_rchs)

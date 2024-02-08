@@ -698,12 +698,12 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 
 region = 'EU'
 version = 'v17'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 rch_dir = '/Users/ealteanau/Documents/SWORD_Dev/update_requests/'+version+'/'+region.lower()+'_'+version+'_single_pt_rchs.csv'
 
 # rm_rch_df = pd.read_csv(rch_dir)
 # rm_rch = np.array(rm_rch_df.reach_id) #csv file
-rm_rch = np.array([23302700046, 23302700015, 23302700035, 23302700066, 23302700056, 23302700025]) #manual
+rm_rch = np.array([23302700015, 23302700025, 23302700035, 23302700046, 23302700056, 23302700066]) #manual
 centerlines, nodes, reaches = read_data(sword_dir)
 rch_check = reaches.id
 
