@@ -2,9 +2,9 @@ import numpy as np
 import netCDF4 as nc
 import pandas as pd
 
-region = 'AS'
-version = 'v16'
-sword_dir = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
+region = 'NA'
+version = 'v17a'
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc')
 
 #centerline variables to update.
@@ -45,5 +45,5 @@ for ind in list(range(len(rchs))):
 #export reaches to delete.
 rch_list = rchs[single_pt_rchs]
 # df = pd.DataFrame(rch_list)
-# df.to_csv('/Users/ealteanau/Documents/SWORD_Dev/update_requests/v16/'+region.lower()+'_'+version+'_single_pt_rchs.csv')
+# df.to_csv('/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region.lower()+'_'+version+'_single_pt_rchs.csv')
 print(len(rch_list)) 

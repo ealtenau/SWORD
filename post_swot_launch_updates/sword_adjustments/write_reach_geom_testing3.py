@@ -362,11 +362,3 @@ for lvl in list(range(len(unq_l2))):
     del(subset)
 end = time.time()
 print('Finished SHPs in: '+str(np.round((end-start)/60,2))+' min')
-
-
-
-
-
-
-
-np.where(unq_rch == 81210500271)[0]

@@ -6,10 +6,10 @@ from shapely.geometry import Point
 import time
 
 start=time.time()
-fn_dir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Atchafalaya/v2.0/pixel_cloud/'
-file = 'SWOT_L2_HR_PIXC_009_550_102L_20240123T183544_20240123T183555_PIC0_01.nc'
+fn_dir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/pixel_cloud/'
+file = 'SWOT_L2_HR_PIXC_008_495_193R_20231231T225617_20231231T225628_PIC0_01.nc'
 fn = fn_dir+file
-tile = '550_102L'
+tile = '495_193R'
 
 pixc = nc.Dataset(fn)
 ht = np.array(pixc.groups['pixel_cloud'].variables['height'][:])
@@ -61,7 +61,7 @@ pixc_all = gp.GeoDataFrame(pixc_all)
 pixc_all.set_geometry(col='geometry')
 pixc_all = pixc_all.set_crs(4326, allow_override=True)
 
-outgpkg = fn_dir+tile+'.gpkg' #fn_dir + 'gis_files/pixel_cloud_'+tile+'.gpkg'
+outgpkg = fn_dir+file[:-3]+'.gpkg'
 pixc_all.to_file(outgpkg, driver='GPKG', layer='pixc')
 
 end = time.time()

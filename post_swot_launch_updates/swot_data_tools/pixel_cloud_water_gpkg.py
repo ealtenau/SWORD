@@ -6,8 +6,8 @@ from shapely.geometry import Point
 import time
 
 start=time.time()
-fn_dir = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/Ganges/'
-file = 'SWOT_L2_HR_PIXC_005_495_193R_20231030T084101_20231030T084112_PIB0_01.nc'
+fn_dir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/pixel_cloud/'
+file = 'SWOT_L2_HR_PIXC_008_495_193R_20231231T225617_20231231T225628_PIC0_01.nc'
 fn = fn_dir+file
 
 pixc = nc.Dataset(fn)
@@ -24,7 +24,12 @@ geo_qual = np.array(pixc.groups['pixel_cloud'].variables['geolocation_qual'][:])
 frac = np.array(pixc.groups['pixel_cloud'].variables['water_frac'][:])
 xtrack = np.array(pixc.groups['pixel_cloud'].variables['sig0_qual'][:])
 
-water = np.where((type == 4) & (class_qual == 0) & (sig0 > 30))[0]
+# water = np.where((type == 4) & (class_qual == 0) & (sig0 > 30))[0]
+water = np.where((type == 4) & (sig0 > 30))[0]
+# water0 = np.where((type == 4) & (sig0 > 30))[0]
+# water = water0[np.where(class_qual[water0] == 524288)[0]]
+# water = np.append(water,water0[np.where(class_qual[water0] == 0)[0]])
+
 ht_water = ht[water]
 geoid_water = geoid[water]
 lat_water = lat[water]
@@ -74,7 +79,7 @@ pixc_water = gp.GeoDataFrame(pixc_water)
 pixc_water.set_geometry(col='geometry')
 pixc_water = pixc_water.set_crs(4326, allow_override=True)
 
-outgpkg = fn_dir + 'gis_files/'+file[:-3]+'_water.gpkg'
+outgpkg = fn_dir+file[:-3]+'_water_only.gpkg'
 pixc_water.to_file(outgpkg, driver='GPKG', layer='pixc')
 
 end = time.time()

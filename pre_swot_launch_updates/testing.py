@@ -282,3 +282,185 @@ sword_rchs = np.unique(sword.reach_id)
 
 len(sword_rchs)
 len(pkl_rchs)
+
+
+import numpy as np
+import rasterio
+from rasterio.plot import show
+
+r = rasterio.open('/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/raster/495_097F_wse_clip.tif')
+
+sig0  = rasterio.open('/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/raster/495_097F_sig0_clip.tif').read(1)
+wse = rasterio.open('/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/raster/495_097F_wse_clip.tif').read(1)
+xtrack  = rasterio.open('/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/raster/495_097F_xtrack_clip.tif').read(1)
+
+
+# Create a copy of first raster
+wse_masked = wse.copy()
+sig0_masked = sig0.copy()
+xtrack_masked = xtrack.copy()
+
+# Set a pixel value to 0 as an example, which will signify NoData
+# (top right pixel)
+
+
+# Mask out any NoData (0) values
+wse_masked = np.ma.masked_array(wse_masked, mask = (wse_masked == 9.96921e+36))
+sig0_masked = np.ma.masked_array(sig0_masked, mask = (sig0_masked == 9.96921e+36))
+xtrack_masked = np.ma.masked_array(xtrack_masked, mask = (xtrack_masked == 9.96921e+36))
+
+wse_0 = wse_masked.copy()
+wse_0 = ma.masked_where(sig0_masked < 15, wse_0)
+wse_0 = ma.masked_where(xtrack_masked <= 10000, wse_0)
+
+show(wse_masked, cmap='terrain')
+show(sig0_masked, cmap='plasma')
+show(xtrack_masked, cmap='viridis')
+
+show(wse_0, cmap='viridis')
+
+
+out_meta = r.meta.copy()
+
+out_meta.update({'nodata': 9.96921e+36,
+                 'height' : r.shape[0],
+                 'width' : r.shape[1],
+                 'transform' : r.transform})
+
+
+
+outLoc = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/raster/495_097F_filt_clip.tif'
+with rasterio.open(outLoc,'w',**out_meta) as dst:
+    dst.write(wse_0,1)
+
+newClip = rasterio.open(outLoc)
+clipIM = newClip.read(1,masked=True)
+show(clipIM, cmap='viridis')
+
+#######################################################################################################
+
+import numpy as np
+import rasterio
+from rasterio.plot import show
+import netCDF4 as nc
+
+lr = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/LR/SWOT_L2_LR_SSH_Expert_009_495_20240121T191011_20240121T200045_PIC0_01.nc')
+
+lat = lr.variables['latitude'][:].flatten()
+lon = lr.variables['longitude'][:].flatten()
+vals = lr.variables['depth_or_elevation'][:].flatten()
+
+lr_points = [(lon[i], lat[i]) for i in range(len(lon))]
+lr_pts = np.array(lr_points)
+
+xmin = 88.5
+xmax = 89.5
+ymin = 21.5
+ymax = 22.5
+ll = np.array([xmin, ymin])  # lower-left
+ur = np.array([xmax, ymax])  # upper-right
+        
+lr_idx = np.all(np.logical_and(ll <= lr_pts, lr_pts <= ur), axis=1)
+lr_lon_crop = lon[lr_idx]
+lr_lat_crop = lat[lr_idx]
+lr_vals_crop = vals[lr_idx]
+
+
+plt.scatter(lr_lon_crop,lr_lat_crop,c=lr_vals_crop,cmap='terrain')
+plt.show()
+
+nodes = gp.GeoDataFrame([
+    lr_lon_crop,
+    lr_lat_crop,
+    lr_vals_crop,
+]).T
+
+#rename columns.
+nodes.rename(
+    columns={
+        0:"x",
+        1:"y",
+        2:"elv",
+        },inplace=True)
+
+nodes = nodes.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
+geom = gp.GeoSeries(map(Point, zip(lr_lon_crop, lr_lat_crop)))
+nodes['geometry'] = geom
+nodes = gp.GeoDataFrame(nodes)
+nodes.set_geometry(col='geometry')
+nodes = nodes.set_crs(4326, allow_override=True)
+outdir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/LR/lr_elv.gpkg'
+nodes.to_file(outdir, driver='GPKG', layer='points')
+
+###################
+import xarray as xr
+import rioxarray as rio
+
+#Open the NetCDF
+#Download the sample from https://www.unidata.ucar.edu/software/netcdf/examples/sresa1b_ncar_ccsm3-example.nc
+ncfile = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/LR/SWOT_L2_LR_SSH_Expert_009_495_20240121T191011_20240121T200045_PIC0_01.nc')
+
+lon = np.array(ncfile.variables['longitude'][:]).flatten()
+lat = np.array(ncfile.variables['latitude'][:]).flatten()
+elv = np.array(ncfile.variables['depth_or_elevation'][:]).flatten()
+
+
+ds = xr.Dataset(
+    {"elv": (("x", "y"), elv.T)},
+    coords={
+        "x": list(lon[0,:]),
+        "y": list(lat[:,0]),
+    },
+)
+
+
+ds = xr.Dataset(
+    {"foo": (("x", "y"), np.random.rand(4, 5))},
+    coords={
+        "x": [10, 20, 30, 40],
+        "y": pd.date_range("2000-01-01", periods=5),
+        "z": ("x", list("abcd")),
+    },
+)
+
+
+
+start = time.time()
+dist = calc_path_dist(lon,lat)
+end = time.time()
+print(end-start)
+
+start = time.time()
+gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(lon, lat),crs="EPSG:4326").to_crs("EPSG:3857") 
+diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+dist = np.cumsum(test)
+end = time.time()
+print(end-start)
+
+
+#Check for the CRS
+ds.rio.crs
+
+#(Optional) If your CRS is not discovered, you should be able to add it like so:
+ds.rio.set_crs("epsg:4326")
+
+
+
+ds.rio.to_raster('/Users/ealtenau/Documents/SWORD_Dev/swot_data/Ganges/v2.0/LR/lr_elv.tif')
+
+
+
+
+
+
+
+import numpy as np
+from scipy import interpolate
+
+A = rch_paths_dist[pts]
+A[np.where(A == 0)] = np.nan
+
+inds = np.arange(A.shape[0])
+good = np.where(np.isfinite(A))
+f = interpolate.interp1d(inds[good], A[good],bounds_error=False)
+B = np.where(np.isfinite(A),A,f(inds))
