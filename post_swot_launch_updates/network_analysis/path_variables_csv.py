@@ -233,7 +233,8 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                 
 def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
                       cl_rchs,cl_nodes,rch_paths,rch_paths_order,
-                      rch_paths_dist,rch_paths_dist2,main_side):
+                      rch_paths_dist,rch_paths_dist2,main_side,
+                      strm_order):
     
     # global attributes
     root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
@@ -279,6 +280,8 @@ def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
         'dist_out_all', 'f8', ('num_points',), fill_value=-9999.)
     main_net = cl_grp.createVariable(
         'main_side_chan', 'i4', ('num_points',), fill_value=-9999.)
+    stream_order = cl_grp.createVariable(
+        'stream_order', 'i4', ('num_points',), fill_value=-9999.)
 
     # saving data
     print("saving nc")
@@ -294,6 +297,7 @@ def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
     path_dist_all[:] = rch_paths_dist2[:]
     path_freq[:] = rch_paths[:]
     main_net[:] = main_side[:]
+    stream_order[:] = strm_order[:]
 
     root_grp.close()
 
@@ -307,19 +311,21 @@ version = 'v17a'
 basin = 'hb74'
 
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
+sword_dir2 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 path_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'
 path_files = os.listdir(path_dir)
 path_files = np.array([f for f in path_files if '.gpkg' in f])
-path_files = np.array([f for f in path_files if 'paths_' in f])
+path_files = np.array([f for f in path_files if 'path_' in f])
 path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
 
 #reading in sword data.
 sword = nc.Dataset(sword_dir)
+sword2 = nc.Dataset(sword_dir2)
 cl_id_all = sword.groups['centerlines'].variables['cl_id'][:]
 cl_x_all = sword.groups['centerlines'].variables['x'][:]
 cl_y_all = sword.groups['centerlines'].variables['y'][:]
 cl_rchs_all = sword.groups['centerlines'].variables['reach_id'][:]
-cl_nodes_all = sword.groups['centerlines'].variables['node_id'][:]
+cl_nodes_all = sword2.groups['centerlines'].variables['node_id'][:]
 sword.close()
 
 #subset sword to basin. 
@@ -329,8 +335,8 @@ cl_ind = cl_id_all[l2]
 cl_lon = cl_x_all[l2]
 cl_lat = cl_y_all[l2]
 cl_rchs = cl_rchs_all[:,l2]
-cl_nodes = cl_nodes_all[l2]
-del(cl_id_all);del(cl_x_all);del(cl_y_all);del(cl_rchs_all);del(cl_nodes_all)
+cl_nodes = cl_nodes_all[:,l2]
+del(cl_id_all);del(cl_x_all);del(cl_y_all);del(cl_rchs_all)#;del(cl_nodes_all)
 
 #if more than one file, sort by longest path in each file (descending).
 if len(path_files) > 1:
@@ -427,13 +433,13 @@ for z in list(range(len(zero_rchs))):
         rch_paths_dist[pts] = 0
 
 #renumber reach path freqency values from 1-max number of values. 
-unq_paths = np.sort(np.unique(rch_paths))
-unq_paths = np.sort(unq_paths[np.where(unq_paths > 0)])
-count = 1
-for p in list(range(len(unq_paths))):
-    pth = np.where(rch_paths == unq_paths[p])
-    rch_paths[pth] = count 
-    count = count+1
+# unq_paths = np.sort(np.unique(rch_paths))
+# unq_paths = np.sort(unq_paths[np.where(unq_paths > 0)])
+# count = 1
+# for p in list(range(len(unq_paths))):
+#     pth = np.where(rch_paths == unq_paths[p])
+#     rch_paths[pth] = count 
+#     count = count+1
 
 #define side channels
 zero2 = np.where(rch_paths == 0)[0]
@@ -455,24 +461,33 @@ rch_paths_dist2 = np.where(np.isfinite(rch_paths_dist2),rch_paths_dist2,interp(i
 end = time.time()
 print('Finished Filling Side Channels in: '+str(np.round((end-start)/60,2))+' mins')
 
+### Think about straheler stream order?
+# strm_order = np.copy(rch_paths)
+# normalize = np.where(strm_order >= 5)[0] # Mississippi has 5 outlets so 5 is the first order streams in the connected river system...
+# strm_order[normalize] = (np.round(np.log(rch_paths[normalize]))-(np.min(np.round(np.log(rch_paths[normalize])))))+1
+# strm_order[np.where(strm_order == 0)] = 1
+
 print('Saving NetCDF')
 start = time.time()
 write_path_netcdf(path_nc,basin,cl_ind,cl_lon,cl_lat,
                   cl_rchs,cl_nodes,rch_paths,rch_paths_order,
-                  rch_paths_dist,rch_paths_dist2,main_side)
+                  rch_paths_dist,rch_paths_dist2,main_side,
+                  strm_order)
 
 end_all = time.time()
 print('Finished Basin '+basin+' in: '+str(np.round((end_all-start_all)/60,2))+' mins')
 
 
+
+
 '''
 ### PLOTS
-side = np.where(main_side == 1)[0]
-plt.scatter(cl_lon, cl_lat, c=np.log(rch_paths), s = 5, cmap='rainbow')
-plt.scatter(cl_lon[side], cl_lat[side], c=side_dist[side], s = 5)
+one = np.where(rch_paths == 3)[0]
+plt.scatter(cl_lon, cl_lat, c=np.round(np.log(rch_paths)), s = 5, cmap='rainbow')
+plt.scatter(cl_lon[one], cl_lat[one], c='black', s = 5)
 plt.show()
 
-plt.scatter(cl_lon, cl_lat, c=rch_paths_dist, s = 5, cmap='magma')
+plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 5, cmap='magma')
 plt.show()
 
 plt.scatter(cl_lon, cl_lat, c=np.log(rch_paths_order), s = 5, cmap='rainbow')
@@ -481,6 +496,8 @@ plt.show()
 plt.scatter(cl_lon[sort_ind], cl_lat[sort_ind], c=cl_ind[sort_ind], s = 5, cmap='rainbow')
 plt.show()
 
+plt.scatter(cl_lon, cl_lat, c=strm_order, s = 5, cmap='rainbow')
+plt.show()
 
 
 side = np.where(main_side == 1)[0]
@@ -519,8 +536,6 @@ df=df.rename(columns={0: "x", 1: "y"})
 df.to_csv(path_csv)
 
 
-
-
 #read in vars from nc
 path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
 
@@ -535,3 +550,21 @@ data.close()
 
 
 '''
+
+strm_order = np.copy(rch_paths)
+outlet_num = 5
+reduce = np.where(strm_order >= outlet_num)[0]
+np.unique(strm_order[reduce]/5)
+
+
+'''
+divide rch_paths by 5 (number of outlets). Then find all reaches at a junction and find all neighbors upstream (using dist_out)
+find all neighbors of stream order 1 rivers and label as two and so forth... 
+
+for each path in path_order, find junctions and split up between junctions using dist_out. the do above... 
+
+
+'''
+
+
+#find all neighbors of 1 tribs and see where all the neighbors are 1 and assign as two etc... 

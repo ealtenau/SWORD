@@ -11,6 +11,7 @@ import os
 import matplotlib.pyplot as plt
 import utm
 from pyproj import Proj
+import matplotlib.pyplot as plt
 
 ###############################################################################
 ###############################################################################
@@ -33,75 +34,75 @@ def read_data(filename):
     
     data = nc.Dataset(filename)
     
-    centerlines.cl_id = data.groups['centerlines'].variables['cl_id'][:]
-    centerlines.x = data.groups['centerlines'].variables['x'][:]
-    centerlines.y = data.groups['centerlines'].variables['y'][:]
-    centerlines.reach_id = data.groups['centerlines'].variables['reach_id'][:]
-    centerlines.node_id = data.groups['centerlines'].variables['node_id'][:]
+    centerlines.cl_id = np.array(data.groups['centerlines'].variables['cl_id'][:])
+    centerlines.x = np.array(data.groups['centerlines'].variables['x'][:])
+    centerlines.y = np.array(data.groups['centerlines'].variables['y'][:])
+    centerlines.reach_id = np.array(data.groups['centerlines'].variables['reach_id'][:])
+    centerlines.node_id = np.array(data.groups['centerlines'].variables['node_id'][:])
     
-    nodes.id = data.groups['nodes'].variables['node_id'][:]
-    nodes.cl_id = data.groups['nodes'].variables['cl_ids'][:]
-    nodes.x = data.groups['nodes'].variables['x'][:]
-    nodes.y = data.groups['nodes'].variables['y'][:]
-    nodes.len = data.groups['nodes'].variables['node_length'][:]
-    nodes.wse = data.groups['nodes'].variables['wse'][:]
-    nodes.wse_var = data.groups['nodes'].variables['wse_var'][:]
-    nodes.wth = data.groups['nodes'].variables['width'][:]
-    nodes.wth_var = data.groups['nodes'].variables['width_var'][:]
-    nodes.grod = data.groups['nodes'].variables['obstr_type'][:]
-    nodes.grod_fid = data.groups['nodes'].variables['grod_id'][:]
-    nodes.hfalls_fid = data.groups['nodes'].variables['hfalls_id'][:]
-    nodes.nchan_max = data.groups['nodes'].variables['n_chan_max'][:]
-    nodes.nchan_mod = data.groups['nodes'].variables['n_chan_mod'][:]
-    nodes.dist_out = data.groups['nodes'].variables['dist_out'][:]
-    nodes.reach_id = data.groups['nodes'].variables['reach_id'][:]
-    nodes.facc = data.groups['nodes'].variables['facc'][:]
-    nodes.lakeflag = data.groups['nodes'].variables['lakeflag'][:]
-    nodes.wth_coef = data.groups['nodes'].variables['wth_coef'][:]
-    nodes.ext_dist_coef = data.groups['nodes'].variables['ext_dist_coef'][:]
-    nodes.max_wth = data.groups['nodes'].variables['max_width'][:]
-    nodes.meand_len = data.groups['nodes'].variables['meander_length'][:]
-    nodes.river_name = data.groups['nodes'].variables['river_name'][:]
-    nodes.manual_add = data.groups['nodes'].variables['manual_add'][:]
-    nodes.sinuosity = data.groups['nodes'].variables['sinuosity'][:]
-    nodes.edit_flag = data.groups['nodes'].variables['edit_flag'][:]
-    nodes.trib_flag = data.groups['nodes'].variables['trib_flag'][:]
+    nodes.id = np.array(data.groups['nodes'].variables['node_id'][:])
+    nodes.cl_id = np.array(data.groups['nodes'].variables['cl_ids'][:])
+    nodes.x = np.array(data.groups['nodes'].variables['x'][:])
+    nodes.y = np.array(data.groups['nodes'].variables['y'][:])
+    nodes.len = np.array(data.groups['nodes'].variables['node_length'][:])
+    nodes.wse = np.array(data.groups['nodes'].variables['wse'][:])
+    nodes.wse_var = np.array(data.groups['nodes'].variables['wse_var'][:])
+    nodes.wth = np.array(data.groups['nodes'].variables['width'][:])
+    nodes.wth_var = np.array(data.groups['nodes'].variables['width_var'][:])
+    nodes.grod = np.array(data.groups['nodes'].variables['obstr_type'][:])
+    nodes.grod_fid = np.array(data.groups['nodes'].variables['grod_id'][:])
+    nodes.hfalls_fid = np.array(data.groups['nodes'].variables['hfalls_id'][:])
+    nodes.nchan_max = np.array(data.groups['nodes'].variables['n_chan_max'][:])
+    nodes.nchan_mod = np.array(data.groups['nodes'].variables['n_chan_mod'][:])
+    nodes.dist_out = np.array(data.groups['nodes'].variables['dist_out'][:])
+    nodes.reach_id = np.array(data.groups['nodes'].variables['reach_id'][:])
+    nodes.facc = np.array(data.groups['nodes'].variables['facc'][:])
+    nodes.lakeflag = np.array(data.groups['nodes'].variables['lakeflag'][:])
+    nodes.wth_coef = np.array(data.groups['nodes'].variables['wth_coef'][:])
+    nodes.ext_dist_coef = np.array(data.groups['nodes'].variables['ext_dist_coef'][:])
+    nodes.max_wth = np.array(data.groups['nodes'].variables['max_width'][:])
+    nodes.meand_len = np.array(data.groups['nodes'].variables['meander_length'][:])
+    nodes.river_name = np.array(data.groups['nodes'].variables['river_name'][:])
+    nodes.manual_add = np.array(data.groups['nodes'].variables['manual_add'][:])
+    nodes.sinuosity = np.array(data.groups['nodes'].variables['sinuosity'][:])
+    nodes.edit_flag = np.array(data.groups['nodes'].variables['edit_flag'][:])
+    nodes.trib_flag = np.array(data.groups['nodes'].variables['trib_flag'][:])
 
-    reaches.id = data.groups['reaches'].variables['reach_id'][:]
-    reaches.cl_id = data.groups['reaches'].variables['cl_ids'][:]
-    reaches.x = data.groups['reaches'].variables['x'][:]
-    reaches.x_min = data.groups['reaches'].variables['x_min'][:]
-    reaches.x_max = data.groups['reaches'].variables['x_max'][:]
-    reaches.y = data.groups['reaches'].variables['y'][:]
-    reaches.y_min = data.groups['reaches'].variables['y_min'][:]
-    reaches.y_max = data.groups['reaches'].variables['y_max'][:]
-    reaches.len = data.groups['reaches'].variables['reach_length'][:]
-    reaches.wse = data.groups['reaches'].variables['wse'][:]
-    reaches.wse_var = data.groups['reaches'].variables['wse_var'][:]
-    reaches.wth = data.groups['reaches'].variables['width'][:]
-    reaches.wth_var = data.groups['reaches'].variables['width_var'][:]
-    reaches.slope = data.groups['reaches'].variables['slope'][:]
-    reaches.rch_n_nodes = data.groups['reaches'].variables['n_nodes'][:]
-    reaches.grod = data.groups['reaches'].variables['obstr_type'][:]
-    reaches.grod_fid = data.groups['reaches'].variables['grod_id'][:]
-    reaches.hfalls_fid = data.groups['reaches'].variables['hfalls_id'][:]
-    reaches.lakeflag = data.groups['reaches'].variables['lakeflag'][:]
-    reaches.nchan_max = data.groups['reaches'].variables['n_chan_max'][:]
-    reaches.nchan_mod = data.groups['reaches'].variables['n_chan_mod'][:]
-    reaches.dist_out = data.groups['reaches'].variables['dist_out'][:]
-    reaches.n_rch_up = data.groups['reaches'].variables['n_rch_up'][:]
-    reaches.n_rch_down = data.groups['reaches'].variables['n_rch_down'][:]
-    reaches.rch_id_up = data.groups['reaches'].variables['rch_id_up'][:]
-    reaches.rch_id_down = data.groups['reaches'].variables['rch_id_dn'][:]
-    reaches.max_obs = data.groups['reaches'].variables['swot_obs'][:]
-    reaches.orbits = data.groups['reaches'].variables['swot_orbits'][:]
-    reaches.facc = data.groups['reaches'].variables['facc'][:]
-    reaches.iceflag = data.groups['reaches'].variables['iceflag'][:]
-    reaches.max_wth = data.groups['reaches'].variables['max_width'][:]
-    reaches.river_name = data.groups['reaches'].variables['river_name'][:]
-    reaches.low_slope = data.groups['reaches'].variables['low_slope_flag'][:]
-    reaches.edit_flag= data.groups['reaches'].variables['edit_flag'][:]
-    reaches.trib_flag = data.groups['reaches'].variables['trib_flag'][:]
+    reaches.id = np.array(data.groups['reaches'].variables['reach_id'][:])
+    reaches.cl_id = np.array(data.groups['reaches'].variables['cl_ids'][:])
+    reaches.x = np.array(data.groups['reaches'].variables['x'][:])
+    reaches.x_min = np.array(data.groups['reaches'].variables['x_min'][:])
+    reaches.x_max = np.array(data.groups['reaches'].variables['x_max'][:])
+    reaches.y = np.array(data.groups['reaches'].variables['y'][:])
+    reaches.y_min = np.array(data.groups['reaches'].variables['y_min'][:])
+    reaches.y_max = np.array(data.groups['reaches'].variables['y_max'][:])
+    reaches.len = np.array(data.groups['reaches'].variables['reach_length'][:])
+    reaches.wse = np.array(data.groups['reaches'].variables['wse'][:])
+    reaches.wse_var = np.array(data.groups['reaches'].variables['wse_var'][:])
+    reaches.wth = np.array(data.groups['reaches'].variables['width'][:])
+    reaches.wth_var = np.array(data.groups['reaches'].variables['width_var'][:])
+    reaches.slope = np.array(data.groups['reaches'].variables['slope'][:])
+    reaches.rch_n_nodes = np.array(data.groups['reaches'].variables['n_nodes'][:])
+    reaches.grod = np.array(data.groups['reaches'].variables['obstr_type'][:])
+    reaches.grod_fid = np.array(data.groups['reaches'].variables['grod_id'][:])
+    reaches.hfalls_fid = np.array(data.groups['reaches'].variables['hfalls_id'][:])
+    reaches.lakeflag = np.array(data.groups['reaches'].variables['lakeflag'][:])
+    reaches.nchan_max = np.array(data.groups['reaches'].variables['n_chan_max'][:])
+    reaches.nchan_mod = np.array(data.groups['reaches'].variables['n_chan_mod'][:])
+    reaches.dist_out = np.array(data.groups['reaches'].variables['dist_out'][:])
+    reaches.n_rch_up = np.array(data.groups['reaches'].variables['n_rch_up'][:])
+    reaches.n_rch_down = np.array(data.groups['reaches'].variables['n_rch_down'][:])
+    reaches.rch_id_up = np.array(data.groups['reaches'].variables['rch_id_up'][:])
+    reaches.rch_id_down = np.array(data.groups['reaches'].variables['rch_id_dn'][:])
+    reaches.max_obs = np.array(data.groups['reaches'].variables['swot_obs'][:])
+    reaches.orbits = np.array(data.groups['reaches'].variables['swot_orbits'][:])
+    reaches.facc = np.array(data.groups['reaches'].variables['facc'][:])
+    reaches.iceflag = np.array(data.groups['reaches'].variables['iceflag'][:])
+    reaches.max_wth = np.array(data.groups['reaches'].variables['max_width'][:])
+    reaches.river_name = np.array(data.groups['reaches'].variables['river_name'][:])
+    reaches.low_slope = np.array(data.groups['reaches'].variables['low_slope_flag'][:])
+    reaches.edit_flag= np.array(data.groups['reaches'].variables['edit_flag'][:])
+    reaches.trib_flag = np.array(data.groups['reaches'].variables['trib_flag'][:])
 
     data.close()    
 
@@ -713,60 +714,262 @@ trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'
 centerlines, nodes, reaches = read_data(nc_fn)
 
 cl_level6 = np.array([str(ind)[0:6] for ind in centerlines.node_id[0,:]])
-cl_rch_num = np.array([str(ind)[6:10] for ind in centerlines.node_id[0,:]])
-cl_node_num = np.array([str(ind)[10:13] for ind in centerlines.node_id[0,:]])
-cl_rch_num_int = np.array([int(str(ind)[6:10]) for ind in centerlines.node_id[0,:]])
+# cl_rch_num_int = np.array([int(str(ind)[6:10]) for ind in centerlines.node_id[0,:]])
 cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in centerlines.node_id[0,:]])
 cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 
 tribs = gp.read_file(trib_fn)
 reach = np.array(tribs['reach_id']) #[81153500201]
 break_id = np.array(tribs['cl_id']) #[7032484]
-
-for r in list(range(len(reach))):
-    print(r, len(reach)-1)
-    cl_r = np.where(centerlines.reach_id[0,:] == reach[r])[0]
-    rch = np.where(reaches.id == reach[r])[0]
-    node_rch = np.where(nodes.reach_id == reach[r])[0]
+unq_rchs = np.unique(reach)
+for r in list(range(len(unq_rchs))):
+    print('r', r, len(unq_rchs)-1)
+    cl_r = np.where(centerlines.reach_id[0,:] == unq_rchs[r])[0]
     order_ids = np.argsort(centerlines.cl_id[cl_r])
 
-    breaks = break_id[np.where(reach == reach[r])[0]]
-    break_pts = [order_ids[np.where(centerlines.cl_id[cl_r[order_ids]] == b)[0]][0] for b in breaks]
+    breaks = break_id[np.where(reach == unq_rchs[r])[0]]
+    break_pts = np.array([np.where(centerlines.cl_id[cl_r[order_ids]] == b)[0][0] for b in breaks])
     
-    ###########################loop through break_pts... 
-    b=0
-    # if b == 0:
-    update_ids = order_ids[0:break_pts[b]]
+    #append start and end points. 
+    bounds = np.append(0,break_pts)
+    bounds = np.append(bounds, len(cl_r))
 
-    #get new rch distance for all reach_ids effected.
-    gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(centerlines.x[update_ids], 
-                                                     centerlines.y[update_ids]),
-                                                     crs="EPSG:4326").to_crs("EPSG:3857")
-    
-    diff = gdf.distance(gdf.shift(1)); diff[0] = 0
-    dist = np.cumsum(diff)
-    new_rch_len = np.max(dist)
-    new_rch_x = np.median(centerlines.x[update_ids])
-    new_rch_y = np.median(centerlines.y[update_ids])
-    new_rch_x_max = np.max(centerlines.x[update_ids])
-    new_rch_x_min = np.min(centerlines.x[update_ids])
-    new_rch_y_max = np.max(centerlines.y[update_ids])
-    new_rch_y_min = np.min(centerlines.y[update_ids])
-    new_rch_id = Need to calculate
+    new_divs = np.zeros(len(cl_r))
+    count = 1
+    for b in list(range(len(bounds)-1)):
+        update_nds = cl_r[order_ids[bounds[b]:bounds[b+1]]]
+        nds = np.unique(centerlines.node_id[0,update_nds])
+        fill = np.where(np.in1d(centerlines.node_id[0,cl_r], nds) == True)[0]
+        if np.max(new_divs[fill])==0:
+            new_divs[fill] = count 
+            count = count+1
+        else:
+            z = np.where(new_divs[fill] == 0)[0]
+            new_divs[fill[z]] = count
+            count = count+1
 
-    unq_nodes = np.unique(cl_nodes[0,update_ids])
-    new_node_len = np.zeros(len(unq_nodes))
-    new_node_x = np.zeros(len(unq_nodes))
-    new_node_y = np.zeros(len(unq_nodes))
-    new_node_id = np.zeros(len(unq_nodes))
-    for n in list(range(len(unq_nodes))):
-        pts = np.where(centerlines.node_id[0,rch] == unq_nodes[n])[0]
-        new_node_x[n] = np.median(centerlines.x[rch[pts]])
-        new_node_y[n] = np.median(centerlines.y[rch[pts]])
-        new_node_len[n] = np.max(dist[pts])-np.min(dist[pts])
-        new_node_id[n] = Need to calculate
-        if len(pts) == 1:
-            new_node_len[n] = 30
-    
-    # if b > 0:
-    ### update *ALL* the variables...
+    ###########################loop through bounds-1... 
+    unq_divs = np.unique(new_divs)
+    for d in list(range(len(unq_divs))):
+        # print('b', b)
+        if d == 0:
+            # print('1')
+            update_ids = cl_r[np.where(new_divs == unq_divs[d])]
+            new_cl_rch_id = centerlines.reach_id[0,update_ids]
+            new_cl_node_ids = centerlines.node_id[0,update_ids]
+            new_rch_id = np.unique(centerlines.reach_id[0,update_ids])[0]
+        else:
+            # print('2')
+            #Create New Reach ID
+            update_ids = cl_r[np.where(new_divs == unq_divs[d])]
+            old_nodes = np.unique(centerlines.node_id[0,update_ids])
+            old_rch = np.unique(centerlines.reach_id[0,update_ids])[0]
+            l6_basin = np.where(cl_level6 == np.unique(cl_level6[update_ids]))[0]
+            cl_rch_num_int = np.array([int(str(ind)[6:10]) for ind in centerlines.node_id[0,l6_basin]])
+            new_rch_num = np.max(cl_rch_num_int)+1
+            if len(str(new_rch_num)) == 1:
+                fill = '000'
+                new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+            if len(str(new_rch_num)) == 2:
+                fill = '00'
+                new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+            if len(str(new_rch_num)) == 3:
+                fill = '0'
+                new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+            if len(str(new_rch_num)) == 4:
+                new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+            new_cl_rch_id = np.repeat(new_rch_id, len(update_ids))
+
+            # print('3')
+            #Create New Node IDs 
+            new_cl_node_ids = np.zeros(len(update_ids),dtype=int)
+            new_cl_node_nums = cl_node_num_int[update_ids] - np.min(cl_node_num_int[update_ids]) + 1
+            for n in list(range(len(new_cl_node_nums))):
+                if len(str(new_cl_node_nums[n])) == 1:
+                    fill = '00'
+                    new_cl_node_ids[n] = int(str(new_rch_id)[0:-1]+fill+str(new_cl_node_nums[n])+str(new_rch_id)[-1])
+                if len(str(new_cl_node_nums[n])) == 2:
+                    fill = '0'
+                    new_cl_node_ids[n] = int(str(new_rch_id)[0:-1]+fill+str(new_cl_node_nums[n])+str(new_rch_id)[-1])
+                if len(str(new_cl_node_nums[n])) == 3:
+                    new_cl_node_ids[n] = int(str(new_rch_id)[0:-1]+fill+str(new_cl_node_nums[n])+str(new_rch_id)[-1])
+
+        # print('4')
+        #get new rch distance for all reach_ids effected.
+        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(centerlines.x[update_ids], 
+                                                        centerlines.y[update_ids]),
+                                                        crs="EPSG:4326").to_crs("EPSG:3857")
+        diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+        dist = np.cumsum(diff)
+        
+        # print('5')
+        new_rch_len = np.max(dist)
+        new_rch_x = np.median(centerlines.x[update_ids])
+        new_rch_y = np.median(centerlines.y[update_ids])
+        new_rch_x_max = np.max(centerlines.x[update_ids])
+        new_rch_x_min = np.min(centerlines.x[update_ids])
+        new_rch_y_max = np.max(centerlines.y[update_ids])
+        new_rch_y_min = np.min(centerlines.y[update_ids])
+
+        # print('6')
+        unq_nodes = np.unique(new_cl_node_ids)
+        new_node_len = np.zeros(len(unq_nodes))
+        new_node_x = np.zeros(len(unq_nodes))
+        new_node_y = np.zeros(len(unq_nodes))
+        new_node_id = np.zeros(len(unq_nodes))
+        new_node_cl_ids = np.zeros((2,len(unq_nodes)))
+        for n2 in list(range(len(unq_nodes))):
+            pts = np.where(new_cl_node_ids == unq_nodes[n2])[0]
+            new_node_x[n2] = np.median(centerlines.x[update_ids[pts]])
+            new_node_y[n2] = np.median(centerlines.y[update_ids[pts]])
+            new_node_len[n2] = np.max(dist[pts])-np.min(dist[pts])
+            new_node_id[n2] = unq_nodes[n2]
+            new_node_cl_ids[0,n2] = np.min(centerlines.cl_id[update_ids[pts]])
+            new_node_cl_ids[1,n2] = np.max(centerlines.cl_id[update_ids[pts]])
+            if len(pts) == 1:
+                new_node_len[n2] = 30
+        
+        if new_rch_id in reaches.id:
+            # print('7')
+            node_ind = np.where(np.in1d(nodes.id, new_node_id)==True)[0]
+            nodes.len[node_ind] = new_node_len
+            nodes.cl_id[:,node_ind] = new_node_cl_ids
+            nodes.x[node_ind] = new_node_x
+            nodes.y[node_ind] = new_node_y
+            
+            rch = np.where(reaches.id == new_rch_id)[0]
+            reaches.cl_id[0,rch] = np.min(centerlines.cl_id[update_ids])
+            reaches.cl_id[1,rch] = np.max(centerlines.cl_id[update_ids])
+            reaches.x[rch] = new_rch_x
+            reaches.x_min[rch] = new_rch_x_min
+            reaches.x_max[rch] = new_rch_x_max
+            reaches.y[rch] = new_rch_y
+            reaches.y_min[rch] = new_rch_y_min
+            reaches.y_max[rch] = new_rch_y_max
+            reaches.len[rch] = new_rch_len
+            reaches.rch_n_nodes[rch] = len(new_node_id)
+
+        else:
+            # print('8')
+            centerlines.reach_id[0,update_ids] = new_cl_rch_id
+            centerlines.node_id[0,update_ids] = new_cl_node_ids
+            
+            old_ind = np.where(np.in1d(nodes.id, old_nodes) == True)[0]
+            nodes.id[old_ind] = new_node_id
+            nodes.len[old_ind] = new_node_len
+            nodes.cl_id[:,old_ind] = new_node_cl_ids
+            nodes.x[old_ind] = new_node_x
+            nodes.y[old_ind] = new_node_y
+            nodes.reach_id[old_ind] = np.repeat(new_rch_id, len(new_node_id))
+            
+            rch = np.where(reaches.id == old_rch)[0]
+            reaches.id = np.append(reaches.id, new_rch_id)
+            new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
+            reaches.cl_id = np.append(reaches.cl_id, new_cl_ids, axis=1)
+            reaches.x = np.append(reaches.x, new_rch_x)
+            reaches.x_min = np.append(reaches.x_min, new_rch_x_min)
+            reaches.x_max = np.append(reaches.x_max, new_rch_x_max)
+            reaches.y = np.append(reaches.y, new_rch_y)
+            reaches.y_min = np.append(reaches.y_min, new_rch_y_min)
+            reaches.y_max = np.append(reaches.y_max, new_rch_y_max)
+            reaches.len = np.append(reaches.len, new_rch_len)
+            reaches.rch_n_nodes = np.append(reaches.rch_n_nodes, len(new_node_id))
+            #fill attribute with current values. 
+            reaches.wse = np.append(reaches.wse, reaches.wse[rch])
+            reaches.wse_var = np.append(reaches.wse_var, reaches.wse_var[rch])
+            reaches.wth = np.append(reaches.wth, reaches.wth[rch])
+            reaches.wth_var = np.append(reaches.wth_var, reaches.wth_var[rch])
+            reaches.slope = np.append(reaches.slope, reaches.slope[rch])
+            reaches.grod = np.append(reaches.grod, reaches.grod[rch])
+            reaches.grod_fid = np.append(reaches.grod_fid, reaches.grod_fid[rch])
+            reaches.hfalls_fid = np.append(reaches.hfalls_fid, reaches.hfalls_fid[rch])
+            reaches.lakeflag = np.append(reaches.lakeflag, reaches.lakeflag[rch])
+            reaches.nchan_max = np.append(reaches.nchan_max, reaches.nchan_max[rch])
+            reaches.nchan_mod = np.append(reaches.nchan_mod, reaches.nchan_mod[rch])
+            reaches.dist_out = np.append(reaches.dist_out, reaches.dist_out[rch])
+            reaches.n_rch_up = np.append(reaches.n_rch_up, reaches.n_rch_up[rch])
+            reaches.n_rch_down = np.append(reaches.n_rch_down, reaches.n_rch_down[rch])
+            reaches.rch_id_up = np.append(reaches.rch_id_up, reaches.rch_id_up[:,rch], axis=1)
+            reaches.rch_id_down = np.append(reaches.rch_id_down, reaches.rch_id_down[:,rch], axis=1)
+            reaches.max_obs = np.append(reaches.max_obs, reaches.max_obs[rch])
+            reaches.orbits = np.append(reaches.orbits, reaches.orbits[:,rch], axis=1)
+            reaches.facc = np.append(reaches.facc, reaches.facc[rch])
+            reaches.iceflag = np.append(reaches.iceflag, reaches.iceflag[:,rch], axis=1)
+            reaches.max_wth = np.append(reaches.max_wth, reaches.max_wth[rch])
+            reaches.river_name = np.append(reaches.river_name, reaches.river_name[rch])
+            reaches.low_slope = np.append(reaches.low_slope, reaches.low_slope[rch])
+            reaches.edit_flag = np.append(reaches.edit_flag, reaches.edit_flag[rch])
+            reaches.trib_flag = np.append(reaches.trib_flag, reaches.trib_flag[rch])
+
+###############################################################################
+### Filler variables
+# discharge subgroup 1
+reaches.h_break = np.full((4,len(reaches.id)), -9999.0)
+reaches.w_break = np.full((4,len(reaches.id)), -9999.0)
+reaches.hw_covariance = np.repeat(-9999., len(reaches.id))
+reaches.h_err_stdev = np.repeat(-9999., len(reaches.id))
+reaches.w_err_stdev = np.repeat(-9999., len(reaches.id))
+reaches.h_w_nobs = np.repeat(-9999., len(reaches.id))
+reaches.fit_coeffs = np.zeros((2, 3, len(reaches.id)))
+reaches.fit_coeffs[np.where(reaches.fit_coeffs == 0)] = -9999.0
+reaches.med_flow_area = np.repeat(-9999., len(reaches.id))
+#MetroMan
+reaches.metroman_ninf = np.repeat(-9999, len(reaches.id))
+reaches.metroman_p = np.repeat(-9999, len(reaches.id))
+reaches.metroman_abar = np.repeat(-9999, len(reaches.id))
+reaches.metroman_abar_stdev = np.repeat(-9999, len(reaches.id))
+reaches.metroman_ninf_stdev = np.repeat(-9999, len(reaches.id))
+reaches.metroman_p_stdev = np.repeat(-9999, len(reaches.id))
+reaches.metroman_ninf_p_cor = np.repeat(-9999, len(reaches.id))
+reaches.metroman_ninf_abar_cor = np.repeat(-9999, len(reaches.id))
+reaches.metroman_p_abar_cor = np.repeat(-9999, len(reaches.id))
+reaches.metroman_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#HiDVI
+reaches.hivdi_abar = np.repeat(-9999, len(reaches.id))
+reaches.hivdi_alpha = np.repeat(-9999, len(reaches.id))
+reaches.hivdi_beta = np.repeat(-9999, len(reaches.id))
+reaches.hivdi_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#MOMMA
+reaches.momma_b = np.repeat(-9999, len(reaches.id))
+reaches.momma_h = np.repeat(-9999, len(reaches.id))
+reaches.momma_save = np.repeat(-9999, len(reaches.id))
+reaches.momma_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#SADS
+reaches.sads_abar = np.repeat(-9999, len(reaches.id))
+reaches.sads_n = np.repeat(-9999, len(reaches.id))
+reaches.sads_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#BAM
+reaches.bam_abar = np.repeat(-9999, len(reaches.id))
+reaches.bam_n = np.repeat(-9999, len(reaches.id))
+reaches.bam_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#SIC4DVar
+reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
+reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
+reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
+
+write_database_nc(centerlines, reaches, nodes, region, nc_fn)
+
+print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
+print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(reaches.id))
+print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
+
+
+'''
+
+plt.scatter(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c='black', s=5)
+plt.show()
+
+
+check = np.where(centerlines.cl_id == breaks)[0]
+plt.plot(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c='black')
+plt.plot(centerlines.x[update_ids], centerlines.y[update_ids], c='blue')
+plt.plot(centerlines.x[update_ids2], centerlines.y[update_ids2], c='green')
+plt.scatter(centerlines.x[cl_r[order_ids[bounds]]], centerlines.y[cl_r[order_ids[bounds]]], c='red', s = 10)
+plt.scatter(centerlines.x[check], centerlines.y[check], c='grey', s = 10)
+plt.show()
+
+plt.plot(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c='black')
+plt.scatter(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c=new_divs)
+plt.show()
+
+'''

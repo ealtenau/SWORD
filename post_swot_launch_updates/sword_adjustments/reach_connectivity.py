@@ -281,6 +281,9 @@ def write_nc(centerlines, outfile):
     reach_id.format = 'CBBBBBRRRRT'
     common = cl_grp.createVariable(
         'common', 'i4', ('num_points',), fill_value=-9999.)
+    node_id = cl_grp.createVariable(
+        'node_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
+    node_id.format = 'CBBBBBRRRRNNNT'
 
     # saving data
     print("saving nc")
@@ -291,6 +294,7 @@ def write_nc(centerlines, outfile):
     cl_y[:] = centerlines.y
     reach_id[:,:] = centerlines.neighbors
     common[:] = centerlines.common
+    node_id[:,:] = centerlines.node_id
 
     root_grp.close()
 
