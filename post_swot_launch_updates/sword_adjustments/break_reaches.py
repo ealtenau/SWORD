@@ -718,9 +718,15 @@ cl_level6 = np.array([str(ind)[0:6] for ind in centerlines.node_id[0,:]])
 cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in centerlines.node_id[0,:]])
 cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 
-tribs = gp.read_file(trib_fn)
-reach = np.array(tribs['reach_id']) #[81153500201]
-break_id = np.array(tribs['cl_id']) #[7032484]
+#automatic
+# tribs = gp.read_file(trib_fn)
+# reach = np.array(tribs['reach_id']) #[81153500201]
+# break_id = np.array(tribs['cl_id']) #[7032484]
+
+#manual
+reach = np.array([77125000021,77119200041,77130801371])
+break_id = np.array([5854123,5802554,5907163])
+
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):
     print('r', r, len(unq_rchs)-1)

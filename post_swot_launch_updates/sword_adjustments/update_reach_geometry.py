@@ -79,10 +79,11 @@ def reproject_utm(latitude, longitude):
 ###############################################################################
 
 gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/shp/NA/na_sword_reaches_hb81_v17a.shp'
+# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/gpkg/na_sword_reaches_v17a.gpkg' #continental gpkg file. 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/netcdf/na_sword_v17a.nc'
 # rch_list = ''
 
-reach = [...]
+reach = [72582700556,72582700504,75216500013]
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]

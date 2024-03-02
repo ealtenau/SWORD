@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 import netCDF4 as nc
 
-nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/pathways/NA/hb74_path_vars.nc'
-shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/shp/NA/na_sword_reaches_hb74_v17a.shp'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/pathways/NA/hb77_path_vars.nc'
+shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/shp/NA/na_sword_reaches_hb77_v17a.shp'
 
 shp = gp.read_file(shp_fn)
 netcdf = nc.Dataset(nc_fn)

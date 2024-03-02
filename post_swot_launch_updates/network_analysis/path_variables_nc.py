@@ -14,6 +14,8 @@ from scipy import stats
 from scipy import interpolate
 
 ################################################################################################
+################################################################################################
+################################################################################################
 
 def calc_path_dist(lon, lat):
 
@@ -233,8 +235,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                 
 def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
                       cl_rchs,cl_nodes,rch_paths,rch_paths_order,
-                      rch_paths_dist,rch_paths_dist2,main_side,
-                      strm_order):
+                      rch_paths_dist,rch_paths_dist2,main_side):
     
     # global attributes
     root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
@@ -280,8 +281,6 @@ def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
         'dist_out_all', 'f8', ('num_points',), fill_value=-9999.)
     main_net = cl_grp.createVariable(
         'main_side_chan', 'i4', ('num_points',), fill_value=-9999.)
-    stream_order = cl_grp.createVariable(
-        'stream_order', 'i4', ('num_points',), fill_value=-9999.)
 
     # saving data
     print("saving nc")
@@ -297,9 +296,96 @@ def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
     path_dist_all[:] = rch_paths_dist2[:]
     path_freq[:] = rch_paths[:]
     main_net[:] = main_side[:]
-    stream_order[:] = strm_order[:]
 
     root_grp.close()
+
+################################################################################################
+def calc_path_variables(path_files, kdt):    
+    count = 1
+    for ind in list(range(len(path_files))):
+        print(ind, len(path_files)-1)
+        path = gp.read_file(path_dir+path_files[ind])
+        path_lens = [len(g.coords.xy[0]) for g in path['geometry']]
+        sort = np.argsort(path_lens)[::-1]
+        for p in list(range(len(sort))):
+            # print(p, len(path)-1)
+            lon = np.array(path['geometry'][sort[p]].coords.xy[0])
+            lat = np.array(path['geometry'][sort[p]].coords.xy[1])
+            
+            if len(lon) == 0:
+                continue
+        
+            # dist = calc_path_dist(lon,lat) #takes longer...
+            gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(lon, lat),crs="EPSG:4326").to_crs("EPSG:3857")
+            diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+            dist = np.cumsum(diff)
+
+            #spatial query with sword
+            path_pts = np.vstack((lon, lat)).T
+            pt_dist, pt_ind = kdt.query(path_pts, k = 1)
+            rch_paths[pt_ind] = rch_paths[pt_ind]+1
+            
+            #assigns the paths a number in order by length.
+            add = np.where(rch_paths_order[pt_ind] == 0)[0]
+            rch_paths_dist[pt_ind[add]] = dist[add]
+            rch_paths_order[pt_ind[add]] = count
+            count = count+1
+
+            del(dist);del(lon);del(lat)
+        del(path)
+    return rch_paths, rch_paths_dist, rch_paths_order
+
+################################################################################################
+
+def filter_zero_pts(rch_paths, rch_paths_dist, rch_paths_order, cl_rchs, cl_ind):
+    zero = np.where(rch_paths == 0)[0]
+    zero_rchs = np.unique(cl_rchs[0,zero])
+    for z in list(range(len(zero_rchs))):
+        pts = np.where(cl_rchs[0,:] == zero_rchs[z])[0]
+        rch_zeros = np.where(rch_paths[pts] == 0)[0]
+        perc = (len(rch_zeros)/len(pts))*100
+        # print([z, perc])
+        if perc < 70 and len(pts) > 3:
+            nz = np.where(rch_paths[pts] > 0)[0]
+            rch_paths[pts[rch_zeros]] = stats.mode(rch_paths[pts[nz]])[0]
+            rch_paths_order[pts[rch_zeros]] = stats.mode(rch_paths_order[pts[nz]])[0]
+            for zp in list(range(len(rch_zeros))):
+                nz2 = np.where(rch_paths_dist[pts] > 0)[0]
+                id_diff = np.abs(cl_ind[pts[rch_zeros[zp]]] - cl_ind[pts[nz2]])
+                nghs = np.where(id_diff == 1)[0]
+                if len(nghs) == 1:
+                    if cl_ind[pts[nghs]] < cl_ind[pts[rch_zeros[zp]]]:
+                        rch_paths_dist[pts[rch_zeros[zp]]] = rch_paths_dist[pts[nghs]]+30
+                    else:
+                        rch_paths_dist[pts[rch_zeros[zp]]] = rch_paths_dist[pts[nghs]]-30
+                else:
+                    rch_paths_dist[pts[rch_zeros[zp]]] = np.mean(rch_paths_dist[pts[nghs]]) 
+        elif perc < 100 and len(pts) <= 3:
+            nz = np.where(rch_paths[pts] > 0)[0]
+            rch_paths[pts[rch_zeros]] = stats.mode(rch_paths[pts[nz]])[0]
+            rch_paths_order[pts[rch_zeros]] = stats.mode(rch_paths_order[pts[nz]])[0]
+            rch_paths_dist[pts[rch_zeros]] = np.max(rch_paths_dist[pts[nz]])
+        else:
+            rch_paths[pts] = 0
+            rch_paths_order[pts] = 0
+            rch_paths_dist[pts] = 0
+
+################################################################################################
+
+def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
+    side_chan = np.unique(cl_rchs[0,np.where(main_side == 1)[0]])
+    for s in list(range(len(side_chan))):
+        pts = np.where(cl_rchs[0,:] == side_chan[s])[0]
+        if len(pts) <= 6:
+            print(side_chan[s])
+            nghs = np.unique(cl_rchs[1::,pts])
+            nghs = nghs[nghs > 0]
+            p = np.array([np.max(rch_paths[np.where(cl_rchs[0,:] == n)[0]]) for n in nghs])
+            po = np.array([np.max(rch_paths_order[np.where(cl_rchs[0,:] == n)[0]]) for n in nghs])
+            if len(np.unique(p)) == 1 and len(np.unique(po)) == 1:
+                main_side[pts] = 0
+                rch_paths[pts] = np.unique(p)
+                rch_paths_order[pts] = np.unique(po)
 
 ################################################################################################
 ################################################################################################
@@ -311,7 +397,6 @@ version = 'v17a'
 basin = 'hb74'
 
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
-sword_dir2 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 path_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'
 path_files = os.listdir(path_dir)
 path_files = np.array([f for f in path_files if '.gpkg' in f])
@@ -320,12 +405,11 @@ path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'
 
 #reading in sword data.
 sword = nc.Dataset(sword_dir)
-sword2 = nc.Dataset(sword_dir2)
 cl_id_all = sword.groups['centerlines'].variables['cl_id'][:]
 cl_x_all = sword.groups['centerlines'].variables['x'][:]
 cl_y_all = sword.groups['centerlines'].variables['y'][:]
 cl_rchs_all = sword.groups['centerlines'].variables['reach_id'][:]
-cl_nodes_all = sword2.groups['centerlines'].variables['node_id'][:]
+cl_nodes_all = sword.groups['centerlines'].variables['node_id'][:]
 sword.close()
 
 #subset sword to basin. 
@@ -335,20 +419,24 @@ cl_ind = cl_id_all[l2]
 cl_lon = cl_x_all[l2]
 cl_lat = cl_y_all[l2]
 cl_rchs = cl_rchs_all[:,l2]
-cl_nodes = cl_nodes_all[:,l2]
+cl_nodes = cl_nodes_all[l2]
 del(cl_id_all);del(cl_x_all);del(cl_y_all);del(cl_rchs_all)#;del(cl_nodes_all)
 
 #if more than one file, sort by longest path in each file (descending).
 if len(path_files) > 1:
+    start = time.time()
     print('Finding Start File')
     length = []
     for idx in list(range(len(path_files))):
+        # print(idx)
         path = gp.read_file(path_dir+path_files[idx])
         path_lens = max([len(g.coords.xy[0]) for g in path['geometry']])
         length.append(path_lens)
         del(path)
     file_order = np.argsort(length)[::-1]
     path_files = path_files[file_order]
+    end = time.time()
+    print('Finished Ordering Paths in: '+str(np.round((end-start)/60,2))+' mins')
 
 #defining filler variables. 
 rch_paths = np.zeros(len(cl_ind))
@@ -362,93 +450,18 @@ kdt = sp.cKDTree(sword_pts)
 #calculating path variables. 
 print('Starting Path Calculations')
 start = time.time()
-count = 1
-for ind in list(range(len(path_files))):
-    print(ind, len(path_files)-1)
-    path = gp.read_file(path_dir+path_files[ind])
-    path_lens = [len(g.coords.xy[0]) for g in path['geometry']]
-    sort = np.argsort(path_lens)[::-1]
-    for p in list(range(len(sort))):
-        # print(p, len(path)-1)
-        lon = np.array(path['geometry'][sort[p]].coords.xy[0])
-        lat = np.array(path['geometry'][sort[p]].coords.xy[1])
-        
-        if len(lon) == 0:
-            continue
-    
-        # dist = calc_path_dist(lon,lat) #takes longer...
-        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(lon, lat),crs="EPSG:4326").to_crs("EPSG:3857")
-        diff = gdf.distance(gdf.shift(1)); diff[0] = 0
-        dist = np.cumsum(diff)
-
-        #spatial query with sword
-        path_pts = np.vstack((lon, lat)).T
-        pt_dist, pt_ind = kdt.query(path_pts, k = 1)
-        rch_paths[pt_ind] = rch_paths[pt_ind]+1
-        
-        #assigns the paths a number in order by length.
-        add = np.where(rch_paths_order[pt_ind] == 0)[0]
-        rch_paths_dist[pt_ind[add]] = dist[add]
-        rch_paths_order[pt_ind[add]] = count
-        count = count+1
-
-        del(dist);del(lon);del(lat)
-    del(path)
-
+rch_paths, rch_paths_dist, rch_paths_order = calc_path_variables(path_files, kdt)
 end = time.time()
 print('Finished Path Calculations in: '+str(np.round((end-start)/60,2))+' mins')
 
 print('Filtering Missed Points')
 start = time.time()
-zero = np.where(rch_paths == 0)[0]
-zero_rchs = np.unique(cl_rchs[0,zero])
-for z in list(range(len(zero_rchs))):
-    pts = np.where(cl_rchs[0,:] == zero_rchs[z])[0]
-    rch_zeros = np.where(rch_paths[pts] == 0)[0]
-    perc = (len(rch_zeros)/len(pts))*100
-    # print([z, perc])
-    if perc < 70 and len(pts) > 3:
-        nz = np.where(rch_paths[pts] > 0)[0]
-        rch_paths[pts[rch_zeros]] = stats.mode(rch_paths[pts[nz]])[0]
-        rch_paths_order[pts[rch_zeros]] = stats.mode(rch_paths_order[pts[nz]])[0]
-        for zp in list(range(len(rch_zeros))):
-            nz2 = np.where(rch_paths_dist[pts] > 0)[0]
-            id_diff = np.abs(cl_ind[pts[rch_zeros[zp]]] - cl_ind[pts[nz2]])
-            nghs = np.where(id_diff == 1)[0]
-            if len(nghs) == 1:
-                if cl_ind[pts[nghs]] < cl_ind[pts[rch_zeros[zp]]]:
-                    rch_paths_dist[pts[rch_zeros[zp]]] = rch_paths_dist[pts[nghs]]+30
-                else:
-                    rch_paths_dist[pts[rch_zeros[zp]]] = rch_paths_dist[pts[nghs]]-30
-            else:
-                rch_paths_dist[pts[rch_zeros[zp]]] = np.mean(rch_paths_dist[pts[nghs]]) 
-    elif perc < 100 and len(pts) <= 3:
-        nz = np.where(rch_paths[pts] > 0)[0]
-        rch_paths[pts[rch_zeros]] = stats.mode(rch_paths[pts[nz]])[0]
-        rch_paths_order[pts[rch_zeros]] = stats.mode(rch_paths_order[pts[nz]])[0]
-        rch_paths_dist[pts[rch_zeros]] = np.max(rch_paths_dist[pts[nz]])
-    else:
-        rch_paths[pts] = 0
-        rch_paths_order[pts] = 0
-        rch_paths_dist[pts] = 0
-
-#renumber reach path freqency values from 1-max number of values. 
-# unq_paths = np.sort(np.unique(rch_paths))
-# unq_paths = np.sort(unq_paths[np.where(unq_paths > 0)])
-# count = 1
-# for p in list(range(len(unq_paths))):
-#     pth = np.where(rch_paths == unq_paths[p])
-#     rch_paths[pth] = count 
-#     count = count+1
-
+filter_zero_pts(rch_paths, rch_paths_dist, rch_paths_order, cl_rchs, cl_ind)
 #define side channels
-zero2 = np.where(rch_paths == 0)[0]
 main_side = np.zeros(len(cl_ind))
-main_side[zero2] = 1
-
+main_side[np.where(rch_paths == 0)[0]] = 1
 end = time.time()
 print('Finished Filter in: '+str(np.round((end-start)/60,2))+' mins')
-
 
 print('Filling in Side Channels')
 start = time.time()
@@ -461,49 +474,36 @@ rch_paths_dist2 = np.where(np.isfinite(rch_paths_dist2),rch_paths_dist2,interp(i
 end = time.time()
 print('Finished Filling Side Channels in: '+str(np.round((end-start)/60,2))+' mins')
 
-### Think about straheler stream order?
-# strm_order = np.copy(rch_paths)
-# normalize = np.where(strm_order >= 5)[0] # Mississippi has 5 outlets so 5 is the first order streams in the connected river system...
-# strm_order[normalize] = (np.round(np.log(rch_paths[normalize]))-(np.min(np.round(np.log(rch_paths[normalize])))))+1
-# strm_order[np.where(strm_order == 0)] = 1
+print('Filtering Short Side Channels')
+filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order)
 
 print('Saving NetCDF')
 start = time.time()
 write_path_netcdf(path_nc,basin,cl_ind,cl_lon,cl_lat,
                   cl_rchs,cl_nodes,rch_paths,rch_paths_order,
-                  rch_paths_dist,rch_paths_dist2,main_side,
-                  strm_order)
+                  rch_paths_dist,rch_paths_dist2,main_side)
 
 end_all = time.time()
 print('Finished Basin '+basin+' in: '+str(np.round((end_all-start_all)/60,2))+' mins')
 
 
-
-
 '''
 ### PLOTS
-one = np.where(rch_paths == 3)[0]
 plt.scatter(cl_lon, cl_lat, c=np.round(np.log(rch_paths)), s = 5, cmap='rainbow')
-plt.scatter(cl_lon[one], cl_lat[one], c='black', s = 5)
 plt.show()
 
-plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 5, cmap='magma')
+plt.scatter(cl_lon, cl_lat, c=rch_paths, s = 5, cmap='rainbow')
+plt.show()
+
+plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 5, cmap='rainbow')
 plt.show()
 
 plt.scatter(cl_lon, cl_lat, c=np.log(rch_paths_order), s = 5, cmap='rainbow')
 plt.show()
 
-plt.scatter(cl_lon[sort_ind], cl_lat[sort_ind], c=cl_ind[sort_ind], s = 5, cmap='rainbow')
-plt.show()
-
-plt.scatter(cl_lon, cl_lat, c=strm_order, s = 5, cmap='rainbow')
-plt.show()
-
-
 side = np.where(main_side == 1)[0]
-zero = np.where(np.isnan(rch_path_dist2)==True)[0]
-plt.scatter(cl_lon[side], cl_lat[side], c=side_dist[side], s = 5)
-plt.scatter(cl_lon[zero], cl_lat[zero], c='red', s = 5)
+plt.scatter(cl_lon, cl_lat, c='blue', s = 5)
+plt.scatter(cl_lon[side], cl_lat[side], c='red', s = 5)
 plt.show()
 
 
@@ -546,25 +546,13 @@ rch_paths_order = data.groups['centerlines'].variables['path_order_by_length'][:
 rch_paths_dist = data.groups['centerlines'].variables['distance_from_outlet'][:]
 main_side = data.groups['centerlines'].variables['main_side_chan'][:]
 
-data.close()
 
-
-'''
-
-strm_order = np.copy(rch_paths)
-outlet_num = 5
-reduce = np.where(strm_order >= outlet_num)[0]
-np.unique(strm_order[reduce]/5)
-
-
-'''
-divide rch_paths by 5 (number of outlets). Then find all reaches at a junction and find all neighbors upstream (using dist_out)
-find all neighbors of stream order 1 rivers and label as two and so forth... 
-
-for each path in path_order, find junctions and split up between junctions using dist_out. the do above... 
-
+### Think about straheler stream order?
+# strm_order = np.copy(rch_paths)
+# normalize = np.where(strm_order >= 5)[0] # Mississippi has 5 outlets so 5 is the first order streams in the connected river system...
+# strm_order[normalize] = (np.round(np.log(rch_paths[normalize]))-(np.min(np.round(np.log(rch_paths[normalize])))))+1
+# strm_order[np.where(strm_order == 0)] = 1
 
 '''
 
 
-#find all neighbors of 1 tribs and see where all the neighbors are 1 and assign as two etc... 
