@@ -28,7 +28,7 @@ region = args.region
 version = args.version
 
 if args.local_processing == 'True':
-    outdir  = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
+    outdir  = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'
 else:
     outdir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/outputs/Reaches_Nodes/'
 

@@ -78,12 +78,11 @@ def reproject_utm(latitude, longitude):
 ###############################################################################
 ###############################################################################
 
-gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/shp/NA/na_sword_reaches_hb81_v17a.shp'
+gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/shp/NA/na_sword_reaches_hb83_v17a.shp'
 # gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/gpkg/na_sword_reaches_v17a.gpkg' #continental gpkg file. 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/netcdf/na_sword_v17a.nc'
-# rch_list = ''
 
-reach = [72582700556,72582700504,75216500013]
+reach = [83300200061]
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]
@@ -185,8 +184,8 @@ for r in list(range(len(reach))):
 
     for n2 in list(range(len(unq_nodes))):
         nc_node = np.where(sword.groups['nodes'].variables['node_id'][:] == unq_nodes[n2])[0]
-        sword.groups['nodes'].variables['node_length'][:] = node_len[n2]
-        sword.groups['nodes'].variables['x'][:] = node_x[n2]
-        sword.groups['nodes'].variables['y'][:] = node_y[n2]
+        sword.groups['nodes'].variables['node_length'][nc_node ] = node_len[n2]
+        sword.groups['nodes'].variables['x'][nc_node ] = node_x[n2]
+        sword.groups['nodes'].variables['y'][nc_node ] = node_y[n2]
 
 sword.close()

@@ -709,7 +709,7 @@ region = 'NA'
 version = 'v17a'
  
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
+# trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 
 centerlines, nodes, reaches = read_data(nc_fn)
 
@@ -724,8 +724,8 @@ cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 # break_id = np.array(tribs['cl_id']) #[7032484]
 
 #manual
-reach = np.array([77125000021,77119200041,77130801371])
-break_id = np.array([5854123,5802554,5907163])
+reach = np.array([83300200021,83300200031])
+break_id = np.array([9920490,9920744])
 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):
