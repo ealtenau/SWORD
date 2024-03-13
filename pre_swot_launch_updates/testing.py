@@ -13,5 +13,3 @@ import geopandas as gp
 from shapely.geometry import Point
 import matplotlib.pyplot as plt
 
-
-

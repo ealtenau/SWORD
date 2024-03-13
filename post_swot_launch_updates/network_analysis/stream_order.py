@@ -13,12 +13,33 @@ import matplotlib.pyplot as plt
 from scipy import stats
 from scipy import interpolate
 
+###############################################################################
+
+def find_path_segs(order, paths):
+    unq_paths = np.unique(order)
+    unq_paths = unq_paths[unq_paths>0]
+    cnt = 1
+    path_segs = np.zeros(len(order))
+    for p in list(range(len(unq_paths))):
+        pth = np.where(order == unq_paths[p])[0]
+        sections = np.unique(paths[pth])
+        for s in list(range(len(sections))):
+            sec = np.where(paths[pth] == sections[s])[0]
+            path_segs[pth[sec]] = cnt
+            cnt = cnt+1
+    return path_segs
+
+###############################################################################
+###############################################################################
+###############################################################################
+
 region = 'NA'
 version = 'v17a'
-basin = 'hb74'
+basin = 'hb91'
 path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
 con_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 
+# Read in data. 
 data = nc.Dataset(path_nc,'r+')
 con = nc.Dataset(con_dir)
 
@@ -28,45 +49,116 @@ main_side = data.groups['centerlines'].variables['main_side_chan'][:]
 rchs = data.groups['centerlines'].variables['reach_id'][:]
 x = data.groups['centerlines'].variables['x'][:]
 y = data.groups['centerlines'].variables['y'][:]
+cl_ids = data.groups['centerlines'].variables['cl_id'][:]
+dist = data.groups['centerlines'].variables['dist_out_all'][:]
 ends = con.groups['centerlines'].variables['end_reach'][:]
 con_rchs = con.groups['centerlines'].variables['reach_id'][:]
+con_cl_ids = con.groups['centerlines'].variables['cl_id'][:]
 
+# Calculate starting stream order. 
 strm_order = np.zeros(len(paths))
 normalize = np.where(paths > 0)[0] 
 strm_order[normalize] = (np.round(np.log(paths[normalize])))+1
 strm_order[np.where(paths == 0)] = -9999
 
-### filter??
-#split paths at junctions (create path segments)
-#find all junction reaches
-#order the junction reaches by path number
-#loop through reaches and if the numbering doesn't work out update path segment
+# Find path segments. 
+path_segs = find_path_segs(order,paths)
+
+#filter stream order. 
+# new_strm_order = np.copy(strm_order)
+# unq_strm = np.unique(strm_order)
+# unq_strm = unq_strm[unq_strm>1]
+# for ind in list(range(len(unq_strm))):
+#     strm_ind = np.where(new_strm_order == unq_strm[ind])[0]
+#     strm_segs = np.unique(path_segs[strm_ind])
+#     strm_dist = np.array([np.max(dist[np.where(path_segs == s)]) for s in strm_segs])
+#     #sort segments to loop through by largest distance from outlet to smallest. 
+#     strm_segs = strm_segs[np.argsort(strm_dist)[::-1]]
+#     for idx in list(range(len(strm_segs))):
+#         seg = np.where(path_segs == strm_segs[idx])[0]
+#         seg_strm = np.max(new_strm_order [seg])
+#         seg_dist = np.max(dist[seg])
+#         max_pt = np.where(dist[seg]==max(dist[seg]))[0]
+#         #find neighboring stream order and distance info. 
+#         r = np.unique(rchs[0,seg[max_pt]])
+#         con_inds = np.where(np.in1d(con_rchs[0,:], r)==True)[0]
+#         ngh_rchs = np.unique(con_rchs[1::,con_inds])
+#         ngh_rchs = ngh_rchs[ngh_rchs>0]
+#         ngh_strm = np.array([np.max(new_strm_order[np.where(rchs[0,:] == n)]) for n in ngh_rchs])
+#         ngh_dist = np.array([np.max(dist[np.where(rchs[0,:] == n)]) for n in ngh_rchs])
+#         ngh_freq = np.array([np.max(paths[np.where(rchs[0,:] == n)]) for n in ngh_rchs])
+#         #filter neighbors to main network and upstream. 
+#         filt = np.where((ngh_strm != -9999) & (ngh_dist > seg_dist))[0]
+#         ngh_rchs = ngh_rchs[filt]
+#         ngh_strm = ngh_strm[filt]
+#         ngh_dist = ngh_dist[filt]
+#         thresh = seg_strm - 1
+#         check = np.where(ngh_strm == thresh)[0]
+#         if len(check) >=2:
+#             continue 
+#         else:
+#             new_strm_order[seg] = max(ngh_strm)
 
 
 if 'stream_order' in data.groups['centerlines'].variables.keys():
     data.groups['centerlines'].variables['stream_order'][:] = strm_order
+    data.groups['centerlines'].variables['path_segments'][:] = path_segs
     data.close()
 else:
     stream_order = data.groups['centerlines'].createVariable(
         'stream_order', 'i4', ('num_points',), fill_value=-9999.)
     data.groups['centerlines'].variables['stream_order'][:] = strm_order
+    path_segments = data.groups['centerlines'].createVariable(
+        'path_segments', 'i8', ('num_points',), fill_value=-9999.)
+    data.groups['centerlines'].variables['path_segments'][:] = path_segs
     data.close()
 
 
-
+print('Done')
+good = np.where(strm_order>0)[0]
+plt.figure(1)
+plt.scatter(x[good],y[good],c=strm_order[good],cmap = 'rainbow', s = 5)
+plt.show()
 
 '''
 
-np.unique(strm_order)
+good = np.where(strm_order>0)[0]
 plt.figure(1)
-plt.scatter(x,y,c=strm_order,cmap = 'rainbow', s = 5)
+plt.scatter(x[good],y[good],c=strm_order[good],cmap = 'rainbow', s = 5)
 plt.show()
 
+
+
+
+
 plt.figure(2)
-plt.scatter(x,y,c=paths,cmap = 'rainbow', s = 5)
+plt.scatter(x,y,c='blue', s = 5)
+plt.scatter(x[pth],y[pth],c='gold', s = 5)
+plt.scatter(x[pth[junc[1]:junc[2]+1]],y[pth[junc[1]:junc[2]+1]], c='magenta', s=5)
+plt.scatter(x[pth[junc[3]:junc[4]+1]],y[pth[junc[3]:junc[4]+1]], c='green', s=5)
+# plt.scatter(x[pth[junc]],y[pth[junc]],c='black', s = 5)
+plt.show()
+
+
+plt.figure(3)
+junc=np.where(ends == 3)[0]
+plt.scatter(x,y,c=path_segs, cmap = 'rainbow', s = 5)
+plt.scatter(x[junc],y[junc],c='black', s = 5)
 plt.show()
 
 one = np.where(order == 1)[0]
 np.unique(paths[one])
 
+
+plt.figure(4)
+junc=np.where(ends == 3)[0]
+plt.scatter(x,y,c=path_segs, cmap = 'rainbow', s = 5)
+plt.scatter(x[seg],y[seg],c='black', s = 5)
+plt.show()
+
+
+
+
+df = pd.DataFrame(np.array([x,y,path_segs,new_strm_order,rchs[0,:]]).T)
+df.to_csv('/Users/ealtenau/Desktop/path_seg_test.csv')
 '''
