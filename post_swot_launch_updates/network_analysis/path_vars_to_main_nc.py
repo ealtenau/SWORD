@@ -71,7 +71,7 @@ def read_data(filename):
         nodes.path_order = data.groups['nodes'].variables['path_order'][:]
         nodes.path_segs = data.groups['nodes'].variables['path_segs'][:]
         nodes.main_side = data.groups['nodes'].variables['main_side'][:]
-        nodes.strm_order = data.groups['nodes'].variables['strm_order'][:]
+        nodes.strm_order = data.groups['nodes'].variables['stream_order'][:]
     else:
         nodes.path_freq = np.zeros(len(nodes.id))
         nodes.path_order = np.zeros(len(nodes.id))
@@ -119,7 +119,7 @@ def read_data(filename):
         reaches.path_order = data.groups['reaches'].variables['path_order'][:]
         reaches.path_segs = data.groups['reaches'].variables['path_segs'][:]
         reaches.main_side = data.groups['reaches'].variables['main_side'][:]
-        reaches.strm_order = data.groups['reaches'].variables['strm_order'][:]
+        reaches.strm_order = data.groups['reaches'].variables['stream_order'][:]
     else:
         reaches.path_freq = np.zeros(len(reaches.id))
         reaches.path_order = np.zeros(len(reaches.id))
@@ -159,6 +159,9 @@ def update_ghost_type(centerlines, con_rch_ids, con_end_ids):
     new_type = np.copy(centerlines.type)
     for ind in list(range(len(ghosts))):
         rch = np.where(con_rch_ids[0,:] == ghosts[ind])[0]
+        if len(rch) == 0:
+            continue
+        
         end = max(con_end_ids[rch])
         if end == 1 or end == 2:
             continue
@@ -210,7 +213,7 @@ def update_headwaters_outlets(path_order, path_cl_dist_out, path_cl_ids,
                 path_dist = path_cl_dist_out[np.where(path_cl_rch_ids == path_rch)]
                 if path_max_dist in path_dist:
                     # print(ind)
-                    con_end_ids[con_inds[hw[h]]] = 1
+                    con_end_ids[con_inds[out[o]]] = 1
 
     side_clids = path_cl_ids[np.where(path_order == 0)[0]]
     side_cl_ind = np.where(np.in1d(con_cl_ids, side_clids) == True)[0]
@@ -226,8 +229,8 @@ def add_rch_node_path_vars(reaches, nodes, path_cl_rch_ids, path_cl_dist_out,
     for ind in list(range(len(unq_rch))):
         # print(ind, len(unq_rch)-1)
         rch = np.where(reaches.id == unq_rch[ind])[0]
-        if len(rch) == 0:
-            continue
+        # if len(rch) == 0:
+        #     continue
         pts = np.where(path_cl_rch_ids == unq_rch[ind])[0]
         reaches.path_freq[rch] = np.max(path_freq[pts])
         reaches.path_order[rch] = np.max(path_order[pts])
@@ -252,7 +255,7 @@ def add_rch_node_path_vars(reaches, nodes, path_cl_rch_ids, path_cl_dist_out,
 
 ###############################################################################                  
         
-def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids):
+def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin):
     
     rch_nums = np.array([int(str(rch)[6:10]) for rch in centerlines.reach_id[0,:]])
     node_nums = np.array([int(str(rch)[10:13]) for rch in centerlines.node_id[0,:]])
@@ -263,6 +266,10 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids):
     hw_nodes = np.unique(centerlines.node_id[0,hw[np.where(centerlines.new_type[hw] != '6')]])
     out_nodes = np.unique(centerlines.node_id[0,out[np.where(centerlines.new_type[out] != '6')]])
     all_new_ghost_nodes = np.append(hw_nodes, out_nodes)
+    new_ghost_l2 = np.array([int(str(rch)[0:2]) for rch in all_new_ghost_nodes])
+    keep = np.where(new_ghost_l2 == int(basin[2:4]))[0]
+    all_new_ghost_nodes = all_new_ghost_nodes[keep]
+
 
     new_rch_num = max(rch_nums)+1
     new_node_num = max(node_nums)+1
@@ -339,6 +346,8 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids):
             reaches.path_freq[rch] = nodes.path_freq[nds]
             reaches.path_order[rch] = nodes.path_order[nds]
             reaches.main_side[rch] = nodes.main_side[nds]
+            reaches.path_segs[rch] = nodes.path_segs[nds]
+            reaches.strm_order[rch] = nodes.strm_order[nds]
         
         else:
             # update current reach attributes and append new ones.
@@ -384,6 +393,8 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids):
             reaches.path_freq = np.append(reaches.path_freq, nodes.path_freq[nds])
             reaches.path_order = np.append(reaches.path_order, nodes.path_order[nds])
             reaches.main_side = np.append(reaches.main_side, nodes.main_side[nds])
+            reaches.path_segs = np.append(reaches.path_segs, nodes.path_segs[nds])
+            reaches.strm_order = np.append(reaches.strm_order, nodes.strm_order[nds])
             #fill other attrubutes with current reach values. 
             reaches.slope = np.append(reaches.slope, reaches.slope[rch])
             reaches.low_slope = np.append(reaches.low_slope, reaches.low_slope[rch])
@@ -482,9 +493,12 @@ def filter_river_names(reaches, nodes, path_segs, path_cl_rch_ids):
     unq_segs = np.unique(path_segs)
     unq_segs = unq_segs[unq_segs>0]
     for ind in list(range(len(unq_segs))):
+        # print(ind)
         seg = np.where(path_segs == unq_segs[ind])[0]
         seg_rchs = np.unique(path_cl_rch_ids[seg])
         rchs = np.where(np.in1d(reaches.id, seg_rchs)==True)[0]
+        # if len(rchs) == 0:
+        #     continue
         node_rchs = np.where(np.in1d(nodes.reach_id, seg_rchs)==True)[0]
         names, cnt = np.unique(reaches.river_name[rchs], return_counts=True)
         name_ind = np.where(cnt == max(cnt))[0][0]
@@ -666,6 +680,8 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
         'stream_order', 'i4', ('num_nodes',), fill_value=-9999.)
     node_main_side = node_grp.createVariable(
         'main_side', 'i4', ('num_nodes',), fill_value=-9999.)
+    node_end_rch = node_grp.createVariable(
+        'end_reach', 'i4', ('num_nodes',), fill_value=-9999.)
 
     # reach variables
     Reach_ID = rch_grp.createVariable(
@@ -768,6 +784,8 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
         'stream_order', 'i4', ('num_reaches',), fill_value=-9999.)
     rch_main_side = rch_grp.createVariable(
         'main_side', 'i4', ('num_reaches',), fill_value=-9999.)
+    rch_end_rch = rch_grp.createVariable(
+        'end_reach', 'i4', ('num_reaches',), fill_value=-9999.)
     # subgroup 1 - 'area_fits'
     h_break = sub_grp1.createVariable(
         'h_break', 'f8', ('num_domains','num_reaches'), fill_value=-9999.)
@@ -945,19 +963,19 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     #Name[:] = cont_str
 
     # centerline data
-    cl_id[:] = centerlines.cl_id
+    cl_id[:] = centerlines.new_cl_id
     cl_x[:] = centerlines.x
     cl_y[:] = centerlines.y
-    reach_id[:,:] = centerlines.reach_id
-    node_id[:,:] = centerlines.node_id
+    reach_id[:,:] = centerlines.new_reach_id
+    node_id[:,:] = centerlines.new_node_id
 
     # node data
-    Node_ID[:] = nodes.id
+    Node_ID[:] = nodes.new_id
     node_cl_id[:,:] = nodes.cl_id
     node_x[:] = nodes.x
     node_y[:] = nodes.y
     node_len[:] = nodes.len
-    node_rch_id[:] = nodes.reach_id
+    node_rch_id[:] = nodes.new_reach_id
     node_wse[:] = nodes.wse
     node_wse_var[:] = nodes.wse_var
     node_wth[:] = nodes.wth
@@ -985,9 +1003,10 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     node_path_seg[:] = nodes.path_segs
     node_strm_order[:] = nodes.strm_order
     node_main_side[:] = nodes.main_side
+    node_end_rch[:] = nodes.end_rch
 
     # reach data
-    Reach_ID[:] = reaches.id
+    Reach_ID[:] = reaches.new_id
     rch_cl_id[:,:] = reaches.cl_id
     rch_x[:] = reaches.x
     rch_x_min[:] = reaches.x_min
@@ -1028,6 +1047,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_path_seg[:] = reaches.path_segs
     rch_strm_order[:] = reaches.strm_order
     rch_main_side[:] = reaches.main_side
+    rch_end_rch[:] = reaches.end_rch
     # subgroup1 - area fits
     h_break[:,:] = reaches.h_break
     w_break[:,:] = reaches.w_break
@@ -1121,7 +1141,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 start_all = time.time()
 region = 'NA'
 version = 'v17a'
-basin = 'hb74'
+basin = 'hb91'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -1151,14 +1171,14 @@ path_strm_order = np.array(paths.groups['centerlines'].variables['stream_order']
 path_segs = np.array(paths.groups['centerlines'].variables['path_segments'][:])
 
 # Filtering River Names.
-print('Filtering River Names')
+print('Filtering River Names') #basin-scale
 start = time.time()
 filter_river_names(reaches, nodes, path_segs, path_cl_rch_ids)
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
 # Re-ordering centerline ids based on new dist_out. 
-print('Re-formatting Centerline IDs')
+print('Re-formatting Centerline IDs') #basin-scale
 start = time.time()
 centerlines.new_cl_id = reorder_cl_ids(path_cl_rch_ids, path_cl_ids, 
                                        path_cl_dist_out, centerlines)
@@ -1166,7 +1186,7 @@ end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
 # update Type info for ghost reaches. 
-print('Fixing Incorrect Ghost Reaches')
+print('Fixing Incorrect Ghost Reaches') #cont-scale
 start = time.time()
 centerlines.type = np.array([str(rch)[-1] for rch in centerlines.reach_id[0,:]])
 centerlines.new_type = update_ghost_type(centerlines, con_rch_ids, con_end_ids)
@@ -1174,7 +1194,7 @@ end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
 # update end_reaches variable (i.e.) correct headwaters and outlets 
-print('Editing Headwaters and Outlets')
+print('Editing Headwaters and Outlets') #basin-scale
 start = time.time()
 update_headwaters_outlets(path_order, path_cl_dist_out, path_cl_ids, 
                               con_cl_ids, con_end_ids) 
@@ -1182,30 +1202,51 @@ end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
 # add new variables to reaches and nodes. 
-print('Adding Reach and Node Path Variables')
+print('Adding Reach and Node Path Variables') #basin-scale
 start = time.time()
 add_rch_node_path_vars(reaches, nodes, path_cl_rch_ids, path_cl_dist_out, 
                       path_freq, path_order, path_main_side, path_cl_node_ids)
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
-print('Creating New Ghost Reaches')
+print('Creating New Ghost Reaches') #basin-scale
 start = time.time()
-update_ghost_reaches(centerlines, nodes, reaches, con_end_ids)
+update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin)
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
 #re-number reaches and nodes. 
-print('Creating New Reach and Node IDs')
+print('Creating New Reach and Node IDs') #basin-scale
 start = time.time()
 number_rchs_nodes(reaches, nodes) 
 reaches.new_id, nodes.new_id, centerlines.new_reach_id, \
     centerlines.new_node_id, nodes.new_reach_id = new_sword_ids(centerlines, nodes, reaches, path_cl_rch_ids)
+# zero-out topology variables for now. 
+centerlines.new_node_id[1,:] = 0; centerlines.new_node_id[2,:] = 0; centerlines.new_node_id[3,:] = 0
+centerlines.new_reach_id[1,:] = 0; centerlines.new_reach_id[2,:] = 0; centerlines.new_reach_id[3,:] = 0
+reaches.n_rch_up[:] = 0; reaches.n_rch_down[:] = 0 
+reaches.rch_id_up[:] = 0; reaches.rch_id_down[:] = 0 
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
+print('Adding End Reach Attribute to Reaches and Nodes') #basin-scale
+rch_hw = centerlines.new_reach_id[0,np.where(con_end_ids == 1)[0]]
+rch_out = centerlines.new_reach_id[0,np.where(con_end_ids == 2)[0]]
+rch_junc = centerlines.new_reach_id[0,np.where(con_end_ids == 3)[0]]
+node_hw = centerlines.new_node_id[0,np.where(con_end_ids == 1)[0]]
+node_out = centerlines.new_node_id[0,np.where(con_end_ids == 2)[0]]
+node_junc = centerlines.new_node_id[0,np.where(con_end_ids == 3)[0]]
+reaches.end_rch = np.zeros(len(reaches.new_id))
+nodes.end_rch = np.zeros(len(nodes.new_id))
+reaches.end_rch[np.where(np.in1d(reaches.new_id, rch_hw))] = 1
+reaches.end_rch[np.where(np.in1d(reaches.new_id, rch_out))] = 2
+reaches.end_rch[np.where(np.in1d(reaches.new_id, rch_junc))] = 3
+nodes.end_rch[np.where(np.in1d(nodes.new_id, node_hw))] = 1
+nodes.end_rch[np.where(np.in1d(nodes.new_id, node_out))] = 2
+nodes.end_rch[np.where(np.in1d(nodes.new_id, node_junc))] = 3
+
 print('Updating Path Variable NetCDF with New SWORD IDs')
-path_inds = np.where(np.in1d(centerlines.reach_id, path_cl_rch_ids) == True)[0]
+path_inds = np.where(np.in1d(centerlines.cl_id, path_cl_ids) == True)[0]
 paths_new_rch_ids = centerlines.new_reach_id[:,path_inds]
 paths_new_node_ids = centerlines.new_node_id[:,path_inds]
 if 'new_reach_id' in paths.groups['centerlines'].variables.keys():
@@ -1219,15 +1260,63 @@ else:
     paths.groups['centerlines'].variables['new_node_id'][:] = paths_new_node_ids
     paths.close()
 
+###############################################################################
+### Filler variables
+# discharge subgroup 1
+reaches.h_break = np.full((4,len(reaches.id)), -9999.0)
+reaches.w_break = np.full((4,len(reaches.id)), -9999.0)
+reaches.hw_covariance = np.repeat(-9999., len(reaches.id))
+reaches.h_err_stdev = np.repeat(-9999., len(reaches.id))
+reaches.w_err_stdev = np.repeat(-9999., len(reaches.id))
+reaches.h_w_nobs = np.repeat(-9999., len(reaches.id))
+reaches.fit_coeffs = np.zeros((2, 3, len(reaches.id)))
+reaches.fit_coeffs[np.where(reaches.fit_coeffs == 0)] = -9999.0
+reaches.med_flow_area = np.repeat(-9999., len(reaches.id))
+#MetroMan
+reaches.metroman_ninf = np.repeat(-9999, len(reaches.id))
+reaches.metroman_p = np.repeat(-9999, len(reaches.id))
+reaches.metroman_abar = np.repeat(-9999, len(reaches.id))
+reaches.metroman_abar_stdev = np.repeat(-9999, len(reaches.id))
+reaches.metroman_ninf_stdev = np.repeat(-9999, len(reaches.id))
+reaches.metroman_p_stdev = np.repeat(-9999, len(reaches.id))
+reaches.metroman_ninf_p_cor = np.repeat(-9999, len(reaches.id))
+reaches.metroman_ninf_abar_cor = np.repeat(-9999, len(reaches.id))
+reaches.metroman_p_abar_cor = np.repeat(-9999, len(reaches.id))
+reaches.metroman_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#HiDVI
+reaches.hivdi_abar = np.repeat(-9999, len(reaches.id))
+reaches.hivdi_alpha = np.repeat(-9999, len(reaches.id))
+reaches.hivdi_beta = np.repeat(-9999, len(reaches.id))
+reaches.hivdi_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#MOMMA
+reaches.momma_b = np.repeat(-9999, len(reaches.id))
+reaches.momma_h = np.repeat(-9999, len(reaches.id))
+reaches.momma_save = np.repeat(-9999, len(reaches.id))
+reaches.momma_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#SADS
+reaches.sads_abar = np.repeat(-9999, len(reaches.id))
+reaches.sads_n = np.repeat(-9999, len(reaches.id))
+reaches.sads_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#BAM
+reaches.bam_abar = np.repeat(-9999, len(reaches.id))
+reaches.bam_n = np.repeat(-9999, len(reaches.id))
+reaches.bam_sbQ_rel = np.repeat(-9999, len(reaches.id))
+#SIC4DVar
+reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
+reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
+reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
+
 print('Writing New NetCDF')
 write_database_nc(centerlines, reaches, nodes, region, sword_dir)
 
-end_all = time.time()
-print('Finished ALL Updates in: '+str(np.round((end_all-start_all)/60,2))+' mins')
 print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
 print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(reaches.id))
 print('New Rch Dimensions:', len(np.unique(centerlines.new_reach_id[0,:])), len(np.unique(nodes.new_reach_id)), len(reaches.new_id))
 print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
 print('New Node Dimensions:', len(np.unique(centerlines.new_node_id[0,:])), len(np.unique(nodes.new_id)), len(nodes.new_id))
-   
+end_all = time.time()
+print('Finished ALL Updates in: '+str(np.round((end_all-start_all)/60,2))+' mins')
 
+basin_ind = np.where(np.in1d(reaches.id, path_cl_rch_ids) == True)[0]
+plt.scatter(reaches.x[basin_ind], reaches.y[basin_ind], c=reaches.dist_out[basin_ind], s=3)
+plt.show()
