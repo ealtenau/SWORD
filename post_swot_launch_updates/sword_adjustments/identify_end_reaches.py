@@ -28,15 +28,15 @@ outpath = outdir+version+'/'
 fn1 = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 fn2 = outpath+'reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 shp_dir = outpath[0:-27]+'gis_files/continent_buffer_0.1deg.gpkg'
-gpkg_dir = outpath+'gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
-gpkg_node_dir = outpath+'gpkg/'+region.lower()+'_sword_nodes_'+version+'.gpkg'
+# gpkg_dir = outpath+'gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
+# gpkg_node_dir = outpath+'gpkg/'+region.lower()+'_sword_nodes_'+version+'.gpkg'
 
 #read in netcdf data.
 data1 = nc.Dataset(fn1)
 data2 = nc.Dataset(fn2, 'r+')
 buffer = gp.read_file(shp_dir)
-gpkg = gp.read_file(gpkg_dir)
-gpkg_node = gp.read_file(gpkg_node_dir)
+# gpkg = gp.read_file(gpkg_dir)
+# gpkg_node = gp.read_file(gpkg_node_dir)
 
 #pull centerline level data. 
 node_id = data1.groups['centerlines'].variables['node_id'][0,:]
@@ -92,7 +92,7 @@ intersect = gp.sjoin(poly, points, how="inner")
 intersect = pd.DataFrame(intersect)
 intersect = intersect.drop_duplicates(subset='index_right', keep='first')
 
-# Identifying the delta ID.
+# Identifying the overlaps.
 ids = np.array(intersect.index_right)
 overlap = np.where(end_rch[ids] == 1)[0]
 end_rch[ids[overlap]] = 2
@@ -106,47 +106,47 @@ node_outlets = np.unique(node_id[np.where(end_rch == 2)])
 node_juncts = np.unique(node_id[np.where(end_rch == 3)])
 
 #update gpkg.
-print('Updating GPKG Files')
-gpkg_rchs = np.array(gpkg['reach_id'])
-ind_head = np.in1d(gpkg_rchs, headwaters)
-ind_out = np.in1d(gpkg_rchs, outlets)
-ind_jun = np.in1d(gpkg_rchs, juncts)
-end_reaches = np.zeros(len(gpkg_rchs))
-end_reaches[ind_jun] = 3
-end_reaches[ind_head] = 1
-end_reaches[ind_out] = 2
-gpkg['end_reach'] = end_reaches
-gpkg.to_file(gpkg_dir, driver='GPKG', layer='reaches')
+# print('Updating GPKG Files')
+# gpkg_rchs = np.array(gpkg['reach_id'])
+# ind_head = np.in1d(gpkg_rchs, headwaters)
+# ind_out = np.in1d(gpkg_rchs, outlets)
+# ind_jun = np.in1d(gpkg_rchs, juncts)
+# end_reaches = np.zeros(len(gpkg_rchs))
+# end_reaches[ind_jun] = 3
+# end_reaches[ind_head] = 1
+# end_reaches[ind_out] = 2
+# gpkg['end_reach'] = end_reaches
+# gpkg.to_file(gpkg_dir, driver='GPKG', layer='reaches')
 
-gpkg_nds = np.array(gpkg_node['node_id'])
-node_ind_head = np.in1d(gpkg_nds, node_headwaters)
-node_ind_out = np.in1d(gpkg_nds, node_outlets)
-node_ind_jun = np.in1d(gpkg_nds, node_juncts)
-node_end_reaches = np.zeros(len(gpkg_nds))
-node_end_reaches[node_ind_jun] = 3
-node_end_reaches[node_ind_head] = 1
-node_end_reaches[node_ind_out] = 2
-gpkg_node['end_reach'] = node_end_reaches
-gpkg_node.to_file(gpkg_node_dir, driver='GPKG', layer='nodes')
+# gpkg_nds = np.array(gpkg_node['node_id'])
+# node_ind_head = np.in1d(gpkg_nds, node_headwaters)
+# node_ind_out = np.in1d(gpkg_nds, node_outlets)
+# node_ind_jun = np.in1d(gpkg_nds, node_juncts)
+# node_end_reaches = np.zeros(len(gpkg_nds))
+# node_end_reaches[node_ind_jun] = 3
+# node_end_reaches[node_ind_head] = 1
+# node_end_reaches[node_ind_out] = 2
+# gpkg_node['end_reach'] = node_end_reaches
+# gpkg_node.to_file(gpkg_node_dir, driver='GPKG', layer='nodes')
 
 #re-saving shp files. 
-print('Updating SHPs')
-rch_level2 = np.array([int(str(r)[0:2]) for r in np.array(gpkg['reach_id'])])
-node_level2 = np.array([int(str(r)[0:2]) for r in np.array(gpkg_node['node_id'])])
-unq_basins = np.unique(rch_level2)
-for b in list(range(len(unq_basins))):
-    rch_outshp = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/shp/'+region+'/'+region.lower()+\
-        '_sword_reaches_hb'+str(unq_basins[b])+'_'+version+'.shp'
-    node_outshp = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/shp/'+region+'/'+region.lower()+\
-        '_sword_nodes_hb'+str(unq_basins[b])+'_'+version+'.shp'
-    rch_basin = np.where(rch_level2 == unq_basins[b])[0]
-    node_basin = np.where(node_level2 == unq_basins[b])[0]
-    #subset continental gpkg file. 
-    rch_subset = gpkg.iloc[rch_basin]
-    rch_subset.to_file(rch_outshp)
-    node_subset = gpkg_node.iloc[node_basin]
-    node_subset.to_file(node_outshp)
-    del(rch_subset); del(node_subset)
+# print('Updating SHPs')
+# rch_level2 = np.array([int(str(r)[0:2]) for r in np.array(gpkg['reach_id'])])
+# node_level2 = np.array([int(str(r)[0:2]) for r in np.array(gpkg_node['node_id'])])
+# unq_basins = np.unique(rch_level2)
+# for b in list(range(len(unq_basins))):
+#     rch_outshp = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/shp/'+region+'/'+region.lower()+\
+#         '_sword_reaches_hb'+str(unq_basins[b])+'_'+version+'.shp'
+#     node_outshp = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/shp/'+region+'/'+region.lower()+\
+#         '_sword_nodes_hb'+str(unq_basins[b])+'_'+version+'.shp'
+#     rch_basin = np.where(rch_level2 == unq_basins[b])[0]
+#     node_basin = np.where(node_level2 == unq_basins[b])[0]
+#     #subset continental gpkg file. 
+#     rch_subset = gpkg.iloc[rch_basin]
+#     rch_subset.to_file(rch_outshp)
+#     node_subset = gpkg_node.iloc[node_basin]
+#     node_subset.to_file(node_outshp)
+#     del(rch_subset); del(node_subset)
 
 #write outlets and headwaters to point files.
 print('Saving Headwaters and Outlets')

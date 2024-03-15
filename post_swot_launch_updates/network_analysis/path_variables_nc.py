@@ -415,12 +415,15 @@ version = 'v17a'
 basin = 'hb86'
 
 print('Starting Basin: ', basin)
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
-path_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
+    '/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
+path_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
+    '/network_building/'+region+'/'+basin+'_paths/'
+path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
+    '/network_building/pathway_netcdfs/'+region+'/'+basin+'_path_vars.nc'
 path_files = os.listdir(path_dir)
 path_files = np.array([f for f in path_files if '.gpkg' in f])
 path_files = np.array([f for f in path_files if 'path_' in f])
-path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
 
 #reading in sword data.
 sword = nc.Dataset(sword_dir)

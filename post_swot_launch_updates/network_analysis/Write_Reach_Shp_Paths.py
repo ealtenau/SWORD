@@ -327,7 +327,7 @@ reaches.rename(
         31:"path_segs",
         32:"main_side",
         33:"strm_order",
-        33:"end_reach",
+        34:"end_reach",
         },inplace=True)
 
 

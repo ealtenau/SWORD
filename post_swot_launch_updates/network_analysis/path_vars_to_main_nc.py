@@ -148,7 +148,8 @@ def reorder_cl_ids(path_cl_rch_ids, path_cl_ids, path_cl_dist_out, centerlines):
         mx_dist = path_cl_dist_out[rch[mx]]
 
         if mn_dist > mx_dist:
-            cl_id_new[rch_main] = cl_id_new[rch_main][::-1]
+            sort_inds = np.argsort(cl_id_new[rch_main])
+            cl_id_new[rch_main[sort_inds]] = cl_id_new[rch_main[sort_inds]][::-1]
 
     return cl_id_new
 
@@ -1140,7 +1141,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
         
 start_all = time.time()
 region = 'NA'
-version = 'v17a'
+version = 'v17'
 basin = 'hb91'
 
 print('Starting Basin: ', basin)
@@ -1149,7 +1150,7 @@ sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
 con_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 path_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
-    +version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
+    +version+'/network_building/pathway_netcdfs/'+region+'/'+basin+'_path_vars.nc'
 
 centerlines, nodes, reaches = read_data(sword_dir)
 conn = nc.Dataset(con_dir)
