@@ -27,7 +27,7 @@ else:
 outpath = outdir+version+'/'
 fn1 = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 fn2 = outpath+'reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
-shp_dir = outpath[0:-27]+'gis_files/continent_buffer_0.1deg.gpkg'
+shp_dir = outpath[0:-26]+'gis_files/continent_buffer_0.1deg.gpkg'
 # gpkg_dir = outpath+'gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
 # gpkg_node_dir = outpath+'gpkg/'+region.lower()+'_sword_nodes_'+version+'.gpkg'
 
@@ -164,7 +164,7 @@ hw['geometry'] = hw_geom
 hw = gp.GeoDataFrame(hw)
 hw.set_geometry(col='geometry')
 hw = hw.set_crs(4326, allow_override=True)
-outgpkg='/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+region.lower()+'_headwaters_sword_'+version+'.gpkg'
+outgpkg='/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_headwaters_sword_'+version+'.gpkg'
 hw.to_file(outgpkg, driver='GPKG', layer='headwaters')
 
 outlets = np.where(end_rch == 2)[0]
@@ -181,7 +181,7 @@ ol['geometry'] = ol_geom
 ol = gp.GeoDataFrame(ol)
 ol.set_geometry(col='geometry')
 ol = ol.set_crs(4326, allow_override=True)
-outgpkg='/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+region.lower()+'_outlets_sword_'+version+'.gpkg'
+outgpkg='/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_outlets_sword_'+version+'.gpkg'
 ol.to_file(outgpkg, driver='GPKG', layer='outlets')
 
 #update connectivity netcdf.

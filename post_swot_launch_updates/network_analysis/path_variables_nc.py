@@ -61,7 +61,13 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
         #has a neighbor with the lowest distance from outlet.
         flag = np.zeros(len(cl_rchs[0,:]))
         flag[np.where(main_side == 0)] = 1
-        start_pt = ngh_pts[np.where(side_dist[ngh_pts] == np.min(side_dist[ngh_pts]))[0]]
+        
+        ### Added the lines to remove nan values on 3/21/2024. To fix issues with Europe. 
+        rmv = np.where(np.isnan(side_dist[ngh_pts]) == True)[0]
+        ngh_pts = np.delete(ngh_pts,rmv)
+        #####
+        
+        start_pt = ngh_pts[np.where(side_dist[ngh_pts] == np.nanmin(side_dist[ngh_pts]))[0]][0]
         loop = 1
         check = len(ngh_pts)+500
         while len(ngh_pts) > 0:
@@ -122,7 +128,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     loop = loop+1
                     continue
                 else:
-                    start_pt = ngh_pts[np.where(side_dist[ngh_pts] == np.min(side_dist[ngh_pts]))[0]]
+                    start_pt = ngh_pts[np.where(side_dist[ngh_pts] == np.nanmin(side_dist[ngh_pts]))[0]]
                     loop = loop+1
 
             if loop > check:
@@ -410,9 +416,9 @@ def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
 ################################################################################################
 
 start_all = time.time()
-region = 'NA'
-version = 'v17a'
-basin = 'hb86'
+region = 'EU'
+version = 'v17'
+basin = 'hb23'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
@@ -562,6 +568,10 @@ rch_paths_order[rch]
 
 plt.scatter(cl_lon[rch], cl_lat[rch], c=rch_paths_dist[rch], s = 5, cmap='rainbow')
 plt.show()
+
+plt.scatter(cl_lon, cl_lat, c=rch_paths_dist, s = 5, cmap='rainbow')
+plt.show()
+
 
 ### SAVE CSV
 path_csv = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'+basin+'_path_vars.csv'

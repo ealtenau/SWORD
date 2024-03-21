@@ -6,8 +6,8 @@ from shapely.geometry import Point
 
 ###############################################################################
 
-region = 'NA'
-version = 'v17a'
+region = 'EU'
+version = 'v17'
 sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 sword = nc.Dataset(sword_fn)
@@ -65,7 +65,7 @@ for ind in list(range(len(unq_l2))):
     nodes.set_geometry(col='geometry')
     nodes = nodes.set_crs(4326, allow_override=True)
 
-    outgpkg = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/gpkg_30m/'\
+    outgpkg = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg_30m/'\
         +region+'/hb'+str(unq_l2[ind])+'_centerlines_'+version+'.gpkg'
     nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
 

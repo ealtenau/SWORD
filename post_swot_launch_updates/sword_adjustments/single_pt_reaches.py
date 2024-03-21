@@ -2,10 +2,11 @@ import numpy as np
 import netCDF4 as nc
 import pandas as pd
 
-region = 'NA'
-version = 'v17a'
+region = 'EU'
+version = 'v17'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc')
+outpath = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region.lower()+'_'+version+'_single_pt_rchs.csv'
 
 #centerline variables to update.
 cl_ids = sword.groups['centerlines'].variables['cl_id'][:]
@@ -44,6 +45,6 @@ for ind in list(range(len(rchs))):
 
 #export reaches to delete.
 rch_list = rchs[single_pt_rchs]
-# df = pd.DataFrame(rch_list)
-# df.to_csv('/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region.lower()+'_'+version+'_single_pt_rchs.csv')
+df = pd.DataFrame(rch_list)
+df.to_csv(outpath)
 print(len(rch_list)) 

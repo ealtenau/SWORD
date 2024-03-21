@@ -91,11 +91,12 @@ def find_tributary_junctions(centerlines):
 #####################################################################################################
 
 start_all = time.time()
-region = 'NA'
-version = 'v17a'
-basin = 'hb74'
+region = 'EU'
+version = 'v17'
 
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
+outgpkg='/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
+
 #reading in sword data.
 sword = nc.Dataset(sword_dir)
 centerlines = Object()
@@ -126,8 +127,6 @@ df['geometry'] = geom
 df = gp.GeoDataFrame(df)
 df.set_geometry(col='geometry')
 df = df.set_crs(4326, allow_override=True)
-outgpkg='/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_testing/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 df.to_file(outgpkg, driver='GPKG', layer='tribs')
-
-print('DONE', 'breaks', len(tributaries), 'reaches', len(np.unique(centerlines.reach_id[0,t])))
+print('DONE', 'breaks', len(tributaries), 'reaches', len(np.unique(centerlines.reach_id[0,:])))
 

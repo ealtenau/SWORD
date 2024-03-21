@@ -1309,7 +1309,7 @@ def format_cl_node_ids(nodes, centerlines):
         Subnodes.id = nodes.id[nodes_ind]
         Subnodes.x = nodes.x[nodes_ind]
         Subnodes.y = nodes.y[nodes_ind]
-        Subnodes.cl_id = nodes.cl_id[nodes_ind]
+        Subnodes.cl_id = nodes.cl_id[nodes_ind,:]
         Subcls.cl_id = centerlines.cl_id[cl_ind]
         Subcls.x = centerlines.lon[cl_ind]
         Subcls.y = centerlines.lat[cl_ind]

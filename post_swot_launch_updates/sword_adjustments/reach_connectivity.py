@@ -158,19 +158,25 @@ def find_connections(centerlines):
             if '4' in t2:
                 dist_pts2 = np.where(centerlines.reach_id[0,pt_ind[mx_id,good_pts2]] != unq_rch[ind])[0]
                 nghs2 = centerlines.reach_id[0,pt_ind[mx_id,good_pts2[dist_pts2]]]
-                dist2 = pt_dist[mx_id,good_pts1[dist_pts2]]
+                dist2 = pt_dist[mx_id,good_pts2[dist_pts2]]
                 min_dist2 = np.array([np.min(dist2[np.where(nghs2 == n)]) for n in n2])
                 dam_ind2 = np.where(t2 == '4')[0]
                 other_rchs2 = n2[np.where(t2 != '4')]
                 for idx in list(range(len(other_rchs2))):
                     pt2 = np.where(n2 == other_rchs2[idx])[0]
-                    if min_dist2[dam_ind2] < 0.0005 and min_dist2[pt2] > 0.0009:
-                        n2 = np.delete(n2, pt2)
-
-            neighbors[1:len(n1)+1, mn_id] = n1
-            neighbors[1:len(n2)+1, mx_id] = n2
+                    if min(min_dist2[dam_ind2]) < 0.0005 and min_dist2[pt2] > 0.0009: #added min() to first condition in EU. 
+                        n2 = np.delete(n2, pt2, axis = 0)
+            if len(n1) == 4 or len(n1) > 4:
+                neighbors[0:4, mn_id] = n1[0:4]
+            else:
+                neighbors[1:len(n1)+1, mn_id] = n1
+            if len(n2) == 4 or len(n2) > 4:
+                neighbors[0:4, mn_id] = n2[0:4]
+            else:
+                neighbors[1:len(n2)+1, mx_id] = n2
     
     neighbors[0,:] = centerlines.reach_id[0,:]
+    
     return neighbors 
 
 ###############################################################################

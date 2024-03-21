@@ -21,12 +21,12 @@ import netCDF4 as nc
 ###############################################################################
 
 start_all = time.time()
-region = 'NA'
+region = 'EU'
 
 # Input file(s).
-nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/channel_additions/'\
+nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'\
     +region.lower()+'_channel_additions.nc'
-sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/netcdf/'+region.lower()+'_sword_v17a.nc'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/'+region.lower()+'_sword_v17.nc'
 
 # Reading in data.
 centerlines, nodes, reaches = rdt.read_data(sword_fn)

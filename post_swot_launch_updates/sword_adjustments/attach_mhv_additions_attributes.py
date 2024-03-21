@@ -9,7 +9,7 @@ import netCDF4 as nc
 from shapely.geometry import Point
 import pandas as pd
 from osgeo import ogr
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 ###############################################################################
 
@@ -366,57 +366,33 @@ def read_cl_data(cl_dir):
 
 ###############################################################################
 
-# def update_segs(cl):
-#     unq_segs = np.unique(cl.seg)
-#     new_segs = np.copy(cl.seg)
-#     count = np.max(unq_segs) + 1
-#     for s in list(range(len(unq_segs))):
-#         seg = np.where(cl.seg == unq_segs[s])[0]
-#         gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(cl.x[seg], cl.y[seg]),crs="EPSG:4326").to_crs("EPSG:3857")
-#         diff = gdf.distance(gdf.shift(1)); diff[0] = 0
-#         jumps = np.where(diff > 1000)[0]
-#         breaks = np.abs(np.diff(cl.ind[seg]))
-#         # print(s, np.unique(breaks))
-#         if np.max(np.unique(breaks)) > 1:
-#             print(s, 'index')
-#             brks = np.where(breaks != 1)[0]+1 
-#             brks = np.append(0,brks)
-#             brks = np.append(brks,len(seg))
-#             for b in list(range(len(brks)-1)):              
-#                 end_pt = brks[b+1]
-#                 new_segs[seg[brks[b]:end_pt]] = count 
-#                 count = count+1
-#         elif len(jumps) > 0:
-#             print(s, 'jump') 
-#             jumps = np.append(0,jumps)
-#             jumps = np.append(jumps,len(seg))
-#             for j in list(range(len(jumps)-1)):              
-#                 end_pt = jumps[j+1]
-#                 new_segs[seg[jumps[j]:end_pt]] = count 
-#                 count = count+1
-#         else:
-#             continue
-#     return new_segs
-
-###############################################################################
-
 def update_segs(cl):
     unq_segs = np.unique(cl.seg)
     new_segs = np.copy(cl.seg)
     count = np.max(unq_segs) + 1
     for s in list(range(len(unq_segs))):
         seg = np.where(cl.seg == unq_segs[s])[0]
-        order_ids = seg[np.argsort(cl.ind[seg])]
-        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(cl.x[order_ids], cl.y[order_ids]),crs="EPSG:4326").to_crs("EPSG:3857")
+        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(cl.x[seg], cl.y[seg]),crs="EPSG:4326").to_crs("EPSG:3857")
         diff = gdf.distance(gdf.shift(1)); diff[0] = 0
         jumps = np.where(diff > 1000)[0]
-        if len(jumps) > 0:
+        breaks = np.abs(np.diff(cl.ind[seg]))
+        # print(s, np.unique(breaks))
+        if np.max(np.unique(breaks)) > 1:
+            print(s, 'index')
+            brks = np.where(breaks != 1)[0]+1 
+            brks = np.append(0,brks)
+            brks = np.append(brks,len(seg))
+            for b in list(range(len(brks)-1)):              
+                end_pt = brks[b+1]
+                new_segs[seg[brks[b]:end_pt]] = count 
+                count = count+1
+        elif len(jumps) > 0:
             print(s, 'jump') 
             jumps = np.append(0,jumps)
             jumps = np.append(jumps,len(seg))
             for j in list(range(len(jumps)-1)):              
                 end_pt = jumps[j+1]
-                new_segs[order_ids[jumps[j]:end_pt]] = count 
+                new_segs[seg[jumps[j]:end_pt]] = count 
                 count = count+1
         else:
             continue
@@ -580,9 +556,25 @@ lake_path = np.array(np.array([file for file in getListOfFiles(lake_dir) if '.sh
 cl = Object()
 cl.x, cl.y, cl.seg, cl.ind, cl.eps = read_cl_data(cl_dir)
 # Re-number segments with non-sequential indexes.
-cl.new_seg = update_segs(cl)
-# cl.ind = order_edits(cl)
-# cl.new_seg = np.copy(cl.seg)
+# cl.new_seg = update_segs(cl)
+cl.ind = order_edits(cl)
+#filtering annoying values. 
+unq_segs = np.unique(cl.seg)
+rmv_idx = list()
+for s in list(range(len(unq_segs))):
+    seg = np.where(cl.seg == unq_segs[s])[0]
+    diff = np.diff(cl.ind[seg])
+    pts = np.where(abs(diff) != 1)[0]+1
+    if len(pts) > 0:
+        # print(s, len(pts))
+        rmv_idx.append(seg[pts])
+
+pts_all = np.array([item for row in rmv_idx for item in row])
+cl.ind = np.delete(cl.ind,pts_all)   
+cl.x = np.delete(cl.x,pts_all) 
+cl.y = np.delete(cl.y,pts_all) 
+cl.seg = np.delete(cl.seg,pts_all) 
+cl.new_seg = np.copy(cl.seg)
 
 # Create distance and endpoint attributes. 
 cl.eps = np.zeros(len(cl.x))
@@ -626,7 +618,11 @@ cl_ext = [np.min(cl.x), np.min(cl.y),
             np.max(cl.x), np.max(cl.y)]
 
 # Creating geodataframe for spatial joins. 
-cl_df = gp.read_file(cl_dir)
+cl_df = nodes = gp.GeoDataFrame(np.array([cl.x, cl.y]).T)
+geom = gp.GeoSeries(map(Point, zip(cl.x, cl.y)))
+cl_df['geometry'] = geom
+cl_df.set_geometry(col='geometry')
+cl_df = cl_df.set_crs(4326, allow_override=True)
 
 # Subset Lake db to mhv extent.
 lake_db_clip = lake_db.cx[cl_ext[0]:cl_ext[2], cl_ext[1]:cl_ext[3]]
@@ -685,22 +681,19 @@ plt.show()
 array([ 1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
        18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33])
 
-seg = np.where(cl.seg == 19)[0]
+seg = np.where(cl.seg == 14)[0]
 plt.scatter(cl.x[seg], cl.y[seg], s = 3, c=cl.ind[seg], cmap='rainbow')
 plt.show()
 
-seg = np.where(cl.seg == 19)[0]
+seg = np.where(cl.seg == 21)[0]
 order_ids = np.argsort(cl.ind[seg])
 plt.plot(cl.x[seg[order_ids]], cl.y[seg[order_ids]])
 plt.show()      
 
 
 
-unq_segs = np.unique(cl.seg)
-for s in list(range(len(unq_segs))):
-    seg = np.where(cl.seg == unq_segs[s])[0]
-    diff = np.diff(cl.ind[seg])
-    pts = np.where(abs(diff) != 1)[0]
+             
+
 
 
 plt.scatter(cl.x[seg], cl.y[seg], s = 3, c=cl.ind[seg], cmap='rainbow')
