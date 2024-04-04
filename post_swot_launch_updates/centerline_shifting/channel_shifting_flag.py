@@ -16,7 +16,8 @@ import geopandas as gp
 import pandas as pd
 import time
 import netCDF4 as nc
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+from scipy.interpolate import splprep, BSpline, splev
 
 ###############################################################################
 ######################## Reading and Writing Functions ########################
@@ -52,7 +53,7 @@ def read_jrc(jrc_fn):
     lat = np.array(ys).flatten()
 
     # Assiging lat/lon coordinates as attributes to "mhydro" object.
-    keep = np.where(vals > 0)[0]
+    keep = np.where(vals > 0)[0] 
     jrc = Object()
     jrc.lon = lon[keep]
     jrc.lat = lat[keep]
@@ -113,7 +114,7 @@ def read_sword(sword_fn, jrc):
 ###############################################################################
 ###############################################################################
 
-sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17a/netcdf/na_sword_v17a.nc'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/na_sword_v16.nc'
 jrc_fn = '/Users/ealtenau/Documents/SWORD_Dev/inputs/JRC_Water_Occurance/occurrence_110W_50Nv1_4_2021.tif'
 
 jrc = read_jrc(jrc_fn)
@@ -122,9 +123,14 @@ sword = read_sword(sword_fn, jrc)
 jrc_pts = np.vstack((jrc.lon, jrc.lat)).T
 sword_pts = np.vstack((sword.lon, sword.lat)).T
 kdt = sp.cKDTree(jrc_pts)
-pt_dist, pt_ind = kdt.query(sword_pts, k = 10)
+pt_dist, pt_ind = kdt.query(sword_pts, k = 10, distance_upper_bound=0.005)
 dist = np.median(pt_dist, axis=1)
-vals = np.median(jrc.vals[pt_ind], axis=1)
+zero_out = np.where(dist == np.inf)[0]
+dist[zero_out] = 0
+ind_max = np.max(pt_ind, axis=1)
+keep = np.where(ind_max != jrc_pts.shape[0])[0]
+vals = np.zeros(len(dist))
+vals[keep]  = np.median(jrc.vals[pt_ind[keep,:]],axis=1)
 
 #filter the flag.
 sword.shift_flag = np.zeros(len(sword.reach_id))
@@ -148,7 +154,7 @@ for ind in list(range(len(unq_rchs))):
 
     threshold = meters_to_degrees(radius, np.median(sword.lat[rch]))
     # flag = np.where(dist[rch]>threshold)[0] #original flag did not consider no data areas. 
-    flag = np.where((dist[rch]>threshold) & (vals[rch] >= 5))[0]
+    flag = np.where((dist[rch]>threshold) & (vals[rch] >= 5))[0] #was 5.
     if len(flag) == 0:
         continue 
     else:
@@ -164,5 +170,64 @@ plt.scatter(sword.lon, sword.lat, c='black')
 plt.scatter(sword.lon[f], sword.lat[f], c='red')
 plt.show()
 
-# df = pd.DataFrame(np.array([sword.lon, sword.lat, sword.shift_flag]).T)
-# df.to_csv('/Users/ealtenau/Desktop/sword_shift_flag_test2.csv', index=False)
+
+
+shift = np.where(sword.shift_flag == 1)[0]
+pt_dist2, pt_ind2 = kdt.query(sword_pts, k = 20)
+shift_lon = np.mean(jrc.lon[pt_ind2[shift,:]], axis=1)
+shift_lat = np.mean(jrc.lat[pt_ind2[shift,:]], axis=1)
+
+new_lon = np.copy(sword.lon)
+new_lat = np.copy(sword.lat)
+new_lon[shift] = shift_lon
+new_lat[shift] = shift_lat
+
+
+
+unq_shift_rchs = np.unique(sword.reach_id[shift])
+# idx=np.where(unq_shift_rchs==74298900291)[0]
+new_lon_smooth = np.copy(new_lon)
+new_lat_smooth = np.copy(new_lat)
+for idx in list(range(len(unq_shift_rchs))):
+    r = np.where(sword.reach_id == unq_shift_rchs[idx])[0]
+    x_diff = np.max(new_lon[r]) - np.min(new_lon[r])
+    y_diff = np.max(new_lat[r]) - np.min(new_lat[r])
+    if y_diff < x_diff:
+        s = np.var(new_lat[r])/3
+    else:
+        s = np.var(new_lon[r])/3
+
+
+    okay = np.where(np.abs(np.diff(new_lon[r])) + np.abs(np.diff(new_lat[r])) > 0)[0]
+    if len(okay) < 5:
+        continue
+    pts = np.vstack((new_lon[r[okay]], new_lat[r[okay]]))
+    # Find the B-spline representation of an N-dimensional curve
+    tck, u = splprep(pts, s=0.00000005) #0.0001, 0.000075
+    # n_new = np.linspace(u.min(), u.max(), len(node_pts))
+    cl_new = np.linspace(u.min(), u.max(), len(r))
+    # Evaluate a B-spline
+    # node_x_smooth, node_y_smooth = splev(n_new, tck)
+    cl_x_smooth, cl_y_smooth = splev(cl_new, tck)
+    new_lon_smooth[r] = cl_x_smooth
+    new_lat_smooth[r] = cl_y_smooth
+
+
+
+
+
+
+# df = pd.DataFrame(np.array([sword.lon, sword.lat, sword.shift_flag, sword.reach_id]).T)
+# df.to_csv('/Users/ealtenau/Desktop/sword_shift_flag_test3.csv', index=False)
+
+
+# meters_to_degrees(1000, np.median(sword.lat[rch]))
+
+
+plt.scatter(sword.lon, sword.lat, c='blue', s = 3)
+plt.scatter(new_lon, new_lat, c='magenta', s = 3)
+plt.scatter(new_lon_smooth, new_lat_smooth, c='cyan', s = 3)
+plt.show()
+
+# df2 = pd.DataFrame(np.array([new_lon_smooth, new_lat_smooth, sword.shift_flag]).T)
+# df2.to_csv('/Users/ealtenau/Desktop/sword_shift_test2.csv', index=False)

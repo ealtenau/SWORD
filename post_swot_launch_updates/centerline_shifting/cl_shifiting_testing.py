@@ -4,16 +4,18 @@ import matplotlib.pyplot as plt
 import glob
 from scipy.interpolate import splprep, BSpline, splev
 import random
+import os
+import pandas as pd
 # import geopandas as gp
 # from scipy import stats
 # from scipy.interpolate import UnivariateSpline
 
 #############################################################################################
 
-def read_pixc_data(files, rch):
+def read_pixc_data(pixc_dir, files, rch):
 
     for f in list(range(len(files))):
-        pixc_df = nc.Dataset(files[f])
+        pixc_df = nc.Dataset(pixc_dir+files[f])
         subset = np.where(pixc_df.variables['reach_id'][:] == rch)[0]
         if f == 0:
             pixc_x = np.array(pixc_df.variables['longitude_vectorproc'][subset])
@@ -33,22 +35,22 @@ def read_pixc_data(files, rch):
     
 #############################################################################################
 
-sword_fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v15b/netcdf/na_sword_v15b.nc'
-pixc_dir = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/shifting_tests/013_232L/'
-files = glob.glob(pixc_dir+'**/*PIXCVecRiver*', recursive = True)
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/na_sword_v16.nc'
+pixc_dir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/shifting_tests/412_079L/'
+files = os.listdir(pixc_dir)
 files =[f for f in files if '.nc' in f] 
-outdir = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/shifting_tests/plots/'
+outdir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/shifting_tests/plots/'
 
 tile = pixc_dir[-9:-1]
 
-pixc = nc.Dataset(files[1])
-xmax = max(pixc.variables['longitude_vectorproc'][:])
-xmin = min(pixc.variables['longitude_vectorproc'][:])
-ymax = max(pixc.variables['latitude_vectorproc'][:])
-ymin = min(pixc.variables['latitude_vectorproc'][:])
-ll = np.array([xmin, ymin])  # lower-left
-ur = np.array([xmax, ymax])  # upper-right
-pixc.close()
+# pixc = nc.Dataset(pixc_dir+files[0])
+# xmax = np.nanmax(np.array(pixc.variables['longitude_vectorproc'][:]))
+# xmin = np.nanmin(np.array(pixc.variables['longitude_vectorproc'][:]))
+# ymax = np.nanmax(np.array(pixc.variables['latitude_vectorproc'][:]))
+# ymin = np.nanmin(np.array(pixc.variables['latitude_vectorproc'][:]))
+# ll = np.array([xmin, ymin])  # lower-left
+# ur = np.array([xmax, ymax])  # upper-right
+# pixc.close()
 
 sword = nc.Dataset(sword_fn)
 sword_lon = sword.groups['centerlines'].variables['x'][:]
@@ -60,14 +62,20 @@ node_id_all = sword.groups['nodes'].variables['node_id'][:]
 node_rch = sword.groups['nodes'].variables['reach_id'][:]
 sword_points = [(sword_lon[i], sword_lat[i]) for i in range(len(sword_lon))]
 sword_pts = np.array(sword_points)
-sword_idx = np.all(np.logical_and(ll <= sword_pts, sword_pts <= ur), axis=1)
-reaches = np.unique(sword_rchs[sword_idx])
+# sword_idx = np.all(np.logical_and(ll <= sword_pts, sword_pts <= ur), axis=1)
+# reaches = np.unique(sword_rchs[sword_idx])
 sword.close()
 
-for r in list(range(len(reaches))):
+
+flagged = pd.read_csv('/Users/ealtenau/Desktop/sword_shift_flag_test3.csv')
+reaches_all = np.array(flagged['3'])
+f = np.where(flagged['2'] == 1)[0]
+reaches = np.unique(reaches_all[f])
+
+for r in list(range(len(reaches))): # r = 4 is a good test, 74298900671
 
     rch = reaches[r]
-    pixc_x,pixc_y,pixc_nodes = read_pixc_data(files, rch)
+    pixc_x,pixc_y,pixc_nodes = read_pixc_data(pixc_dir,files, rch)
 
     if len(pixc_x) == 0:
         continue

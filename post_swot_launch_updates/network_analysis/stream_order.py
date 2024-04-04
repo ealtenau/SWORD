@@ -33,10 +33,10 @@ def find_path_segs(order, paths):
 ###############################################################################
 ###############################################################################
 
-region = 'NA'
-version = 'v17a'
-basin = 'hb91'
-path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
+region = 'EU'
+version = 'v17'
+basin = 'hb28'
+path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/pathway_netcdfs/'+region+'/'+basin+'_path_vars.nc'
 con_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 
 # Read in data. 
@@ -63,42 +63,6 @@ strm_order[np.where(paths == 0)] = -9999
 
 # Find path segments. 
 path_segs = find_path_segs(order,paths)
-
-#filter stream order. 
-# new_strm_order = np.copy(strm_order)
-# unq_strm = np.unique(strm_order)
-# unq_strm = unq_strm[unq_strm>1]
-# for ind in list(range(len(unq_strm))):
-#     strm_ind = np.where(new_strm_order == unq_strm[ind])[0]
-#     strm_segs = np.unique(path_segs[strm_ind])
-#     strm_dist = np.array([np.max(dist[np.where(path_segs == s)]) for s in strm_segs])
-#     #sort segments to loop through by largest distance from outlet to smallest. 
-#     strm_segs = strm_segs[np.argsort(strm_dist)[::-1]]
-#     for idx in list(range(len(strm_segs))):
-#         seg = np.where(path_segs == strm_segs[idx])[0]
-#         seg_strm = np.max(new_strm_order [seg])
-#         seg_dist = np.max(dist[seg])
-#         max_pt = np.where(dist[seg]==max(dist[seg]))[0]
-#         #find neighboring stream order and distance info. 
-#         r = np.unique(rchs[0,seg[max_pt]])
-#         con_inds = np.where(np.in1d(con_rchs[0,:], r)==True)[0]
-#         ngh_rchs = np.unique(con_rchs[1::,con_inds])
-#         ngh_rchs = ngh_rchs[ngh_rchs>0]
-#         ngh_strm = np.array([np.max(new_strm_order[np.where(rchs[0,:] == n)]) for n in ngh_rchs])
-#         ngh_dist = np.array([np.max(dist[np.where(rchs[0,:] == n)]) for n in ngh_rchs])
-#         ngh_freq = np.array([np.max(paths[np.where(rchs[0,:] == n)]) for n in ngh_rchs])
-#         #filter neighbors to main network and upstream. 
-#         filt = np.where((ngh_strm != -9999) & (ngh_dist > seg_dist))[0]
-#         ngh_rchs = ngh_rchs[filt]
-#         ngh_strm = ngh_strm[filt]
-#         ngh_dist = ngh_dist[filt]
-#         thresh = seg_strm - 1
-#         check = np.where(ngh_strm == thresh)[0]
-#         if len(check) >=2:
-#             continue 
-#         else:
-#             new_strm_order[seg] = max(ngh_strm)
-
 
 if 'stream_order' in data.groups['centerlines'].variables.keys():
     data.groups['centerlines'].variables['stream_order'][:] = strm_order

@@ -724,8 +724,8 @@ cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 # break_id = np.array(tribs['cl_id']) 
 
 #manual
-reach = np.array([26200100751,26170900605,26181000985])
-break_id = np.array([24109959,22549212,22609342])
+reach = np.array([29147000391,29420300291,29420500501,29420400551,29461000511,29145000041])
+break_id = np.array([31133009,31288094,31345367,31291330,31488734,31114667])
 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):

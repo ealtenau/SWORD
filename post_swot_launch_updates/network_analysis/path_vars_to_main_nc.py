@@ -142,12 +142,19 @@ def reorder_cl_ids(path_cl_rch_ids, path_cl_ids, path_cl_dist_out, centerlines):
         rch = np.where(path_cl_rch_ids == unq_rchs[ind])[0]
         rch_main = np.where(cl_rch_ids == unq_rchs[ind])[0]
 
-        mn = np.where(path_cl_ids[rch] == min(path_cl_ids[rch]))[0]
-        mx = np.where(path_cl_ids[rch] == max(path_cl_ids[rch]))[0]
-        mn_dist = path_cl_dist_out[rch[mn]]
-        mx_dist = path_cl_dist_out[rch[mx]]
+        ### Did not account for nan values
+        # mn = np.where(path_cl_ids[rch] == min(path_cl_ids[rch]))[0]
+        # mx = np.where(path_cl_ids[rch] == max(path_cl_ids[rch]))[0]
+        # mn_dist = path_cl_dist_out[rch[mn]]
+        # mx_dist = path_cl_dist_out[rch[mx]]
+        
+        keep = np.where(path_cl_dist_out[rch] >= 0)[0]
+        mn = np.where(path_cl_dist_out[rch[keep]] == min(path_cl_dist_out[rch[keep]]))[0][0]
+        mx = np.where(path_cl_dist_out[rch[keep]] == max(path_cl_dist_out[rch[keep]]))[0][0]
+        mn_id = path_cl_ids[rch[keep[mn]]]
+        mx_id = path_cl_ids[rch[keep[mx]]]
 
-        if mn_dist > mx_dist:
+        if mn_id > mx_id:
             sort_inds = np.argsort(cl_id_new[rch_main])
             cl_id_new[rch_main[sort_inds]] = cl_id_new[rch_main[sort_inds]][::-1]
 
@@ -1140,9 +1147,9 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
         
 start_all = time.time()
-region = 'NA'
+region = 'EU'
 version = 'v17'
-basin = 'hb91'
+basin = 'hb29'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\

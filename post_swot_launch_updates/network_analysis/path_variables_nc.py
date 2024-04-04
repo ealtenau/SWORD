@@ -418,7 +418,7 @@ def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
 start_all = time.time()
 region = 'EU'
 version = 'v17'
-basin = 'hb23'
+basin = 'hb28'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\

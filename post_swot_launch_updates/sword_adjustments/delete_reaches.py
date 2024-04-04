@@ -704,7 +704,7 @@ rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/EU/eu_deletio
 # rm_rch_df = pd.read_csv(rch_dir)
 # rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 # rm_rch = np.unique(rm_rch)
-rm_rch = np.array([26186000711,26200101915,26200102866,26200101591,26200102706,26200102696]) #manual
+rm_rch = np.array([24100600126]) #manual
 
 centerlines, nodes, reaches = read_data(sword_dir)
 rch_check = reaches.id
