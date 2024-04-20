@@ -2,7 +2,7 @@ import numpy as np
 import netCDF4 as nc
 import pandas as pd
 
-region = 'EU'
+region = 'SA'
 version = 'v17'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc')

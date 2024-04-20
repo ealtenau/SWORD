@@ -91,7 +91,7 @@ def find_tributary_junctions(centerlines):
 #####################################################################################################
 
 start_all = time.time()
-region = 'EU'
+region = 'SA'
 version = 'v17'
 
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'

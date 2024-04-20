@@ -705,11 +705,11 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'EU'
+region = 'SA'
 version = 'v17'
  
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
+trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 
 centerlines, nodes, reaches = read_data(nc_fn)
 
@@ -724,8 +724,8 @@ cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 # break_id = np.array(tribs['cl_id']) 
 
 #manual
-reach = np.array([29147000391,29420300291,29420500501,29420400551,29461000511,29145000041])
-break_id = np.array([31133009,31288094,31345367,31291330,31488734,31114667])
+reach = np.array([67207001115,67209500015])
+break_id = np.array([60266567,60376689])
 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):

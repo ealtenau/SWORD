@@ -361,8 +361,8 @@ def read_cl_data(cl_dir):
     cl_y = np.array([gm.y for gm in cl.geometry])
     cl_seg = np.array(cl['segment'])
     cl_ind = np.array(cl.index)
-    cl_eps = np.array(cl['endpoints'])
-    return cl_x, cl_y, cl_seg, cl_ind, cl_eps
+    # cl_eps = np.array(cl['endpoints'])
+    return cl_x, cl_y, cl_seg, cl_ind #, cl_eps
 
 ###############################################################################
 
@@ -558,9 +558,9 @@ def save_mhv_nc(cl, region, outfile):
 start_all = time.time()
 
 #Define input directories and filenames. Will need to be changed based on user needs.
-region = 'EU'
+region = 'SA'
 data_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/'
-cl_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_mhv_line_additions_all.gpkg'
+cl_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_mhv_point_additions_ALL.gpkg'
 outfile = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_channel_additions.nc'
 
 # Global Paths.
@@ -578,7 +578,7 @@ lake_path = np.array(np.array([file for file in getListOfFiles(lake_dir) if '.sh
 
 # Read in new centerline data. 
 cl = Object()
-cl.x, cl.y, cl.seg, cl.ind, cl.eps = read_cl_data(cl_dir)
+cl.x, cl.y, cl.seg, cl.ind = read_cl_data(cl_dir)
 # Re-number segments with non-sequential indexes.
 cl.new_seg = update_segs(cl)
 # cl.ind = order_edits(cl)
@@ -604,7 +604,7 @@ lake_db = gp.GeoDataFrame.from_file(lake_path[0])
 delta_db = gp.GeoDataFrame.from_file(fn_deltas)
 
 # Reading in mhv data.
-mhv = nc.Dataset(mhv_dir, 'r+') 
+mhv = nc.Dataset(mhv_dir) 
 mhv_lon = mhv.groups['centerlines'].variables['x'][:]
 mhv_lat = mhv.groups['centerlines'].variables['y'][:]
 mhv_wth = mhv.groups['centerlines'].variables['p_width'][:]

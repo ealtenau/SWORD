@@ -132,7 +132,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     loop = loop+1
 
             if loop > check:
-                print('LOOP STUCK', cl_rchs[1::,start_pt])
+                print('LOOP1 STUCK', cl_rchs[1::,start_pt])
                 break
 
         #have to fill in weird scenerios. 
@@ -248,7 +248,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                         loop = loop+1
 
                 if loop > check:
-                    print('LOOP STUCK', start_rch)
+                    print('LOOP2 STUCK', start_rch)
                     break
 
     return side_dist
@@ -416,9 +416,9 @@ def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
 ################################################################################################
 
 start_all = time.time()
-region = 'EU'
+region = 'SA'
 version = 'v17'
-basin = 'hb28'
+basin = 'hb67'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
@@ -533,7 +533,7 @@ plt.show()
 plt.scatter(cl_lon, cl_lat, c=rch_paths, s = 5, cmap='rainbow')
 plt.show()
 
-plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 5, cmap='rainbow')
+plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 2, cmap='rainbow')
 plt.show()
 
 plt.scatter(cl_lon, cl_lat, c=np.log(rch_paths_order), s = 5, cmap='rainbow')

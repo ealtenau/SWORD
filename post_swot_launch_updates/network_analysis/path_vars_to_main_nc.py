@@ -278,13 +278,20 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin):
     keep = np.where(new_ghost_l2 == int(basin[2:4]))[0]
     all_new_ghost_nodes = all_new_ghost_nodes[keep]
 
-
-    new_rch_num = max(rch_nums)+1
-    new_node_num = max(node_nums)+1
+    # new_rch_num = max(rch_nums)+1
+    # new_node_num = max(node_nums)+1
     for ind in list(range(len(all_new_ghost_nodes))):
-        # print(ind)
+        # print(ind, all_new_ghost_nodes[ind], len(all_new_ghost_nodes)-1)
         update_ids = np.where(centerlines.node_id[0,:] == all_new_ghost_nodes[ind])
+        nds = np.where(nodes.id == all_new_ghost_nodes[ind])[0]
         old_rch = np.unique(centerlines.reach_id[0,update_ids])
+
+        bsn6 = np.where(cl_level6 == np.unique(cl_level6[update_ids]))[0]
+        new_node_num = max(node_nums[bsn6])+1
+        node_nums[update_ids] = new_node_num
+        new_rch_num = max(rch_nums[bsn6])+1
+        rch_nums[update_ids] = new_rch_num
+
         if len(str(new_rch_num)) == 1:
             fill = '000'
             new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
@@ -295,7 +302,7 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin):
             fill = '0'
             new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
         if len(str(new_rch_num)) == 4:
-            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
+            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+str(new_rch_num)+'6')
 
         if len(str(new_node_num)) == 1:
             fill = '00'
@@ -304,18 +311,16 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin):
             fill = '0'
             new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_node_num)+str(new_rch_id)[-1])
         if len(str(new_node_num)) == 3:
-            new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_node_num)+str(new_rch_id)[-1])
+            new_node_id = int(str(new_rch_id)[0:-1]+str(new_node_num)+str(new_rch_id)[-1])
         
         # update nums for next loop... 
-        new_node_num = new_node_num+1
-        new_rch_num = new_rch_num+1 
+        # new_node_num = new_node_num+1
+        # new_rch_num = new_rch_num+1 
 
         ### update centerline and node points
         centerlines.reach_id[0,update_ids] = new_rch_id
         centerlines.node_id[0,update_ids] = new_node_id 
         centerlines.new_type[update_ids] = '6'
-
-        nds = np.where(nodes.id == all_new_ghost_nodes[ind])[0]
         nodes.id[nds] = new_node_id
         nodes.reach_id[nds] = new_rch_id
 
@@ -413,7 +418,11 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin):
             reaches.rch_id_down = np.append(reaches.rch_id_down, reaches.rch_id_down[:,rch], axis=1)
             reaches.max_obs = np.append(reaches.max_obs, reaches.max_obs[rch])
             reaches.orbits = np.append(reaches.orbits, reaches.orbits[:,rch], axis=1)
-        
+        #checking dimensions
+        # print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
+        # print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(reaches.id))
+        # print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
+ 
 ###############################################################################
             
 def number_rchs_nodes(reaches, nodes):
@@ -468,7 +477,7 @@ def new_sword_ids(centerlines, nodes, reaches, path_cl_rch_ids):
                 fill = '0'
                 new_rch_id = int(unq_basins[ind]+fill+str(basin_rch_nums[r])+rch_type)
             if len(str(basin_rch_nums[r])) == 4:
-                new_rch_id = int(unq_basins[ind]+fill+str(basin_rch_nums[r])+rch_type)
+                new_rch_id = int(unq_basins[ind]+str(basin_rch_nums[r])+rch_type)
             #update centerline and reach level ids. 
             cl_rch_ids[0,cl_rch] = new_rch_id
             reach_ids[rch_order_ids[r]] = new_rch_id
@@ -488,7 +497,7 @@ def new_sword_ids(centerlines, nodes, reaches, path_cl_rch_ids):
                     fill = '0'
                     new_node_id = int(str(new_rch_id)[0:-1]+fill+str(basin_node_nums[n])+str(new_rch_id)[-1])
                 if len(str(basin_node_nums[n])) == 3:
-                    new_node_id = int(str(new_rch_id)[0:-1]+fill+str(basin_node_nums[n])+str(new_rch_id)[-1])
+                    new_node_id = int(str(new_rch_id)[0:-1]+str(basin_node_nums[n])+str(new_rch_id)[-1])
                 #update centerline and node level ids. 
                 cl_node_ids[0,cl_nodes] = new_node_id
                 node_ids[nds_order_ids[n]] = new_node_id        
@@ -1147,9 +1156,9 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
         
 start_all = time.time()
-region = 'EU'
+region = 'SA'
 version = 'v17'
-basin = 'hb29'
+basin = 'hb67'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -1326,5 +1335,7 @@ end_all = time.time()
 print('Finished ALL Updates in: '+str(np.round((end_all-start_all)/60,2))+' mins')
 
 basin_ind = np.where(np.in1d(reaches.id, path_cl_rch_ids) == True)[0]
-plt.scatter(reaches.x[basin_ind], reaches.y[basin_ind], c=reaches.dist_out[basin_ind], s=3)
+plt.scatter(reaches.x[basin_ind], reaches.y[basin_ind], c=reaches.dist_out[basin_ind], cmap='rainbow', s=3)
 plt.show()
+
+

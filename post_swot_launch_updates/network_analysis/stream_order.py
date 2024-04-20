@@ -33,9 +33,9 @@ def find_path_segs(order, paths):
 ###############################################################################
 ###############################################################################
 
-region = 'EU'
+region = 'SA'
 version = 'v17'
-basin = 'hb28'
+basin = 'hb67'
 path_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/pathway_netcdfs/'+region+'/'+basin+'_path_vars.nc'
 con_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 

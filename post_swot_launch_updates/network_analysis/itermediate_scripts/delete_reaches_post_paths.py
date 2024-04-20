@@ -58,6 +58,12 @@ def read_data(filename):
     nodes.sinuosity = data.groups['nodes'].variables['sinuosity'][:]
     nodes.edit_flag = data.groups['nodes'].variables['edit_flag'][:]
     nodes.trib_flag = data.groups['nodes'].variables['trib_flag'][:]
+    nodes.path_freq = data.groups['nodes'].variables['path_freq'][:]
+    nodes.path_order = data.groups['nodes'].variables['path_order'][:]
+    nodes.path_segs = data.groups['nodes'].variables['path_segs'][:]
+    nodes.strm_order = data.groups['nodes'].variables['stream_order'][:]
+    nodes.main_side = data.groups['nodes'].variables['main_side'][:]
+    nodes.end_rch = data.groups['nodes'].variables['end_reach'][:]
 
     reaches.id = data.groups['reaches'].variables['reach_id'][:]
     reaches.cl_id = data.groups['reaches'].variables['cl_ids'][:]
@@ -94,6 +100,12 @@ def read_data(filename):
     reaches.low_slope = data.groups['reaches'].variables['low_slope_flag'][:]
     reaches.edit_flag= data.groups['reaches'].variables['edit_flag'][:]
     reaches.trib_flag = data.groups['reaches'].variables['trib_flag'][:]
+    reaches.path_freq = data.groups['reaches'].variables['path_freq'][:]
+    reaches.path_order = data.groups['reaches'].variables['path_order'][:]
+    reaches.path_segs = data.groups['reaches'].variables['path_segs'][:]
+    reaches.strm_order = data.groups['reaches'].variables['stream_order'][:]
+    reaches.main_side = data.groups['reaches'].variables['main_side'][:]
+    reaches.end_rch = data.groups['reaches'].variables['end_reach'][:]
 
     data.close()    
 
@@ -264,6 +276,18 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     node_edit_flag._Encoding = 'ascii'
     node_trib_flag = node_grp.createVariable(
         'trib_flag', 'i4', ('num_nodes',), fill_value=-9999.)
+    node_path_freq = node_grp.createVariable(
+        'path_freq', 'i8', ('num_nodes',), fill_value=-9999.)
+    node_path_order = node_grp.createVariable(
+        'path_order', 'i8', ('num_nodes',), fill_value=-9999.)
+    node_path_seg = node_grp.createVariable(
+        'path_segs', 'i8', ('num_nodes',), fill_value=-9999.)
+    node_strm_order = node_grp.createVariable(
+        'stream_order', 'i4', ('num_nodes',), fill_value=-9999.)
+    node_main_side = node_grp.createVariable(
+        'main_side', 'i4', ('num_nodes',), fill_value=-9999.)
+    node_end_rch = node_grp.createVariable(
+        'end_reach', 'i4', ('num_nodes',), fill_value=-9999.)
 
     # reach variables
     Reach_ID = rch_grp.createVariable(
@@ -356,6 +380,18 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_edit_flag._Encoding = 'ascii'
     rch_trib_flag = rch_grp.createVariable(
         'trib_flag', 'i4', ('num_reaches',), fill_value=-9999.)
+    rch_path_freq = rch_grp.createVariable(
+        'path_freq', 'i8', ('num_reaches',), fill_value=-9999.)
+    rch_path_order = rch_grp.createVariable(
+        'path_order', 'i8', ('num_reaches',), fill_value=-9999.)
+    rch_path_seg = rch_grp.createVariable(
+        'path_segs', 'i8', ('num_reaches',), fill_value=-9999.)
+    rch_strm_order = rch_grp.createVariable(
+        'stream_order', 'i4', ('num_reaches',), fill_value=-9999.)
+    rch_main_side = rch_grp.createVariable(
+        'main_side', 'i4', ('num_reaches',), fill_value=-9999.)
+    rch_end_rch = rch_grp.createVariable(
+        'end_reach', 'i4', ('num_reaches',), fill_value=-9999.)
     # subgroup 1 - 'area_fits'
     h_break = sub_grp1.createVariable(
         'h_break', 'f8', ('num_domains','num_reaches'), fill_value=-9999.)
@@ -568,6 +604,12 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     node_manual_add[:] = nodes.manual_add
     node_edit_flag[:] = nodes.edit_flag
     node_trib_flag[:] = nodes.trib_flag
+    node_path_freq[:] = nodes.path_freq
+    node_path_order[:] = nodes.path_order
+    node_path_seg[:] = nodes.path_segs
+    node_strm_order[:] = nodes.strm_order
+    node_main_side[:] = nodes.main_side
+    node_end_rch[:] = nodes.end_rch
 
     # reach data
     Reach_ID[:] = reaches.id
@@ -606,6 +648,12 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     rch_low_slope[:] = reaches.low_slope
     rch_edit_flag[:] = reaches.edit_flag
     rch_trib_flag[:] = reaches.trib_flag
+    rch_path_freq[:] = reaches.path_freq
+    rch_path_order[:] = reaches.path_order
+    rch_path_seg[:] = reaches.path_segs
+    rch_strm_order[:] = reaches.strm_order
+    rch_main_side[:] = reaches.main_side
+    rch_end_rch[:] = reaches.end_rch
     # subgroup1 - area fits
     h_break[:,:] = reaches.h_break
     w_break[:,:] = reaches.w_break
@@ -696,7 +744,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'SA'
+region = 'EU'
 version = 'v17'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 # rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/SA/sa_deletions_round1.csv'
@@ -704,7 +752,8 @@ sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version
 # rm_rch_df = pd.read_csv(rch_dir)
 # rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 # rm_rch = np.unique(rm_rch)
-rm_rch = np.array([67206000671]) #manual
+rm_rch = np.array([23261001491, 23261001474, 23261001521, 23261001591, 23261001601, 
+                   23261001634, 23261001651, 23261001671, 23261001701]) #manual
 
 centerlines, nodes, reaches = read_data(sword_dir)
 rch_check = reaches.id
@@ -749,6 +798,12 @@ for ind in list(range(len(rm_rch))):
     nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
     nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
     nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
+    nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
+    nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
+    nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
+    nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
+    nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
+    nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
 
     reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
     reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
@@ -785,6 +840,12 @@ for ind in list(range(len(rm_rch))):
     reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
     reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
     reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
+    reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
+    reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
+    reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
+    reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
+    reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
+    reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
 
     #removing residual neighbors with deleted reach id in centerline and reach groups. 
     cl_ind1 = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]

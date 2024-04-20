@@ -22,7 +22,7 @@ from scipy import spatial as sp
 import netCDF4 as nc
 from pyproj import Proj
 
-###############################################################################
+###############################################################################/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/sa_sword_v17.nc
 ######################## Reach Definition Functions ###########################
 ###############################################################################
 

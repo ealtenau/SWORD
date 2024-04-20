@@ -705,10 +705,10 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'EU'
+region = 'SA'
 version = 'v17'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-rch_list = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/EU/eu_to_hb232709_final.csv'
+rch_list = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/SA/hb62_to_631010.csv'
 
 centerlines, nodes, reaches = read_data(nc_fn)
 df = pd.read_csv(rch_list)

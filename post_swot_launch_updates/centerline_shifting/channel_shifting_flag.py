@@ -75,14 +75,16 @@ def clip_sword(sword, jrc):
     lon = np.array(sword.groups['centerlines'].variables['x'][:])
     lat = np.array(sword.groups['centerlines'].variables['y'][:])
     rch_id = np.array(sword.groups['centerlines'].variables['reach_id'][0,:])
+    ind = np.array(sword.groups['centerlines'].variables['cl_id'][:])
     pts = np.array([(lon[i], lat[i]) for i in range(len(lon))])
 
     idx = np.all(np.logical_and(ll <= pts, pts <= ur), axis=1)
     sword_lon = lon[idx]
     sword_lat = lat[idx]
     sword_rch_id = rch_id[idx]
+    sword_cl_id = ind[idx]
 
-    return sword_lon, sword_lat, sword_rch_id
+    return sword_lon, sword_lat, sword_rch_id, sword_cl_id
 
 ###############################################################################
 
@@ -90,7 +92,7 @@ def read_sword(sword_fn, jrc):
     
     sword = nc.Dataset(sword_fn)
     data = Object()
-    data.lon, data.lat, data.reach_id = clip_sword(sword, jrc)
+    data.lon, data.lat, data.reach_id, data.ind = clip_sword(sword, jrc)
 
     unq_rchs = np.unique(data.reach_id)
     data.rch_len = np.zeros(len(data.reach_id))
@@ -166,68 +168,60 @@ for ind in list(range(len(unq_rchs))):
 
 
 f = np.where(sword.shift_flag==1)[0]
+plt.scatter(jrc.lon, jrc.lat, c='lightgrey',s=2)
 plt.scatter(sword.lon, sword.lat, c='black')
 plt.scatter(sword.lon[f], sword.lat[f], c='red')
 plt.show()
 
+# shift = np.where(sword.shift_flag == 1)[0]
+# pt_dist2, pt_ind2 = kdt.query(sword_pts, k = 10)
+# shift_lon = np.median(jrc.lon[pt_ind2[shift,:]], axis=1)
+# shift_lat = np.median(jrc.lat[pt_ind2[shift,:]], axis=1)
+
+# new_lon = np.copy(sword.lon)
+# new_lat = np.copy(sword.lat)
+# new_lon[shift] = shift_lon
+# new_lat[shift] = shift_lat
 
 
-shift = np.where(sword.shift_flag == 1)[0]
-pt_dist2, pt_ind2 = kdt.query(sword_pts, k = 20)
-shift_lon = np.mean(jrc.lon[pt_ind2[shift,:]], axis=1)
-shift_lat = np.mean(jrc.lat[pt_ind2[shift,:]], axis=1)
-
-new_lon = np.copy(sword.lon)
-new_lat = np.copy(sword.lat)
-new_lon[shift] = shift_lon
-new_lat[shift] = shift_lat
-
-
-
-unq_shift_rchs = np.unique(sword.reach_id[shift])
-# idx=np.where(unq_shift_rchs==74298900291)[0]
-new_lon_smooth = np.copy(new_lon)
-new_lat_smooth = np.copy(new_lat)
-for idx in list(range(len(unq_shift_rchs))):
-    r = np.where(sword.reach_id == unq_shift_rchs[idx])[0]
-    x_diff = np.max(new_lon[r]) - np.min(new_lon[r])
-    y_diff = np.max(new_lat[r]) - np.min(new_lat[r])
-    if y_diff < x_diff:
-        s = np.var(new_lat[r])/3
-    else:
-        s = np.var(new_lon[r])/3
+# unq_shift_rchs = np.unique(sword.reach_id[shift])
+# # idx=np.where(unq_shift_rchs==74298900291)[0]
+# new_lon_smooth = np.copy(new_lon)
+# new_lat_smooth = np.copy(new_lat)
+# for idx in list(range(len(unq_shift_rchs))):
+#     r = np.where(sword.reach_id == unq_shift_rchs[idx])[0]
+#     x_diff = np.max(new_lon[r]) - np.min(new_lon[r])
+#     y_diff = np.max(new_lat[r]) - np.min(new_lat[r])
+#     if y_diff < x_diff:
+#         s = np.var(new_lat[r])/3
+#     else:
+#         s = np.var(new_lon[r])/3
 
 
-    okay = np.where(np.abs(np.diff(new_lon[r])) + np.abs(np.diff(new_lat[r])) > 0)[0]
-    if len(okay) < 5:
-        continue
-    pts = np.vstack((new_lon[r[okay]], new_lat[r[okay]]))
-    # Find the B-spline representation of an N-dimensional curve
-    tck, u = splprep(pts, s=0.00000005) #0.0001, 0.000075
-    # n_new = np.linspace(u.min(), u.max(), len(node_pts))
-    cl_new = np.linspace(u.min(), u.max(), len(r))
-    # Evaluate a B-spline
-    # node_x_smooth, node_y_smooth = splev(n_new, tck)
-    cl_x_smooth, cl_y_smooth = splev(cl_new, tck)
-    new_lon_smooth[r] = cl_x_smooth
-    new_lat_smooth[r] = cl_y_smooth
+#     okay = np.where(np.abs(np.diff(new_lon[r])) + np.abs(np.diff(new_lat[r])) > 0)[0]
+#     if len(okay) < 5:
+#         continue
+#     pts = np.vstack((new_lon[r[okay]], new_lat[r[okay]]))
+#     # Find the B-spline representation of an N-dimensional curve
+#     tck, u = splprep(pts, s=0.0000005) #0.0001, 0.000075
+#     # n_new = np.linspace(u.min(), u.max(), len(node_pts))
+#     cl_new = np.linspace(u.min(), u.max(), len(r))
+#     # Evaluate a B-spline
+#     # node_x_smooth, node_y_smooth = splev(n_new, tck)
+#     cl_x_smooth, cl_y_smooth = splev(cl_new, tck)
+#     new_lon_smooth[r] = cl_x_smooth
+#     new_lat_smooth[r] = cl_y_smooth
 
-
-
-
-
-
-# df = pd.DataFrame(np.array([sword.lon, sword.lat, sword.shift_flag, sword.reach_id]).T)
-# df.to_csv('/Users/ealtenau/Desktop/sword_shift_flag_test3.csv', index=False)
 
 
 # meters_to_degrees(1000, np.median(sword.lat[rch]))
-
-
 plt.scatter(sword.lon, sword.lat, c='blue', s = 3)
-plt.scatter(new_lon, new_lat, c='magenta', s = 3)
-plt.scatter(new_lon_smooth, new_lat_smooth, c='cyan', s = 3)
+# plt.scatter(new_lon, new_lat, c='magenta', s = 3)
+# plt.scatter(new_lon_smooth, new_lat_smooth, c='cyan', s = 3)
 plt.show()
 
-# df2 = pd.DataFrame(np.array([new_lon_smooth, new_lat_smooth, sword.shift_flag]).T)
-# df2.to_csv('/Users/ealtenau/Desktop/sword_shift_test2.csv', index=False)
+# df = pd.DataFrame(np.array([sword.lon, sword.lat, sword.shift_flag, sword.reach_id, sword.ind]).T)
+# df.to_csv('/Users/ealtenau/Desktop/sword_shift_flag_test3.csv', index=False)
+
+# df2 = pd.DataFrame(np.array([new_lon_smooth, new_lat_smooth, sword.shift_flag, sword.reach_id]).T)
+# df2.to_csv('/Users/ealtenau/Desktop/sword_shift_test3.csv', index=False)

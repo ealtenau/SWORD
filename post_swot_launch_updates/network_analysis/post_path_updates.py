@@ -116,7 +116,7 @@ def define_network_regions(subpaths, subreaches, cl_rchs, basin):
 ################################################################################################
 ################################################################################################
 
-region = 'EU'
+region = 'SA'
 version = 'v17'
 
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -266,13 +266,20 @@ for r in list(range(len(reaches))):
     # plt.plot(cl_lon[sort_inds],cl_lat[sort_inds])
     # plt.show()
 
+rch_nan = np.where(new_main_side == 1)[0]
+node_nan = np.where(nodes_new_main_side == 1)[0]
+
 print('Updating NetCDF')
 sword.groups['reaches'].variables['stream_order'][:] = strm_order_all
 sword.groups['reaches'].variables['path_segs'][:] = side_segs
 sword.groups['reaches'].variables['main_side'][:] = new_main_side
+sword.groups['reaches'].variables['path_order'][rch_nan] = -9999
+sword.groups['reaches'].variables['path_freq'][rch_nan] = -9999
 sword.groups['nodes'].variables['stream_order'][:] = nodes_strm_order_all
 sword.groups['nodes'].variables['path_segs'][:] = nodes_side_segs
 sword.groups['nodes'].variables['main_side'][:] = nodes_new_main_side
+sword.groups['nodes'].variables['path_order'][node_nan] = -9999
+sword.groups['nodes'].variables['path_freq'][node_nan] = -9999
 sword.close()
 conn.close()
 

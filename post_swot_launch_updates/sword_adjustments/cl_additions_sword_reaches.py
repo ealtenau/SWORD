@@ -21,7 +21,7 @@ import netCDF4 as nc
 ###############################################################################
 
 start_all = time.time()
-region = 'EU'
+region = 'SA'
 
 # Input file(s).
 nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'\

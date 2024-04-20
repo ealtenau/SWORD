@@ -3,11 +3,11 @@ import pandas as pd
 import numpy as np
 import netCDF4 as nc
 
-region = 'NA'
-version = 'v17a'
-basin = 'hb77'
+region = 'SA'
+version = 'v17'
+basin = 'hb62'
 
-nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/pathways/'\
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/pathway_netcdfs/'\
     +region+'/'+basin+'_path_vars.nc'
 rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/shp/'\
     +region+'/'+region.lower()+'_sword_reaches_'+basin+'_'+version+'.shp'

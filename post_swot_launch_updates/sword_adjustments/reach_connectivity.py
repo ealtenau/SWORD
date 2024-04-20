@@ -142,33 +142,37 @@ def find_connections(centerlines):
             n1 = np.reshape(n1,(len(n1),1))
             n2 = np.reshape(n2,(len(n2),1))
             
-            len1 = np.array([len(np.where(centerlines.reach_id[0,:] == n)[0]) for n in n1])
-            len2 = np.array([len(np.where(centerlines.reach_id[0,:] == n)[0]) for n in n2])
-            # t1 = np.array([str(n)[11] for n in n1])
-            # t2 = np.array([str(n)[11] for n in n2])
+            # len1 = np.array([len(np.where(centerlines.reach_id[0,:] == n)[0]) for n in n1])
+            # len2 = np.array([len(np.where(centerlines.reach_id[0,:] == n)[0]) for n in n2])
+            t1 = np.array([str(n)[11] for n in n1])
+            t2 = np.array([str(n)[11] for n in n2])
             
             if len(n1) > 1:
-                if min(len1) < 8:
-                # if '4' in t1:
+                # if min(len1) < 8:
+                if '4' in t1:
                     dist_pts1 = np.where(centerlines.reach_id[0,pt_ind[mn_id,good_pts1]] != unq_rch[ind])[0]
                     nghs1 = centerlines.reach_id[0,pt_ind[mn_id,good_pts1[dist_pts1]]]
                     dist1 = pt_dist[mn_id,good_pts1[dist_pts1]]
                     min_dist1 = np.array([np.min(dist1[np.where(nghs1 == n)]) for n in n1])
-                    dam_ind1 = np.where(len1 <= 8)[0]
-                    other_rchs1 = n1[np.where(len1 > 8)]
+                    # dam_ind1 = np.where(len1 <= 8)[0]
+                    # other_rchs1 = n1[np.where(len1 > 8)]
+                    dam_ind1 = np.where(t1 == '4')[0]
+                    other_rchs1 = n1[np.where(t1 != '4')]
                     for idx in list(range(len(other_rchs1))):
                         pt1 = np.where(n1 == other_rchs1[idx])[0]
                         if min(min_dist1[dam_ind1]) < 0.0005 and min_dist1[pt1] > 0.0009:
                             n1 = np.delete(n1, pt1)
             if len(n2) > 1:
-                if min(len2) < 8:
-                # if '4' in t2:
+                # if min(len2) < 8:
+                if '4' in t2:
                     dist_pts2 = np.where(centerlines.reach_id[0,pt_ind[mx_id,good_pts2]] != unq_rch[ind])[0]
                     nghs2 = centerlines.reach_id[0,pt_ind[mx_id,good_pts2[dist_pts2]]]
                     dist2 = pt_dist[mx_id,good_pts2[dist_pts2]]
                     min_dist2 = np.array([np.min(dist2[np.where(nghs2 == n)]) for n in n2])
-                    dam_ind2 = np.where(len2 <= 8)[0]
-                    other_rchs2 = n2[np.where(len2 > 8)]
+                    # dam_ind2 = np.where(len2 <= 8)[0]
+                    # other_rchs2 = n2[np.where(len2 > 8)]
+                    dam_ind2 = np.where(t2 == '4')[0]
+                    other_rchs2 = n2[np.where(t2 != '4')]
                     for idx in list(range(len(other_rchs2))):
                         pt2 = np.where(n2 == other_rchs2[idx])[0]
                         if min(min_dist2[dam_ind2]) < 0.0005 and min_dist2[pt2] > 0.0009: #added min() to first condition in EU. 

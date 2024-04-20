@@ -14,7 +14,7 @@ from shapely.geometry import Point
 import matplotlib.pyplot as plt
 
 
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/eu_sword_v17.nc'
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/sa_sword_v17.nc'
 sword = nc.Dataset(sword_dir,'r+')
 
 reaches = np.array(sword.groups['reaches'].variables['reach_id'][:])
@@ -52,3 +52,75 @@ sword.groups['reaches'].variables['stream_order'][update] = -9999
 sword.groups['nodes'].variables['stream_order'][update2] = -9999
 
 sword.close()
+
+
+#################################################################################################
+#################################################################################################
+#################################################################################################
+
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/eu_sword_v17.nc'
+sword = nc.Dataset(sword_dir,'r+')
+
+rch_nan = np.where(np.array(sword.groups['reaches'].variables['main_side'][:]) == 1)[0]
+node_nan = np.where(np.array(sword.groups['nodes'].variables['main_side'][:]) == 1)[0]
+sword.groups['reaches'].variables['path_freq'][rch_nan] = -9999
+sword.groups['nodes'].variables['path_freq'][node_nan] = -9999
+sword.groups['reaches'].variables['path_order'][rch_nan] = -9999
+sword.groups['nodes'].variables['path_order'][node_nan] = -9999
+sword.close()
+
+np.min(np.array(sword.groups['reaches'].variables['path_freq'][:]))
+np.min(np.array(sword.groups['reaches'].variables['path_order'][:]))
+#################################################################################################
+#################################################################################################
+#################################################################################################
+
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/sa_sword_v17.nc'
+sword = nc.Dataset(sword_dir,'r+')
+
+rch = 61538000271
+cl_ids = np.array(sword.groups['centerlines'].variables['cl_id'][:])
+cl_rchs = np.array(sword.groups['centerlines'].variables['reach_id'][:])
+x = np.array(sword.groups['centerlines'].variables['x'][:])
+y = np.array(sword.groups['centerlines'].variables['y'][:])
+
+r = np.where(cl_rchs[0,:] == rch)[0]
+sort_ids = np.argsort(cl_ids[r])
+plt.plot(x[r[sort_ids]], y[r[sort_ids]])
+plt.show()
+
+
+#################################################################################################
+#################################################################################################
+#################################################################################################
+
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/sa_sword_v17.nc'
+sword = nc.Dataset(sword_dir)
+
+cl_nodes = np.array(sword.groups['centerlines'].variables['node_id'][0,:])
+cl_id = np.array(sword.groups['centerlines'].variables['cl_id'][:])
+cl_x = np.array(sword.groups['centerlines'].variables['x'][:])
+cl_y = np.array(sword.groups['centerlines'].variables['y'][:])
+nodes = np.array(sword.groups['nodes'].variables['node_id'][:])
+nodes_cl_id = np.array(sword.groups['nodes'].variables['cl_ids'][:])
+nx = np.array(sword.groups['nodes'].variables['x'][:])
+ny = np.array(sword.groups['nodes'].variables['y'][:])
+
+cln = np.unique(cl_nodes)
+nds = np.unique(nodes)
+missing = np.where(np.in1d(nds, cln) == False)[0]
+missed_nodes = nds[missing]
+
+for ind in list(range(len(missed_nodes))):
+    id1 = nodes_cl_id[0,np.where(nds == missed_nodes[ind])[0]]
+    id2 = nodes_cl_id[1,np.where(nds == missed_nodes[ind])[0]]
+    indexes = list(range(id1[0],id2[0]+1))
+    cl_inds = np.where(np.in1d(cl_id, indexes) == True)[0]
+    cl_nodes[cl_inds] = missed_nodes[ind]
+
+
+pt = np.where(nds == nodes[0])[0]
+test = np.where(cl_nodes == nodes[0])[0]
+plt.scatter(cl_x[test], cl_y[test])
+plt.scatter(nx[0], ny[0],c = 'red')
+plt.show()
