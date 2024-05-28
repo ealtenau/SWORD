@@ -14,7 +14,7 @@ from scipy import stats
 from scipy import interpolate
 import matplotlib.pyplot as plt
 
-region = 'SA'
+region = 'NA'
 version = 'v17'
 
 gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/gpkg/'\
@@ -51,6 +51,8 @@ rch_ends = np.array(sword.groups['reaches'].variables['end_reach'][:])
 node_ends = np.array(sword.groups['nodes'].variables['end_reach'][:])
 nodes = np.array(sword.groups['nodes'].variables['node_id'][:])
 node_dist = np.array(sword.groups['nodes'].variables['dist_out'][:])
+rch_net = np.array(sword.groups['reaches'].variables['network'][:])
+node_net = np.array(sword.groups['nodes'].variables['network'][:])
 
 print('Updating Attributes from SHP File')
 unq_rchs = np.array(gpkg['reach_id'])
@@ -64,6 +66,12 @@ for r in list(range(len(unq_rchs))):
     node_rn[nds] = gpkg['river_name'][r]
     rch_ends[rch] = gpkg['end_reach'][r]
     node_ends[nds] = gpkg['end_reach'][r]
+    rch_net[rch] = gpkg['network'][r]
+    node_net[nds] = gpkg['network'][r]
+    # path_freq[rch] = gpkg['path_freq'][r]
+    # node_path_freq[nds] = gpkg['path_freq'][r]
+    # path_order[rch] = gpkg['path_order'][r]
+    # node_path_order[nds] = gpkg['path_order'][r]
 
 print('Updating Stream Order')
 strm_order_all = np.zeros(len(reaches))
@@ -104,6 +112,7 @@ for ind in list(range(len(unq_l2))):
     # strm_order[np.where(deltas > 0)] = -9999
     strm_order[np.where(rch_ms[l2] > 0)] = -9999
     strm_order[np.where(path_freq[l2] == -9999)] = -9999
+    strm_order[np.where(strm_order == 0)] = -9999
     strm_order_all[l2] = strm_order
 
 print('Updating Node Attributes')
@@ -112,7 +121,7 @@ for r2 in list(range(len(reaches))):
     nds = np.where(node_rchs == reaches[r2])[0]
     nodes_strm_order_all[nds] = strm_order_all[r2]
 
-# good = np.where(rch_ms == 0)[0]        
+# good = np.where(strm_order_all != -9999)[0]        
 # plt.scatter(rch_x[good], rch_y[good], c=strm_order_all[good], s=5)
 # plt.show()
 
@@ -153,4 +162,19 @@ sword.groups['reaches'].variables['river_name'][:] = rch_rn
 sword.groups['nodes'].variables['river_name'][:] = node_rn
 sword.groups['reaches'].variables['end_reach'][:] = rch_ends
 sword.groups['nodes'].variables['end_reach'][:] = node_ends
+sword.groups['reaches'].variables['stream_order'][:] = strm_order_all
+sword.groups['nodes'].variables['stream_order'][:] = nodes_strm_order_all
+sword.groups['reaches'].variables['network'][:] = rch_net
+sword.groups['nodes'].variables['network'][:] = node_net
+# sword.groups['reaches'].variables['path_freq'][:] = path_freq
+# sword.groups['nodes'].variables['path_freq'][:] = node_path_freq
+# sword.groups['reaches'].variables['path_order'][:] = path_order
+# sword.groups['nodes'].variables['path_order'][:] = node_path_order
+
+rch_side = np.where(rch_ms == 1)[0]
+node_side = np.where(node_ms == 1)[0]
+sword.groups['reaches'].variables['path_freq'][rch_side] = -9999
+sword.groups['reaches'].variables['path_order'][rch_side] = -9999
+sword.groups['nodes'].variables['path_freq'][node_side] = -9999
+sword.groups['nodes'].variables['path_order'][node_side] = -9999
 sword.close()

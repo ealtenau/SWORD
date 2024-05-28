@@ -143,6 +143,9 @@ x = sword.groups['reaches'].variables['x'][:]
 y = sword.groups['reaches'].variables['y'][:]
 Type = np.array([int(str(r)[-1]) for r in reaches])
 end_rch = sword.groups['reaches'].variables['end_reach'][:]
+# strm_order = sword.groups['reaches'].variables['stream_order'][:]
+
+# main_side[np.where(main_side == 2)] = 0
 
 nodes_main_side = sword.groups['nodes'].variables['main_side'][:]
 nodes_strm_order = sword.groups['nodes'].variables['stream_order'][:]
@@ -248,11 +251,14 @@ print('Updating Node Attributes')
 nodes_strm_order_all = np.copy(nodes_strm_order)
 nodes_side_segs = np.copy(nodes_path_segs)
 nodes_new_main_side = np.copy(nodes_main_side)
+nodes_networks = np.zeros(len(nodes_main_side))
 for r in list(range(len(reaches))):
     nds = np.where(node_rchs == reaches[r])[0]
     nodes_strm_order_all[nds] = strm_order_all[r]
     nodes_side_segs[nds] = side_segs[r]
     nodes_new_main_side[nds] = new_main_side[r]
+    nodes_networks[nds] = basin_networks[r]
+
     #calculating lengths
     # cl_ind = np.where(cl_rchs[0,:] == reaches[r])[0]
     # sort_inds = np.argsort(cl_index[cl_ind])
@@ -283,10 +289,26 @@ sword.groups['nodes'].variables['path_freq'][node_nan] = -9999
 sword.close()
 conn.close()
 
+if 'network' in sword.groups['reaches'].variables.keys():
+    sword.groups['reaches'].variables['network'][:] = basin_networks
+    sword.groups['nodes'].variables['network'][:] = nodes_networks
+else:
+    sword.groups['reaches'].createVariable(
+        'network', 'i4', ('num_reaches',), fill_value=-9999.)
+    sword.groups['nodes'].createVariable(
+        'network', 'i4', ('num_nodes',), fill_value=-9999.)
+    #populate new variables.
+    sword.groups['reaches'].variables['network'][:] = basin_networks
+    sword.groups['nodes'].variables['network'][:] = nodes_networks
+
+sword.close()
 
 # other = np.where(nodes_new_main_side == 2)[0]
 # side = np.where(nodes_new_main_side == 1)[0]
 # plt.scatter(nx, ny, c = 'blue', s = 5)
 # plt.scatter(nx[other], ny[other], c = 'gold', s = 5)
 # plt.scatter(nx[side], ny[side], c = 'magenta', s = 5)
+# plt.show()
+
+# plt.scatter(x, y, c=basin_networks, cmap='rainbow', s = 3)
 # plt.show()

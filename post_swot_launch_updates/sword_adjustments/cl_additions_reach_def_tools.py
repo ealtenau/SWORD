@@ -389,7 +389,7 @@ def simple_rch_ids(centerlines, sword_basins, sword_rch_nums):
             fill = '0'
             reach_id[rch] = int(str(l6)+fill+str(rch_num)+str(tp))
         if len(str(rch_num)) == 4:
-            reach_id[rch] = int(str(l6)+fill+str(rch_num)+str(tp))
+            reach_id[rch] = int(str(l6)+str(rch_num)+str(tp))
     return reach_id
 
 ###############################################################################

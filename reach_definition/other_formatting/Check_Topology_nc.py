@@ -1,9 +1,9 @@
 import numpy as np
 import netCDF4 as nc
 
-region = 'OC'
-version = 'v16'
-fn_nc = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+region = 'NA'
+version = 'v17'
+fn_nc = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 # fn_nc = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/oc_sword_v16.nc'
 
 #load sword.
@@ -27,6 +27,7 @@ for i in list(range(len(reach_id))):
             check = np.where(rch_id_dn[:,k] == reach_id[i])[0]
             if len(check) == 0:
                 flag[i] = 1
+                print(reach_id[i])
     #check downstream 
     for j in list(range(n_rch_down[i])):
         k = np.where(reach_id == rch_id_dn[j,i])[0]
@@ -36,5 +37,6 @@ for i in list(range(len(reach_id))):
             check = np.where(rch_id_up[:,k] == reach_id[i])[0]
             if len(check) == 0:
                 flag[i] = 1
+                print(reach_id[i])
 
-print('DONE. Percent flagged: ',(np.round((len(np.where(flag == 1)[0])/len(reach_id))*100,3)))
+print('DONE. Number of reaches flagged: ',len(np.where(flag == 1)[0]))

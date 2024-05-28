@@ -696,15 +696,16 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'SA'
+region = 'OC'
 version = 'v17'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/SA/sa_deletions_round1.csv'
+# rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/AS/as_v17_single_pt_rchs2.csv'
 
 # rm_rch_df = pd.read_csv(rch_dir)
 # rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 # rm_rch = np.unique(rm_rch)
-rm_rch = np.array([67206000671]) #manual
+rm_rch = np.array([52409500446,52409500031,52409500041,52409500024,52406000593,52501500223,52190500045,52190100095,52190100015,52190100115,52190100176,52179900325,52180100071,52180100206,52140300081,52140300281,52140300291,52140300301,52140300381,52140300366,52172000711,53130900205,53130900235,53130900055,53130300545,53130300565,53150000556,53150000335,56900101265,56900101546]) #manual
+rm_rch = np.unique(rm_rch)
 
 centerlines, nodes, reaches = read_data(sword_dir)
 rch_check = reaches.id

@@ -21,7 +21,7 @@ import netCDF4 as nc
 ###############################################################################
 
 start_all = time.time()
-region = 'SA'
+region = 'AS'
 
 # Input file(s).
 nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'\
@@ -206,3 +206,9 @@ end_all=time.time()
 print('Time to Finish All Reaches and Nodes: ' +
       str(np.round((end_all-start_all)/60, 2)) + ' min')
 
+
+
+# z = np.where(subcls.basins == 0)[0]
+# plt.scatter(subcls.lon, subcls.lat)
+# plt.scatter(subcls.lon[z], subcls.lat[z], c='red')
+# plt.show()

@@ -71,6 +71,7 @@ sword.close()
 
 np.min(np.array(sword.groups['reaches'].variables['path_freq'][:]))
 np.min(np.array(sword.groups['reaches'].variables['path_order'][:]))
+
 #################################################################################################
 #################################################################################################
 #################################################################################################
@@ -124,3 +125,29 @@ test = np.where(cl_nodes == nodes[0])[0]
 plt.scatter(cl_x[test], cl_y[test])
 plt.scatter(nx[0], ny[0],c = 'red')
 plt.show()
+
+#################################################################################################
+#################################################################################################
+#################################################################################################
+
+dir1 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/NA/'
+dir2 = '/Users/ealtenau/Desktop/NA_v17_04092024/'
+files1 = os.listdir(dir1)
+files2 = os.listdir(dir2)
+files1 = np.array([f for f in files1 if '.shp' in f])
+files2 = np.array([f for f in files2 if '.shp' in f])
+files1 = np.sort(np.array([f for f in files1 if 'reaches' in f]))
+files2 = np.sort(np.array([f for f in files2 if 'reaches' in f]))
+
+for ind in list(range(len(files1))):
+    f1 = gp.read_file(dir1+files1[ind])
+    f2 = gp.read_file(dir2+files2[ind])
+    print(files1[ind], np.unique(f1['reach_id']-f2['reach_id']))
+
+#################################################################################################
+#################################################################################################
+#################################################################################################
+
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17.nc'
+sword = nc.Dataset(sword_dir)
+

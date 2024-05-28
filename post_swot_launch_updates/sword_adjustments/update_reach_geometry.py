@@ -11,8 +11,9 @@ import os
 import matplotlib.pyplot as plt
 import utm
 from pyproj import Proj
+from geopy import Point, distance
 
-###################################################w############################
+###############################################################################
 
 def reproject_utm(latitude, longitude):
 
@@ -74,15 +75,27 @@ def reproject_utm(latitude, longitude):
 
     return east, north, zone_num, zone_let
 
+##############################################################################
+
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
+
 ###############################################################################
 ###############################################################################
 ###############################################################################
 
-# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/EU/eu_sword_reaches_hb21_v17.shp'
-gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/eu_sword_reaches_v17.gpkg' #continental gpkg file. 
-nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/eu_sword_v17.nc'
+gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/OC/oc_sword_reaches_hb52_v17.shp'
+# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/na_sword_reaches_v17.gpkg' #continental gpkg file. 
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/oc_sword_v17.nc'
 
-reach = [23261001441, 23261001431, 23261001611, 23261001661, 23261001641, 23261001624]
+reach = [52409900651,52409900201,52409400205,52406000201,52406001171,52405000201,52405000711,52501600021,52501700665,52501700655,52190500015,52190500095,52190500085,52190400075,52179900575,52190100025,52177000405,52175700155,52175700355,52173300195,52150900355,52150900455,52139900085,52140100065,52175700205,52179300135,52140300311,52140300071]
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]
@@ -96,9 +109,12 @@ cl_id = sword.groups['centerlines'].variables['cl_id']
 
 for r in list(range(len(reach))):
     print(r, len(reach)-1)
-    gp_rch = np.where(gpkg['reach_id'] == reach[r])[0][0]
-    lon = np.array(geom[gp_rch].coords.xy[0])
-    lat = np.array(geom[gp_rch].coords.xy[1])
+    gp_rch = np.where(gpkg['reach_id'] == reach[r])[0]
+    if len(gp_rch) == 0:
+        print('Reach does not exist: ', reach[r])
+        continue
+    lon = np.array(geom[gp_rch[0]].coords.xy[0])
+    lat = np.array(geom[gp_rch[0]].coords.xy[1])
 
     # plt.plot(lon, lat)
     # plt.show()
@@ -137,18 +153,25 @@ for r in list(range(len(reach))):
 
     #order the reach points based on index values, then calculate the
     #eculdean distance bewteen each ordered point.
-    cl_x, cl_y, __, __ = reproject_utm(cl_lat[rch], cl_lon[rch])
-    dist = np.zeros(len(rch))
-    dist[order_ids[0]] = 0
-    for idx in list(range(len(order_ids)-1)):
-        d = np.sqrt((cl_x[order_ids[idx]]-cl_x[order_ids[idx+1]])**2 +
-                    (cl_y[order_ids[idx]]-cl_y[order_ids[idx+1]])**2)
-        dist[order_ids[idx+1]] = d + dist[order_ids[idx]]
-    dist = np.array(dist)
+    # cl_x, cl_y, __, __ = reproject_utm(cl_lat[rch], cl_lon[rch])
+    # dist = np.zeros(len(rch))
+    # dist[order_ids[0]] = 0
+    # for idx in list(range(len(order_ids)-1)):
+    #     d = np.sqrt((cl_x[order_ids[idx]]-cl_x[order_ids[idx+1]])**2 +
+    #                 (cl_y[order_ids[idx]]-cl_y[order_ids[idx+1]])**2)
+    #     dist[order_ids[idx+1]] = d + dist[order_ids[idx]]
+    # dist = np.array(dist)
+
+    #Global Projection
+    x_coords = cl_lon[rch[order_ids]]
+    y_coords = cl_lat[rch[order_ids]]
+    diff = get_distances(x_coords,y_coords)
+    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #"EPSG:3857", "ESRI:54009", "EPSG:9822"
+    # diff = gdf.distance(gdf.shift(1));diff[0] = 0
+    dist = np.cumsum(diff)
 
     # plt.scatter(cl_lon[rch], cl_lat[rch], c=dist, s=8)
     # plt.show()
-
     # plt.scatter(cl_lon[rch], cl_lat[rch], c=cl_nodes[0,rch], s=15)
     # plt.show()
 
@@ -160,7 +183,9 @@ for r in list(range(len(reach))):
         pts = np.where(cl_nodes[0,rch] == unq_nodes[n])[0]
         node_x[n] = np.median(cl_lon[rch[pts]])
         node_y[n] = np.median(cl_lat[rch[pts]])
-        node_len[n] = np.max(dist[pts])-np.min(dist[pts])
+        # node_len[n] = np.max(dist[pts])-np.min(dist[pts])
+        node_len[n] = max(np.cumsum(dist[pts]))
+        # node_len[n] = max(np.cumsum(diff[pts]))
         if len(pts) == 1:
             node_len[n] = 30
 

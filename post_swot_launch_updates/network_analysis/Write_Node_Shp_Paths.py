@@ -73,6 +73,7 @@ nodes = gp.GeoDataFrame([
     np.array(data.groups['nodes'].variables['main_side'][:]),
     np.array(data.groups['nodes'].variables['stream_order'][:]),
     np.array(data.groups['nodes'].variables['end_reach'][:]),
+    np.array(data.groups['nodes'].variables['network'][:]),
 ]).T
 
 #rename columns.
@@ -109,6 +110,7 @@ nodes.rename(
         28:"main_side",
         29:"strm_order",
         30:"end_reach",
+        31:"network",
         },inplace=True)
 
 nodes = nodes.apply(pd.to_numeric, errors='ignore') # nodes.dtypes

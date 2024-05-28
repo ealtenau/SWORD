@@ -7,6 +7,8 @@ from scipy import spatial as sp
 import utm 
 import argparse
 from pyproj import Proj
+import geopandas as gp
+import geopy.distance
 
 ###############################################################################
 ###############################################################################
@@ -877,7 +879,7 @@ print('Finished Removing Duplicated Points in: '+str(np.round((end-start),2))+' 
 print('Starting Reach and Nodes Updates')
 start = time.time()
 for ind in list(range(len(rch_updates))):
-    # print(ind, len(rch_updates)-1)
+    print(ind, len(rch_updates)-1)
     cl_rch = np.where(centerlines.reach_id[0,:] == rch_updates[ind])[0]
     rch_ind = np.where(reaches.id == rch_updates[ind])[0]
 
@@ -992,9 +994,14 @@ for ind in list(range(len(rch_updates))):
 
     #calculate distance variables for centerline points. 
     facc = calc_rch_facc(nodes, centerlines, cl_rch)
-    dist = calc_segDist(centerlines.x[cl_rch], centerlines.y[cl_rch], 
-                        centerlines.reach_id[0,cl_rch], 
-                        facc, centerlines.cl_id[cl_rch])
+    # dist = calc_segDist(centerlines.x[cl_rch], centerlines.y[cl_rch], 
+    #                     centerlines.reach_id[0,cl_rch], 
+    #                     facc, centerlines.cl_id[cl_rch])
+    sort_ids = np.argsort(centerlines.cl_id[cl_rch])
+    gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(centerlines.x[cl_rch[sort_ids]], 
+                                                     centerlines.y[cl_rch[sort_ids]]),crs="EPSG:4326").to_crs("EPSG:3857")
+    diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+    dist = np.array(np.cumsum(diff))
     
     #update reach variables:
     diff_len = reaches.len[rch_ind] - np.max(dist)

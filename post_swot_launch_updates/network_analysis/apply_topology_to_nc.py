@@ -5,14 +5,14 @@ import pandas as pd
 
 region = 'NA'
 version = 'v17'
-basin = 'hb73'
+basin = 'hb82'
 
 rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/topo_fixes/'\
-    +region.lower()+'_sword_reaches_'+basin+'_'+version+'_FG1_LSFix_MS_TopoFix_VizAcc.shp'
+    +region.lower()+'_sword_reaches_'+basin+'_'+version+'_FG1_LSFix_MS_TopoFix_Manual.shp'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 csv_fn = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/topo_fixes/'\
-    +region.lower()+'_sword_reaches_'+basin+'_'+version+'_rev_LS.csv'
+    +region.lower()+'_sword_reaches_'+basin+'_'+version+'_rev_LS_MS_fix.csv'
 
 rch_shp = gp.read_file(rch_shp_fn)
 netcdf = nc.Dataset(nc_fn,'r+')
@@ -25,12 +25,14 @@ rch_id_up = np.array(rch_shp['rch_id_up'])
 rch_id_dn = np.array(rch_shp['rch_id_dn'])
 n_rch_up = np.array(rch_shp['n_rch_up'])
 n_rch_dn = np.array(rch_shp['n_rch_dn'])
+dist_out = np.array(rch_shp['dist_out'])
 
 nc_rchs = np.array(netcdf.groups['reaches'].variables['reach_id'][:])
 nc_rch_id_up = np.array(netcdf.groups['reaches'].variables['rch_id_up'][:])
 nc_rch_id_dn = np.array(netcdf.groups['reaches'].variables['rch_id_dn'][:])
 nc_n_rch_up = np.array(netcdf.groups['reaches'].variables['n_rch_up'][:])
 nc_n_rch_dn = np.array(netcdf.groups['reaches'].variables['n_rch_down'][:])
+nc_dist_out = np.array(netcdf.groups['reaches'].variables['dist_out'][:])
 nc_cl_ids = np.array(netcdf.groups['centerlines'].variables['cl_id'][:])
 nc_cl_rchs = np.array(netcdf.groups['centerlines'].variables['reach_id'][:])
 
@@ -42,11 +44,15 @@ for rev in list(range(len(rev_rchs))):
 
 print('updating topology')
 for ind in list(range(len(reaches))):
-    # print(ind, len(reaches)-1)
+    # print(ind, reaches[ind], len(reaches)-1)    
     nc_ind = np.where(nc_rchs == reaches[ind])[0]
     cl_ind = np.where(nc_cl_rchs[0,:] == reaches[ind])[0]
     cl_id_up = cl_ind[np.where(nc_cl_ids[cl_ind] == np.max(nc_cl_ids[cl_ind]))]
     cl_id_dn = cl_ind[np.where(nc_cl_ids[cl_ind] == np.min(nc_cl_ids[cl_ind]))]
+    
+    ###dist_out
+    nc_dist_out[nc_ind] = dist_out[ind]
+    
     ###upstream
     if n_rch_up[ind] == 1:
         nc_rch_id_up[0,nc_ind] = int(rch_id_up[ind])
@@ -81,6 +87,7 @@ netcdf.groups['reaches'].variables['rch_id_up'][:] = nc_rch_id_up
 netcdf.groups['reaches'].variables['rch_id_dn'][:] = nc_rch_id_dn
 netcdf.groups['reaches'].variables['n_rch_up'][:] = nc_n_rch_up
 netcdf.groups['reaches'].variables['n_rch_down'][:] = nc_n_rch_dn
+netcdf.groups['reaches'].variables['dist_out'][:] = nc_dist_out
 netcdf.groups['centerlines'].variables['cl_id'][:] = nc_cl_ids
 netcdf.close()
 

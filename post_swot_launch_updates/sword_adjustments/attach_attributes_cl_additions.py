@@ -558,7 +558,7 @@ def save_mhv_nc(cl, region, outfile):
 start_all = time.time()
 
 #Define input directories and filenames. Will need to be changed based on user needs.
-region = 'SA'
+region = 'AS'
 data_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/'
 cl_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_mhv_point_additions_ALL.gpkg'
 outfile = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_channel_additions.nc'

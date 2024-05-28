@@ -1,7 +1,6 @@
 import numpy as np
 import netCDF4 as nc
 import geopandas as gp
-import geopy.distance
 from shapely.geometry import LineString, Point
 from geopandas import GeoSeries
 import pandas as pd
@@ -12,6 +11,7 @@ from scipy import spatial as sp
 import matplotlib.pyplot as plt
 from scipy import stats
 from scipy import interpolate
+from geopy import distance
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
@@ -19,21 +19,15 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 ################################################################################################
 ################################################################################################
 
-def calc_path_dist(lon, lat):
-
-    dist = []    
-    for ind in list(range(len(lon))):
-        if ind == len(lon)-1:
-            continue
-        else:
-            coords_1 = (lat[ind], lon[ind])
-            coords_2 = (lat[ind+1], lon[ind+1])
-            d = geopy.distance.geodesic(coords_1, coords_2).m
-            dist.append(d)
-    dist = np.array(dist)
-    dist = np.append(0,dist)
-    dist_out = np.cumsum(dist)
-    return(dist_out)
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
 
 ################################################################################################
 
@@ -71,7 +65,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
         loop = 1
         check = len(ngh_pts)+500
         while len(ngh_pts) > 0:
-            # print(loop, cl_rchs[1::,start_pt])
+            print(loop, cl_rchs[1::,start_pt])
             nghs = cl_rchs[1::,start_pt]
             nghs = nghs[nghs>0]
             ngh_basins = np.array([str(n)[0:2] for n in nghs])
@@ -89,11 +83,12 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                 if len(dnstrm_pt) > 1 or len(dnstrm_pt) == 0:
                     # in an odd case where the reach hasn't broken at a tributary and is at both ends. 
                     dnstrm_pt = 0
-                if dnstrm_pt == 0:
+                # if dnstrm_pt == 0:
                     x_coords = cl_lon[sort_ind]
                     y_coords = cl_lat[sort_ind]
-                    gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-                    diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+                    diff = get_distances(x_coords,y_coords)
+                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+side_dist[start_pt]+30
                     side_dist[sort_ind] = rch_dist_out
@@ -108,8 +103,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                 else:
                     x_coords = cl_lon[sort_ind[::-1]]
                     y_coords = cl_lat[sort_ind[::-1]]
-                    gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-                    diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+                    diff = get_distances(x_coords,y_coords)
+                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+side_dist[start_pt]+30
                     side_dist[sort_ind[::-1]] = rch_dist_out
@@ -128,7 +124,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     loop = loop+1
                     continue
                 else:
-                    start_pt = ngh_pts[np.where(side_dist[ngh_pts] == np.nanmin(side_dist[ngh_pts]))[0]]
+                    start_pt = ngh_pts[np.where(side_dist[ngh_pts] == np.nanmin(side_dist[ngh_pts]))[0]][0]
                     loop = loop+1
 
             if loop > check:
@@ -160,8 +156,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                 if len(end1_dist) == 0 and len(end2_dist) > 0:
                     x_coords = cl_lon[sort_ind[::-1]]
                     y_coords = cl_lat[sort_ind[::-1]]
-                    gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-                    diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+                    diff = get_distances(x_coords,y_coords)
+                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+end2_dist+30
                     side_dist[sort_ind[::-1]] = rch_dist_out
@@ -175,8 +172,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                 elif len(end1_dist) > 0 and len(end2_dist) == 0:
                     x_coords = cl_lon[sort_ind]
                     y_coords = cl_lat[sort_ind]
-                    gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-                    diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+                    diff = get_distances(x_coords,y_coords)
+                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+end1_dist+30
                     side_dist[sort_ind] = rch_dist_out
@@ -192,8 +190,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     if dnstrm_pt == True:
                         x_coords = cl_lon[sort_ind]
                         y_coords = cl_lat[sort_ind]
-                        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-                        diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+                        diff = get_distances(x_coords,y_coords)
+                        # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+                        # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                         rch_dist = np.cumsum(diff)
                         rch_dist_out = rch_dist+end1_dist+30
                         side_dist[sort_ind] = rch_dist_out
@@ -206,8 +205,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     else:
                         x_coords = cl_lon[sort_ind[::-1]]
                         y_coords = cl_lat[sort_ind[::-1]]
-                        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-                        diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+                        diff = get_distances(x_coords,y_coords)
+                        # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+                        # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                         rch_dist = np.cumsum(diff)
                         rch_dist_out = rch_dist+end2_dist+30
                         side_dist[sort_ind[::-1]] = rch_dist_out
@@ -228,8 +228,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     if len(any_nghs) == 0:
                         x_coords = cl_lon[sort_ind]
                         y_coords = cl_lat[sort_ind]
-                        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-                        diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+                        diff = get_distances(x_coords,y_coords)
+                        # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+                        # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                         rch_dist = np.cumsum(diff)
                         rch_dist_out = np.array(rch_dist)
                         side_dist[sort_ind] = rch_dist_out
@@ -322,6 +323,7 @@ def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
     root_grp.close()
 
 ################################################################################################
+
 def calc_path_variables(path_files, kdt):    
     count = 1
     for ind in list(range(len(path_files))):
@@ -338,20 +340,24 @@ def calc_path_variables(path_files, kdt):
                 continue
         
             # dist = calc_path_dist(lon,lat) #takes longer...
-            gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(lon, lat),crs="EPSG:4326").to_crs("EPSG:3857")
-            diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+            diff = get_distances(lon,lat)
             dist = np.cumsum(diff)
+            # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(lon, lat),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+            # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+            # dist = np.cumsum(diff)
 
             #spatial query with sword
             path_pts = np.vstack((lon, lat)).T
             pt_dist, pt_ind = kdt.query(path_pts, k = 1)
-            rch_paths[pt_ind] = rch_paths[pt_ind]+1
+            rch_paths[pt_ind] = rch_paths[pt_ind]+1 
             
             #assigns the paths a number in order by length.
             add = np.where(rch_paths_order[pt_ind] == 0)[0]
             rch_paths_dist[pt_ind[add]] = dist[add]
             rch_paths_order[pt_ind[add]] = count
             count = count+1
+            # if len(add) > 0:
+            #     rch_paths[pt_ind] = rch_paths[pt_ind]+1 # added condition for areas where paths are incomplete for efficiency (i.e. Amazon).
 
             del(dist);del(lon);del(lat)
         del(path)
@@ -399,26 +405,30 @@ def filter_zero_pts(rch_paths, rch_paths_dist, rch_paths_order, cl_rchs, cl_ind)
 def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
     side_chan = np.unique(cl_rchs[0,np.where(main_side == 1)[0]])
     for s in list(range(len(side_chan))):
+        # print(s)
         pts = np.where(cl_rchs[0,:] == side_chan[s])[0]
         if len(pts) <= 6:
-            print(side_chan[s])
-            nghs = np.unique(cl_rchs[1::,pts])
-            nghs = nghs[nghs > 0]
-            p = np.array([np.max(rch_paths[np.where(cl_rchs[0,:] == n)[0]]) for n in nghs])
-            po = np.array([np.max(rch_paths_order[np.where(cl_rchs[0,:] == n)[0]]) for n in nghs])
-            if len(np.unique(p)) == 1 and len(np.unique(po)) == 1:
-                main_side[pts] = 0
-                rch_paths[pts] = np.unique(p)
-                rch_paths_order[pts] = np.unique(po)
+            try:
+                print(side_chan[s])
+                nghs = np.unique(cl_rchs[1::,pts])
+                nghs = nghs[nghs > 0]
+                p = np.array([np.max(rch_paths[np.where(cl_rchs[0,:] == n)[0]]) for n in nghs])
+                po = np.array([np.max(rch_paths_order[np.where(cl_rchs[0,:] == n)[0]]) for n in nghs])
+                if len(np.unique(p)) == 1 and len(np.unique(po)) == 1:
+                    main_side[pts] = 0
+                    rch_paths[pts] = np.unique(p)
+                    rch_paths_order[pts] = np.unique(po)
+            except:
+                continue
 
 ################################################################################################
 ################################################################################################
 ################################################################################################
 
 start_all = time.time()
-region = 'SA'
+region = 'AS'
 version = 'v17'
-basin = 'hb67'
+basin = 'hb31'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
@@ -505,7 +515,7 @@ print('Finished Filling Side Channels in: '+str(np.round((end-start)/60,2))+' mi
 print('Filtering Short Side Channels')
 filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order)
 
-print('Normalizing Path Order')
+print('Normalizing Path Frequency')
 unq_paths = np.unique(rch_paths_order)
 norm_freq = np.zeros(len(rch_paths))
 for ord in list(range(len(unq_paths))):
@@ -531,6 +541,9 @@ plt.scatter(cl_lon, cl_lat, c=np.round(np.log(rch_paths)), s = 5, cmap='rainbow'
 plt.show()
 
 plt.scatter(cl_lon, cl_lat, c=rch_paths, s = 5, cmap='rainbow')
+plt.show()
+
+plt.scatter(cl_lon, cl_lat, c=rch_paths_dist, s = 2, cmap='rainbow')
 plt.show()
 
 plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 2, cmap='rainbow')

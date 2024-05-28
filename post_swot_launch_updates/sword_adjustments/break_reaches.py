@@ -1,7 +1,7 @@
 import numpy as np
 import netCDF4 as nc
 import geopandas as gp
-import geopy.distance
+from geopy import Point, distance
 from shapely.geometry import LineString, Point
 from geopandas import GeoSeries
 import pandas as pd
@@ -23,6 +23,18 @@ class Object(object):
         Creates class object to assign attributes to.
     """
     pass 
+
+###############################################################################
+
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
 
 ###############################################################################
 
@@ -705,11 +717,11 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'SA'
+region = 'OC'
 version = 'v17'
  
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
+# trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 
 centerlines, nodes, reaches = read_data(nc_fn)
 
@@ -719,17 +731,17 @@ cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in centerlines.node_id[
 cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 
 #automatic
-# tribs = gp.read_file(trib_fn)
+# tribs = gp.read_file(trib_fn) 
 # reach = np.array(tribs['reach_id']) 
 # break_id = np.array(tribs['cl_id']) 
 
 #manual
-reach = np.array([67207001115,67209500015])
-break_id = np.array([60266567,60376689])
+reach = np.array([52120700171,53159701055,53159900365,53159900495,53159900585,53130100825,53130100625,53130100595,53130100085,53110900125,53110900075,53110400115,53190700085,53700100011,53159700785,53159701355,53159701335,56239000395,56239000285,56297000035,56299100035,56391100055,56391400023,56510000035])
+break_id = np.array([2607537,6814969,6923070,6933404,6940193,5778045,5772941,5771368,5753773,5689687,5688379,5616054,8120924,8238189,6799608,6827224,6826737,9146861,9141745,10071937,10208069,10937681,10948834,13085029])
 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):
-    print('r', r, len(unq_rchs)-1)
+    print(r, unq_rchs[r], len(unq_rchs)-1)
     cl_r = np.where(centerlines.reach_id[0,:] == unq_rchs[r])[0]
     order_ids = np.argsort(centerlines.cl_id[cl_r])
 
@@ -739,6 +751,7 @@ for r in list(range(len(unq_rchs))):
     #append start and end points. 
     bounds = np.append(0,break_pts)
     bounds = np.append(bounds, len(cl_r))
+    bounds = np.sort(bounds) #added 4/26/24
 
     new_divs = np.zeros(len(cl_r))
     count = 1
@@ -783,7 +796,7 @@ for r in list(range(len(unq_rchs))):
                 fill = '0'
                 new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
             if len(str(new_rch_num)) == 4:
-                new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+                new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
             new_cl_rch_id = np.repeat(new_rch_id, len(update_ids))
 
             # print('3')
@@ -802,10 +815,15 @@ for r in list(range(len(unq_rchs))):
 
         # print('4')
         #get new rch distance for all reach_ids effected.
-        gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(centerlines.x[update_ids], 
-                                                        centerlines.y[update_ids]),
-                                                        crs="EPSG:4326").to_crs("EPSG:3857")
-        diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+        # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(centerlines.x[update_ids], 
+        #                                                 centerlines.y[update_ids]),
+        #                                                 crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
+        # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+        # dist = np.cumsum(diff)
+
+        x_coords = centerlines.x[update_ids]
+        y_coords = centerlines.y[update_ids]
+        diff = get_distances(x_coords,y_coords)
         dist = np.cumsum(diff)
         
         # print('5')
@@ -828,7 +846,7 @@ for r in list(range(len(unq_rchs))):
             pts = np.where(new_cl_node_ids == unq_nodes[n2])[0]
             new_node_x[n2] = np.median(centerlines.x[update_ids[pts]])
             new_node_y[n2] = np.median(centerlines.y[update_ids[pts]])
-            new_node_len[n2] = np.max(dist[pts])-np.min(dist[pts])
+            new_node_len[n2] = max(np.cumsum(dist[pts]))
             new_node_id[n2] = unq_nodes[n2]
             new_node_cl_ids[0,n2] = np.min(centerlines.cl_id[update_ids[pts]])
             new_node_cl_ids[1,n2] = np.max(centerlines.cl_id[update_ids[pts]])

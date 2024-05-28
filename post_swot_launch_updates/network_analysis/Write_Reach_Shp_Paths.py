@@ -288,6 +288,7 @@ reaches = gp.GeoDataFrame([
     np.array(data1.groups['reaches'].variables['main_side'][:]),
     np.array(data1.groups['reaches'].variables['stream_order'][:]),
     np.array(data1.groups['reaches'].variables['end_reach'][:]),
+    np.array(data1.groups['reaches'].variables['network'][:])
 ]).T
 
 #rename columns.
@@ -328,6 +329,7 @@ reaches.rename(
         32:"main_side",
         33:"strm_order",
         34:"end_reach",
+        35:"network"
         },inplace=True)
 
 
