@@ -275,6 +275,7 @@ def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin):
     hw_nodes = np.unique(centerlines.node_id[0,hw[np.where(centerlines.new_type[hw] != '6')]])
     out_nodes = np.unique(centerlines.node_id[0,out[np.where(centerlines.new_type[out] != '6')]])
     all_new_ghost_nodes = np.append(hw_nodes, out_nodes)
+    all_new_ghost_nodes = np.unique(all_new_ghost_nodes)
     new_ghost_l2 = np.array([int(str(rch)[0:2]) for rch in all_new_ghost_nodes])
     keep = np.where(new_ghost_l2 == int(basin[2:4]))[0]
     all_new_ghost_nodes = all_new_ghost_nodes[keep]
@@ -1157,9 +1158,9 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
         
 start_all = time.time()
-region = 'AS'
+region = 'OC'
 version = 'v17'
-basin = 'hb31'
+basin = 'hb52'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -1207,7 +1208,8 @@ print(str(np.round((end-start)/60,2))+' mins')
 print('Fixing Incorrect Ghost Reaches') #cont-scale
 start = time.time()
 centerlines.type = np.array([str(rch)[-1] for rch in centerlines.reach_id[0,:]])
-centerlines.new_type = update_ghost_type(centerlines, con_rch_ids, con_end_ids)
+centerlines.new_type = np.copy(centerlines.type)
+# centerlines.new_type = update_ghost_type(centerlines, con_rch_ids, con_end_ids)
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
@@ -1227,11 +1229,11 @@ add_rch_node_path_vars(reaches, nodes, path_cl_rch_ids, path_cl_dist_out,
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
-print('Creating New Ghost Reaches') #basin-scale
-start = time.time()
-update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin)
-end = time.time()
-print(str(np.round((end-start)/60,2))+' mins')
+# print('Creating New Ghost Reaches') #basin-scale
+# start = time.time()
+# update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin)
+# end = time.time()
+# print(str(np.round((end-start)/60,2))+' mins')
 
 #re-number reaches and nodes. 
 print('Creating New Reach and Node IDs') #basin-scale
@@ -1324,8 +1326,8 @@ reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
 reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
 reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
 
-print('Writing New NetCDF')
-write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+# print('Writing New NetCDF')
+# write_database_nc(centerlines, reaches, nodes, region, sword_dir)
 
 print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
 print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(reaches.id))
@@ -1339,31 +1341,33 @@ print('Finished ALL Updates in: '+str(np.round((end_all-start_all)/60,2))+' mins
 ####################################################################################
 ####################################################################################
 
-# print('Updating NetCDF')
-# sword = nc.Dataset(sword_dir, 'r+')
-# sword.groups['reaches'].variables['reach_id'][:] = reaches.new_id
-# sword.groups['nodes'].variables['node_id'][:] = nodes.new_id
-# sword.groups['nodes'].variables['reach_id'][:] = nodes.new_reach_id
-# sword.groups['centerlines'].variables['reach_id'][:] = centerlines.new_reach_id
-# sword.groups['centerlines'].variables['node_id'][:] = centerlines.new_node_id
-# sword.groups['centerlines'].variables['cl_id'][:] = centerlines.new_cl_id
+
+
+print('Updating NetCDF')
+sword = nc.Dataset(sword_dir, 'r+')
+sword.groups['reaches'].variables['reach_id'][:] = reaches.new_id
+sword.groups['nodes'].variables['node_id'][:] = nodes.new_id
+sword.groups['nodes'].variables['reach_id'][:] = nodes.new_reach_id
+sword.groups['centerlines'].variables['reach_id'][:] = centerlines.new_reach_id
+sword.groups['centerlines'].variables['node_id'][:] = centerlines.new_node_id
+sword.groups['centerlines'].variables['cl_id'][:] = centerlines.new_cl_id
 
 # #other attributes
-# sword.groups['reaches'].variables['dist_out'][:] = reaches.dist_out
-# sword.groups['nodes'].variables['dist_out'][:] = nodes.dist_out
-# sword.groups['reaches'].variables['path_freq'][:] = reaches.path_freq
-# sword.groups['nodes'].variables['path_freq'][:] = nodes.path_freq
-# sword.groups['reaches'].variables['path_order'][:] = reaches.path_order
-# sword.groups['nodes'].variables['path_order'][:] = nodes.path_order
+sword.groups['reaches'].variables['dist_out'][:] = reaches.dist_out
+sword.groups['nodes'].variables['dist_out'][:] = nodes.dist_out
+sword.groups['reaches'].variables['path_freq'][:] = reaches.path_freq
+sword.groups['nodes'].variables['path_freq'][:] = nodes.path_freq
+sword.groups['reaches'].variables['path_order'][:] = reaches.path_order
+sword.groups['nodes'].variables['path_order'][:] = nodes.path_order
 
-# rch_side = np.where(sword.groups['reaches'].variables['main_side'][:] == 1)[0]
-# node_side = np.where(sword.groups['nodes'].variables['main_side'][:] == 1)[0]
-# sword.groups['reaches'].variables['path_freq'][rch_side] = -9999
-# sword.groups['reaches'].variables['path_order'][rch_side] = -9999
-# sword.groups['nodes'].variables['path_freq'][node_side] = -9999
-# sword.groups['nodes'].variables['path_order'][node_side] = -9999
+rch_side = np.where(sword.groups['reaches'].variables['main_side'][:] == 1)[0]
+node_side = np.where(sword.groups['nodes'].variables['main_side'][:] == 1)[0]
+sword.groups['reaches'].variables['path_freq'][rch_side] = -9999
+sword.groups['reaches'].variables['path_order'][rch_side] = -9999
+sword.groups['nodes'].variables['path_freq'][node_side] = -9999
+sword.groups['nodes'].variables['path_order'][node_side] = -9999
 
-# sword.close()
+sword.close()
 
 ####################################################################################
 ####################################################################################

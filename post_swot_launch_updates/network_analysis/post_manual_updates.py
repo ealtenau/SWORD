@@ -14,8 +14,9 @@ from scipy import stats
 from scipy import interpolate
 import matplotlib.pyplot as plt
 
-region = 'NA'
+region = 'AF'
 version = 'v17'
+dist_update = True
 
 gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/gpkg/'\
     +region.lower()+'_sword_reaches_'+version+'.gpkg'
@@ -35,6 +36,7 @@ cl_y = np.array(con.groups['centerlines'].variables['y'][:])
 cl_ends = np.array(con.groups['centerlines'].variables['end_reach'][:])
 reaches = np.array(sword.groups['reaches'].variables['reach_id'][:])
 reach_dist = np.array(sword.groups['reaches'].variables['dist_out'][:])
+rch_len = np.array(sword.groups['reaches'].variables['reach_length'][:])
 node_rchs = np.array(sword.groups['nodes'].variables['reach_id'][:])
 rch_ms = np.array(sword.groups['reaches'].variables['main_side'][:])
 node_ms = np.array(sword.groups['nodes'].variables['main_side'][:])
@@ -51,13 +53,16 @@ rch_ends = np.array(sword.groups['reaches'].variables['end_reach'][:])
 node_ends = np.array(sword.groups['nodes'].variables['end_reach'][:])
 nodes = np.array(sword.groups['nodes'].variables['node_id'][:])
 node_dist = np.array(sword.groups['nodes'].variables['dist_out'][:])
+node_len = np.array(sword.groups['nodes'].variables['node_length'][:])
 rch_net = np.array(sword.groups['reaches'].variables['network'][:])
 node_net = np.array(sword.groups['nodes'].variables['network'][:])
+path_segs = np.array(sword.groups['reaches'].variables['path_segs'][:])
+node_path_segs = np.array(sword.groups['nodes'].variables['path_segs'][:])
 
 print('Updating Attributes from SHP File')
 unq_rchs = np.array(gpkg['reach_id'])
 for r in list(range(len(unq_rchs))):
-    # print(r)
+    # print(r, len(unq_rchs)-1)
     rch = np.where(reaches == unq_rchs[r])[0]
     nds = np.where(node_rchs == unq_rchs[r])[0] 
     rch_ms[rch] = gpkg['main_side'][r]
@@ -68,10 +73,14 @@ for r in list(range(len(unq_rchs))):
     node_ends[nds] = gpkg['end_reach'][r]
     rch_net[rch] = gpkg['network'][r]
     node_net[nds] = gpkg['network'][r]
-    # path_freq[rch] = gpkg['path_freq'][r]
-    # node_path_freq[nds] = gpkg['path_freq'][r]
-    # path_order[rch] = gpkg['path_order'][r]
-    # node_path_order[nds] = gpkg['path_order'][r]
+    path_freq[rch] = gpkg['path_freq'][r]
+    node_path_freq[nds] = gpkg['path_freq'][r]
+    path_order[rch] = gpkg['path_order'][r]
+    node_path_order[nds] = gpkg['path_order'][r]
+    path_segs[rch] = gpkg['path_segs'][r]
+    node_path_segs[nds] = gpkg['path_segs'][r]
+    if dist_update == True: 
+        reach_dist[rch] = gpkg['dist_out'][r]
 
 print('Updating Stream Order')
 strm_order_all = np.zeros(len(reaches))
@@ -118,8 +127,14 @@ for ind in list(range(len(unq_l2))):
 print('Updating Node Attributes')
 nodes_strm_order_all = np.zeros(len(nodes))
 for r2 in list(range(len(reaches))):
+    # print(r2, len(reaches)-1)
     nds = np.where(node_rchs == reaches[r2])[0]
     nodes_strm_order_all[nds] = strm_order_all[r2]
+    #updating dist_out for nodes.
+    if dist_update == True: 
+        base_val = reach_dist[r2] - rch_len[r2]
+        node_cs = np.cumsum(node_len[nds])
+        node_dist[nds] = node_cs+base_val 
 
 # good = np.where(strm_order_all != -9999)[0]        
 # plt.scatter(rch_x[good], rch_y[good], c=strm_order_all[good], s=5)
@@ -166,10 +181,14 @@ sword.groups['reaches'].variables['stream_order'][:] = strm_order_all
 sword.groups['nodes'].variables['stream_order'][:] = nodes_strm_order_all
 sword.groups['reaches'].variables['network'][:] = rch_net
 sword.groups['nodes'].variables['network'][:] = node_net
-# sword.groups['reaches'].variables['path_freq'][:] = path_freq
-# sword.groups['nodes'].variables['path_freq'][:] = node_path_freq
-# sword.groups['reaches'].variables['path_order'][:] = path_order
-# sword.groups['nodes'].variables['path_order'][:] = node_path_order
+sword.groups['reaches'].variables['path_freq'][:] = path_freq
+sword.groups['nodes'].variables['path_freq'][:] = node_path_freq
+sword.groups['reaches'].variables['path_order'][:] = path_order
+sword.groups['nodes'].variables['path_order'][:] = node_path_order
+sword.groups['reaches'].variables['path_segs'][:] = path_segs
+sword.groups['nodes'].variables['path_segs'][:] = node_path_segs
+sword.groups['reaches'].variables['dist_out'][:] = reach_dist
+sword.groups['nodes'].variables['dist_out'][:] = node_dist
 
 rch_side = np.where(rch_ms == 1)[0]
 node_side = np.where(node_ms == 1)[0]

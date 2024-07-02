@@ -91,11 +91,11 @@ def get_distances(lon,lat):
 ###############################################################################
 ###############################################################################
 
-gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/OC/oc_sword_reaches_hb52_v17.shp'
-# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/na_sword_reaches_v17.gpkg' #continental gpkg file. 
-nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/oc_sword_v17.nc'
+# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/OC/oc_sword_reaches_hb57_v17.shp'
+gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/af_sword_reaches_v17.gpkg' #continental gpkg file. 
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/af_sword_v17.nc'
 
-reach = [52409900651,52409900201,52409400205,52406000201,52406001171,52405000201,52405000711,52501600021,52501700665,52501700655,52190500015,52190500095,52190500085,52190400075,52179900575,52190100025,52177000405,52175700155,52175700355,52173300195,52150900355,52150900455,52139900085,52140100065,52175700205,52179300135,52140300311,52140300071]
+reach = [17291300571]
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]

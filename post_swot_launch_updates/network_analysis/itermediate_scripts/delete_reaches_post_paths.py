@@ -752,15 +752,15 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'AS'
+region = 'AF'
 version = 'v17'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/SA/sa_deletions_round1.csv'
+# rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/AS/as_ghost_deletions.csv'
 
 # rm_rch_df = pd.read_csv(rch_dir)
 # rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 # rm_rch = np.unique(rm_rch)
-rm_rch = np.array([...]) #manual
+rm_rch = np.array([13122000331,13122000181,14301000646]) #manual
 
 centerlines, nodes, reaches = read_data(sword_dir)
 rch_check = reaches.id

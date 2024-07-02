@@ -116,7 +116,7 @@ def define_network_regions(subpaths, subreaches, cl_rchs, basin):
 ################################################################################################
 ################################################################################################
 
-region = 'SA'
+region = 'EU'
 version = 'v17'
 
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -286,8 +286,6 @@ sword.groups['nodes'].variables['path_segs'][:] = nodes_side_segs
 sword.groups['nodes'].variables['main_side'][:] = nodes_new_main_side
 sword.groups['nodes'].variables['path_order'][node_nan] = -9999
 sword.groups['nodes'].variables['path_freq'][node_nan] = -9999
-sword.close()
-conn.close()
 
 if 'network' in sword.groups['reaches'].variables.keys():
     sword.groups['reaches'].variables['network'][:] = basin_networks
@@ -302,6 +300,7 @@ else:
     sword.groups['nodes'].variables['network'][:] = nodes_networks
 
 sword.close()
+conn.close()
 
 # other = np.where(nodes_new_main_side == 2)[0]
 # side = np.where(nodes_new_main_side == 1)[0]

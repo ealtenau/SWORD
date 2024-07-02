@@ -17,7 +17,7 @@ def get_distances(lon,lat):
 
 ################################################################################################
 
-region = 'EU'
+region = 'OC'
 version = 'v17'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\

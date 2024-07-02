@@ -63,9 +63,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
         
         start_pt = ngh_pts[np.where(side_dist[ngh_pts] == np.nanmin(side_dist[ngh_pts]))[0]][0]
         loop = 1
-        check = len(ngh_pts)+500
+        check = len(ngh_pts)+5000 #was 500 
         while len(ngh_pts) > 0:
-            print(loop, cl_rchs[1::,start_pt])
+            # print(loop, cl_rchs[0::,start_pt])
             nghs = cl_rchs[1::,start_pt]
             nghs = nghs[nghs>0]
             ngh_basins = np.array([str(n)[0:2] for n in nghs])
@@ -128,7 +128,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     loop = loop+1
 
             if loop > check:
-                print('LOOP1 STUCK', cl_rchs[1::,start_pt])
+                print('LOOP1 STUCK', cl_rchs[0::,start_pt])
                 break
 
         #have to fill in weird scenerios. 
@@ -136,7 +136,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
             missed_rchs = np.unique(cl_rchs[0,np.where(flag == 0)])
             start_rch = missed_rchs[0]
             loop = 1
-            check = len(missed_rchs)+ 100
+            check = len(missed_rchs)+ 100 #was 100 
             while len(missed_rchs) > 0:
                 # print(loop, start_rch)
                 rch = np.where(cl_rchs[0,:] == start_rch)[0] #if multiple choose first.
@@ -145,7 +145,7 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                 end_pts = np.vstack((cl_lon[eps], cl_lat[eps])).T
                 basin_pts = np.vstack((cl_lon, cl_lat)).T
                 kdt = sp.cKDTree(basin_pts)
-                pt_dist, pt_ind = kdt.query(end_pts, k = 5)
+                pt_dist, pt_ind = kdt.query(end_pts, k = 15)
                 end1_dist = np.array(side_dist[pt_ind[0,np.where(side_dist[pt_ind[0,:]]>0)]][0])
                 end2_dist = np.array(side_dist[pt_ind[1,np.where(side_dist[pt_ind[1,:]]>0)]][0])
                 if len(end1_dist) > 0:
@@ -244,8 +244,9 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                         #try another start reach. 
                         if len(missed_rchs) == 0:
                             continue
-                        # all_rchs = np.append(any_nghs, start_rch)
                         start_rch = missed_rchs[np.where(missed_rchs != start_rch)[0][0]]
+                        # all_rchs = np.append(any_nghs, start_rch)
+                        # start_rch = missed_rchs[np.where(np.in1d(missed_rchs, all_rchs) == False)[0][0]]
                         loop = loop+1
 
                 if loop > check:
@@ -426,9 +427,9 @@ def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
 ################################################################################################
 
 start_all = time.time()
-region = 'AS'
+region = 'OC'
 version = 'v17'
-basin = 'hb31'
+basin = 'hb52'
 
 print('Starting Basin: ', basin)
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\

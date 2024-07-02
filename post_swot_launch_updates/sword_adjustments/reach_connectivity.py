@@ -129,6 +129,12 @@ def find_connections(centerlines):
             n1 = np.reshape(n1,(len(n1),1))
             n2 = np.reshape(n2,(len(n2),1))
 
+            if len(n1) >= 4:
+                n1 = n1[0:3]
+
+            if len(n2) >= 4:
+                n2 = n2[0:3]
+
             neighbors[1:len(n1)+1, mn_id] = n1
             neighbors[1:len(n2)+1, mx_id] = n2 
 

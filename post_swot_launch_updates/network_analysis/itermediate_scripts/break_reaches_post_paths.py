@@ -773,7 +773,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'NA'
+region = 'AF'
 version = 'v17'
  
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
@@ -792,8 +792,8 @@ cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 # break_id = np.array(tribs['cl_id']) 
 
 #manual
-reach = np.array([82268000573,82285000361])
-break_id = np.array([8913334,9040639])
+reach = np.array([18170800861,18170800081])
+break_id = np.array([37101060,37026265])
 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):
@@ -803,11 +803,12 @@ for r in list(range(len(unq_rchs))):
 
     breaks = break_id[np.where(reach == unq_rchs[r])[0]]
     break_pts = np.array([np.where(centerlines.cl_id[cl_r[order_ids]] == b)[0][0] for b in breaks])
-    
+
     #append start and end points. 
     bounds = np.append(0,break_pts)
     bounds = np.append(bounds, len(cl_r))
     bounds = np.sort(bounds) #added 4/26/24
+    bounds = np.unique(bounds) #added 6/7/24
 
     new_divs = np.zeros(len(cl_r))
     count = 1

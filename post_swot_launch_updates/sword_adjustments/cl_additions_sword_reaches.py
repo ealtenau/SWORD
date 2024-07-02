@@ -21,11 +21,11 @@ import netCDF4 as nc
 ###############################################################################
 
 start_all = time.time()
-region = 'AS'
+region = 'AF'
 
 # Input file(s).
 nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'\
-    +region.lower()+'_channel_additions.nc'
+    +region.lower()+'_channel_additions2.nc'
 sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/'+region.lower()+'_sword_v17.nc'
 
 # Reading in data.
@@ -144,6 +144,28 @@ subreaches.cl_id = subreaches.cl_id.T; subnodes.cl_id = subnodes.cl_id.T
 subreaches.rch_id_up = subreaches.rch_id_up.T; subreaches.rch_id_down = subreaches.rch_id_down.T
 subreaches.orbits = subreaches.orbits.T
 subreaches.iceflag = subreaches.iceflag.T
+
+#################################################################################
+#################################################################################
+
+# subnodes.path_freq = np.repeat(-9999, len(subnodes.id))
+# subnodes.path_order = np.repeat(-9999, len(subnodes.id))
+# subnodes.path_segs = np.repeat(-9999, len(subnodes.id))
+# subnodes.main_side = np.repeat(1, len(subnodes.id))
+# subnodes.strm_order = np.repeat(-9999, len(subnodes.id))
+# subnodes.network = np.repeat(0, len(subnodes.id))
+# subnodes.end_rch = np.repeat(0, len(subnodes.id))
+
+# subreaches.path_freq = np.repeat(-9999, len(subreaches.id))
+# subreaches.path_order = np.repeat(-9999, len(subreaches.id))
+# subreaches.path_segs = np.repeat(-9999, len(subreaches.id))
+# subreaches.main_side = np.repeat(1, len(subreaches.id))
+# subreaches.strm_order = np.repeat(-9999, len(subreaches.id))
+# subreaches.network = np.repeat(0, len(subreaches.id))
+# subreaches.end_rch = np.repeat(0, len(subreaches.id))
+
+#################################################################################
+#################################################################################
 
 # Append new data to existing data. 
 rdt.append_data(centerlines, nodes, reaches, 

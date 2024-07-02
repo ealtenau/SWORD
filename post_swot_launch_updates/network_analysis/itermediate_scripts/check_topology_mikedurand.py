@@ -127,13 +127,16 @@ def check_topology(domain_reachids,domain_reach_data,Output):
 
 import numpy as np
 import netCDF4 as nc
+import time
 
-region = 'NA'
+start = time.time()
+
+region = 'SA'
 version = 'v17'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 
 subset = False
-Lxbasin='74'
+Lxbasin='XX' #the two digit pfafstetter basin number. 
 
 sword_dataset=nc.Dataset(nc_fn)
 sword_point_reachids=sword_dataset['centerlines/reach_id'][0,:][:]
@@ -191,4 +194,5 @@ nerrors,reaches_with_issues=check_topology(domain_reachids,domain_reach_data,Ver
 print('There are a total of ',nerrors[1],'type 1 errors')
 print('There are a total of ',nerrors[2],'type 2 errors')
 
-
+end = time.time()
+print(str(np.round((end-start)/60,2))+' mins')

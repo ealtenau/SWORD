@@ -148,6 +148,12 @@ for ind in list(range(len(files1))):
 #################################################################################################
 #################################################################################################
 
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17.nc'
-sword = nc.Dataset(sword_dir)
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/sa_sword_v17.nc'
+sword = nc.Dataset(sword_dir, 'r+')
 
+
+sword.groups['reaches'].variables['n_rch_up'][:] = 0
+sword.groups['reaches'].variables['n_rch_down'][:] = 0
+sword.groups['reaches'].variables['rch_id_up'][:] = 0
+sword.groups['reaches'].variables['rch_id_dn'][:] = 0
+sword.close()

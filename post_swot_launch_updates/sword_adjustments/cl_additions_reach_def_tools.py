@@ -1437,6 +1437,13 @@ def append_data(centerlines, nodes, reaches,
     nodes.sinuosity = np.append(nodes.sinuosity, subnodes.sinuosity)
     nodes.edit_flag = np.append(nodes.edit_flag, subnodes.edit_flag)
     nodes.trib_flag = np.append(nodes.trib_flag, subnodes.trib_flag)
+    # nodes.path_freq = np.append(nodes.path_freq, subnodes.path_freq)
+    # nodes.path_order = np.append(nodes.path_order, subnodes.path_order)
+    # nodes.path_segs = np.append(nodes.path_segs, subnodes.path_segs)
+    # nodes.main_side = np.append(nodes.main_side, subnodes.main_side)
+    # nodes.strm_order = np.append(nodes.strm_order, subnodes.strm_order)
+    # nodes.end_rch = np.append(nodes.end_rch, subnodes.end_rch)
+    # nodes.network = np.append(nodes.network, subnodes.network)
 
     reaches.id = np.append(reaches.id, subreaches.id)
     reaches.cl_id = np.append(reaches.cl_id, subreaches.cl_id, axis=1)
@@ -1473,6 +1480,13 @@ def append_data(centerlines, nodes, reaches,
     reaches.low_slope = np.append(reaches.low_slope, subreaches.low_slope)
     reaches.edit_flag = np.append(reaches.edit_flag, subreaches.edit_flag)
     reaches.trib_flag = np.append(reaches.trib_flag, subreaches.trib_flag)
+    # reaches.path_freq = np.append(reaches.path_freq, subreaches.path_freq)
+    # reaches.path_order = np.append(reaches.path_order, subreaches.path_order)
+    # reaches.path_segs = np.append(reaches.path_segs, subreaches.path_segs)
+    # reaches.main_side = np.append(reaches.main_side, subreaches.main_side)
+    # reaches.strm_order = np.append(reaches.strm_order, subreaches.strm_order)
+    # reaches.end_rch = np.append(reaches.end_rch, subreaches.end_rch)
+    # reaches.network = np.append(reaches.network, subreaches.network)
     
 ###############################################################################
 

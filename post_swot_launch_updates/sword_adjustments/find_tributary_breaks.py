@@ -64,7 +64,7 @@ def find_tributary_junctions(centerlines):
                 ep1_max = np.max(centerlines.id[s1])
                 #finding the junction point cl_id. 
                 con1_ind = np.where(centerlines.reach_id[0,ep1_ind] == ep1_segs[e1])[0]
-                con1_pt = ep1_ind[np.where(ep1_dist[con1_ind] == np.min(ep1_dist[con1_ind]))[0]]
+                con1_pt = ep1_ind[np.where(ep1_dist[con1_ind] == np.min(ep1_dist[con1_ind]))[0]][0]
                 ep1_junct = centerlines.id[con1_pt]
                 if ep1_junct > ep1_min+5 and ep1_junct < ep1_max-5:
                     if len(seg) >= 15: 
@@ -78,7 +78,7 @@ def find_tributary_junctions(centerlines):
                 ep2_max = np.max(centerlines.id[s2])
                 #finding the junction point cl_id. 
                 con2_ind = np.where(centerlines.reach_id[0,ep2_ind] == ep2_segs[e2])[0]
-                con2_pt = ep2_ind[np.where(ep2_dist[con2_ind] == np.min(ep2_dist[con2_ind]))[0]]
+                con2_pt = ep2_ind[np.where(ep2_dist[con2_ind] == np.min(ep2_dist[con2_ind]))[0]][0]
                 ep2_junct = centerlines.id[con2_pt]
                 if ep2_junct > ep2_min+5 and ep2_junct < ep2_max-5:
                     if len(seg) >= 15:
@@ -91,7 +91,7 @@ def find_tributary_junctions(centerlines):
 #####################################################################################################
 
 start_all = time.time()
-region = 'AS'
+region = 'EU'
 version = 'v17'
 
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
