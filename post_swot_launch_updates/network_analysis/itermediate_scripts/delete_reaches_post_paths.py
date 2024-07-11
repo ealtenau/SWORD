@@ -760,7 +760,7 @@ sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version
 # rm_rch_df = pd.read_csv(rch_dir)
 # rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 # rm_rch = np.unique(rm_rch)
-rm_rch = np.array([13122000331,13122000181,14301000646]) #manual
+rm_rch = np.array([13222601473,14210000665]) #manual
 
 centerlines, nodes, reaches = read_data(sword_dir)
 rch_check = reaches.id

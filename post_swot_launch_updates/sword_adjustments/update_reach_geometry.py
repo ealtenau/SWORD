@@ -92,10 +92,10 @@ def get_distances(lon,lat):
 ###############################################################################
 
 # gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/OC/oc_sword_reaches_hb57_v17.shp'
-gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/af_sword_reaches_v17.gpkg' #continental gpkg file. 
-nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/af_sword_v17.nc'
+gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/eu_sword_reaches_v17.gpkg' #continental gpkg file. 
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/eu_sword_v17.nc'
 
-reach = [17291300571]
+reach = [22795000121]
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]

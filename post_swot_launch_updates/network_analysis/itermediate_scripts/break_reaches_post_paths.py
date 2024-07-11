@@ -773,7 +773,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'AF'
+region = 'EU'
 version = 'v17'
  
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
@@ -792,8 +792,8 @@ cl_rch_type = np.array([str(ind)[-1] for ind in centerlines.node_id[0,:]])
 # break_id = np.array(tribs['cl_id']) 
 
 #manual
-reach = np.array([18170800861,18170800081])
-break_id = np.array([37101060,37026265])
+reach = np.array([22795000121])
+break_id = np.array([7933191])
 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):

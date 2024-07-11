@@ -3,20 +3,20 @@ import netCDF4 as nc
 import geopandas as gp
 import pandas as pd
 
-region = 'SA'
+region = 'AF'
 version = 'v17'
-basin = 'hb67'
+basin = 'hb14'
 
 rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/Final_Topology/'\
-    +basin[1::]+'/'+region.lower()+'_sword_reaches_'+basin+'_'+version+'_FG1_LSFix_MS_TopoFix.shp'
+    +basin[1::]+'/'+region.lower()+'_sword_reaches_'+basin+'_'+version+'_FG1_LSFix_MS_TopoFix_Manual.shp'
 csv_fn = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/Final_Topology/'\
-    +basin[1::]+'/'+region.lower()+'_sword_reaches_'+basin+'_'+version+'_rev_LS_MS.csv'
+    +basin[1::]+'/'+region.lower()+'_sword_reaches_'+basin+'_'+version+'_rev_LS_all.csv'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 
 # testing paths:
 # rch_shp_fn ='/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/SA/topo_fixes/sa_sword_reaches_hb62_v17_FG1_LSFix_MS_TopoFix_Manual.shp'
-# csv_fn ='/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/SA/topo_fixes/sa_sword_reaches_hb62_v17_rev_LS_MS_fix.csv'
+# csv_fn ='/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/NA/na_sword_reaches_hb82_v17_rev_LS_FI.csv'
 
 rch_shp = gp.read_file(rch_shp_fn)
 netcdf = nc.Dataset(nc_fn,'r+')
