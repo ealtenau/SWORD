@@ -181,12 +181,11 @@ import geopandas as gp
 import time
 import matplotlib.pyplot as plt
 
-start_all = time.time()
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17_glows.nc'
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_glows/netcdf/na_sword_v16_glows.nc'
 
 print('Reading in SWORD Data')
 start = time.time()
-sword = nc.Dataset(sword_dir,'r+')
+sword = nc.Dataset(sword_dir)
 nlon = np.array(sword.groups['nodes'].variables['x'][:])
 nlat = np.array(sword.groups['nodes'].variables['y'][:])
 rlon = np.array(sword.groups['reaches'].variables['x'][:])
@@ -196,14 +195,18 @@ rid = np.array(sword.groups['reaches'].variables['reach_id'][:])
 nrid = np.array(sword.groups['nodes'].variables['reach_id'][:])
 rwth = np.array(sword.groups['reaches'].variables['width'][:])
 nwth = np.array(sword.groups['nodes'].variables['width'][:])
-
 rwth_max = np.array(sword.groups['reaches'].variables['max_width'][:])
 nwth_max = np.array(sword.groups['nodes'].variables['max_width'][:])
 
-wth_median = sword.groups['nodes'].variables['glows_wth_med'][:] 
-wth_min = sword.groups['nodes'].variables['glows_wth_min'][:] 
-wth_max = sword.groups['nodes'].variables['glows_wth_max'][:] 
-wth_1sigma = sword.groups['nodes'].variables['glows_wth_1sig'][:] 
+wth_median = np.array(sword.groups['nodes'].variables['glows_wth_med'][:]) 
+wth_min = np.array(sword.groups['nodes'].variables['glows_wth_min'][:]) 
+wth_max = np.array(sword.groups['nodes'].variables['glows_wth_max'][:]) 
+wth_1sigma = np.array(sword.groups['nodes'].variables['glows_wth_1sig'][:]) 
+rch_wth_median = np.array(sword.groups['reaches'].variables['glows_wth_med'][:]) 
+rch_wth_min = np.array(sword.groups['reaches'].variables['glows_wth_min'][:]) 
+rch_wth_max = np.array(sword.groups['reaches'].variables['glows_wth_max'][:]) 
+rch_wth_1sigma = np.array(sword.groups['reaches'].variables['glows_wth_1sig'][:]) 
+wth_id = np.array(sword.groups['nodes'].variables['glows_river_id'][:]) 
 end = time.time()
 print(str(np.round((end-start),2))+' sec')
 
@@ -231,21 +234,6 @@ end = time.time()
 print(str(np.round((end-start),2))+' sec')
 
 
-
-node_basins = np.array([int(str(ind)[0:4]) for ind in nid])
-rch_basins = np.array([int(str(ind)[0:4]) for ind in rid])
-node_zero = np.where(node_basins != 7426)[0]
-rch_zero = np.where(rch_basins != 7426)[0]
-
-wth_median[node_zero] = -9999
-wth_min[node_zero] = -9999
-wth_max[node_zero] = -9999
-wth_1sigma[node_zero] = -9999
-rch_wth_median[rch_zero] = -9999
-rch_wth_min[rch_zero] = -9999
-rch_wth_max[rch_zero] = -9999
-rch_wth_1sigma[rch_zero] = -9999
-
 # #nodes
 # sword.groups['nodes'].variables['glows_wth_med'][:] = wth_median
 # sword.groups['nodes'].variables['glows_wth_min'][:] = wth_min
@@ -258,39 +246,79 @@ rch_wth_1sigma[rch_zero] = -9999
 # sword.groups['reaches'].variables['glows_wth_1sig'][:] = rch_wth_1sigma
 # sword.close()
 
-basin = np.where(node_basins == 7426)[0]
-data = np.where(wth_median[basin]>-9999)[0]
-plt.scatter(nlon[basin], nlat[basin], c='blue', s=5)
-plt.scatter(nlon[basin[data]], nlat[basin[data]], c='red', s=5)
+data = np.where(wth_median>-9999)[0]
+plt.scatter(nlon, nlat, c='blue', s=5)
+plt.scatter(nlon[data], nlat[data], c='red', s=5)
 plt.show()
 
-plt.scatter(nlon[basin], nlat[basin], c='black', s=5)
-plt.scatter(nlon[basin[data]], nlat[basin[data]], c=wth_median[basin[data]], s=5, cmap='rainbow')
+plt.scatter(nlon, nlat, c='black', s=5)
+plt.scatter(nlon[data], nlat[data], c=wth_median[data], s=5, cmap='rainbow')
 plt.show()
 
-plt.scatter(nlon[basin], nlat[basin], c='black', s=5)
-plt.scatter(nlon[basin[data]], nlat[basin[data]], c=np.log(wth_median[basin[data]]), s=5, cmap='rainbow')
+plt.scatter(nlon, nlat, c='black', s=5)
+plt.scatter(nlon[data], nlat[data], c=np.log(wth_median[data]), s=5, cmap='rainbow')
 plt.show()
 
-rbasin = np.where(rch_basins == 7426)[0]
-rdata = np.where(rch_wth_median[rbasin]>-9999)[0]
-
-plt.scatter(rlon[rbasin], rlat[rbasin], c='black', s=5)
-plt.scatter(rlon[rbasin[rdata]], rlat[rbasin[rdata]], c=np.log(rch_wth_median[rbasin[rdata]]), s=5, cmap='rainbow')
+max_wth_diff = nwth_max - wth_max #positive is sword is larger...
+plt.scatter(nlon, nlat, c='black', s=5)
+plt.scatter(nlon[data], nlat[data], c=np.log(max_wth_diff[data]), s=5, cmap='rainbow')
 plt.show()
 
-print(len(data)/len(nlon[basin])*100) #89%
-print(len(rdata)/len(nlon[rbasin])*100) #92% 
+rdata = np.where(rch_wth_median>-9999)[0]
+plt.scatter(rlon, rlat, c='black', s=5)
+plt.scatter(rlon[rdata], rlat[rdata], c=np.log(rch_wth_median[rdata]), s=5, cmap='rainbow')
+plt.show()
 
-np.median(abs(nwth[basin[data]]-wth_median[basin[data]])) #22 m 
-np.mean(abs(nwth[basin[data]]-wth_median[basin[data]])) #45 m 
+id_check = np.where(wth_id != 'NaN')[0]
+plt.scatter(nlon, nlat, c='black', s=5)
+plt.scatter(nlon[id_check], nlat[id_check], c='cyan', s=5)
+plt.show()
 
-np.median(abs(nwth_max[basin[data]]-wth_max[basin[data]])) #39.5 m 
-np.mean(abs(nwth_max[basin[data]]-wth_max[basin[data]])) #118.4 m 
 
-np.median(abs(rwth[rbasin[rdata]]-rch_wth_median[rbasin[rdata]])) #22 m 
-np.mean(abs(rwth[rbasin[rdata]]-rch_wth_median[rbasin[rdata]])) #41 m 
+# print(len(data)/len(nlon)*100) #89%
+# print(len(rdata)/len(nlon)*100) #92% 
 
-np.median(abs(rwth_max[rbasin[rdata]]-rch_wth_max[rbasin[rdata]])) #126 m 
-np.mean(abs(rwth_max[rbasin[rdata]]-rch_wth_max[rbasin[rdata]])) #276 m 
+np.median(abs(nwth[data]-wth_median[data])) #22 m 
+np.mean(abs(nwth[data]-wth_median[data])) #45 m 
 
+np.median(abs(nwth_max[data]-wth_max[data])) #39.5 m 
+np.mean(abs(nwth_max[data]-wth_max[data])) #118.4 m 
+
+np.median(abs(rwth[rdata]-rch_wth_median[rdata])) #22 m 
+np.mean(abs(rwth[rdata]-rch_wth_median[rdata])) #41 m 
+
+np.median(abs(rwth_max[rdata]-rch_wth_max[rdata])) #126 m 
+np.mean(abs(rwth_max[rdata]-rch_wth_max[rdata])) #276 m 
+
+### fixing ids...
+
+id_check = np.where(wth_id != 'NaN')[0]
+plt.scatter(nlon, nlat, c='black', s=5)
+plt.scatter(nlon[id_check], nlat[id_check], c='cyan', s=5)
+plt.show()
+
+# sword_glows_id[id_check] = glows_ids[id_check]
+
+# id_check2 = np.where(sword_glows_id != 'NaN')[0]
+# plt.scatter(nlon, nlat, c='black', s=5)
+# plt.scatter(nlon[id_check2], nlat[id_check2], c='cyan', s=5)
+# plt.show()
+
+# sword.groups['nodes'].variables['glows_river_id'][:] = sword_glows_id[:]
+
+
+# test = np.where(wth_id == 'R81008984XS0060552')[0]
+
+#################################################################################################
+#################################################################################################
+
+import itertools
+from itertools import permutations, combinations
+import numpy as np
+
+x_steps = list(np.round(np.arange(-0.005,0.0051,0.0001),10))
+y_steps = list(np.round(np.arange(-0.005,0.0051,0.0001),10))
+
+pairs = list(itertools.product(x_steps, y_steps))
+x_pair = np.array([p[0] for p in pairs])
+y_pair = np.array([p[1] for p in pairs])

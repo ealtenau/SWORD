@@ -25,8 +25,8 @@ crop = args.subset
 basin_id = args.basin
 
 # region = 'NA'
-# version = 'v16'
-# glows_region = '7'
+# version = 'v16_glows'
+# glows_region = '8'
 # crop = True
 # basin_id = '7426'
 
@@ -40,7 +40,7 @@ else:
 swordpath = sworddir+version+'/'
 sword_dir = swordpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
 wth_data_dir = glows_data_dir + 'GLOW-S_regions_merged/GLOW-S_region_'+glows_region+'_daywidth.parquet'
-wth_node_dir = glows_data_dir + 'GLOW-S_crosssection_points/GLOW-S_region_'+glows_region+'_subset_Ohio.shp'
+wth_node_dir = glows_data_dir + 'GLOW-S_crosssection_points/GLOW-S_region_'+glows_region+'.shp'
 
 print('Reading in SWORD Data')
 start = time.time()
@@ -49,9 +49,13 @@ nlon = np.array(sword.groups['nodes'].variables['x'][:])
 nlat = np.array(sword.groups['nodes'].variables['y'][:])
 nid = np.array(sword.groups['nodes'].variables['node_id'][:])
 rid = np.array(sword.groups['reaches'].variables['reach_id'][:])
+rlon = np.array(sword.groups['reaches'].variables['x'][:])
+rlat = np.array(sword.groups['reaches'].variables['y'][:])
 nrid = np.array(sword.groups['nodes'].variables['reach_id'][:])
 nedit = np.array(sword.groups['nodes'].variables['edit_flag'][:])
 nedit[:] = 'NaN'
+if 'glows_river_id' in sword.groups['nodes'].variables.keys():
+    sword_glows_id = np.array(sword.groups['nodes'].variables['glows_river_id'][:])
 end = time.time()
 print(str(np.round((end-start),2))+' sec')
 
@@ -87,7 +91,7 @@ print(str(np.round((end-start),2))+' sec')
 if crop == 'True':
     print('Dividing into L2 Basins')
     start = time.time()
-    sword_basin = np.array([int(str(ind)[0:4]) for ind in nid])
+    sword_basin = np.array([int(str(ind)[0:len(basin_id)]) for ind in nid])
     wth_l2 = np.array([int(ind[1:3]) for ind in node])
     end = time.time()
     print(str(np.round((end-start),2))+' sec')
@@ -161,7 +165,6 @@ if 'glows_wth_med' in sword.groups['nodes'].variables.keys():
     sword.groups['nodes'].variables['glows_wth_min'][node_keep] = wth_min[node_keep]
     sword.groups['nodes'].variables['glows_wth_max'][node_keep] = wth_max[node_keep]
     sword.groups['nodes'].variables['glows_wth_1sig'][node_keep] = wth_1sigma[node_keep]
-    sword.groups['nodes'].variables['glows_river_id'][id_keep] = glows_ids[id_keep]
     #reaches
     rch_keep = np.where(rch_wth_median > -9999)[0]
     sword.groups['reaches'].variables['glows_wth_med'][rch_keep] = rch_wth_median[rch_keep]
@@ -169,6 +172,10 @@ if 'glows_wth_med' in sword.groups['nodes'].variables.keys():
     sword.groups['reaches'].variables['glows_wth_max'][rch_keep] = rch_wth_max[rch_keep]
     sword.groups['reaches'].variables['glows_wth_1sig'][rch_keep] = rch_wth_1sigma[rch_keep]
     sword.close()
+    #glows river id population
+    # add = np.where(sword_glows_id != 'NaN')[0]
+    # glows_ids[add] = sword_glows_id[add]
+    # sword.groups['nodes'].variables['glows_river_id'][:] = glows_ids
 else:
     #nodes
     sword.groups['nodes'].createVariable('glows_wth_med', 'f8', ('num_nodes',), fill_value=-9999.)
@@ -183,8 +190,6 @@ else:
     sword.groups['nodes'].variables['glows_wth_min'][node_keep] = wth_min[node_keep]
     sword.groups['nodes'].variables['glows_wth_max'][node_keep] = wth_max[node_keep]
     sword.groups['nodes'].variables['glows_wth_1sig'][node_keep] = wth_1sigma[node_keep]
-    glows_id[:] = 'NaN'
-    glows_id[id_keep] = glows_ids[id_keep]
     #reaches
     sword.groups['reaches'].createVariable('glows_wth_med', 'f8', ('num_reaches',), fill_value=-9999.)
     sword.groups['reaches'].createVariable('glows_wth_min', 'f8', ('num_reaches',), fill_value=-9999.)
@@ -195,6 +200,8 @@ else:
     sword.groups['reaches'].variables['glows_wth_min'][rch_keep] = rch_wth_min[rch_keep]
     sword.groups['reaches'].variables['glows_wth_max'][rch_keep] = rch_wth_max[rch_keep]
     sword.groups['reaches'].variables['glows_wth_1sig'][rch_keep] = rch_wth_1sigma[rch_keep]
+    #glows river id population
+    # glows_id[:] = glows_ids
     sword.close()
 end = time.time()
 print(str(np.round((end-start)/60,2))+' min')
@@ -203,10 +210,20 @@ print('DONE in: ')
 end_all = time.time()
 print(str(np.round((end_all-start_all)/3600,2))+' hrs')
 
-### plotting 
+### stats and plotting 
 data = np.where(wth_median[basin]>-9999)[0]
-# plt.scatter(nlon[basin], nlat[basin], c='blue', s=5)
-# plt.scatter(nlon[basin[data]], nlat[basin[data]], c='red', s=5)
-# plt.show()
+rch_basins = np.array([int(str(ind)[0:len(basin_id)]) for ind in rid])
+rbasin = np.where(rch_basins == int(basin_id))[0]
+rdata = np.where(rch_wth_median[rbasin]>-9999)[0]
 
 print(len(data)/len(nlon[basin])*100, '% Node Coverage') #89% node coverage in Ohio Basin. 
+print(len(rdata)/len(nlon[rbasin])*100, '% Reach Coverage')
+
+plt.scatter(nlon[basin], nlat[basin], c='blue', s=5)
+plt.scatter(nlon[basin[data]], nlat[basin[data]], c='red', s=5)
+plt.show()
+
+# plt.scatter(rlon[rbasin], rlat[rbasin], c='black', s=5)
+# plt.scatter(rlon[rbasin[rdata]], rlat[rbasin[rdata]], c=np.log(rch_wth_median[rbasin[rdata]]), s=5, cmap='rainbow')
+# plt.show()
+
