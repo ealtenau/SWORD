@@ -1,0 +1,76 @@
+Command line inputs
+- /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_FG1_Main.shp
+- /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_FG1_Main_pts.shp
+- /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_head_at_junc.csv
+- /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_FG1.shp
+- /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_FG1_Main_LSFix.shp
+- /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_rev_LS.csv
+Reading in data
+Starting topology algorithm for the main network
+The number of possible locations with potential reversed LineString issues is 294
+The number of potentially problematic areas is: 588
+The number of potentially problematic areas remaining is: 294
+The number of areas modified is: 0
+[]
+len(rch_ids_rev): 0
+No more reaches to reverse!
+The reversed reach IDs are: []
+The number of reversed reach IDs is: 0
+Writing output river file containing reversed LineStrings
+Writing reach IDs of reversed LineStrings to CSV
+The main network algorithm took 21.195573559716664 minutes or 0.3532595593286111 hours to complete.
+Starting topology algorithm for the side network
+Finding new geometric intersections for side channels
+Redoing new geometric intersections for side channels with associated main network reaches
+Redoing new geometric intersections one last time to find reaches associated
+The number of possible locations with potential reversed LineString issues is 166
+The number of potentially problematic areas is: 332
+The number of potentially problematic areas remaining is: 211
+The number of areas modified is: 19
+['53159701795', '53130000275', '53159304181', '53130000125', '53159100895', '53130200741', '53130200701', '53159900695', '53130101045', '53159701825', '53130101055', '53159701815', '53159304125', '53130000285', '53159304235', '53159304195', '53159304221', '53159304155']
+len(rch_ids_rev): 18
+Reversing 53159701795
+Reversing 53130000275
+Reversing 53159304181
+Reversing 53130000125
+Reversing 53159100895
+Reversing 53130200741
+Reversing 53130200701
+Reversing 53159900695
+Reversing 53130101045
+Reversing 53159701825
+Reversing 53130101055
+Reversing 53159701815
+Reversing 53159304125
+Reversing 53130000285
+Reversing 53159304235
+Reversing 53159304195
+Reversing 53159304221
+Reversing 53159304155
+Finished reversing initial reaches, finding new geometric intersections
+geom_con_fname: /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_FG1_Main_LSFix_Side_sub_pts_0.shp
+Starting while loop for finding further changes
+The while loop is in iteration 1
+The number of possible locations with potential reversed LineString issues is 164
+The number of potentially problematic areas is: 239
+The number of potentially problematic areas remaining is: 120
+The number of areas modified is: 7
+['53159304195', '53130000125', '53159304275', '53159900725', '53130101115', '53159304155']
+len(rch_ids_rev): 6
+A reach has been reversed multiple times -- check code!
+The counter is: 1
+['53159304195', '53130000125', '53159304155']
+Writing reach IDs that been reversed multiple times to CSV -- may need to do manual topology in these locations
+Reversing last reaches not involved in reaches that have been reversed multiple times
+Reversing 53159304275
+Reversing 53159900725
+Reversing 53130101115
+Finished reversing reaches, finding new geometric intersections
+geom_con_fname: /Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/OC/b53/oc_sword_reaches_hb53_v17_FG1_Main_LSFix_Side_sub_sub_pts_final.shp
+The reversed reach IDs are: ['53159701795', '53130000275', '53159304181', '53130000125', '53159100895', '53130200741', '53130200701', '53159900695', '53130101045', '53159701825', '53130101055', '53159701815', '53159304125', '53130000285', '53159304235', '53159304195', '53159304221', '53159304155', '53159304275', '53159900725', '53130101115']
+The number of reversed reach IDs is: 21
+Writing output river file containing reversed LineStrings
+Writing reach IDs of reversed LineStrings to CSV
+The side network algorithm took 17.3687009493 minutes or 0.289478349155 hours to complete.
+The whole algorithm took 38.5642745868 minutes or 0.64273790978 hours to complete.
+- Done

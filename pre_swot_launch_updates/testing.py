@@ -322,3 +322,180 @@ y_steps = list(np.round(np.arange(-0.005,0.0051,0.0001),10))
 pairs = list(itertools.product(x_steps, y_steps))
 x_pair = np.array([p[0] for p in pairs])
 y_pair = np.array([p[1] for p in pairs])
+
+
+
+################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+gaps = pd.read_csv('/Users/ealtenau/Desktop/gap_rchs_copy.csv')
+sword = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/as_sword_v17.nc')
+
+end_rch = np.array(sword['/reaches/end_reach'][:])
+rchs = np.array(sword['/reaches/reach_id'][:])
+
+ends = rchs[np.where((end_rch > 0) & (end_rch < 3))[0]]
+
+rmv = np.where(np.in1d(gaps['reach_id'], ends)== True)[0]
+
+gaps = gaps.drop(rmv)
+
+gaps.to_csv('/Users/ealtenau/Desktop/gap_rchs_copy.csv',index=False)
+
+####################################################################################
+####################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+edits = pd.read_csv('/Users/ealtenau/Desktop/europe_hb23_node_edits.csv')
+sword = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/eu_sword_v17.nc', 'r+')
+
+old_id = np.array(edits['node_id'])
+cl_id = np.array(edits['cl_id'])
+new_id = np.array(edits['new_node_id2'])
+x = np.array(edits['x'])
+y = np.array(edits['y'])
+
+nc_cl_nodes = np.array(sword['/centerlines/node_id'][:])
+nc_cl_id = np.array(sword['/centerlines/cl_id'][:])
+nc_cl_x = np.array(sword['/centerlines/x'][:])
+nc_cl_y = np.array(sword['/centerlines/y'][:])
+nc_node_x = np.array(sword['/nodes/x'][:])
+nc_node_y = np.array(sword['/nodes/y'][:])
+nc_nodes = np.array(sword['/nodes/node_id'][:])
+
+for ind in list(range(len(cl_id))):
+    pt = np.where(nc_cl_id == cl_id[ind])[0]
+    nc_cl_nodes[0,pt] = new_id[ind]
+
+unq_nodes = np.unique(new_id)
+
+for idx in list(range(len(unq_nodes))):
+    pts = np.where(new_id == unq_nodes[idx])[0]
+    new_x = np.median(x[pts])
+    new_y = np.median(y[pts])
+    nind = np.where(nc_nodes == unq_nodes[idx])[0]
+    nc_node_x[nind] = new_x
+    nc_node_y[nind] = new_y
+
+
+sword['/nodes/x'][:] = nc_node_x
+sword['/nodes/y'][:] = nc_node_y
+sword['/centerlines/node_id'][:] = nc_cl_nodes
+sword.close()
+
+
+####################################################################################
+####################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+
+shp = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/AS/b35/as_sword_reaches_hb35_v17_FG1_pts.shp')
+# shp = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/AS/b35/as_sword_reaches_hb35_v17_pts.shp')
+
+pts = np.array(shp['geom1_rch_'])
+unq_pts = np.unique(pts)
+issues = []
+for ind in list(range(len(unq_pts))):
+    print(ind, len(unq_pts)-1)
+    p = np.where(pts == unq_pts[ind])[0]
+    if len(p) > 10:
+        issues.append(unq_pts[ind])
+
+print(len(issues))
+
+
+####################################################################################
+####################################################################################
+
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+reaches = pd.read_csv('/Users/ealtenau/Documents/SWORD_Dev/swot_data/glows_sword_calval_reaches/reach_ids_4_dongmei.csv')
+sword = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_glows/netcdf/oc_sword_v16_glows.nc')
+
+nc_node_rchs = sword['/nodes/reach_id/'][:]
+nc_node_ids = sword['/nodes/node_id/'][:]
+nc_glows_ids = sword['/nodes/glows_river_id/'][:]
+unq_rchs = np.unique(reaches['reach_id'])
+
+for r in list(range(len(unq_rchs))):
+    print(r, len(unq_rchs)-1)
+    pts = np.where(nc_node_rchs == unq_rchs[r])[0]
+    if len(pts) == 0:
+        continue
+    else:
+        if 'node_ids' in locals():
+            node_ids = np.append(node_ids, nc_node_ids[pts])
+            glows_ids = np.append(glows_ids, nc_glows_ids[pts])
+        else:
+            
+            node_ids = nc_node_ids[pts]
+            glows_ids = nc_glows_ids[pts]
+
+
+df = pd.DataFrame(np.array([node_ids, glows_ids]).T)
+df.rename(columns={0:'reach_id', 1:'glows_id'},inplace=True)
+df.to_csv('/Users/ealtenau/Documents/SWORD_Dev/swot_data/glows_sword_calval_reaches/reach_csv_glows/sword_glows_calval_regions5.csv', index = False)
+sword.close()
+
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+sword = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17.nc','r+')
+
+n = 81390900170051
+check = np.where(sword['/nodes/node_id/'][:] == n)[0]
+sword['/nodes/cl_ids/'][:,check]
+
+cl_check = np.where(sword['/centerlines/node_id/'][0,:] == n)[0]
+sword['/centerlines/node_id/'][0,cl_check]
+sword['/centerlines/cl_id/'][cl_check]
+
+r = 82213000121
+rch = np.where(sword['/reaches/reach_id/'][:] == r)[0]
+
+sword['/reaches/reach_id/'][rch]
+sword['/reaches/n_rch_up/'][rch] = 0
+sword['/reaches/n_rch_down/'][rch] = 1
+sword['/reaches/rch_id_up/'][:,rch] = 0
+sword['/reaches/rch_id_dn/'][:,rch] = 0
+sword.close()
+
+

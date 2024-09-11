@@ -44,7 +44,8 @@ shp_dir='/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/'+reg
 pts_dir='/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+region+'/b'+basin+'/'
 if os.path.exists(pts_dir) == False:
     os.makedirs(pts_dir)
-rrr_riv_shp = shp_dir+region.lower()+'_sword_reaches_hb' + basin + '_v17.shp'
+rrr_riv_shp = shp_dir+region.lower()+'_sword_reaches_hb' + basin + '_v17.shp' 
+# rrr_riv_shp = pts_dir+region.lower()+'_sword_reaches_hb' + basin + '_v17_FG1.shp'
 rrr_pts_shp = pts_dir+region.lower()+'_sword_reaches_hb' + basin + '_v17_pts.shp'
 
 # log = open('out.txt', 'a')

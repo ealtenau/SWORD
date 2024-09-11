@@ -1,8 +1,7 @@
-from __future__ import division
-import numpy as np
-import time
 import netCDF4 as nc
 import pandas as pd
+import numpy as np
+import time
 
 ###############################################################################
 ###############################################################################
@@ -752,150 +751,262 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'AF'
+region = 'OC'
 version = 'v17'
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/AS/as_ghost_deletions.csv'
-
-# rm_rch_df = pd.read_csv(rch_dir)
-# rm_rch = np.array(rm_rch_df['reach_id']) #csv file
-# rm_rch = np.unique(rm_rch)
-rm_rch = np.array([13222601473,14210000665]) #manual
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
+    '/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+csv_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+\
+    '/'+region.lower()+'_missing_ghost_reaches.csv'
+check_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+region+'/'+'order_problems.csv'
+out_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
 
 centerlines, nodes, reaches = read_data(sword_dir)
-rch_check = reaches.id
+reaches.type = np.array([int(str(rch)[-1]) for rch in reaches.id])
+old_num_rchs = len(reaches.id)
 
-#### LOOP
-for ind in list(range(len(rm_rch))):
-    print(ind, len(rm_rch))
-    rch_ind = np.where(reaches.id == rm_rch[ind])[0]
-    node_ind = np.where(nodes.reach_id == rm_rch[ind])[0]
-    cl_ind = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
+rch_csv = pd.read_csv(csv_dir)
+check = pd.read_csv(check_dir)
+rmv = np.where(np.in1d(rch_csv['reach_id'],check['reach_id']))[0]
+if len(rmv) > 0:
+    rch_csv = rch_csv.drop(rmv)
+    print('Reaches with node ordering issues droped: '+str(len(rmv)))
 
-    centerlines.cl_id = np.delete(centerlines.cl_id, cl_ind, axis=0)
-    centerlines.x = np.delete(centerlines.x, cl_ind, axis=0)
-    centerlines.y = np.delete(centerlines.y, cl_ind, axis=0)
-    centerlines.reach_id = np.delete(centerlines.reach_id, cl_ind, axis=1)
-    centerlines.node_id = np.delete(centerlines.node_id, cl_ind, axis=1)
+subreaches = np.array(rch_csv['reach_id'])
+hw_out = np.array(rch_csv['hw_out'])
 
-    nodes.id = np.delete(nodes.id, node_ind, axis = 0)
-    nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
-    nodes.x = np.delete(nodes.x, node_ind, axis = 0)
-    nodes.y = np.delete(nodes.y, node_ind, axis = 0)
-    nodes.len = np.delete(nodes.len, node_ind, axis = 0)
-    nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
-    nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
-    nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
-    nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
-    nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
-    nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
-    nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
-    nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
-    nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
-    nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
-    nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
-    nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
-    nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
-    nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
-    nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
-    nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
-    nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
-    nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
-    nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
-    nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
-    nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
-    nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
-    nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
-    nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
-    nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
-    nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
-    nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
-    nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
-    nodes.network = np.delete(nodes.network, node_ind, axis = 0)
+#find the node for each reach that should be the ghost reach... 
+all_new_ghost_nodes = np.zeros(len(subreaches),dtype=int)
+for r in list(range(len(subreaches))):
+    nind = np.where(nodes.reach_id == subreaches[r])[0]
+    # print(r, len(nind))
+    if hw_out[r] == 1:
+        all_new_ghost_nodes[r] = max(nodes.id[nind])
+    else:
+        all_new_ghost_nodes[r] = min(nodes.id[nind])
 
-    reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
-    reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
-    reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
-    reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
-    reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
-    reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
-    reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
-    reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
-    reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
-    reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
-    reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
-    reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
-    reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
-    reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
-    reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
-    reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
-    reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
-    reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
-    reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
-    reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
-    reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
-    reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
-    reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
-    reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
-    reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
-    reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
-    reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
-    reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
-    reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
-    reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
-    reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
-    reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
-    reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
-    reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
-    reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
-    reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
-    reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
-    reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
-    reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
-    reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
-    reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
-    reaches.network = np.delete(reaches.network, rch_ind, axis = 0)
+rch_nums = np.array([int(str(rch)[6:10]) for rch in centerlines.reach_id[0,:]])
+node_nums = np.array([int(str(rch)[10:13]) for rch in centerlines.node_id[0,:]])
+cl_level6 = np.array([int(str(rch)[0:6]) for rch in centerlines.node_id[0,:]])
 
-    #removing residual neighbors with deleted reach id in centerline and reach groups. 
-    cl_ind1 = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
-    cl_ind2 = np.where(centerlines.reach_id[1,:] == rm_rch[ind])[0]
-    cl_ind3 = np.where(centerlines.reach_id[2,:] == rm_rch[ind])[0]
-    cl_ind4 = np.where(centerlines.reach_id[3,:] == rm_rch[ind])[0]
-    if len(cl_ind1) > 0:
-        centerlines.reach_id[0,cl_ind1] = 0
-    if len(cl_ind2) > 0:
-        centerlines.reach_id[1,cl_ind2] = 0
-    if len(cl_ind3) > 0:
-        centerlines.reach_id[2,cl_ind3] = 0
-    if len(cl_ind4) > 0:
-        centerlines.reach_id[3,cl_ind4] = 0
+issues = []
+for ind in list(range(len(all_new_ghost_nodes))):
+    # print(ind, all_new_ghost_nodes[ind], len(all_new_ghost_nodes)-1)
+    update_ids = np.where(centerlines.node_id[0,:] == all_new_ghost_nodes[ind])[0]
+    if len(update_ids) == 0: #added for odd reach cases. usually one node reaches with zero up and down neighbors.
+        issues.append(all_new_ghost_nodes[ind])
+        continue
 
-    rch_up_ind1 = np.where(reaches.rch_id_up[0,:] == rm_rch[ind])[0]
-    rch_up_ind2 = np.where(reaches.rch_id_up[1,:] == rm_rch[ind])[0]
-    rch_up_ind3 = np.where(reaches.rch_id_up[2,:] == rm_rch[ind])[0]
-    rch_up_ind4 = np.where(reaches.rch_id_up[3,:] == rm_rch[ind])[0]
-    if len(rch_up_ind1) > 0:
-        reaches.rch_id_up[0,rch_up_ind1] = 0
-    if len(rch_up_ind2) > 0:
-        reaches.rch_id_up[1,rch_up_ind2] = 0
-    if len(rch_up_ind3) > 0:
-        reaches.rch_id_up[2,rch_up_ind3] = 0
-    if len(rch_up_ind4) > 0:
-        reaches.rch_id_up[3,rch_up_ind4] = 0
+    nds = np.where(nodes.id == all_new_ghost_nodes[ind])[0]
+    old_rch = np.unique(centerlines.reach_id[0,update_ids])
+    num_nodes = len(np.where(nodes.reach_id == old_rch)[0])
 
-    rch_dn_ind1 = np.where(reaches.rch_id_down[0,:] == rm_rch[ind])[0]
-    rch_dn_ind2 = np.where(reaches.rch_id_down[1,:] == rm_rch[ind])[0]
-    rch_dn_ind3 = np.where(reaches.rch_id_down[2,:] == rm_rch[ind])[0]
-    rch_dn_ind4 = np.where(reaches.rch_id_down[3,:] == rm_rch[ind])[0]
-    if len(rch_dn_ind1) > 0:
-        reaches.rch_id_down[0,rch_dn_ind1] = 0
-    if len(rch_dn_ind2) > 0:
-        reaches.rch_id_down[1,rch_dn_ind2] = 0
-    if len(rch_dn_ind3) > 0:
-        reaches.rch_id_down[2,rch_dn_ind3] = 0
-    if len(rch_dn_ind4) > 0:
-        reaches.rch_id_down[3,rch_dn_ind4] = 0
+    bsn6 = np.where(cl_level6 == np.unique(cl_level6[update_ids]))[0]
+    if num_nodes == 1:
+        new_node_num = np.unique(node_nums[update_ids])[0]
+        node_nums[update_ids] = node_nums[update_ids]
+        new_rch_num = np.unique(rch_nums[update_ids])[0]
+        rch_nums[update_ids] = rch_nums[update_ids]
+    else:
+        new_node_num = 1 #max(node_nums[bsn6])+1
+        node_nums[update_ids] = new_node_num
+        #use to separate how headwaters and outlets were handled
+        #outlets use to be given a value of zero but was an issue if two 
+        #reaches needed updated in the same level 6 basin.
+        #cause duplicate reach ids. Decided to use max value for outlets too
+        #to prevent having to renumber all reaches in a level six basin 
+        #and require topology updates for all. 
+        new_rch_num = max(rch_nums[bsn6])+1  
+        rch_nums[update_ids] = new_rch_num
+    # print(new_rch_num, new_node_num)
 
+    if len(str(new_rch_num)) == 1:
+        fill = '000'
+        new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
+    if len(str(new_rch_num)) == 2:
+        fill = '00'
+        new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
+    if len(str(new_rch_num)) == 3:
+        fill = '0'
+        new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
+    if len(str(new_rch_num)) == 4:
+        new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+str(new_rch_num)+'6')
+
+    if len(str(new_node_num)) == 1:
+        fill = '00'
+        new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_node_num)+str(new_rch_id)[-1])
+    if len(str(new_node_num)) == 2:
+        fill = '0'
+        new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_node_num)+str(new_rch_id)[-1])
+    if len(str(new_node_num)) == 3:
+        new_node_id = int(str(new_rch_id)[0:-1]+str(new_node_num)+str(new_rch_id)[-1])
+
+        
+    ### update centerline and node points
+    centerlines.reach_id[0,update_ids] = new_rch_id
+    centerlines.reach_id[1,np.where(centerlines.reach_id[1,:]== old_rch)[0]] = new_rch_id
+    centerlines.reach_id[2,np.where(centerlines.reach_id[2,:]== old_rch)[0]] = new_rch_id
+    centerlines.reach_id[3,np.where(centerlines.reach_id[3,:]== old_rch)[0]] = new_rch_id  
+    centerlines.node_id[0,update_ids] = new_node_id
+    centerlines.node_id[1,np.where(centerlines.node_id[1,:]== all_new_ghost_nodes[ind])[0]] = new_node_id
+    centerlines.node_id[2,np.where(centerlines.node_id[2,:]== all_new_ghost_nodes[ind])[0]] = new_node_id
+    centerlines.node_id[3,np.where(centerlines.node_id[3,:]== all_new_ghost_nodes[ind])[0]] = new_node_id
+    nodes.id[nds] = new_node_id
+    nodes.reach_id[nds] = new_rch_id
+   
+    #update key variables for original reach if it was only one node to start with. 
+    cl_rch = np.where(centerlines.reach_id[0,:] == old_rch)[0]
+    rch = np.where(reaches.id == old_rch)[0]
+    if len(cl_rch) == 0:
+        reaches.id[rch] = new_rch_id
+        new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
+        reaches.cl_id[:,rch] = new_cl_ids
+        reaches.x[rch] = np.median(centerlines.x[update_ids])
+        reaches.x_min[rch] = np.min(centerlines.x[update_ids])
+        reaches.x_max[rch] = np.max(centerlines.x[update_ids])
+        reaches.y[rch] = np.median(centerlines.y[update_ids])
+        reaches.y_min[rch] = np.min(centerlines.y[update_ids])
+        reaches.y_max[rch] = np.max(centerlines.y[update_ids])
+        reaches.len[rch] = nodes.len[nds]
+        reaches.rch_n_nodes[rch] = 1
+        #fill some attributes with node values. 
+        reaches.wse[rch] = nodes.wse[nds]
+        reaches.wse_var[rch] = nodes.wse_var[nds]
+        reaches.wth[rch] = nodes.wth[nds]
+        reaches.wth_var[rch] = nodes.wth_var[nds]
+        reaches.grod[rch] = nodes.grod[nds]
+        reaches.grod_fid[rch] = nodes.grod_fid[nds]
+        reaches.hfalls_fid[rch] = nodes.hfalls_fid[nds]
+        reaches.lakeflag[rch] = nodes.lakeflag[nds]
+        reaches.dist_out[rch] = nodes.dist_out[nds]
+        reaches.facc[rch] = nodes.facc[nds]
+        reaches.max_wth[rch] = nodes.max_wth[nds]
+        reaches.river_name[rch] = nodes.river_name[nds]
+        reaches.edit_flag[rch] = nodes.edit_flag[nds]
+        reaches.trib_flag[rch] = nodes.trib_flag[nds]
+        reaches.nchan_max[rch] = nodes.nchan_max[nds]
+        reaches.nchan_mod[rch] = nodes.nchan_mod[nds]
+        reaches.path_freq[rch] = nodes.path_freq[nds]
+        reaches.path_order[rch] = nodes.path_order[nds]
+        reaches.main_side[rch] = nodes.main_side[nds]
+        reaches.path_segs[rch] = nodes.path_segs[nds]
+        reaches.strm_order[rch] = nodes.strm_order[nds]
+        reaches.network[rch] = nodes.network[nds]
+        ### topology and end reach variables....
+        if hw_out[ind] == 1: #headwater
+            reaches.end_rch[rch] = 1
+            dn_nghs = reaches.rch_id_down[:,rch]
+            dn_nghs = dn_nghs[dn_nghs>0]
+            for dn in list(range(len(dn_nghs))):    
+                ngh_rch = np.where(reaches.id == dn_nghs[dn])[0]
+                nr_ind = np.where(reaches.rch_id_up[:,ngh_rch] == old_rch)[0]
+                reaches.rch_id_up[nr_ind,ngh_rch] = new_rch_id
+                ngh_cl = np.where(centerlines.reach_id[0,:] == dn_nghs[dn])[0]
+                centerlines.reach_id[1,np.where(centerlines.reach_id[1,ngh_cl] == old_rch)[0]] = new_rch_id
+                centerlines.reach_id[2,np.where(centerlines.reach_id[2,ngh_cl] == old_rch)[0]] = new_rch_id
+                centerlines.reach_id[3,np.where(centerlines.reach_id[3,ngh_cl] == old_rch)[0]] = new_rch_id
+                
+        else: #outlet
+            reaches.end_rch[rch] = 2
+            up_nghs = reaches.rch_id_up[:,rch]
+            up_nghs = up_nghs[up_nghs>0]
+            for up in list(range(len(up_nghs))):    
+                ngh_rch = np.where(reaches.id == up_nghs[up])[0]
+                nr_ind = np.where(reaches.rch_id_down[:,ngh_rch] == old_rch)[0]
+                reaches.rch_id_down[nr_ind,ngh_rch] = new_rch_id
+                ngh_cl = np.where(centerlines.reach_id[0,:] == up_nghs[up])[0]
+                centerlines.reach_id[1,np.where(centerlines.reach_id[1,ngh_cl] == old_rch)[0]] = new_rch_id
+                centerlines.reach_id[2,np.where(centerlines.reach_id[2,ngh_cl] == old_rch)[0]] = new_rch_id
+                centerlines.reach_id[3,np.where(centerlines.reach_id[3,ngh_cl] == old_rch)[0]] = new_rch_id
+        
+    else:
+        # update current reach attributes and append new ones.
+        reaches.x[rch] = np.median(centerlines.x[cl_rch])
+        reaches.x_min[rch] = np.min(centerlines.x[cl_rch])
+        reaches.x_max[rch] = np.max(centerlines.x[cl_rch])
+        reaches.y[rch] = np.median(centerlines.y[cl_rch])
+        reaches.y_min[rch] = np.min(centerlines.y[cl_rch])
+        reaches.y_max[rch] = np.max(centerlines.y[cl_rch])
+        reaches.cl_id[0,rch] = np.min(centerlines.cl_id[cl_rch])
+        reaches.cl_id[1,rch] = np.max(centerlines.cl_id[cl_rch])
+        reaches.len[rch] = reaches.len[rch] - nodes.len[nds]
+        reaches.rch_n_nodes[rch] = reaches.rch_n_nodes[rch] - 1
+        #add new reach to reaches object.
+        reaches.id = np.append(reaches.id, new_rch_id)
+        new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
+        reaches.cl_id = np.append(reaches.cl_id, new_cl_ids, axis=1)
+        reaches.x = np.append(reaches.x, np.median(centerlines.x[update_ids]))
+        reaches.x_min = np.append(reaches.x_min, np.min(centerlines.x[update_ids]))
+        reaches.x_max = np.append(reaches.x_max, np.max(centerlines.x[update_ids]))
+        reaches.y = np.append(reaches.y, np.median(centerlines.y[update_ids]))
+        reaches.y_min = np.append(reaches.y_min, np.min(centerlines.y[update_ids]))
+        reaches.y_max = np.append(reaches.y_max, np.max(centerlines.y[update_ids]))
+        reaches.len = np.append(reaches.len, nodes.len[nds])
+        reaches.rch_n_nodes = np.append(reaches.rch_n_nodes, 1)
+        #fill some attributes with node values. 
+        reaches.wse = np.append(reaches.wse, nodes.wse[nds])
+        reaches.wse_var = np.append(reaches.wse_var, nodes.wse_var[nds])
+        reaches.wth = np.append(reaches.wth, nodes.wth[nds])
+        reaches.wth_var = np.append(reaches.wth_var, nodes.wth_var[nds])
+        reaches.grod = np.append(reaches.grod, nodes.grod[nds])
+        reaches.grod_fid = np.append(reaches.grod_fid, nodes.grod_fid[nds])
+        reaches.hfalls_fid = np.append(reaches.hfalls_fid, nodes.hfalls_fid[nds])
+        reaches.lakeflag = np.append(reaches.lakeflag, nodes.lakeflag[nds])
+        reaches.dist_out = np.append(reaches.dist_out, nodes.dist_out[nds])
+        reaches.facc = np.append(reaches.facc, nodes.facc[nds])
+        reaches.max_wth = np.append(reaches.max_wth, nodes.max_wth[nds])
+        reaches.river_name = np.append(reaches.river_name, nodes.river_name[nds])
+        reaches.edit_flag = np.append(reaches.edit_flag, nodes.edit_flag[nds])
+        reaches.trib_flag = np.append(reaches.trib_flag, nodes.trib_flag[nds])
+        reaches.nchan_max = np.append(reaches.nchan_max, nodes.nchan_max[nds])
+        reaches.nchan_mod = np.append(reaches.nchan_mod, nodes.nchan_mod[nds])
+        reaches.path_freq = np.append(reaches.path_freq, nodes.path_freq[nds])
+        reaches.path_order = np.append(reaches.path_order, nodes.path_order[nds])
+        reaches.main_side = np.append(reaches.main_side, nodes.main_side[nds])
+        reaches.path_segs = np.append(reaches.path_segs, nodes.path_segs[nds])
+        reaches.strm_order = np.append(reaches.strm_order, nodes.strm_order[nds])
+        reaches.network = np.append(reaches.network, nodes.network[nds])
+        #fill other attrubutes with current reach values. 
+        reaches.slope = np.append(reaches.slope, reaches.slope[rch])
+        reaches.low_slope = np.append(reaches.low_slope, reaches.low_slope[rch])
+        reaches.iceflag = np.append(reaches.iceflag, reaches.iceflag[:,rch], axis=1)
+        reaches.max_obs = np.append(reaches.max_obs, reaches.max_obs[rch])
+        reaches.orbits = np.append(reaches.orbits, reaches.orbits[:,rch], axis=1)
+        #fill topology attributes based on if the new reach is a headwater or outlet.
+        if hw_out[ind] == 1: #headwater
+            end_rch = 1
+            n_rch_up = 0
+            rch_id_up = np.array([0,0,0,0]); rch_id_up = rch_id_up.reshape((4,1))
+            n_rch_down = 1
+            rch_id_down = np.array([old_rch[0],0,0,0]); rch_id_down = rch_id_down.reshape((4,1))
+            #updating current reach topology
+            reaches.n_rch_up[rch] = 1
+            reaches.rch_id_up[0,rch] = new_rch_id
+            reaches.end_rch[rch] = 0
+            centerlines.reach_id[1,cl_rch[np.where(cl_rch == max(cl_rch))]] = new_rch_id
+            cl_rch2 = np.where(centerlines.reach_id[0,:] == new_rch_id)[0]
+            centerlines.reach_id[1,cl_rch2[np.where(cl_rch2 == min(cl_rch2))]] = old_rch
+
+        else: #outlet
+            end_rch = 2
+            n_rch_down = 0
+            rch_id_down = np.array([0,0,0,0]); rch_id_down = rch_id_down.reshape((4,1))
+            n_rch_up = 1
+            rch_id_up = np.array([old_rch[0],0,0,0]); rch_id_up = rch_id_up.reshape((4,1))
+            #updating current reach topology
+            reaches.n_rch_down[rch] = 1
+            reaches.rch_id_down[0,rch] = new_rch_id
+            reaches.end_rch[rch] = 0
+            centerlines.reach_id[1,cl_rch[np.where(cl_rch == min(cl_rch))]] = new_rch_id
+            cl_rch2 = np.where(centerlines.reach_id[0,:] == new_rch_id)[0]
+            centerlines.reach_id[1,cl_rch2[np.where(cl_rch2 == max(cl_rch2))]] = old_rch
+
+        #appending the new reach topology.
+        reaches.n_rch_up = np.append(reaches.n_rch_up, n_rch_up)
+        reaches.n_rch_down = np.append(reaches.n_rch_down, n_rch_down)
+        reaches.rch_id_up = np.append(reaches.rch_id_up, rch_id_up, axis = 1)
+        reaches.rch_id_down = np.append(reaches.rch_id_down, rch_id_down, axis = 1)
+        reaches.end_rch = np.append(reaches.end_rch, end_rch)
+    # print(old_rch, new_rch_id)
 
 ###############################################################################
 ### Filler variables
@@ -943,6 +1054,16 @@ reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
 reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
 reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
 
-new_rch_num = len(rch_check) - len(rm_rch)
-if len(reaches.id) == new_rch_num:
-    write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+#checking dimensions
+print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
+print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
+print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(np.unique(reaches.id)), len(reaches.id))
+print('Previous Number of Reaches: '+str(old_num_rchs))
+print('Issues: '+str(issues))
+
+issue_csv = {'reach_id': np.array(issues).astype('int64')}
+issue_csv = pd.DataFrame(issue_csv)
+issue_csv.to_csv(out_dir+region.lower()+'_check_ghost_reaches.csv', index=False)
+
+print('Writing New NetCDF')
+write_database_nc(centerlines, reaches, nodes, region, sword_dir)

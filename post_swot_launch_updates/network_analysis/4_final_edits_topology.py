@@ -14,8 +14,17 @@ from scipy import stats
 from scipy import interpolate
 import matplotlib.pyplot as plt
 
-region = 'SA'
-version = 'v17'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+
+# region = 'SA'
+# version = 'v17'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
     +region.lower()+'_sword_'+version+'.nc'
@@ -30,12 +39,12 @@ cl_y = sword.groups['centerlines'].variables['y'][:]
 cl_node_id = sword.groups['centerlines'].variables['node_id'][:]
 
 print('Updating Edit Flag')
-rch_erse = np.where(rch_edit_flag != '7')[0]
-node_erse = np.where(node_edit_flag != '7')[0]
-rch_edit_flag[rch_erse] = 'NaN'
-node_edit_flag[node_erse] = 'NaN'
-sword.groups['reaches'].variables['edit_flag'][:] = rch_edit_flag
-sword.groups['nodes'].variables['edit_flag'][:] = node_edit_flag
+# rch_erse = np.where(rch_edit_flag != '7')[0]
+# node_erse = np.where(node_edit_flag != '7')[0]
+# rch_edit_flag[rch_erse] = 'NaN'
+# node_edit_flag[node_erse] = 'NaN'
+# sword.groups['reaches'].variables['edit_flag'][:] = rch_edit_flag
+# sword.groups['nodes'].variables['edit_flag'][:] = node_edit_flag
 
 print('Updating Centerline Node ID Neighbors')
 cl_pts = np.vstack((cl_x, cl_y)).T

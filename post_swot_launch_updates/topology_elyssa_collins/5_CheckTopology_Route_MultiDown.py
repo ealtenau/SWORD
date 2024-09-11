@@ -26,12 +26,12 @@ import geopandas as gp
 import argparse
 
 #*******************************************************************************
-#Declaration of variables (given as command line arguments)
+#Command Line Variables / Instructions:
 #*******************************************************************************
-# 1 - rrr_con_csv
-# 2 - rrr_bas_csv
-# 3 - rrr_rch_acc
-
+# 1 - SWORD Continent (i.e. AS)
+# 2 - Level 2 Pfafstetter Basin (i.e. 36)
+# Example Syntax: "python CheckTopology_Route_MultiDown.py AS 36"
+#*******************************************************************************
 
 #*******************************************************************************
 #Get command line arguments
@@ -39,19 +39,23 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
 parser.add_argument("basin", help="<Required> Level Two Pfafstetter Basin (i.e. 74)", type = str)
+parser.add_argument("rerun", help="whether to rerun the routing from manual or not", type = str)
 args = parser.parse_args()
 
 b = args.basin
 region = args.region
+rerun = args.rerun
 
 data_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+region+'/b'+b+'/'
 
 rrr_con_csv= data_dir + region.lower()+'_sword_reaches_hb' + b + '_v17_FG1_LSFix_MS_TopoFix_con.csv'
 rrr_bas_csv= data_dir + region.lower()+'_sword_reaches_hb' + b + '_v17_FG1_LSFix_MS_TopoFix_riv.csv'
-rrr_top_shp= data_dir + region.lower()+'_sword_reaches_hb' + b + '_v17_FG1_LSFix_MS_TopoFix.shp'
 rrr_acc_shp= data_dir + region.lower()+'_sword_reaches_hb' + b + '_v17_FG1_LSFix_MS_TopoFix_Acc.shp'
 rrr_rch_acc= data_dir + region.lower()+'_sword_reaches_hb' + b + '_v17_FG1_LSFix_MS_TopoFix_acc.csv'
-
+if rerun == 'True':
+     rrr_top_shp= data_dir + region.lower()+'_sword_reaches_hb' + b + '_v17_FG1_LSFix_MS_TopoFix_Acc.shp'
+else:
+     rrr_top_shp= data_dir + region.lower()+'_sword_reaches_hb' + b + '_v17_FG1_LSFix_MS_TopoFix.shp'
 #*******************************************************************************
 #Print input information
 #*******************************************************************************
@@ -202,6 +206,7 @@ IV_col=[]
 IV_val=[]
 # 3184
 for JS_riv_bas in range(IS_riv_bas):
+     # print(IV_riv_bas_id[JS_riv_bas])
      JS_riv_tot=IM_hsh_tot[IV_riv_bas_id[JS_riv_bas]]
 
      #If the IV_riv_tot_dn reach is in IV_riv_tot_dn_multi, then assign

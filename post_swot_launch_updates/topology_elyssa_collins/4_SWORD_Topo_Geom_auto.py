@@ -13,14 +13,12 @@ import sys
 import argparse
 
 #*******************************************************************************
-#Declaration of variables (given as command line arguments)
+#Command Line Variables / Instructions:
 #*******************************************************************************
-# 1 - rrr_pts_shp
-# 2 - rrr_riv_shp
-# 3 - rrr_top_shp
-# 4 - rrr_con_csv
-# 5 - rrr_riv_csv
-
+# 1 - SWORD Continent (i.e. AS)
+# 2 - Level 2 Pfafstetter Basin (i.e. 36)
+# Example Syntax: "python SWORD_Topo_Geom_auto.py AS 36 Main_pts.shp"
+#*******************************************************************************
 
 #*******************************************************************************
 #Get command line arguments
@@ -29,7 +27,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
 parser.add_argument("basin", help="<Required> Level Two Pfafstetter Basin (i.e. 74)", type = str)
-parser.add_argument("pts_shp_file", help="<Required> Final Geometric Intersection Point Shapefile for Topology.", type = int)
+parser.add_argument("pts_shp_file", help="<Required> Final Geometric Intersection Point Shapefile for Topology.", type = str)
 args = parser.parse_args()
 
 b = args.basin

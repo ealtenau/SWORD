@@ -56,13 +56,12 @@ warnings.filterwarnings("ignore") #if code stops working may need to comment out
 
 
 #*******************************************************************************
-#Declaration of variables (given as command line arguments)
+#Command Line Variables / Instructions:
 #*******************************************************************************
-# 1 - line_shp (river shapefile, main network)
-# 2 - geom_con_fname (initial geometric connections shapefile)
-# 3 - riv_all_shp (river shapefile, main and side network)
-# 4 - riv_out_shp (output river shapefile with reversed LineStrings)
-
+# 1 - SWORD Continent (i.e. AS)
+# 2 - Level 2 Pfafstetter Basin (i.e. 36)
+# Example Syntax: "python SWORD_GEOM_fast_v2.py AS 36 >log_files/out_36.txt"
+#*******************************************************************************
 
 #*******************************************************************************
 #Get command line arguments
@@ -281,6 +280,7 @@ indf_geom2_rch_id = []
 d_list = []
 
 for ix, r in shp.iterrows():
+    # print(ix,r['reach_id'])
     geom1 = lines[ix]
     geom1_rch_id = reach_ids[ix]
 
@@ -293,7 +293,7 @@ for ix, r in shp.iterrows():
 
     #Only comparing selected_reach to reaches within search distance (minimizes computational needs)
     for ix2, r2 in reaches_win_dist.iterrows(): 
-
+        # print(ix2,r2['reach_id'])
         geom2 = shapely.geometry.shape(reaches_win_dist.geometry[ix2])
         geom2_rch_id = reaches_win_dist.reach_id.astype('str')[ix2]
 
@@ -305,12 +305,22 @@ for ix, r in shp.iterrows():
             con_geom2_rch_id_ind = [i for i in range(len(con_geom2_rch_id)) if con_geom2_rch_id[i] == str(geom2_rch_id)]
             con_geom1_geom2_ind = [i for i in con_geom1_rch_id_ind if i in con_geom2_rch_id_ind]
 
+            ################ added on 8/9/2024 by Elizabeth Altenau. Needed for antimeridian reaches. 
+            if len(con_geom1_geom2_ind) == 0:
+                continue
+            ################
+
             con_geom2_opp_rch_id_ind = [i for i in range(len(con_geom1_rch_id)) if con_geom1_rch_id[i] == str(geom2_rch_id)]
             con_geom1_opp_rch_id_ind = [i for i in range(len(con_geom2_rch_id)) if con_geom2_rch_id[i] == str(geom1_rch_id)]
             con_geom1_geom2_opp_ind = [i for i in con_geom1_opp_rch_id_ind if i in con_geom2_opp_rch_id_ind]
 
             con_geom1_closest = [con_closest[i] for i in con_geom1_geom2_ind]    
             con_geom2_closest = [con_closest[i] for i in con_geom1_geom2_opp_ind]    
+
+            ################ added on 8/10/2024 by Elizabeth Altenau. Needed for antimeridian reaches. 
+            if len(con_geom2_closest) == 0:
+                continue
+            ################
 
         # if geom1.distance(geom2) < eps: 
 
@@ -341,8 +351,6 @@ for ix, r in shp.iterrows():
                 d_list.append(d)
 
 
-
-
 ind0_df = pd.DataFrame({'geom1_rch_id': ind0_geom1_rch_id, 'geom2_rch_id': ind0_geom2_rch_id})
 indf_df = pd.DataFrame({'geom1_rch_id': indf_geom1_rch_id, 'geom2_rch_id': indf_geom2_rch_id})
 
@@ -367,6 +375,7 @@ rch_ids_rev = [] # Reach IDs that need to have the coordinates of the linestring
 
 ## Now loop through ind0_df and figure out which reach needs to be fixed, if it needs to be fixed at all
 for ix in range(len(ind0_df)):
+    # print(ix,ind0_df['geom1_rch_id'][ix],ind0_df['geom2_rch_id'][ix])
     geom1_rch_id = ind0_df['geom1_rch_id'][ix]
     geom2_rch_id = ind0_df['geom2_rch_id'][ix]
 
@@ -538,9 +547,10 @@ for ix in range(len(ind0_df)):
             print('New junction configuration exists! Refine code. Reaches involved:')
             print(geom1_rch_id)
             print(geom2_rch_id)
+            temp_end = timer()
+            print("Time Elapsed: " + str(((temp_end - start) / 60)) + " min")
             raise SystemExit(22) 
                    
-
                 
     ## If it's not a junction, then use outlet distance to figure out which one to reverse
     elif geom1_dist_out < geom2_dist_out:
@@ -569,6 +579,7 @@ for ix in range(len(ind0_df)):
 
 ## Now loop through inf_df and figure out which reach needs to be fixed, if it needs to be fixed at all
 for ix in range(len(indf_df)):
+    # print(ix,ind0_df['geom1_rch_id'][ix],ind0_df['geom2_rch_id'][ix])
     geom1_rch_id = indf_df['geom1_rch_id'][ix]
     geom2_rch_id = indf_df['geom2_rch_id'][ix]
 
@@ -749,6 +760,8 @@ for ix in range(len(indf_df)):
             print('New junction configuration exists! Refine code. Reaches involved:')
             print(geom1_rch_id)
             print(geom2_rch_id)
+            temp_end = timer()
+            print("Time Elapsed: " + str(((temp_end - start) / 60)) + " min")
             raise SystemExit(22) 
 
 
@@ -787,6 +800,8 @@ else:
     if len(rev_chk) > 0:
         print('A reach has been reversed multiple times -- check code!')
         print(rev_chk)
+        temp_end = timer()
+        print("Time Elapsed: " + str(((temp_end - start) / 60)) + " min")
         raise SystemExit(22) 
 
 
@@ -832,7 +847,7 @@ else:
 
         #Only comparing selected_reach to reaches within search distance (minimizes computational needs)
         for ix2, r2 in reaches_win_dist.iterrows(): 
-
+            # print(ix2,r2['reach_id'])
             geom2 = shapely.geometry.shape(reaches_win_dist.geometry[ix2])
             geom2_rch_id = reaches_win_dist.reach_id[ix2]
 
@@ -847,6 +862,7 @@ else:
                 ## Sometimes the point won't exactly match up, so need to find the nearest point to connect the 2 segments
                 found = False
                 for i in range(len(geom1.coords.xy[0])):
+                    # print(i)
                     x = geom1.coords.xy[0][i]
                     y = geom1.coords.xy[1][i]
                     tmp_pt = shapely.geometry.shape({'type': 'Point', 'coordinates': [(x, y)]})
@@ -967,7 +983,7 @@ else:
 
             #Only comparing selected_reach to reaches within search distance (minimizes computational needs)
             for ix2, r2 in reaches_win_dist.iterrows(): 
-
+                # print(ix2,r2['reach_id'])
                 geom2 = shapely.geometry.shape(reaches_win_dist.geometry[ix2])
                 geom2_rch_id = reaches_win_dist.reach_id.astype('str')[ix2]
 
@@ -1205,6 +1221,8 @@ else:
                     print('New junction configuration exists! Refine code. Reaches involved:')
                     print(geom1_rch_id)
                     print(geom2_rch_id)
+                    temp_end = timer()
+                    print("Time Elapsed: " + str(((temp_end - start) / 60)) + " min")
                     raise SystemExit(22) 
 
                         
@@ -1408,6 +1426,8 @@ else:
                     print('New junction configuration exists! Refine code. Reaches involved:')
                     print(geom1_rch_id)
                     print(geom2_rch_id)
+                    temp_end = timer()
+                    print("Time Elapsed: " + str(((temp_end - start) / 60)) + " min")
                     raise SystemExit(22) 
 
 
@@ -1447,6 +1467,8 @@ else:
             print('A reach has been reversed multiple times -- check code!')
             print('The counter is: ' + str(counter))
             print(rev_chk)
+            temp_end = timer()
+            print("Time Elapsed: " + str(((temp_end - start) / 60)) + " min")
             raise SystemExit(22) 
 
 
@@ -3126,6 +3148,8 @@ else:
         df = pd.DataFrame({"reach_id": rev_chk})
         rev_ids_csv = rev_ids_csv.replace('LS.csv', 'multi.csv')
         df.to_csv(rev_ids_csv, index=False)
+        temp_end = timer()
+        print("Time Elapsed: " + str(((temp_end - start) / 60)) + " min")
         raise SystemExit(22) 
 
 

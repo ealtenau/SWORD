@@ -11,7 +11,7 @@ def check_topology(domain_reachids,domain_reach_data,Output):
       4. Check for reaches that are NOT ghost reaches but that have no upstream neighbors
       5. A reach has an upstream or downstream neighbor with the same reachid as itself
       
-      by Mike, October 2023
+      by Mike Durand, October 2023
       
       Output = 0 : show no errors or warnings
                1 : show errors but not warnings
@@ -27,6 +27,7 @@ def check_topology(domain_reachids,domain_reach_data,Output):
     reaches_with_issues=[]
 
     for reachid in domain_reachids:
+        # print(str(reachid))
         reachidstr=str(reachid)
         reachtype=reachidstr[-1]        
        
@@ -131,7 +132,7 @@ import time
 
 start = time.time()
 
-region = 'AF'
+region = 'AS'
 version = 'v17'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 

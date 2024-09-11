@@ -91,13 +91,31 @@ def get_distances(lon,lat):
 ###############################################################################
 ###############################################################################
 
-# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/EU/eu_sword_reaches_hb28_v17.shp'
-# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/NA/b72/na_sword_reaches_hb72_v17_FG1_LSFix_MS_TopoFix.shp'
-gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/na_sword_reaches_v17.gpkg' #continental gpkg file. 
-# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg copy/na_sword_reaches_v17_orig.gpkg'
-nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17.nc'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("basin", help="<Required> Level Two Pfafstetter Basin (i.e. 74)", type = str)
 
-reach = [83150700286,83150700296,81153500336]
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+basin = args.basin
+
+# region = 'AS'
+# version = 'v17'
+# basin = '46'
+
+gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+region+'/b'+basin+'/'\
+    +region.lower()+'_sword_reaches_hb'+basin+'_'+version+'_FG1_LSFix_MS_TopoFix_Acc.shp'
+csv_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+region+'/b'+basin+'/'\
+    +region.lower()+'_sword_reaches_hb'+basin+'_'+version+'_fixed_geom.csv'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
+    +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+
+# reach = [36102900451,36102900421,36102500183,36102600153,36102700203] #manual
+reach_csv = pd.read_csv(csv_fn)
+reach = list(reach_csv['reach_id'])
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]
@@ -143,6 +161,9 @@ for r in list(range(len(reach))):
         if np.abs(len(rch)-len(lon)) == 2:
             lon = lon[1:-1]
             lat = lat[1:-1]
+        if np.abs(len(rch)-len(lon)) > 2:
+            print(print('Reach Geometry Odd - Skipping: ', reach[r]))
+            continue
 
     order_ids = np.argsort(cl_id[rch])
     cl_lon[rch[order_ids]] = lon

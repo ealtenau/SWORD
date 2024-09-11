@@ -26,11 +26,25 @@ import sys
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-# from timeit import default_timer as timer
 import argparse
 
 import warnings
 warnings.filterwarnings("ignore") #if code stops working may need to comment out to check warnings. 
+
+#*******************************************************************************
+#Command Line Variables / Instructions:
+#*******************************************************************************
+# 1 - SWORD Continent (i.e. AS)
+# 2 - Level 2 Pfafstetter Basin (i.e. 36)
+# 3 = Section of code to start at (integer value 1-5)
+    # 1 - Finding and fixing geometry problems - Junctions.
+    # 2 - Finding and fixing geometry problems - Standard Reaches.
+    # 3 - Identifying Gaps.
+    # 4 - Updating Geometric Intersections.
+    # 5 - Run all sections from beginning.
+
+# Example Syntax: "python SWORD_Topo_Geom_auto.py AS 36 4"
+#*******************************************************************************
 
 #**************************************************
 # Defining helpful functions
@@ -79,6 +93,7 @@ if section in [5]:
 
     #### Read in river shapefile
     line_shp = shp_dir+region.lower()+"_sword_reaches_hb" + b + "_v17.shp"
+    # line_shp = out_dir+region.lower()+"_sword_reaches_hb" + b + "_v17_FG1.shp"
     shp = gpd.read_file(line_shp)
     eps = 5e-07 
     crs = shp.crs
@@ -192,13 +207,16 @@ if section in [1,5]:
 
     if section < 5: 
         shp = gpd.read_file(out_dir+region.lower()+'_sword_reaches_hb' + b + '_v17_FG1.shp')
+        geom_con_shp = gpd.read_file(out_dir+region.lower()+'_sword_reaches_hb'+b+'_v17_pts.shp')
         eps = 5e-07 
         crs = shp.crs
         prob_juncs = pd.read_csv(out_dir+'intermediate/prob_juncs.csv')
         prob_juncs = list(prob_juncs['reach_id'])
         head_at_junc = pd.read_csv(out_dir+'intermediate/headwater_juncs.csv')
         head_at_junc = list(head_at_junc['reach_id'])
-        rch_ass = pd.read_csv(out_dir+'intermediate/associated_rchs.csv.csv')
+        outlet_at_junc = pd.read_csv(out_dir+'intermediate/outlet_juncs.csv')
+        outlet_at_junc = list(outlet_at_junc['reach_id'])
+        rch_ass = pd.read_csv(out_dir+'intermediate/associated_rchs.csv')
         rch_ass = list(rch_ass['reach_id'])
     try:
         #### Fixing reaches with problematic geometry
@@ -272,7 +290,14 @@ if section in [1,5]:
         prob_csv.to_csv(out_dir+'intermediate/prob_juncs.csv', index = False)
         hw_csv.to_csv(out_dir+'intermediate/headwater_juncs.csv', index = False)
         ar_csv.to_csv(out_dir+'intermediate/associated_rchs.csv', index = False)
-        # ol_csv.to_csv(out_dir+'outlet_juncs.csv')
+        if 'outlet_at_junc' in locals():
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
+        else:
+            outlet_at_junc = []
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
+        
         print("All Problems Fixed - Section 1: Junction Reaches")
 
     except Exception as e:
@@ -283,6 +308,13 @@ if section in [1,5]:
         prob_csv.to_csv(out_dir+'intermediate/prob_juncs.csv', index = False)
         hw_csv.to_csv(out_dir+'intermediate/headwater_juncs.csv', index = False)
         ar_csv.to_csv(out_dir+'intermediate/associated_rchs.csv', index = False)
+        if 'outlet_at_junc' in locals():
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
+        else:
+            outlet_at_junc = []
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
         print(f"An error occurred: {e}")
         print("!! Manual Corrections Required - Section 1: Junction Reach Problems !!")
         print(print('File Reference -> intermediate/prob_juncs.csv'))
@@ -299,8 +331,8 @@ if section in [1,5]:
     shp['last_digit'] = shp['reach_id'].astype('str').str.strip().str[-1]
 
     #### Read in points shapefile containing initial geometric intersections (from init_geom.py)
-    point_shp = out_dir+region.lower()+'_sword_reaches_hb'+b+'_v17_pts.shp'
-    geom_con_shp = gpd.read_file(point_shp)
+    # point_shp = out_dir+region.lower()+'_sword_reaches_hb'+b+'_v17_pts.shp'
+    # geom_con_shp = gpd.read_file(point_shp)
     reach_ids = geom_con_shp['geom1_rch_'].unique()
     # len(reach_ids)
 
@@ -365,16 +397,20 @@ if section in [1,2,5]:
     
     if section < 5: #re-read files when re-starting later sections after manual edits. 
         shp = gpd.read_file(out_dir+region.lower()+'_sword_reaches_hb' + b + '_v17_FG1.shp')
+        geom_con_shp = gpd.read_file(out_dir+region.lower()+'_sword_reaches_hb'+b+'_v17_pts.shp')
         eps = 5e-07 
         crs = shp.crs
         prob_juncs = pd.read_csv(out_dir+'intermediate/prob_juncs.csv')
         prob_juncs = list(prob_juncs['reach_id'])
         head_at_junc = pd.read_csv(out_dir+'intermediate/headwater_juncs.csv')
         head_at_junc = list(head_at_junc['reach_id'])
-        rch_ass = pd.read_csv(out_dir+'intermediate/associated_rchs.csv.csv')
+        outlet_at_junc = pd.read_csv(out_dir+'intermediate/outlet_juncs.csv')
+        outlet_at_junc = list(outlet_at_junc['reach_id'])
+        rch_ass = pd.read_csv(out_dir+'intermediate/associated_rchs.csv')
         rch_ass = list(rch_ass['reach_id'])
-        prob_rch_fix = pd.read_csv(out_dir+'intermediate/prob_rchs.csv')
-        prob_rch_fix = list(prob_rch_fix['reach_id'])        
+        if 'prob_rch_fix' in locals() == False:
+            prob_rch_fix = pd.read_csv(out_dir+'intermediate/prob_rchs.csv')
+            prob_rch_fix = list(prob_rch_fix['reach_id'])        
 
     try:
         #### Fixing reaches with problematic geometry
@@ -464,6 +500,13 @@ if section in [1,2,5]:
         ar_csv = pd.DataFrame({"reach_id": rch_ass})
         prob_csv.to_csv(out_dir+'intermediate/prob_rchs.csv', index = False)
         ar_csv.to_csv(out_dir+'intermediate/associated_rchs.csv', index = False)
+        if 'outlet_at_junc' in locals():
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
+        else:
+            outlet_at_junc = []
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
         print('All Problems Fixed - Section 2: Standard Reaches')
 
     except Exception as e:
@@ -472,6 +515,13 @@ if section in [1,2,5]:
         ar_csv = pd.DataFrame({"reach_id": rch_ass})
         prob_csv.to_csv(out_dir+'intermediate/prob_rchs.csv', index = False)
         ar_csv.to_csv(out_dir+'intermediate/associated_rchs.csv', index = False)
+        if 'outlet_at_junc' in locals():
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
+        else:
+            outlet_at_junc = []
+            ol_csv = pd.DataFrame({"reach_id": outlet_at_junc})
+            ol_csv.to_csv(out_dir+'intermediate/outlet_juncs.csv', index = False)
         print(f"An error occurred: {e}")
         print("!! Manual Corrections Required - Section 2: Standard Reach Problems !!")
         print('File Reference -> intermediate/prob_rchs.csv')
@@ -489,13 +539,16 @@ if section in [1,2,3,5]:
 
     if section < 5: #re-read files when re-starting later sections after manual edits. 
         shp = gpd.read_file(out_dir+region.lower()+'_sword_reaches_hb' + b + '_v17_FG1.shp')
+        geom_con_shp = gpd.read_file(out_dir+region.lower()+'_sword_reaches_hb'+b+'_v17_pts.shp')
         eps = 5e-07 
         crs = shp.crs
         prob_juncs = pd.read_csv(out_dir+'intermediate/prob_juncs.csv')
         prob_juncs = list(prob_juncs['reach_id'])
         head_at_junc = pd.read_csv(out_dir+'intermediate/headwater_juncs.csv')
         head_at_junc = list(head_at_junc['reach_id'])
-        rch_ass = pd.read_csv(out_dir+'intermediate/associated_rchs.csv.csv')
+        outlet_at_junc = pd.read_csv(out_dir+'intermediate/outlet_juncs.csv')
+        outlet_at_junc = list(outlet_at_junc['reach_id'])
+        rch_ass = pd.read_csv(out_dir+'intermediate/associated_rchs.csv')
         rch_ass = list(rch_ass['reach_id'])
         prob_rch_fix = pd.read_csv(out_dir+'intermediate/prob_rchs.csv')
         prob_rch_fix = list(prob_rch_fix['reach_id'])
@@ -577,6 +630,12 @@ if section in [1,2,3,4,5]:
     #**************************************************
     #### Read in river shapefile with fixed geometry and points shapefile containing initial 
     #### geometric intersections (from init_geom.py)
+    #### Read in juctions and associated reach, etc. files. 
+    #### When the topology algorithm breaks and new geometry errors are found and fixed, 
+    #### update the 'intermediate/prob_rchs_all.csv','intermediate/prob_rchs_all.csv',
+    #### and 'intermediate/headwater_juncs.csv' files. Then start this code with 
+    #### section = 4 (i.e.: python SWORD_Prep_Topo_Clean.py AS 36 4).
+
     if section < 5: #re-read files when re-starting later sections after manual edits. 
         shp = gpd.read_file(out_dir+region.lower()+'_sword_reaches_hb' + b + '_v17_FG1.shp')
         eps = 5e-07 
@@ -585,42 +644,10 @@ if section in [1,2,3,4,5]:
         prob_juncs = list(prob_juncs['reach_id'])
         head_at_junc = pd.read_csv(out_dir+'intermediate/headwater_juncs.csv')
         head_at_junc = list(head_at_junc['reach_id'])
+        outlet_at_junc = pd.read_csv(out_dir+'intermediate/outlet_juncs.csv')
+        outlet_at_junc = list(outlet_at_junc['reach_id'])
         rch_ass = pd.read_csv(out_dir+'intermediate/associated_rchs.csv')
         rch_ass = list(rch_ass['reach_id'])
-
-    #read in juctions and associated reach, etc. files. 
-    #create condition for if the topology algorithm breaks. 
-
-    #### Example below for basin 22 for continuing to extend 'prob_juncs', 'rch_ass', 'head_at_junc',
-    #### and 'outlet_at_junc' lists for when the topology algorithm breaks and new geometry
-    #### errors are found and fixed
-
-    ## eu_sword_reaches_hb22_v17_FG1.shp
-    # prob_juncs.extend([22520100191, 22310000101])
-    # rch_ass.extend(['22520100041', '22520100031', '22330000101', '22330000091'])
-    # prob_juncs.extend([22204000321])
-    # rch_ass.extend(['22204000316', '22204001701', '22204000303'])
-    # prob_juncs.extend([22203000513, 22204002021, 22380500071])
-    # rch_ass.extend(['22203000493', '22203000501', '22204002011', '22204002003', '22380500061', '22380500051'])
-
-    # head_at_junc.extend([22795000021])
-
-    # prob_juncs = [22160700096, 22350100226, 22380700036, 22206000806, 22206000616, 22203000726, 22206000536, 22204001756, 22202900401, 22204002011, 22380500061, 22203000501, 22520100191, 22310000101]
-    # rch_ass = ['22160700103', '22160700084', '22350100234', '22350100211', '22380700041', '22380700021', '22206000811', '22206000791', '22206000623', '22206000603', '22203000731', '22203000713', '22206000543', '22206000523', '22204001761', '22204001743', '22202900413', '22202900393', '22204002021', '22204002003', '22380500071', '22380500051', '22203000513', '22203000493', '22520100041', '22520100031', '22330000101', '22330000091']
-    # head_at_junc = [22204000016, 22202600266, 22520400616, 22736000993]
-    # outlet_at_junc = []
-    #### Above 4 lines, I'm keeping track of all of the reaches stored in each of the variables so that it's easier to run multiple basins
-    #### simulataneously and not have to rerun the above code for finding geometry problems
-
-
-    # prob_juncs = 
-    # rch_ass = 
-    # head_at_junc = 
-    # outlet_at_junc = 
-
-    # prob_juncs.extend([])
-    # rch_ass.extend([''])
-
 
     #### Now finding new geomtric intersections where edits were made
     rch_ass_int = [int(r) for r in rch_ass]
