@@ -111,7 +111,7 @@ def append_data(reaches, subreaches, cnt):
 
 ###############################################################################
 #sword_rivers = np.sort(glob.glob('E:/Users/Elizabeth Humphries/Documents/SWORD/For_Server/outputs/Reaches_Nodes_v10/netcdf/*v10*'))
-sword_rivers = np.sort(glob.glob('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/*v16*'))
+sword_rivers = np.sort(glob.glob('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/*v17*'))
 # sword_obs = np.sort(glob.glob('/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/SWOT_Coverage_Ice/v14/netcdf/*v14*'))
 sword = Object()
 cnt = 0
@@ -138,6 +138,14 @@ rivers = np.where(sword.type == 1)[0]
 (len(dams)/len(All))*100 #10.5 (v10), 10.5 (v11)
 (len(lakes)/len(All))*100 #10.1 (v10), 10.1 (v11)
 (len(coast)/len(All))*100 #6.6 (v10), 6.4 (v11)
+
+#type pie chart
+p = np.array([(len(rivers)/len(All))*100, (len(dams)/len(All))*100 , 
+              (len(lakes)/len(All))*100, (len(coast)/len(All))*100])
+mylabels = ["Rivers", "Dams", "Lakes on Rivers", "Unreliable Topology"]
+mycolors = ["royalblue", "crimson", "deepskyblue", "gold"]
+plt.pie(p,labels = mylabels, colors = mycolors)
+plt.show() 
 
 ## reach length percentages
 np.sum(sword.len[dams])/np.sum(sword.len[All]) #0.5%
@@ -174,8 +182,8 @@ np.median(sword.swot_obs[All]) #2
 (len(np.where(sword.len[All] < 5000)[0])/len(sword.len[All]))*100 # 23.0% 
 (len(np.where(sword.len[rivers] < 5000)[0])/len(sword.len[rivers]))*100 # 10.9% 
 
-(len(np.where(sword.len[All] < 10000)[0])/len(sword.len[All]))*100 # 37.2% 
-(len(np.where(sword.len[rivers] < 10000)[0])/len(sword.len[rivers]))*100 # 23.9% 
+# (len(np.where(sword.len[All] < 10000)[0])/len(sword.len[All]))*100 # 37.2% 
+# (len(np.where(sword.len[rivers] < 10000)[0])/len(sword.len[rivers]))*100 # 23.9% 
 
 
 (len(np.where((sword.len[All] >= 5000) & (sword.len[All] < 10000))[0])/len(sword.len[All]))*100 # 14.2%
