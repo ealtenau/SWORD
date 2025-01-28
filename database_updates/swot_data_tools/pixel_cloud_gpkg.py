@@ -6,8 +6,8 @@ from shapely.geometry import Point
 import time
 
 start=time.time()
-fn_dir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/MakenzieDelta/'
-file = 'SWOT_L2_HR_PIXC_001_431_280R_20230805T150237_20230805T150248_PIA1_01.nc'
+fn_dir = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Greenland/'
+file = 'SWOT_L2_HR_PIXC_022_348_025R_20241013T185637_20241013T185649_PIC0_01.nc'
 fn = fn_dir+file
 
 

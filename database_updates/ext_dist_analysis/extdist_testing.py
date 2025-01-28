@@ -22,8 +22,6 @@ import itertools
 from geopandas import GeoSeries
 from shapely.geometry import LineString, Point
 
-
-
 ###############################################################################
 
 def meters_to_degrees(meters, latitude):
@@ -65,7 +63,7 @@ def create_geom(nid, pt_ind, nx, ny, ortho):
 ### Reading in data. 
 
 ### netcdf input large amount of data.
-# sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_glows/netcdf/na_sword_v16_glows_5constant.nc'
+# sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_glows/netcdf/na_sword_v16_glows.nc'
 # sword = nc.Dataset(sword_fn,'r+')
 # nx = np.array(sword['/nodes/x/'][:])
 # ny = np.array(sword['/nodes/y/'][:])
@@ -78,8 +76,8 @@ def create_geom(nid, pt_ind, nx, ny, ortho):
 # rid = np.array(sword['/nodes/reach_id/'][:])
 # ext_dist = np.array(sword['/nodes/ext_dist_coef/'][:])
 
-modifier = 'wil_orthos0_base.gpkg'
-sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/testing_files/willamette_extdist_test_subset_v16_glows.gpkg'
+modifier = 'yukon1_3sig_max5_node_level_wth_nchan3_maxval.gpkg'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/testing_files/yukon_extdist_test_subset_v16_glows.shp'
 sword = gp.read_file(sword_fn)
 nx = np.array(sword['x'])
 ny = np.array(sword['y'])
@@ -97,7 +95,7 @@ sword_pts = np.vstack((nx,ny)).T
 kdt = sp.cKDTree(sword_pts)
 pt_dist, pt_ind = kdt.query(sword_pts, k = 5) 
 
-ext_dist = np.repeat(5,len(nid)) #setting everything a value of 3 to start. 
+# ext_dist = np.repeat(5,len(nid)) #setting everything a value of 3 to start. 
 
 # single channel = 5 multichannel = 10. 
 # ext_dist = np.repeat(5,len(nid))
@@ -119,24 +117,24 @@ ext_dist = np.repeat(5,len(nid)) #setting everything a value of 3 to start.
 #         ext_dist[npts] = chan_med
 
 #trying cassie's ratio with glow-s data. 
-ext_dist = np.repeat(5,len(nid))
+max_val = 5
 unq_rchs = np.unique(rid)
 for r in list(range(len(unq_rchs))):
     npts = np.where(rid == unq_rchs[r])[0]
     max_sig = np.max(glows_sig[npts])
-    chan_med = np.median(nchan_max[npts])
-    if max_sig > 0:
-        ext_dist[npts] = (wth[npts]+(3*max_sig))/wth[npts]
-        if chan_med > 1:
-            update = np.where((ext_dist[npts] < 5) & (ext_dist[npts] > 10))[0]
-            ext_dist[npts[update]] = 5
-ext_dist[np.where(ext_dist < 0)] = 5
-# ext_dist[np.where(ext_dist > 10)] = 5
+    # chan_med = np.median(nchan_max[npts])
+    sigs = np.where((glows_sig[npts] > 0) & (ext_dist[npts] != 1))[0]
+    if len(sigs) > 0:
+        # ext_dist[npts[sigs]] = np.ceil((wth[npts[sigs]]+(3*glows_sig[npts[sigs]]))/wth[npts[sigs]])
+        ext_dist[npts[sigs]] = np.ceil((wth[npts[sigs]]+(3*max_sig))/wth[npts[sigs]])
+ext_dist[np.where(ext_dist < 1)] = 1
+ext_dist[np.where(ext_dist > max_val)] = max_val
+ext_dist[np.where(nchan_mod >= 3)[0]] = max_val
 
 # ortho = (max_wth/2) * ext_dist #creating orthogonal distance to display.
 # ortho = ((max_wth/3)*3/2) * ext_dist
 # ortho = (wth/2) * ext_dist 
-ortho = ((wth/3)*3/2) * ext_dist
+ortho = ((wth/3)*3/2) * ext_dist #creating orthogonal distance to display.
 
 geom = create_geom(nid, pt_ind, nx, ny, ortho)
 

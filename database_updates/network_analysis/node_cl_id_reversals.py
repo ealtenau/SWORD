@@ -17,8 +17,8 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-# region = 'NA'
-# version = 'v17'
+# region = 'SA'
+# version = 'v18'
 
 # nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17_reversal_testing.nc'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -222,8 +222,27 @@ sword.close()
 end_all = time.time()
 print('*** '+region + ' Done in: '+str(np.round((end_all-start_all)/60,2))+' mins ***')
 
+##### Subsetting if don't want to edit entire NetCDF #######
+# node_l6 = np.array([int(str(ind)[0:6]) for ind in nodes])
+# cl_l6 = np.array([int(str(ind)[0:6]) for ind in cl_rchs[0,:]])
+# node_update = np.where(node_l6 == 672099)[0]
+# cl_update = np.where(cl_l6 == 672099)[0]
 
+# print('Updating the NetCDF')
+# sword.groups['nodes'].variables['node_id'][node_update] = nodes[node_update]
+# sword.groups['nodes'].variables['cl_ids'][:,node_update] = node_cl_ids[:,node_update]
+# sword.groups['nodes'].variables['dist_out'][node_update] = node_dist[node_update]
+# sword.groups['centerlines'].variables['cl_id'][cl_update] = cl_ids[cl_update]
+# sword.groups['centerlines'].variables['node_id'][:,cl_update] = cl_nodes[:,cl_update]
+# sword.groups['centerlines'].variables['reach_id'][:,cl_update] = cl_rchs[:,cl_update]
+# sword.close()
+# end_all = time.time()
+# print('*** '+region + ' Done in: '+str(np.round((end_all-start_all)/60,2))+' mins ***')
+# print('reaches updated:', len(np.unique(cl_rchs[0,cl_update])))
+
+############################################
 ##### OLD CENTERLINE REVERSAL SCRIPT #######
+############################################
 # print('Reversing Centerline IDs')
 # cl_pts = np.vstack((cl_x, cl_y)).T
 # kdt = sp.cKDTree(cl_pts)

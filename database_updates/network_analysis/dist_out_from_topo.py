@@ -21,7 +21,7 @@ region = args.region
 version = args.version
 basin = args.basin
 
-# region = 'OC'
+# region = 'SA'
 # basin = 'All'
 # version = 'v17'
 

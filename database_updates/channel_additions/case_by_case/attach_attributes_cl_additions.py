@@ -10,6 +10,7 @@ from shapely.geometry import Point
 import pandas as pd
 from osgeo import ogr
 import matplotlib.pyplot as plt
+from geopy import Point, distance
 
 ###############################################################################
 
@@ -552,16 +553,29 @@ def save_mhv_nc(cl, region, outfile):
     root_grp.close()
 
 ###############################################################################
+
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
+
+###############################################################################
+###############################################################################
 ##############################    MAIN CODE    ################################
 ###############################################################################
 
 start_all = time.time()
 
 #Define input directories and filenames. Will need to be changed based on user needs.
-region = 'NA'
+region = 'SA'
 data_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/'
 cl_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_channel_additions2_v17_pts.gpkg'
-outfile = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_channel_additions3.nc'
+outfile = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'+region.lower()+'_channel_additions2.nc'
 
 # Global Paths.
 fn_grand = data_dir + 'GRAND/GRanD_dams_v1_1.shp'
@@ -592,8 +606,12 @@ for s in list(range(len(unq_seg))):
     seg = np.where(cl.new_seg == unq_seg[s])[0]
     mn = np.where(cl.ind[seg] == np.min(cl.ind[seg]))[0]
     mx = np.where(cl.ind[seg] == np.max(cl.ind[seg]))[0]
-    gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(cl.x[seg], cl.y[seg]),crs="EPSG:4326").to_crs("EPSG:3857")
-    diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(cl.x[seg], cl.y[seg]),crs="EPSG:4326").to_crs("EPSG:3857")
+    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
+    # dist = np.cumsum(diff)
+    x_coords = cl.x[seg]
+    y_coords = cl.y[seg]
+    diff = get_distances(x_coords,y_coords)
     dist = np.cumsum(diff)
     cl.dist[seg] = dist
     cl.eps[seg[mn]] = 1

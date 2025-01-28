@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 # region = args.region
 # version = args.version
 
-region = 'AS'
-version = 'v17'
+region = 'SA'
+version = 'v18'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'

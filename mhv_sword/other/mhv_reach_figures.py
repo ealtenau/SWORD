@@ -9,7 +9,7 @@ import random
 ###############################################################################
 ###############################################################################
 
-reaches_len = np.copy(subcls.rch_len6)
+reaches_len = np.copy(subcls.rch_len1)
 Type = np.copy(subcls.type6)
 
 np.mean(reaches_len)/1000
@@ -121,8 +121,8 @@ plt.scatter(subcls.x[r3], subcls.y[r3], c = 'cyan')
 plt.show()
 
 
-rch = np.where(subcls.rch_id2 == 25516)[0]
-plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.ind[rch])
+rch = np.where(subcls.rch_id2 == 5595)[0]
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.seg[rch])
 plt.show()
 
 
@@ -208,4 +208,9 @@ plt.scatter(subcls.x[r], subcls.y[r], c = subcls.seg[r])
 plt.show()
 
 plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.seg[rch])
+plt.show()
+
+
+rch = np.where(subcls.rch_id5 == 94.0)[0]
+plt.scatter(subcls.x[rch], subcls.y[rch], c = subcls.rch_dist5[rch])
 plt.show()

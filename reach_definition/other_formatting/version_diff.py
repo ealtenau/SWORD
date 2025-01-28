@@ -10,7 +10,7 @@ import numpy as np
 from scipy import spatial as sp
 import pandas as pd
 
-region = 'OC'
+region = 'NA'
 new_v = 'v17'
 old_v = 'v16'
 
@@ -49,6 +49,9 @@ indexes = eps_ind[:,0]
 dist = eps_dist[:,0]
 old_node_ids = oid[indexes]
 old_reach_ids = orch_id[indexes]
+
+# test = np.where(dist < 0.0005)
+# np.median(dist[test])*111000
 
 # Flag any nodes with a previous version node greater than 500 m away (i.e. new centerline channel).
 new_cls = np.where(dist > 0.005)[0]

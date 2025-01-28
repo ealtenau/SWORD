@@ -5,6 +5,7 @@ from scipy import spatial as sp
 import netCDF4 as nc
 from pyproj import Proj
 import math
+from geopy import distance
 
 ###############################################################################
 
@@ -43,10 +44,10 @@ def read_merge_netcdf(filename):
     data.lat = np.array(new.groups['centerlines'].variables['y'][:])
     data.x = np.array(new.groups['centerlines'].variables['easting'][:])
     data.y = np.array(new.groups['centerlines'].variables['northing'][:])
-    data.seg = np.array(new.groups['centerlines'].variables['segID'][:])
-    data.ind = np.array(new.groups['centerlines'].variables['segInd'][:])
+    data.seg = np.array(new.groups['centerlines'].variables['new_segs'][:]) #use to be segID
+    data.ind = np.array(new.groups['centerlines'].variables['new_segs_ind'][:]) #use to be segInd
     data.id = np.array(new.groups['centerlines'].variables['cl_id'][:])
-    data.segDist = np.array(new.groups['centerlines'].variables['segDist'][:])
+    data.dist = np.array(new.groups['centerlines'].variables['new_segDist'][:]) #use to be segDist
     data.wth = np.array(new.groups['centerlines'].variables['p_width'][:])
     data.elv = np.array(new.groups['centerlines'].variables['p_height'][:])
     data.facc = np.array(new.groups['centerlines'].variables['flowacc'][:])
@@ -132,6 +133,18 @@ def reproject_utm(latitude, longitude):
 
 ###############################################################################
 
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
+
+###############################################################################
+
 def calc_segDist(subcls_lon, subcls_lat, subcls_rch_id, subcls_facc,
                  subcls_rch_ind):
 
@@ -163,29 +176,26 @@ def calc_segDist(subcls_lon, subcls_lat, subcls_rch_id, subcls_facc,
         seg = np.where(subcls_rch_id == uniq_segs[ind])[0]
         seg_lon = subcls_lon[seg]
         seg_lat = subcls_lat[seg]
-        seg_x, seg_y, __, __ = reproject_utm(seg_lat, seg_lon)
         upa = subcls_facc[seg]
 
-        #order the reach points based on index values, then calculate the
-        #eculdean distance bewteen each ordered point.
-        order_ids = np.argsort(subcls_rch_ind[seg])
-        dist = np.zeros(len(seg))
-        dist[order_ids[0]] = 0
-        for idx in list(range(len(order_ids)-1)):
-            d = np.sqrt((seg_x[order_ids[idx]]-seg_x[order_ids[idx+1]])**2 +
-                        (seg_y[order_ids[idx]]-seg_y[order_ids[idx+1]])**2)
-            dist[order_ids[idx+1]] = d + dist[order_ids[idx]]
+        #segment distance
+        sort_ind = np.argsort(subcls_rch_ind[seg])
+        x_coords = seg_lon[sort_ind]
+        y_coords = seg_lat[sort_ind]
+        diff = get_distances(x_coords,y_coords)
+        dist = np.cumsum(diff)
 
+        segDist[seg] = dist
+        
         #format flow distance as array and determine flow direction by flowacc.
-        dist = np.array(dist)
-        start = upa[np.where(dist == np.min(dist))[0][0]]
-        end = upa[np.where(dist == np.max(dist))[0][0]]
+        # start = upa[np.where(dist == np.min(dist))[0][0]]
+        # end = upa[np.where(dist == np.max(dist))[0][0]]
 
-        if end > start:
-            segDist[seg] = abs(dist-np.max(dist))
+        # if end > start:
+        #     segDist[seg] = abs(dist-np.max(dist))
 
-        else:
-            segDist[seg] = dist
+        # else:
+        #     segDist[seg] = dist
 
     return segDist
 
@@ -1015,7 +1025,6 @@ def update_rch_indexes(subcls, new_rch_id):
         rch_ind = subcls.ind[rch]
         rch_segs = subcls.seg[rch]
         unq_segs = np.unique(subcls.seg[rch]) #subcls.seg[rch[index]]
-        # print(ind, len(unq_segs))
         if len(unq_segs) == 1:
             new_rch_ind[rch] = subcls.ind[rch]
             ep1 = np.where(subcls.ind[rch] == np.min(subcls.ind[rch]))[0]
@@ -1023,9 +1032,10 @@ def update_rch_indexes(subcls, new_rch_id):
             new_rch_eps[rch[ep1]] = 1
             new_rch_eps[rch[ep2]] = 1
             #reverse index order to have indexes increasing in the upstream direction.
-            if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
-                new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))   
+            # if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
+            #     new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))   
         else:
+            print(ind, len(unq_segs))
             rch_ind_temp = np.zeros(len(rch))
             for r in list(range(len(unq_segs))):
                 seg = np.where(rch_segs == unq_segs[r])[0]
@@ -1302,11 +1312,17 @@ def aggregate_rivers(subcls, min_dist):
     new_rch_id = np.copy(subcls.rch_id1)
     new_rch_dist = np.copy(subcls.rch_len1)
     new_flag = np.copy(subcls.type1)
-    level4 = np.array([int(str(point)[0:4]) for point in subcls.basins])
-    uniq_basins = np.unique(level4) #np.unique(subcls.basins)
+    # level4 = np.array([int(str(point)[0:4]) for point in subcls.basins])
+    # uniq_basins = np.unique(level4) #np.unique(subcls.basins)
+    
+    # on 1/24/2025 I changed the scale for aggregation to the segment level from 
+    # the basin level to try and cut down on index issues. This is only for 
+    # mhv based reaches.
+    uniq_basins = np.unique(subcls.seg)
     for ind in list(range(len(uniq_basins))):
         # print(ind, 'BASIN = ', uniq_basins[ind])
-        basin = np.where(level4 == uniq_basins[ind])[0]
+        # basin = np.where(level4 == uniq_basins[ind])[0]
+        basin = np.where(subcls.seg == uniq_basins[ind])[0]
         basin_l6 =  subcls.basins[basin]
         basin_rch = subcls.rch_id1[basin]
         basin_dist = subcls.rch_len1[basin]
@@ -2244,11 +2260,17 @@ def aggregate_lakes(subcls, min_dist):
     new_rch_id = np.copy(subcls.rch_id2)
     new_rch_dist = np.copy(subcls.rch_len2)
     new_flag = np.copy(subcls.type2)
-    level4 = np.array([np.int(np.str(point)[0:4]) for point in subcls.basins])
-    uniq_basins = np.unique(level4) #np.unique(subcls.basins)
+    # level4 = np.array([int(str(point)[0:4]) for point in subcls.basins])
+    # uniq_basins = np.unique(level4) #np.unique(subcls.basins)
+    
+    # on 1/24/2025 I changed the scale for aggregation to the segment level from 
+    # the basin level to try and cut down on index issues. This is only for 
+    # mhv based reaches.
+    uniq_basins = np.unique(subcls.seg)
     for ind in list(range(len(uniq_basins))):
         #print(ind)
-        basin = np.where(level4 == uniq_basins[ind])[0]
+        # basin = np.where(level4 == uniq_basins[ind])[0]
+        basin = np.where(subcls.seg == uniq_basins[ind])[0]
         basin_l6 =  subcls.basins[basin]
         basin_rch = subcls.rch_id2[basin]
         basin_dist = subcls.rch_len2[basin]
@@ -3049,11 +3071,17 @@ def aggregate_dams(subcls, min_dist):
     new_rch_id = np.copy(subcls.rch_id3)
     new_rch_dist = np.copy(subcls.rch_len3)
     new_flag = np.copy(subcls.type3)
-    level4 = np.array([np.int(np.str(point)[0:4]) for point in subcls.basins])
-    uniq_basins = np.unique(level4) #np.unique(subcls.basins)
+    # level4 = np.array([int(str(point)[0:4]) for point in subcls.basins])
+    # uniq_basins = np.unique(level4) #np.unique(subcls.basins)
+    
+    # on 1/24/2025 I changed the scale for aggregation to the segment level from 
+    # the basin level to try and cut down on index issues. This is only for 
+    # mhv based reaches.
+    uniq_basins = np.unique(subcls.seg)
     for ind in list(range(len(uniq_basins))):
         #print(ind)
-        basin = np.where(level4 == uniq_basins[ind])[0]
+        # basin = np.where(level4 == uniq_basins[ind])[0]
+        basin = np.where(subcls.seg == uniq_basins[ind])[0]
         basin_l6 =  subcls.basins[basin]
         basin_rch = subcls.rch_id3[basin]
         basin_dist = subcls.rch_len3[basin]
@@ -4253,19 +4281,19 @@ def reach_topology(subcls):
         rch_topo[basin[np.where(notopo_order > 0)]] = notopo_order[np.where(notopo_order > 0)]
 
     # Create formal reach id.
-    reach_id = np.zeros(len(rch_topo), dtype = np.int64)
+    reach_id = np.zeros(len(rch_topo), dtype = int)
     for ind in list(range(len(rch_topo))):
-        if len(np.str(np.int(rch_topo[ind]))) == 1:
+        if len(str(int(rch_topo[ind]))) == 1:
             fill = '000'
-            reach_id[ind] = np.int(np.str(subcls.basins[ind])+fill+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
-        if len(np.str(np.int(rch_topo[ind]))) == 2:
+            reach_id[ind] = int(str(subcls.basins[ind])+fill+str(int(rch_topo[ind]))+str(int(subcls.type5[ind])))
+        if len(str(int(rch_topo[ind]))) == 2:
             fill = '00'
-            reach_id[ind] = np.int(np.str(subcls.basins[ind])+fill+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
-        if len(np.str(np.int(rch_topo[ind]))) == 3:
+            reach_id[ind] = int(str(subcls.basins[ind])+fill+str(int(rch_topo[ind]))+str(int(subcls.type5[ind])))
+        if len(str(int(rch_topo[ind]))) == 3:
             fill = '0'
-            reach_id[ind] = np.int(np.str(subcls.basins[ind])+fill+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
-        if len(np.str(np.int(rch_topo[ind]))) == 4:
-            reach_id[ind] = np.int(np.str(subcls.basins[ind])+np.str(np.int(rch_topo[ind]))+np.str(np.int(subcls.type5[ind])))
+            reach_id[ind] = int(str(subcls.basins[ind])+fill+str(int(rch_topo[ind]))+str(int(subcls.type5[ind])))
+        if len(str(int(rch_topo[ind]))) == 4:
+            reach_id[ind] = int(str(subcls.basins[ind])+str(int(rch_topo[ind]))+str(int(subcls.type5[ind])))
 
     return reach_id, rch_topo
 
@@ -4303,7 +4331,7 @@ def node_reaches(subcls, node_len):
     # Set variables.
     node_num = np.zeros(len(subcls.rch_id5))
     node_dist = np.zeros(len(subcls.rch_id5), dtype = 'f8')
-    node_id = np.zeros(len(subcls.rch_id5), dtype = np.int64)
+    node_id = np.zeros(len(subcls.rch_id5), dtype = int)
     uniq_rch = np.unique(subcls.rch_id5)
 
     # Loop through each reach and divide it up based on the specified node
@@ -4329,7 +4357,7 @@ def node_reaches(subcls, node_len):
 
         divs_dist = d/divs
 
-        break_index = np.zeros(np.int(divs-1))
+        break_index = np.zeros(int(divs-1))
         for idx in range(int(divs)-1):
             dist = divs_dist*(range(int(divs)-1)[idx]+1)+np.min(distance)
             cut = np.where(abs(distance - dist) == np.min(abs(distance - dist)))[0][0]
@@ -4373,16 +4401,16 @@ def node_reaches(subcls, node_len):
 
         # Create formal Node ID.
         for inz in list(range(len(rch))):
-            #if len(np.str(np.int(node_num[rch[inz]]))) > 3:
+            #if len(str(int(node_num[rch[inz]]))) > 3:
                 #print(ind)
-            if len(np.str(np.int(node_num[rch[inz]]))) == 1:
+            if len(str(int(node_num[rch[inz]]))) == 1:
                 fill = '00'
-                node_id[rch[inz]] = np.int(np.str(subcls.reach_id[rch[inz]])[:-1]+fill+np.str(np.int(node_num[rch[inz]]))+np.str(subcls.reach_id[rch[inz]])[10:11])
-            if len(np.str(np.int(node_num[rch[inz]]))) == 2:
+                node_id[rch[inz]] = int(str(subcls.reach_id[rch[inz]])[:-1]+fill+str(int(node_num[rch[inz]]))+str(subcls.reach_id[rch[inz]])[10:11])
+            if len(str(int(node_num[rch[inz]]))) == 2:
                 fill = '0'
-                node_id[rch[inz]] = np.int(np.str(subcls.reach_id[rch[inz]])[:-1]+fill+np.str(np.int(node_num[rch[inz]]))+np.str(subcls.reach_id[rch[inz]])[10:11])
-            if len(np.str(np.int(node_num[rch[inz]]))) == 3:
-                node_id[rch[inz]] = np.int(np.str(subcls.reach_id[rch[inz]])[:-1]+np.str(np.int(node_num[rch[inz]]))+np.str(subcls.reach_id[rch[inz]])[10:11])
+                node_id[rch[inz]] = int(str(subcls.reach_id[rch[inz]])[:-1]+fill+str(int(node_num[rch[inz]]))+str(subcls.reach_id[rch[inz]])[10:11])
+            if len(str(int(node_num[rch[inz]]))) == 3:
+                node_id[rch[inz]] = int(str(subcls.reach_id[rch[inz]])[:-1]+str(int(node_num[rch[inz]]))+str(subcls.reach_id[rch[inz]])[10:11])
 
     return node_id, node_dist, node_num
 
@@ -4577,31 +4605,31 @@ def ghost_reaches(subcls):
         for ind in list(range(len(uniq_nodes))):
             ghost = np.where(new_nodes == uniq_nodes[ind])[0]
             for idx in list(range(len(ghost))):
-                #new_nodes[ghost[idx]] = np.int(np.str(new_nodes[ghost[idx]])[:-1]+str(6))
-                #new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+str(6))
+                #new_nodes[ghost[idx]] = int(str(new_nodes[ghost[idx]])[:-1]+str(6))
+                #new_reaches[ghost[idx]] = int(str(new_reaches[ghost[idx]])[:-1]+str(6))
 
                 #new reach id
-                if len(np.str(rch_num)) == 1:
+                if len(str(rch_num)) == 1:
                     fill = '000'
-                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
-                if len(np.str(rch_num)) == 2:
+                    new_reaches[ghost[idx]] = int(str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
+                if len(str(rch_num)) == 2:
                     fill = '00'
-                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
-                if len(np.str(rch_num)) == 3:
+                    new_reaches[ghost[idx]] = int(str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
+                if len(str(rch_num)) == 3:
                     fill = '0'
-                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
-                if len(np.str(rch_num)) == 4:
-                    new_reaches[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[0:6]+str(rch_num)+str(6))
+                    new_reaches[ghost[idx]] = int(str(new_reaches[ghost[idx]])[0:6]+fill+str(rch_num)+str(6))
+                if len(str(rch_num)) == 4:
+                    new_reaches[ghost[idx]] = int(str(new_reaches[ghost[idx]])[0:6]+str(rch_num)+str(6))
 
                 #new node id
-                if len(np.str(nd_num)) == 1:
+                if len(str(nd_num)) == 1:
                     fill = '00'
-                    new_nodes[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+fill+str(nd_num)+str(6))
-                if len(np.str(nd_num)) == 2:
+                    new_nodes[ghost[idx]] = int(str(new_reaches[ghost[idx]])[:-1]+fill+str(nd_num)+str(6))
+                if len(str(nd_num)) == 2:
                     fill = '0'
-                    new_nodes[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+fill+str(nd_num)+str(6))
-                if len(np.str(nd_num)) == 3:
-                    new_nodes[ghost[idx]] = np.int(np.str(new_reaches[ghost[idx]])[:-1]+str(nd_num)+str(6))
+                    new_nodes[ghost[idx]] = int(str(new_reaches[ghost[idx]])[:-1]+fill+str(nd_num)+str(6))
+                if len(str(nd_num)) == 3:
+                    new_nodes[ghost[idx]] = int(str(new_reaches[ghost[idx]])[:-1]+str(nd_num)+str(6))
 
                 #updating length
                 old_rch_id = np.where(new_reaches == np.unique(subcls.reach_id[ghost[idx]]))[0]
@@ -4633,6 +4661,7 @@ def update_netcdf(nc_file, centerlines):
         data.groups['centerlines'].variables['node_id'][:] = centerlines.node_id
         data.groups['centerlines'].variables['rch_dist'][:] = centerlines.rch_dist
         data.groups['centerlines'].variables['node_len'][:] = centerlines.node_len
+        data.groups['centerlines'].variables['rch_issue_flag'][:] = centerlines.rch_flag
         data.close()
     else:
         # create variables. 
@@ -4646,6 +4675,7 @@ def update_netcdf(nc_file, centerlines):
         data.groups['centerlines'].createVariable('node_id', 'i8', ('num_points',))
         data.groups['centerlines'].createVariable('rch_dist', 'f8', ('num_points',))
         data.groups['centerlines'].createVariable('node_len', 'f8', ('num_points',))
+        data.groups['centerlines'].createVariable('rch_issue_flag', 'i4', ('num_points',))
         # populate variables. 
         data.groups['centerlines'].variables['reach_id'][:] = centerlines.reach_id
         data.groups['centerlines'].variables['rch_len'][:] = centerlines.rch_len
@@ -4657,6 +4687,7 @@ def update_netcdf(nc_file, centerlines):
         data.groups['centerlines'].variables['node_id'][:] = centerlines.node_id
         data.groups['centerlines'].variables['rch_dist'][:] = centerlines.rch_dist
         data.groups['centerlines'].variables['node_len'][:] = centerlines.node_len
+        data.groups['centerlines'].variables['rch_issue_flag'][:] = centerlines.rch_flag
         data.close()
 
 ###############################################################################

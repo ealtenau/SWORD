@@ -3,14 +3,17 @@ import netCDF4 as nc
 import geopandas as gp
 import sys
 
-region = 'OC'
-version = 'v17'
-dist_update = True
+region = 'SA'
+version = 'v18'
+dist_update = 'True'
 
 # gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/gpkg/'\
 #     +region.lower()+'_sword_reaches_'+version+'.gpkg'
+# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/shp/SA/'\
+#     +region.lower()+'_sword_reaches_hb67_'+version+'.shp'
 gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+version+'/'+region+\
         '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
+# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/sa_sword_reaches_v17.gpkg'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
     +region.lower()+'_sword_'+version+'.nc'
 
@@ -70,7 +73,7 @@ for r in list(range(len(unq_rchs))):
     node_path_segs[nds] = gpkg['path_segs'][r]
     rch_strm[rch] = gpkg['strm_order'][r]
     node_strm[nds] = gpkg['strm_order'][r]
-    if dist_update == True: 
+    if dist_update == 'True': 
         reach_dist[rch] = gpkg['dist_out2'][r]
         sort_nodes = np.argsort(nodes[nds])
         base_val = reach_dist[r] - rch_len[r]
@@ -98,7 +101,7 @@ sword.groups['reaches'].variables['path_order'][:] = path_order
 sword.groups['nodes'].variables['path_order'][:] = node_path_order
 sword.groups['reaches'].variables['path_segs'][:] = path_segs
 sword.groups['nodes'].variables['path_segs'][:] = node_path_segs
-if dist_update == True:
+if dist_update == 'True':
     sword.groups['reaches'].variables['dist_out'][:] = reach_dist
     sword.groups['nodes'].variables['dist_out'][:] = node_dist
 sword.close()

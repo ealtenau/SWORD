@@ -115,8 +115,8 @@ def read_data(filename):
 ###############################################################################
 ###############################################################################
 
-region = 'OC'
-version = 'v17'
+region = 'SA'
+version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 out_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
 centerlines, nodes, reaches = read_data(sword_dir)

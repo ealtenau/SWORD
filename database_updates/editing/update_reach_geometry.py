@@ -91,8 +91,8 @@ def get_distances(lon,lat):
 ###############################################################################
 ###############################################################################
 
-region = 'AF'
-version = 'v17'
+region = 'SA'
+version = 'v18'
 
 gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
         +version+'/gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
@@ -101,7 +101,7 @@ gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 
-reach = [16220100033]
+reach = [67209900101,67209900121,67209900141]
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]

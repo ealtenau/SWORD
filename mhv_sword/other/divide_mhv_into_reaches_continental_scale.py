@@ -1,7 +1,7 @@
 from __future__ import division
 import os
-if os.path.exists('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_swot_launch_updates/mhv_sword/'):
-    os.chdir('/Users/ealteanau/Documents/SWORD_Dev/src/SWORD/post_swot_launch_updates/mhv_sword/')
+if os.path.exists('/Users/ealtenau/Documents/SWORD_Dev/src/SWORD/mhv_sword/'):
+    os.chdir('/Users/ealtenau/Documents/SWORD_Dev/src/SWORD/mhv_sword/')
 else:
     os.chdir('/afs/cas.unc.edu/users/e/a/ealtenau/SWORD/post_swot_launch_updates/mhv_sword/')
 import mhv_reach_def_tools as rdt
@@ -12,6 +12,7 @@ import geopandas as gp
 from shapely.geometry import Point
 import pandas as pd
 import argparse
+import glob
 
 ###############################################################################
 ##################### Defining Reach and Node Locations #######################
@@ -27,13 +28,15 @@ region = args.region
 
 # Input file(s).
 if args.local_processing == 'True':
-    main_dir = '/Users/ealteanau/Documents/SWORD_Dev/inputs/'
+    main_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/'
 else:
     main_dir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/inputs/'
-nc_file = main_dir+'MHV_SWORD/'+region+'_mhv_sword.nc'
+nc_file_list = glob.glob(os.path.join(main_dir+'MHV_SWORD/netcdf/'+region+'/', '*.nc'))
 
+###loop 
+f=0
 # Reading in data.
-data = rdt.read_merge_netcdf(nc_file)
+data = rdt.read_merge_netcdf(nc_file_list[f])
 
 # Making sure flow accumulation minimum isn't zero.
 data.facc[np.where(data.facc == 0)[0]] = 0.001
@@ -75,7 +78,7 @@ for ind in list(range(len(uniq_level2))):
     subcls.lat = data.lat[level2]
     subcls.seg = data.seg[level2]
     subcls.ind = data.ind[level2]
-    subcls.dist = data.segDist[level2]
+    subcls.dist = data.dist[level2]
     subcls.wth = data.wth[level2]
     subcls.elv = data.elv[level2]
     subcls.facc = data.facc[level2]
@@ -222,7 +225,7 @@ for ind in list(range(len(uniq_level2))):
 
 # Update NetCDF File.
 print('Updating NetCDF')
-rdt.update_netcdf(nc_file, centerlines)
+rdt.update_netcdf(nc_file_list[f], centerlines)
 
 end_all=time.time()
 print('Time to Finish All Reaches and Nodes: ' +

@@ -678,15 +678,15 @@ import geopandas as gp
 import time
 import matplotlib.pyplot as plt
 
-sword = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17_glows/netcdf/oc_sword_v17_glows.nc','r+')
-gpkg = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17_glows/gpkg/oc_sword_nodes_v17_glows_comid.gpkg')
+sword = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_glows/netcdf/oc_sword_v16_glows.nc','r+')
+gpkg = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_glows/gpkg/oc_sword_nodes_v16_glows_comid.gpkg')
 sword_comid = np.array(gpkg['COMID'])
 nid = np.array(sword.groups['nodes'].variables['node_id'][:])
 print(np.unique(gpkg['node_id']-nid))
 
 sword.groups['nodes'].createVariable('comid', 'i8', ('num_nodes',), fill_value=-9999.)
 sword.groups['nodes'].variables['comid'][:] = sword_comid 
-sword.groups['nodes']
+# sword.groups['nodes']
 sword.close()
 del(gpkg)
 
@@ -716,3 +716,626 @@ plt.scatter(nlon, nlat, c='black', s=5)
 plt.scatter(nlon, nlat, c=np.log(wth_med), s=5, cmap='rainbow')
 plt.show()
 
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+sword17 = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/sa_sword_v17.nc')
+sword18 = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/sa_sword_v18_pacora_only.nc')
+
+rch17 = np.array(sword17.groups['reaches'].variables['reach_id'][:])
+rch18 = np.array(sword18.groups['reaches'].variables['reach_id'][:])
+dist17 = np.array(sword17.groups['reaches'].variables['dist_out'][:])
+dist18 = np.array(sword18.groups['reaches'].variables['dist_out'][:])
+wse17 = np.array(sword17.groups['reaches'].variables['wse'][:])
+wse18 = np.array(sword18.groups['reaches'].variables['wse'][:])
+facc17 = np.array(sword17.groups['reaches'].variables['facc'][:])
+facc18 = np.array(sword18.groups['reaches'].variables['facc'][:])
+strm17 = np.array(sword17.groups['reaches'].variables['stream_order'][:])
+strm18 = np.array(sword18.groups['reaches'].variables['stream_order'][:])
+wth17 = np.array(sword17.groups['reaches'].variables['width'][:])
+wth18 = np.array(sword18.groups['reaches'].variables['width'][:])
+###
+ms17 = np.array(sword17.groups['reaches'].variables['main_side'][:])
+ms18 = np.array(sword18.groups['reaches'].variables['main_side'][:])
+name17 = np.array(sword17.groups['reaches'].variables['river_name'][:])
+name18 = np.array(sword18.groups['reaches'].variables['river_name'][:])
+end17 = np.array(sword17.groups['reaches'].variables['end_reach'][:])
+end18 = np.array(sword18.groups['reaches'].variables['end_reach'][:])
+net17 = np.array(sword17.groups['reaches'].variables['network'][:])
+net18 = np.array(sword18.groups['reaches'].variables['network'][:])
+freq17 = np.array(sword17.groups['reaches'].variables['path_freq'][:])
+freq18 = np.array(sword18.groups['reaches'].variables['path_freq'][:])
+order17 = np.array(sword17.groups['reaches'].variables['path_order'][:])
+order18 = np.array(sword18.groups['reaches'].variables['path_order'][:])
+segs17 = np.array(sword17.groups['reaches'].variables['path_segs'][:])
+segs18 = np.array(sword18.groups['reaches'].variables['path_segs'][:])
+
+r = np.where(np.in1d(rch18, rch17)==True)[0]
+np.unique(dist17-dist18[r])
+np.unique(wse17-wse18[r])
+np.unique(facc17-facc18[r])
+np.unique(wth17-wth18[r])
+np.unique(strm17-strm18[r])
+np.unique(ms17-ms18[r])
+# np.unique(name17-name18[r])
+np.unique(net17-net18[r])
+np.unique(end17-end18[r])
+np.unique(freq17-freq18[r])
+np.unique(order17-order18[r])
+np.unique(segs17-segs18[r])
+
+node17 = np.array(sword17.groups['nodes'].variables['node_id'][:])
+nrch17 = np.array(sword17.groups['nodes'].variables['reach_id'][:])
+node18 = np.array(sword18.groups['nodes'].variables['node_id'][:])
+ndist17 = np.array(sword17.groups['nodes'].variables['dist_out'][:])
+ndist18 = np.array(sword18.groups['nodes'].variables['dist_out'][:])
+nwse17 = np.array(sword17.groups['nodes'].variables['wse'][:])
+nwse18 = np.array(sword18.groups['nodes'].variables['wse'][:])
+nfacc17 = np.array(sword17.groups['nodes'].variables['facc'][:])
+nfacc18 = np.array(sword18.groups['nodes'].variables['facc'][:])
+nwth17 = np.array(sword17.groups['nodes'].variables['width'][:])
+nwth18 = np.array(sword18.groups['nodes'].variables['width'][:])
+nstrm17 = np.array(sword17.groups['nodes'].variables['stream_order'][:])
+nstrm18 = np.array(sword18.groups['nodes'].variables['stream_order'][:])
+###
+nms17 = np.array(sword17.groups['nodes'].variables['main_side'][:])
+nms18 = np.array(sword18.groups['nodes'].variables['main_side'][:])
+nname17 = np.array(sword17.groups['nodes'].variables['river_name'][:])
+nname18 = np.array(sword18.groups['nodes'].variables['river_name'][:])
+nend17 = np.array(sword17.groups['nodes'].variables['end_reach'][:])
+nend18 = np.array(sword18.groups['nodes'].variables['end_reach'][:])
+nnet17 = np.array(sword17.groups['nodes'].variables['network'][:])
+nnet18 = np.array(sword18.groups['nodes'].variables['network'][:])
+nfreq17 = np.array(sword17.groups['nodes'].variables['path_freq'][:])
+nfreq18 = np.array(sword18.groups['nodes'].variables['path_freq'][:])
+norder17 = np.array(sword17.groups['nodes'].variables['path_order'][:])
+norder18 = np.array(sword18.groups['nodes'].variables['path_order'][:])
+nsegs17 = np.array(sword17.groups['nodes'].variables['path_segs'][:])
+nsegs18 = np.array(sword18.groups['nodes'].variables['path_segs'][:])
+
+n = np.where(np.in1d(node18, node17)==True)[0]
+np.unique(node17-node18[n])
+np.unique(ndist17-ndist18[n])
+np.unique(nwse17-nwse18[n])
+np.unique(nfacc17-nfacc18[n])
+np.unique(nwth17-nwth18[n])
+np.unique(nstrm17-nstrm18[n])
+np.unique(nms17-nms18[n])
+# np.unique(nname17-nname18[n])
+np.unique(nnet17-nnet18[n])
+np.unique(nend17-nend18[n])
+np.unique(nfreq17-nfreq18[n])
+np.unique(norder17-norder18[n])
+np.unique(nsegs17-nsegs18[n])
+
+cl17 = np.array(sword17.groups['centerlines'].variables['cl_id'][:])
+cl18 = np.array(sword18.groups['centerlines'].variables['cl_id'][:])
+clx17 = np.array(sword17.groups['centerlines'].variables['x'][:])
+clx18 = np.array(sword18.groups['centerlines'].variables['x'][:])
+cly17 = np.array(sword17.groups['centerlines'].variables['y'][:])
+cly18 = np.array(sword18.groups['centerlines'].variables['y'][:])
+clrch17 = np.array(sword17.groups['centerlines'].variables['reach_id'][:])
+clrch18 = np.array(sword18.groups['centerlines'].variables['reach_id'][:])
+clnode17 = np.array(sword17.groups['centerlines'].variables['node_id'][:])
+clnode18 = np.array(sword18.groups['centerlines'].variables['node_id'][:])
+
+c = np.where(np.in1d(cl18, cl17)==True)[0]
+np.unique(cl17-cl18[c])
+np.unique(clx17-clx18[c])
+np.unique(cly17-cly18[c])
+np.unique(clrch17[:]-clrch18[:,c])
+np.unique(clnode17[:]-clnode18[:,c])
+
+# test = np.where(ndist17-ndist18[n] != 0)[0]
+# test2 = np.where(nfacc17-nfacc18[n] != 0)[0]
+# len(np.unique(nrch17[test]))
+# len(np.unique(nrch17[test2]))
+# np.cumsum(ndist17[test[0]])
+
+# sword18.groups['nodes'].variables['facc'][n] = nfacc17
+# sword18.groups['nodes'].variables['dist_out'][n] = ndist17
+
+sword17.close()
+sword18.close()
+
+##############################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+sword18 = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/sa_sword_v18.nc')
+ndist18 = np.array(sword18.groups['nodes'].variables['dist_out'][:])
+nrch18 = np.array(sword18.groups['nodes'].variables['reach_id'][:])
+rch18 = np.array(sword18.groups['reaches'].variables['reach_id'][:])
+dist18 = np.array(sword18.groups['reaches'].variables['dist_out'][:])
+len18 = np.array(sword18.groups['reaches'].variables['reach_length'][:])
+node18 = np.array(sword18.groups['nodes'].variables['node_id'][:])
+nlen18 = np.array(sword18.groups['nodes'].variables['node_length'][:])
+
+problem = []
+for r in list(range(len(rch18))):
+    nds = np.where(nrch18 == rch18[r])[0]
+    sort_nodes = np.argsort(node18[nds])
+    node_cs = np.cumsum(nlen18[nds[sort_nodes]])
+    if np.round(max(node_cs)-len18[r]) != 0:
+        problem.append(rch18[r])
+        print(rch18[r])
+        print(max(node_cs), len18[r])
+        print(max(ndist18[nds]), dist18[r])
+
+len(problem)
+
+sword18.close()
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+region = 'SA'
+version = 'v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+
+sword = nc.Dataset(nc_fn)
+cl_id = np.array(sword.groups['centerlines'].variables['cl_id'][:])
+cl_rchs = np.array(sword.groups['centerlines'].variables['reach_id'][0,:])
+clx = np.array(sword.groups['centerlines'].variables['x'][:])
+cly = np.array(sword.groups['centerlines'].variables['y'][:])
+
+r = 67209900201
+rch = np.where(cl_rchs == r)[0]
+sort_inds = np.argsort(cl_id[rch])
+
+plt.plot(clx[rch[sort_inds]], cly[rch[sort_inds]])
+plt.show()
+
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+region = 'SA'
+version = 'v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'_pacora_only.nc'
+
+sword = nc.Dataset(nc_fn, 'r+')
+cl_rchs = np.array(sword.groups['centerlines'].variables['reach_id'][:])
+
+rch = 67209900151
+r = np.where(cl_rchs[0,:] == rch)[0]
+cl_rchs[1,r]
+cl_rchs[2,r]
+
+rch = 67209900091
+r = np.where(cl_rchs[0,:] == rch)[0]
+cl_rchs[1,r[-1]] = 67209900101
+
+rch = 67209900111
+r = np.where(cl_rchs[0,:] == rch)[0]
+cl_rchs[1,r[-1]] = 67209900121
+
+rch = 67209900131
+r = np.where(cl_rchs[0,:] == rch)[0]
+cl_rchs[2,r[-1]] = 67209900141
+
+rch = 67209900151
+r = np.where(cl_rchs[0,:] == rch)[0]
+cl_rchs[2,r[-1]] = 67209900161
+
+sword.groups['centerlines'].variables['reach_id'][:] = cl_rchs
+sword.close()
+
+
+############################################################################################
+############################################################################################
+############################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+region = 'SA'
+version = 'v18'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
+    +region.lower()+'_sword_'+version+'.nc'
+nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v18/'+region+'/channel_additions/'\
+    +region.lower()+'_channel_additions.nc'
+
+sword = nc.Dataset(sword_fn, 'r+')
+additions = nc.Dataset(nc_file)
+
+clx = np.array(sword['/centerlines/x'][:])
+cly = np.array(sword['/centerlines/y'][:])
+cl_nodes = np.array(sword['/centerlines/node_id'][0,:])
+nodes = np.array(sword['/nodes/node_id'][:])
+facc = np.array(sword['/nodes/facc'][:])
+ax = np.array(additions['/centerlines/x'][:])
+ay = np.array(additions['/centerlines/y'][:])
+afacc = np.array(additions['/centerlines/flowacc'][:])
+
+node_l6 = np.array([int(str(ind)[0:6]) for ind in nodes])
+cl_l6 = np.array([int(str(ind)[0:6]) for ind in cl_nodes])
+nind = np.where(node_l6 == 672099)[0]
+cind = np.where(cl_l6 == 672099)[0]
+
+add_pts = np.vstack((ax, ay)).T
+cl_pts = np.vstack((clx[cind], cly[cind])).T
+kdt = sp.cKDTree(add_pts)
+pt_dist, pt_ind = kdt.query(cl_pts, k = 5)
+
+cl_facc = np.median(afacc[pt_ind], axis = 1)
+for n in list(range(len(nodes[nind]))):
+    nix = np.where(cl_nodes[cind] == nodes[nind[n]])
+    facc[nind[n]] = np.max(cl_facc[nix])
+
+update = np.where(facc[nind] > 1000)[0]
+facc[nind[update]] = 259.5
+
+sword['/nodes/facc'][nind] = facc[nind]
+sword.close()
+additions.close()
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+region = 'OC'
+sword16 = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16/netcdf/'+region.lower()+'_sword_v16.nc')
+sword17 = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/'+region.lower()+'_sword_v17.nc')
+rch_attr = list(sword16.groups['reaches'].variables.keys())
+node_attr = list(sword16.groups['nodes'].variables.keys())
+
+## reaches 
+for r in list(range(len(rch_attr))):
+    min16 = np.min(np.array(sword16.groups['reaches'].variables[rch_attr[r]][:]))
+    min17 = np.min(np.array(sword17.groups['reaches'].variables[rch_attr[r]][:]))
+    print(rch_attr[r], 'v16:', min16, 'v17:', min17)
+
+## nodes
+for n in list(range(len(node_attr))):
+    min16 = np.min(np.array(sword16.groups['nodes'].variables[node_attr[n]][:]))
+    min17 = np.min(np.array(sword17.groups['nodes'].variables[node_attr[n]][:]))
+    print(node_attr[n], 'v16:', min16, 'v17:', min17)
+
+sword16.close(); sword17.close()
+
+#########################################################################################
+#########################################################################################
+#########################################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+sword = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/NA/na_sword_reaches_hb74_v17.shp')
+mhv = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/gpkg/NA/hb74_mhv_sword_pts_v18.gpkg')
+
+sword_len = np.sum(sword['reach_len'])
+
+unq_rchs = np.unique(mhv['reach_id'])
+mhv_rch_len = np.zeros(len(unq_rchs))
+mhv_rch_strm = np.zeros(len(unq_rchs))
+mhv_rch_add = np.zeros(len(unq_rchs))
+for r in list(range(len(unq_rchs))):
+    rch = np.where(mhv['reach_id'] == unq_rchs[r])[0]
+    mhv_rch_len[r] = np.unique(mhv['rch_len'][rch])
+    mhv_rch_strm[r] = max(np.unique(mhv['strmorder'][rch]))
+    mhv_rch_add[r] = max(mhv['add_flag'][rch])
+
+add = np.where(mhv_rch_add>0)[0]
+add2 = np.where((mhv_rch_add>0)&(mhv_rch_strm>=4))[0]
+
+mhv_len = np.sum(mhv_rch_len[add]) #down to stream order 3
+mhv_len2 = np.sum(mhv_rch_len[add2]) #down to stream order 4
+
+((mhv_len+sword_len)-sword_len)/sword_len*100 #188% increase in database length
+((mhv_len2+sword_len)-sword_len)/sword_len*100 #59% increase in database length
+
+mhv_len/(mhv_len+sword_len)*100 #additions would consitute 65% of new database length.
+mhv_len2/(mhv_len2+sword_len)*100 #additions would consitute 37% of new database length.
+
+#overall that is a lot of data for one person to validate and for something to go wrong with non-consistent data bases. 
+
+
+###################################################################
+
+def aggregate_segs(seg_pts, seg_hwout_pts, seg_junc_pts, up_pts, down_pts):
+    outlets = np.unique(seg_pts[np.where(seg_hwout_pts == 2)[0]])
+    network = np.zeros(len(seg_pts))
+    flag = np.zeros(len(seg_pts))
+    start_seg = np.array([outlets[0]])
+    cnt = 1
+    loop = 1
+    while min(flag) == 0:
+        print(loop)
+        pts = np.where(seg_pts == start_seg)[0]
+        #upstream segment 
+        up_nodes = np.unique(up_pts[pts]) 
+        up_segs = np.unique(seg_pts[np.where(down_pts == up_nodes)[0]])
+
+        if len(up_segs) == 0: #headwater
+            network[pts] = cnt
+            flag[pts] = 1
+            start_pts = np.unique(seg_pts[np.where((seg_hwout_pts == 2)&(flag == 0))[0]]) #outlets 
+            if len(start_pts) > 0:
+                start_seg = np.array([start_pts[0]])
+                cnt = cnt+1
+                loop = loop+1
+            elif len(start_pts) == 0:
+                start_pts = np.unique(seg_pts[np.where((seg_junc_pts == 1)&(flag == 0))[0]]) #junctions
+                if len(start_pts) > 0:
+                    start_seg = np.array([start_pts[0]])
+                    cnt = cnt+1
+                    loop = loop+1
+                else:
+                    start_pts = np.unique(seg_pts[np.where(flag == 0)[0]]) #junctions
+                    if len(start_pts) > 0:
+                        start_seg = np.array([start_pts[0]])
+                        cnt = cnt+1
+                        loop = loop+1
+                    else:
+                        loop = loop+1
+                        continue
+        elif len(up_segs) == 1: #normal
+            network[pts] = cnt
+            flag[pts] = 1
+            start_seg = up_segs
+            loop = loop+1
+        else: #junction
+            network[pts] = cnt
+            flag[pts] = 1
+            start_pts = np.unique(seg_pts[np.where(np.where((seg_junc_pts == 1)&(flag == 0))[0])]) #junctions 
+            if len(start_pts) > 0:
+                start_seg = np.array([start_pts[0]])
+                cnt = cnt+1
+                loop = loop+1
+            elif len(start_pts) == 0:
+                start_pts = np.unique(seg_pts[np.where((seg_hwout_pts == 2)&(flag == 0))[0]]) #junctions
+                if len(start_pts) > 0:
+                    start_seg = np.array([start_pts[0]])
+                    cnt = cnt+1
+                    loop = loop+1
+                else:
+                    start_pts = np.unique(seg_pts[np.where(flag == 0)[0]]) #junctions
+                    if len(start_pts) > 0:
+                        start_seg = np.array([start_pts[0]])
+                        cnt = cnt+1
+                        loop = loop+1
+                    else:
+                        loop = loop+1
+                        continue
+
+        if loop > len(np.unique(seg_pts))*2:
+            print('LOOP STUCK')
+            break
+
+z = np.where(network == 0)[0]
+plt.scatter(x_pts, y_pts, c=network, cmap = 'rainbow', s = 5)
+plt.scatter(x_pts[z], y_pts[z], c='grey', s = 5)
+plt.show()
+
+###################################################################
+
+def filter_sword_flag(seg_pts, seg_ind_pts,flag_pts, x_pts, y_pts):
+    cnt=[]
+    flag = np.copy(flag_pts)
+    check = np.unique(seg_pts[np.where(flag == 0)[0]])
+    for s in list(range(len(check))):
+        # print(s, len(check)-1)
+        line = np.where(seg_pts == check[s])[0]
+        # seg_x = x[line]
+        # seg_y = y[line]
+        seg_lon = x_pts[line]
+        seg_lat = y_pts[line]
+        seg_ind = seg_ind_pts[line]
+        end1, end2 = find_neighbors(seg_pts, flag, x_pts, y_pts, seg_lon, 
+                                    seg_lat, seg_ind, check[s], line)
+        if len(end1) == 0:
+            continue
+        elif len(end2) == 0:
+            continue
+        else:
+            # Cond. 1: end 1 has SWORD flag, but end 2 does not. 
+            if np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 0:
+                for n in list(range(len(end2))):
+                    line2 = np.where(seg_pts == end2[0,0])[0]
+                    seg_lon2 = x_pts[line2]
+                    seg_lat2 = y_pts[line2]
+                    seg_ind2 = seg_ind_pts[line2]
+                    ngh_end1, ngh_end2 = find_neighbors(seg_pts, flag, x_pts, y_pts, seg_lon2, 
+                                        seg_lat2, seg_ind2, check[s], line2)
+                    if n == 0:
+                        ngh_end1_all = np.copy(ngh_end1)
+                        ngh_end2_all = np.copy(ngh_end2)
+                    else:
+                        ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
+                        ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
+                if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
+                    # print(s, check[s], 'cond.1')
+                    flag[line] = 1
+                    # flag[line] = 1
+                    cnt.append(check[s])
+                else:
+                    continue
+            # Cond. 2: end 2 has SWORD flag, but end 1 does not.
+            elif np.max(end1[:,1]) == 0 and np.max(end2[:,1]) == 1:
+                for n in list(range(len(end1))):
+                    line2 = np.where(seg_pts == end1[0,0])[0]
+                    seg_lon2 = x_pts[line2]
+                    seg_lat2 = y_pts[line2]
+                    seg_ind2 = seg_ind_pts[line2]
+                    ngh_end1, ngh_end2 = find_neighbors(seg_pts, flag, x_pts, y_pts, seg_lon2, 
+                                        seg_lat2, seg_ind2, check[s], line2)
+                    if n == 0:
+                        ngh_end1_all = np.copy(ngh_end1)
+                        ngh_end2_all = np.copy(ngh_end2)
+                    else:
+                        ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
+                        ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
+                if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
+                    # print(s, check[s], 'cond.2')
+                    # flag_all[subset[line]] = 1
+                    flag[line] = 1
+                    cnt.append(check[s])
+                else:
+                    continue
+            # Cond. 3: Both ends have SWORD flag. 
+            elif np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 1:
+                # print(s, check[s], 'cond.3')
+                # flag_all[subset[line]] = 1
+                flag[line] = 1
+                cnt.append(check[s])
+
+            else:
+                continue
+
+    return flag, cnt
+
+print('Filtering SWORD Flag')
+start = time.time()
+flag_filt, count = filter_sword_flag(seg_pts, seg_ind_pts,flag_pts, x_pts, y_pts)
+end = time.time()
+print(str((end-start)/60) + ' min, Segments corrected: ' + str(len(cnt)))
+
+###############################################################################
+
+def overlapping_files(mhv_lon, mhv_lat, elv_paths):
+
+    #define grwl extent as ogr geometry format.
+    poly1 = ogr.Geometry(ogr.wkbLinearRing)
+    poly1.AddPoint(min(mhv_lon), max(mhv_lat))
+    poly1.AddPoint(min(mhv_lon), min(mhv_lat))
+    poly1.AddPoint(max(mhv_lon), min(mhv_lat))
+    poly1.AddPoint(max(mhv_lon), max(mhv_lat))
+    poly1.AddPoint(min(mhv_lon), max(mhv_lat))
+    mhvGeometry = ogr.Geometry(ogr.wkbPolygon)
+    mhvGeometry.AddGeometry(poly1)
+    poly_box = mhvGeometry.GetEnvelope()        
+
+    #find overlapping SWOT tracks.
+    track_files = []
+    for fn in elv_paths:
+        # Read raster extent
+        # Open the raster file
+        raster_ds = gdal.Open(fn)
+        raster_geotransform = raster_ds.GetGeoTransform()
+        raster_extent = (
+            raster_geotransform[0],
+            raster_geotransform[0] + raster_geotransform[1] * raster_ds.RasterXSize,
+            raster_geotransform[3] + raster_geotransform[5] * raster_ds.RasterYSize,
+            raster_geotransform[3]
+        )
+
+        # Check for overlap
+        overlap = (
+            poly_box[0] < raster_extent[1] and
+            poly_box[1] > raster_extent[0] and
+            poly_box[2] < raster_extent[3] and
+            poly_box[3] > raster_extent[2]
+        )
+
+        if overlap == True:
+            track_files.append(fn)
+    
+    track_files = np.unique(track_files)
+
+    return(track_files)
+
+###############################################################################
+
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+mhv = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/NA/mhv_sword_hb82_pts_v18.nc')
+mhv.groups['centerlines']
+
+np.unique(mhv.groups['centerlines'].variables['lakeflag'][:]) 
+np.unique(mhv.groups['centerlines'].variables['deltaflag'][:]) 
+np.unique(mhv.groups['centerlines'].variables['grand_id'][:]) 
+np.unique(mhv.groups['centerlines'].variables['grod_id'][:]) 
+np.unique(mhv.groups['centerlines'].variables['grod_fid'][:]) 
+np.unique(mhv.groups['centerlines'].variables['hfalls_fid'][:]) 
+np.unique(mhv.groups['centerlines'].variables['basin_code'][:]) 
+np.unique(mhv.groups['centerlines'].variables['number_obs'][:]) 
+np.unique(mhv.groups['centerlines'].variables['orbits'][:,:]) 
+np.unique(mhv.groups['centerlines'].variables['lake_id'][:]) 
+
+mhv.close()
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+#see if any reaches cross segments
+np.mean(subcls.rch_len1)
+np.mean(subcls.rch_len2)
+np.mean(subcls.rch_len3)
+np.mean(subcls.rch_len4)
+np.mean(subcls.rch_len5)
+np.mean(subcls.rch_len6);np.median(subcls.rch_len6)
+
+np.min(subcls.rch_len1)
+np.min(subcls.rch_len2)
+np.min(subcls.rch_len3)
+np.min(subcls.rch_len4)
+
+cp_rchs = np.copy(subcls.reach_id)
+unq_rchs = np.unique(cp_rchs)
+for r in list(range(len(unq_rchs))):
+    pts = np.where(cp_rchs == unq_rchs[r])
+    nsegs = len(np.unique(subcls.seg[pts]))
+    if nsegs > 1:
+        print(r, unq_rchs[r], nsegs)

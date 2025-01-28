@@ -4,7 +4,7 @@ if os.path.exists('/Users/ealtenau/Documents/SWORD_Dev/src/SWORD/database_update
     os.chdir('/Users/ealtenau/Documents/SWORD_Dev/src/SWORD/database_updates/channel_additions/')
 else:
     os.chdir('/afs/cas.unc.edu/users/e/a/ealtenau/SWORD/post_swot_launch_updates/sword_adjustments/')
-import cl_additions_reach_def_tools as rdt
+import database_updates.channel_additions.case_by_case.cl_additions_reach_def_tools as rdt
 # import Write_Database_Files as wf
 import time
 import numpy as np
@@ -21,12 +21,12 @@ import netCDF4 as nc
 ###############################################################################
 
 start_all = time.time()
-region = 'NA'
+region = 'SA'
 
 # Input file(s).
-nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region+'/channel_additions/'\
-    +region.lower()+'_channel_additions3.nc'
-sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/'+region.lower()+'_sword_v17.nc'
+nc_file = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v18/'+region+'/channel_additions/'\
+    +region.lower()+'_channel_additions.nc'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/'+region.lower()+'_sword_v18.nc'
 
 # Reading in data.
 centerlines, nodes, reaches = rdt.read_data(sword_fn)
