@@ -98,7 +98,7 @@ version = 'v18'
 
 sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 mhv_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/' + region +'/'
-mhv_files = glob.glob(os.path.join(mhv_dir, '*.nc'))
+mhv_files = np.sort(glob.glob(os.path.join(mhv_dir, '*.nc')))
 
 #reading in sword data.
 sword = nc.Dataset(sword_fn)

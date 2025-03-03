@@ -18,7 +18,7 @@ def get_distances(lon,lat):
 
 ################################################################################################
 
-region = 'SA'
+region = 'NA'
 version = 'v18'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
@@ -33,8 +33,10 @@ cl_nodes = np.array(sword.groups['centerlines'].variables['node_id'][0,:])
 
 reaches = np.array(sword.groups['reaches'].variables['reach_id'][:])
 rch_len = np.array(sword.groups['reaches'].variables['reach_length'][:])
+rch_dist = np.array(sword.groups['reaches'].variables['dist_out'][:])
 nodes = np.array(sword.groups['nodes'].variables['node_id'][:])
 node_len = np.array(sword.groups['nodes'].variables['node_length'][:])
+node_dist = np.array(sword.groups['nodes'].variables['dist_out'][:])
 node_rch = np.array(sword.groups['nodes'].variables['reach_id'][:])
 
 for r in list(range(len(reaches))):
@@ -56,15 +58,17 @@ for r in list(range(len(reaches))):
         nind = np.where(nodes == unq_nodes[n])[0]
         node_len[nind] = max(np.cumsum(diff[nds]))
 
-# sword.groups['reaches'].variables['reach_length'][:] = rch_len
-# sword.groups['nodes'].variables['node_length'][:] = node_len
+sword.groups['reaches'].variables['reach_length'][:] = rch_len
+sword.groups['nodes'].variables['node_length'][:] = node_len
 sword.close()
 
 import random
 rand = random.sample(range(0,len(reaches)), 100)
 for ind in list(range(len(rand))):
     test = np.where(node_rch == reaches[rand[ind]])[0]
-    print(ind, np.round(sum(node_len[test])-rch_len[rand[ind]]))
+    print(reaches[rand[ind]], 
+          abs(np.round(sum(node_len[test])-rch_len[rand[ind]])), 
+          abs(np.round(max(node_dist[test])-rch_dist[rand[ind]])))
 
 print('DONE')
 

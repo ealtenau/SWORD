@@ -122,46 +122,88 @@ def meters_to_degrees(meters, latitude):
     return deg
 
 ###############################################################################
-
-def read_merge_netcdf(filename):
-
-    """
-    FUNCTION:
-        Reads in attributes from the merged database and assigns them to an
-        object.
-
-    INPUTS
-        filename -- Merged database netcdf file.
-
-    OUTPUTS
-        data -- Object containing attributes from the merged database.
-    """
-
+    
+def read_mhv_sword(mhv_fn):
+    mhv = nc.Dataset(mhv_fn)
     data = Object()
-    new = nc.Dataset(filename)
-    data.lon = np.array(new.groups['centerlines'].variables['x'][:])
-    data.lat = np.array(new.groups['centerlines'].variables['y'][:])
-    data.seg = np.array(new.groups['centerlines'].variables['segID'][:])
-    data.ind = np.array(new.groups['centerlines'].variables['segInd'][:])
-    data.dist = np.array(new.groups['centerlines'].variables['segDist'][:])
-    data.wth = np.array(new.groups['centerlines'].variables['p_width'][:])
-    data.elv = np.array(new.groups['centerlines'].variables['p_height'][:])
-    data.facc = np.array(new.groups['centerlines'].variables['flowacc'][:])
-    data.lake = np.array(new.groups['centerlines'].variables['lakeflag'][:])
-    data.delta = np.array(new.groups['centerlines'].variables['deltaflag'][:])
-    data.nchan = np.array(new.groups['centerlines'].variables['nchan'][:])
-    data.grand = np.array(new.groups['centerlines'].variables['grand_id'][:])
-    data.grod = np.array(new.groups['centerlines'].variables['grod_id'][:])
-    data.grod_fid = np.array(new.groups['centerlines'].variables['grod_fid'][:])
-    data.hfalls_fid = np.array(new.groups['centerlines'].variables['hfalls_fid'][:])
-    data.basins = np.array(new.groups['centerlines'].variables['basin_code'][:])
-    data.manual = np.array(new.groups['centerlines'].variables['manual_add'][:])
-    data.num_obs = np.array(new.groups['centerlines'].variables['number_obs'][:])
-    data.orbits = np.array(new.groups['centerlines'].variables['orbits'][:])
-    data.eps = np.array(new.groups['centerlines'].variables['endpoints'][:])
-    data.lake_id = np.array(new.groups['centerlines'].variables['lake_id'][:])
-    new.close()
-
+    data.lon = np.array(mhv['/centerlines/x'][:])
+    data.lat = np.array(mhv['/centerlines/y'][:])
+    data.strm = np.array(mhv['/centerlines/strmorder'][:])
+    data.sword_flag = np.array(mhv['/centerlines/swordflag'][:])
+    data.cl_id = np.array(mhv['/centerlines/new_segs_ind'][:]) #was cl_id but seemed unreliable... 
+    data.x = np.array(mhv['/centerlines/easting'][:])
+    data.y = np.array(mhv['/centerlines/northing'][:])
+    data.wth = np.array(mhv['/centerlines/p_width'][:])
+    data.elv = np.array(mhv['/centerlines/p_height'][:])
+    data.facc = np.array(mhv['/centerlines/flowacc'][:])
+    data.nchan = np.array(mhv['/centerlines/nchan'][:])
+    data.manual = np.array(mhv['/centerlines/manual_add'][:])
+    data.eps = np.array(mhv['/centerlines/endpoints'][:])
+    data.lake = np.array(mhv['/centerlines/lakeflag'][:])
+    data.delta = np.array(mhv['/centerlines/deltaflag'][:])
+    data.grand = np.array(mhv['/centerlines/grand_id'][:])
+    data.grod = np.array(mhv['/centerlines/grod_id'][:])
+    data.grod_fid = np.array(mhv['/centerlines/grod_fid'][:])
+    data.hfalls_fid = np.array(mhv['/centerlines/hfalls_fid'][:])
+    data.basins = np.array(mhv['/centerlines/basin_code'][:])
+    data.num_obs = np.array(mhv['/centerlines/number_obs'][:])
+    data.orbits = np.array(mhv['/centerlines/orbits'][:])
+    data.lake_id = np.array(mhv['/centerlines/lake_id'][:])
+    data.sword_flag_filt = np.array(mhv['/centerlines/swordflag_filt'][:])
+    data.reach_id = np.array(mhv['/centerlines/reach_id'][:])
+    data.rch_len6 = np.array(mhv['/centerlines/rch_len'][:])
+    data.node_num = np.array(mhv['/centerlines/node_num'][:])
+    data.rch_eps = np.array(mhv['/centerlines/rch_eps'][:])
+    data.type = np.array(mhv['/centerlines/type'][:])
+    data.rch_ind6 = np.array(mhv['/centerlines/rch_ind'][:])
+    data.rch_num = np.array(mhv['/centerlines/rch_num'][:])
+    data.node_id = np.array(mhv['/centerlines/node_id'][:])
+    data.rch_dist6 = np.array(mhv['/centerlines/rch_dist'][:])
+    data.node_len = np.array(mhv['/centerlines/node_len'][:])
+    data.seg = np.array(mhv['/centerlines/new_segs'][:])
+    data.ind = np.array(mhv['/centerlines/new_segs_ind'][:])
+    data.dist = np.array(mhv['/centerlines/new_segDist'][:])
+    data.add_flag = np.array(mhv['/centerlines/add_flag'][:])
+    
+    keep = np.where(data.add_flag > 0)[0]
+    data.lon = data.lon[keep]
+    data.lat = data.lat[keep]
+    data.strm = data.strm[keep]
+    data.sword_flag = data.sword_flag[keep]
+    data.cl_id = data.cl_id[keep]
+    data.x = data.x[keep]
+    data.y = data.y[keep]
+    data.wth = data.wth[keep]
+    data.elv = data.elv[keep]
+    data.facc = data.facc[keep]
+    data.nchan = data.nchan[keep]
+    data.manual = data.manual[keep]
+    data.eps = data.eps[keep]
+    data.lake = data.lake[keep]
+    data.delta = data.delta[keep]
+    data.grand = data.grand[keep]
+    data.grod = data.grod[keep]
+    data.grod_fid = data.grod_fid[keep]
+    data.hfalls_fid = data.hfalls_fid[keep]
+    data.basins = data.basins[keep]
+    data.num_obs = data.num_obs[keep]
+    data.orbits = data.orbits[keep,:]
+    data.lake_id = data.lake_id[keep]
+    data.sword_flag_filt = data.sword_flag_filt[keep]
+    data.reach_id = data.reach_id[keep]
+    data.rch_len6 = data.rch_len6[keep]
+    data.node_num = data.node_num[keep]
+    data.rch_eps = data.rch_eps[keep]
+    data.type = data.type[keep]
+    data.rch_ind6 = data.rch_ind6[keep]
+    data.rch_num = data.rch_num[keep]
+    data.node_id = data.node_id[keep]
+    data.rch_dist6 = data.rch_dist6[keep]
+    data.node_len = data.node_len[keep]
+    data.seg = data.seg[keep]
+    data.ind = data.ind[keep]
+    data.dist = data.dist[keep]
+    data.add_flag = data.add_flag[keep]
     return data
 
 ###############################################################################
@@ -614,16 +656,23 @@ def basin_node_attributes(node_id, node_dist, height, width, facc, nchan, lon,
         node_rch_id[ind] = np.unique(reach_id[nodes])[0]
         node_x[ind] = np.median(lon[nodes])
         node_y[ind] = np.median(lat[nodes])
-        node_len[ind] = np.unique(node_dist[nodes])[0]
+        node_len[ind] = max(np.unique(node_dist[nodes]))
         node_wse[ind] = np.median(height[nodes])
         node_wse_var[ind] = np.var(height[nodes])
-        node_wth[ind] = np.median(width[nodes])
-        node_wth_var[ind] = np.var(width[nodes])
         node_facc[ind] = np.max(facc[nodes])
         node_nchan_max[ind] = np.max(nchan[nodes])
         node_nchan_mod[ind] = max(set(list(nchan[nodes])), key=list(nchan[nodes]).count)
         node_lakeflag[ind] = max(set(list(lakes[nodes])), key=list(lakes[nodes]).count)
         node_lake_id[ind] = max(set(list(lake_id[nodes])), key=list(lake_id[nodes]).count)
+
+        good_vals = np.where(width[nodes] > 0)[0]
+        perc = len(good_vals)/len(nodes)*100
+        if perc > 0:
+            node_wth[ind] = np.median(width[nodes[good_vals]])
+            node_wth_var[ind] = np.var(width[nodes[good_vals]])
+        else:
+            node_wth[ind] = 0
+            node_wth_var[ind] = 0
 
         GROD = np.copy(grod_id[nodes])
         GROD[np.where(GROD > 4)] = 0
@@ -729,12 +778,12 @@ def node_attributes(subcls):
         v1, v2, v3, v4, v5, v6, v7,\
             v8, v9, v10, v11, \
             v12, v13, v14, v15, \
-            v16, v17 = basin_node_attributes(subcls.node_id[basin],
+            v16, v17 = basin_node_attributes(subcls.new_node_id[0,basin],
                                                             subcls.node_len[basin],
                                                             subcls.elv[basin], subcls.wth[basin],
                                                             subcls.facc[basin], subcls.nchan[basin],
                                                             subcls.lon[basin], subcls.lat[basin],
-                                                            subcls.reach_id[basin], subcls.grod[basin],
+                                                            subcls.new_reach_id[0,basin], subcls.grod[basin],
                                                             subcls.lake[basin], subcls.grod_fid[basin],
                                                             subcls.hfalls_fid[basin], subcls.lake_id[basin])
 
@@ -1115,11 +1164,11 @@ def reach_attributes(subcls):
     # Loop through and calculate reach locations and attributes for each
     # unique reach ID.
     # print('2')
-    uniq_rch = np.unique(subcls.reach_id)
+    uniq_rch = np.unique(subcls.new_reach_id[0,:])
     for ind in list(range(len(uniq_rch))):
-        print(ind)
-        reach = np.where(subcls.reach_id == uniq_rch[ind])[0]
-        Reach_ID[ind] = int(np.unique(subcls.reach_id[reach]))
+        # print(ind)
+        reach = np.where(subcls.new_reach_id[0,:] == uniq_rch[ind])[0]
+        Reach_ID[ind] = int(np.unique(subcls.new_reach_id[0,reach]))
         reach_x[ind] = np.median(subcls.lon[reach])
         reach_y[ind] = np.median(subcls.lat[reach])
         reach_x_max[ind] = np.max(subcls.lon[reach])
@@ -1129,14 +1178,21 @@ def reach_attributes(subcls):
         reach_len[ind] = np.max(subcls.rch_dist6[reach])
         reach_wse[ind] = np.median(subcls.elv[reach])
         reach_wse_var[ind] = np.var(subcls.elv[reach])
-        reach_wth[ind] = np.median(subcls.wth[reach])
-        reach_wth_var[ind] = np.var(subcls.wth[reach])
         reach_facc[ind] = np.max(subcls.facc[reach])
         reach_nchan_max[ind] = np.max(subcls.nchan[reach])
         reach_nchan_mod[ind] = max(set(list(subcls.nchan[reach])), key=list(subcls.nchan[reach]).count)
         reach_n_nodes[ind] = len(np.unique(subcls.node_id[reach]))
         rch_lakeflag[ind] = max(set(list(subcls.lake[reach])), key=list(subcls.lake[reach]).count)
         rch_lake_id[ind] = max(set(list(subcls.lake_id[reach])), key=list(subcls.lake_id[reach]).count)
+
+        good_vals = np.where(subcls.wth[reach]>0)[0]
+        perc = len(good_vals)/len(reach)*100
+        if perc >= 25:
+            reach_wth[ind] = np.median(subcls.wth[reach[good_vals]])
+            reach_wth_var[ind] = np.var(subcls.wth[reach[good_vals]])
+        else:
+            reach_wth[ind] = 0
+            reach_wth_var[ind] = 0
 
         # Find grod type per reach.
         GROD = np.copy(subcls.grod[reach])
@@ -1195,7 +1251,7 @@ def swot_obs_percentage(subcls, subreaches):
 
     # Loop through each reach and calculate the coverage for each swot overpass.
     for ind in list(range(len(uniq_rch))):
-        rch = np.where(subcls.reach_id == uniq_rch[ind])[0]
+        rch = np.where(subcls.new_reach_id[0,:] == uniq_rch[ind])[0]
         orbs = subcls.orbits[rch]
         max_obs[ind] = np.max(subcls.num_obs[rch])
         med_obs[ind] = np.median(subcls.num_obs[rch])
@@ -1222,14 +1278,14 @@ def centerline_ids(subreaches, subnodes, subcls):
 
     unq_rchs = np.unique(subreaches.id)
     for ind in list(range(len(unq_rchs))):
-        cl_rch = np.where(subcls.reach_id == unq_rchs[ind])[0]
+        cl_rch = np.where(subcls.new_reach_id[0,:] == unq_rchs[ind])[0]
         rch = np.where(subreaches.id == unq_rchs[ind])[0]
         rch_cl_id[rch,0] = np.min(subcls.id[cl_rch])
         rch_cl_id[rch,1] = np.max(subcls.id[cl_rch])
 
     unq_nodes = np.unique(subnodes.id)
     for idx in list(range(len(unq_nodes))):
-        cl_nodes = np.where(subcls.node_id == unq_nodes[idx])[0]
+        cl_nodes = np.where(subcls.new_node_id[0,:] == unq_nodes[idx])[0]
         nds = np.where(subnodes.id == unq_nodes[idx])[0]
         node_cl_id[nds,0] = np.min(subcls.id[cl_nodes])
         node_cl_id[nds,1] = np.max(subcls.id[cl_nodes])
@@ -1420,11 +1476,11 @@ def format_cl_rch_ids(reaches, centerlines):
 def append_data(centerlines, nodes, reaches, 
                 subcls, subnodes, subreaches):
 
-    centerlines.cl_id = np.append(centerlines.cl_id, subcls.cl_id)
+    centerlines.cl_id = np.append(centerlines.cl_id, subcls.new_cl_id)
     centerlines.x = np.append(centerlines.x, subcls.lon)
     centerlines.y = np.append(centerlines.y, subcls.lat)
-    centerlines.reach_id = np.append(centerlines.reach_id, subcls.reach_id, axis=1)
-    centerlines.node_id = np.append(centerlines.node_id, subcls.node_id, axis=1)
+    centerlines.reach_id = np.append(centerlines.reach_id, subcls.new_reach_id, axis=1)
+    centerlines.node_id = np.append(centerlines.node_id, subcls.new_node_id, axis=1)
     
     nodes.id = np.append(nodes.id, subnodes.id)
     nodes.cl_id = np.append(nodes.cl_id, subnodes.cl_id, axis=1)
@@ -2138,5 +2194,395 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     print("Ended Saving Main NetCDF in: ", str(np.round((end-start)/60, 2)), " min")
 
     return outfile
+
+###############################################################################
+
+def renumber_reaches(mhv, sword_rch_basins, sword_rch_nums):
+    unq_basins = np.unique(mhv.basins)
+    all_new_rchs = np.zeros(len(mhv.basins), dtype = int)
+    all_new_nodes = np.zeros(len(mhv.basins), dtype = int)
+    for ind in list(range(len(unq_basins))):
+        # print(ind)
+        b = np.where(sword_rch_basins == unq_basins[ind])[0]
+        if len(b) == 0:
+            pts = np.where(mhv.basins == unq_basins[ind])[0]
+            all_new_rchs[pts] = mhv.reach_id[pts]
+            all_new_nodes[pts] = mhv.node_id[pts]
+            continue
+        else:
+            max_val = max(sword_rch_nums[b])
+            pts = np.where(mhv.basins == unq_basins[ind])[0]
+            mhv_basin_rchs = mhv.reach_id[pts]
+            mhv_basin_nodes = mhv.node_id[pts]
+            mhv_rch_nums = np.array([int(str(r)[6:10]) for r in mhv_basin_rchs])
+            mhv_rch_basins = np.array([str(r)[0:6] for r in mhv_basin_rchs])
+            mhv_rch_node_nums = np.array([str(r)[10:13] for r in mhv_basin_nodes])
+            mhv_rch_type = np.array([str(r)[-1] for r in mhv_basin_rchs])
+            if min(mhv_rch_nums) == 1:
+                new_rch_num = mhv_rch_nums+max_val
+            else:
+                mhv_rch_nums_norm = (mhv_rch_nums-min(mhv_rch_nums))+1
+                new_rch_num = mhv_rch_nums_norm+max_val
+            ### make new reach and node ids.
+            new_rch_id = np.zeros(len(mhv_basin_rchs), dtype = int)
+            new_node_id = np.zeros(len(mhv_basin_rchs), dtype = int)
+            for br in list(range(len(mhv_basin_rchs))):
+                if len(str(new_rch_num[br])) == 1:
+                    fill = '000'
+                    new_rch_id[br] = int(mhv_rch_basins[br]+fill+str(new_rch_num[br])+mhv_rch_type[br])
+                    new_node_id[br] = int(mhv_rch_basins[br]+fill+str(new_rch_num[br])+mhv_rch_node_nums[br]+mhv_rch_type[br])
+                if len(str(new_rch_num[br])) == 2:
+                    fill = '00'
+                    new_rch_id[br] = int(mhv_rch_basins[br]+fill+str(new_rch_num[br])+mhv_rch_type[br])
+                    new_node_id[br] = int(mhv_rch_basins[br]+fill+str(new_rch_num[br])+mhv_rch_node_nums[br]+mhv_rch_type[br])
+                if len(str(new_rch_num[br])) == 3:
+                    fill = '0'
+                    new_rch_id[br] = int(mhv_rch_basins[br]+fill+str(new_rch_num[br])+mhv_rch_type[br])
+                    new_node_id[br] = int(mhv_rch_basins[br]+fill+str(new_rch_num[br])+mhv_rch_node_nums[br]+mhv_rch_type[br])
+                if len(str(new_rch_num[br])) == 4:
+                    new_rch_id[br] = int(mhv_rch_basins[br]+str(new_rch_num[br])+mhv_rch_type[br])
+                    new_node_id[br] = int(mhv_rch_basins[br]+str(new_rch_num[br])+mhv_rch_node_nums[br]+mhv_rch_type[br])
+            all_new_rchs[pts] = new_rch_id
+            all_new_nodes[pts] = new_node_id
+            
+    return all_new_rchs, all_new_nodes
+
+###############################################################################
+
+def fill_mhv_topology(subcls):
+    new_pts = np.vstack((subcls.lon, subcls.lat)).T
+    kdt = sp.cKDTree(new_pts)
+    pt_dist, pt_ind = kdt.query(new_pts, k = 6)
+    unq_segs = np.unique(subcls.seg)
+    for s in list(range(len(unq_segs))):
+        seg = np.where(subcls.seg == unq_segs[s])[0]
+        seg_sort = seg[np.argsort(subcls.new_cl_id[seg])]
+        mn_seg_nghs = np.unique(subcls.seg[pt_ind[seg_sort[0],:]])
+        mx_seg_nghs = np.unique(subcls.seg[pt_ind[seg_sort[-1],:]])
+        mn_seg_nghs = mn_seg_nghs[mn_seg_nghs != unq_segs[s]]
+        mx_seg_nghs = mx_seg_nghs[mx_seg_nghs != unq_segs[s]]
+        #finding distance from point and sorting by distance. 
+        if len(mn_seg_nghs) > 0:
+            mn_ngh_dist = np.zeros(len(mn_seg_nghs))
+            mn_ngh_ind = np.zeros(len(mn_seg_nghs))
+            for mn in list(range(len(mn_seg_nghs))):
+                mn_sort = np.where(subcls.seg[pt_ind[seg_sort[0],:]] == mn_seg_nghs[mn])[0]
+                mn_ngh_dist[mn] = max(pt_dist[seg_sort[0], mn_sort])
+                mn_ngh_ind[mn] = max(subcls.new_cl_id[pt_ind[seg_sort[0], mn_sort]])
+            mn_seg_nghs = mn_seg_nghs[np.argsort(mn_ngh_dist)]
+            mn_ngh_dist = mn_ngh_dist[np.argsort(mn_ngh_dist)]
+            mn_ngh_ind = mn_ngh_ind[np.argsort(mn_ngh_dist)]
+        if len(mx_seg_nghs) > 0:
+            mx_ngh_dist = np.zeros(len(mx_seg_nghs))
+            mx_ngh_ind = np.zeros(len(mx_seg_nghs))
+            for mx in list(range(len(mx_seg_nghs))):
+                mx_sort = np.where(subcls.seg[pt_ind[seg_sort[-1],:]] == mx_seg_nghs[mx])[0]
+                mx_ngh_dist[mx] = min(pt_dist[seg_sort[-1], mx_sort])
+                mx_ngh_ind[mx] = min(subcls.new_cl_id[pt_ind[seg_sort[-1], mx_sort]])
+            mx_seg_nghs = mx_seg_nghs[np.argsort(mx_ngh_dist)]
+            mx_ngh_dist = mx_ngh_dist[np.argsort(mx_ngh_dist)]
+            mx_ngh_ind = mx_ngh_ind[np.argsort(mx_ngh_dist)]
+        #finding which are actual neighbors based on indexes. 
+        if len(mn_seg_nghs) > 2:
+            # print('complex min junc', s, unq_segs[s])
+            mx_ind0 = max(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[0])[0]])
+            mx_ind1 = max(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[1])[0]])
+            if mx_ind0 in mn_ngh_ind:
+                mn_seg_nghs = np.array([mn_seg_nghs[0]])
+            else:
+                mn_seg_nghs = np.array([mn_seg_nghs[1]])
+        if len(mx_seg_nghs) > 2:
+            # print('complex max junc', s, unq_segs[s])
+            new_nx_mghs = []
+            if len(np.unique(mn_ngh_dist[0:3])) == 0:
+                mn_ind0 = min(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[0])[0]])
+                mn_ind1 = min(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[1])[0]])
+                mn_ind2 = min(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[2])[0]])
+                if mn_ind0 in mx_ngh_ind:
+                    new_nx_mghs.append(mn_seg_nghs[0])
+                if mn_ind1 in mx_ngh_ind:
+                    new_nx_mghs.append(mn_seg_nghs[1])
+                if mn_ind2 in mx_ngh_ind:
+                    new_nx_mghs.append(mn_seg_nghs[2])
+                mx_seg_nghs = np.array(new_nx_mghs)
+            
+            else:
+                mx_seg_nghs = mx_seg_nghs[0:2]
+
+        ### reach topology.
+        unq_rchs = np.unique(subcls.new_reach_id[0,seg_sort])
+        mxid = [max(subcls.new_cl_id[seg_sort[np.where(subcls.new_reach_id[0,seg_sort] == r)[0]]]) for r in unq_rchs]
+        id_sort = np.argsort(mxid)
+        unq_rchs = unq_rchs[id_sort]
+        if len(unq_rchs) == 1:
+            pts = np.where(subcls.new_reach_id[0,seg_sort] == unq_rchs)[0]
+            mn_id = np.where(subcls.new_cl_id[seg_sort[pts]] == min(subcls.new_cl_id[seg_sort[pts]]))[0]
+            mx_id = np.where(subcls.new_cl_id[seg_sort[pts]] == max(subcls.new_cl_id[seg_sort[pts]]))[0]
+            #need to work out downstream reaches. 
+            dn_nghs = []
+            if len(mn_seg_nghs) > 0:
+                for n in list(range(len(mn_seg_nghs))):
+                    vals = np.where(subcls.seg[pt_ind[seg_sort[0],:]] == mn_seg_nghs[n])[0]
+                    idx = subcls.new_cl_id[pt_ind[seg_sort[0],vals]]
+                    ngh_seg_min = min(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[n])[0]])
+                    ngh_seg_max = max(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[n])[0]])
+                    if ngh_seg_max in idx:
+                        dn_nghs.append(subcls.new_reach_id[0,pt_ind[seg_sort[0],vals[np.where(idx == ngh_seg_max)[0]]]][0])
+                        # subcls.new_reach_id[pt_ind[seg_sort[0],vals[np.where(idx == ngh_seg_max)[0]]]]
+                dn_nghs = np.array(dn_nghs)
+                dn_nghs = dn_nghs.reshape((len(dn_nghs), 1))
+                if len(dn_nghs) > 0:
+                    subcls.new_reach_id[1:len(dn_nghs)+1, seg_sort[pts[mn_id]]] = dn_nghs #subcls.new_reach_id[:, seg_sort[pts[mn_id]]]
+            #need to work out upstream reaches. 
+            up_nghs = []
+            if len(mx_seg_nghs) > 0:
+                for n in list(range(len(mx_seg_nghs))):
+                    vals = np.where(subcls.seg[pt_ind[seg_sort[-1],:]] == mx_seg_nghs[n])[0]
+                    idx = subcls.new_cl_id[pt_ind[seg_sort[-1],vals]]
+                    ngh_seg_min = min(subcls.new_cl_id[np.where(subcls.seg == mx_seg_nghs[n])[0]])
+                    ngh_seg_max = max(subcls.new_cl_id[np.where(subcls.seg == mx_seg_nghs[n])[0]])
+                    if ngh_seg_min in idx:
+                        up_nghs.append(subcls.new_reach_id[0,pt_ind[seg_sort[-1],vals[np.where(idx == ngh_seg_min)[0]]]][0])
+                        # subcls.new_reach_id[pt_ind[seg_sort[0],vals[np.where(idx == ngh_seg_min)[0]]]]
+                up_nghs = np.array(up_nghs)
+                up_nghs = up_nghs.reshape((len(up_nghs), 1))
+                if len(up_nghs) > 0:
+                    subcls.new_reach_id[1:len(up_nghs)+1, seg_sort[pts[mx_id]]] = up_nghs #subcls.new_reach_id[:, seg_sort[pts[mx_id]]]
+        else:
+            for r in list(range(len(unq_rchs))):            
+                if r == 0:
+                    ### first reach of segment.
+                    pts = np.where(subcls.new_reach_id[0,seg_sort] == unq_rchs[r])[0]
+                    mn_id = np.where(subcls.new_cl_id[seg_sort[pts]] == min(subcls.new_cl_id[seg_sort[pts]]))[0]
+                    mx_id = np.where(subcls.new_cl_id[seg_sort[pts]] == max(subcls.new_cl_id[seg_sort[pts]]))[0]
+                    up_nghs = unq_rchs[r+1]; up_nghs = np.array([up_nghs])
+                    subcls.new_reach_id[1:len(up_nghs)+1, seg_sort[pts[mx_id]]] = up_nghs #subcls.new_reach_id[:, seg_sort[pts[mx_id]]]
+                    #need to work out downstream reaches. 
+                    dn_nghs = []
+                    if len(mn_seg_nghs) > 0:
+                        for n in list(range(len(mn_seg_nghs))):
+                            vals = np.where(subcls.seg[pt_ind[seg_sort[0],:]] == mn_seg_nghs[n])[0]
+                            idx = subcls.new_cl_id[pt_ind[seg_sort[0],vals]]
+                            ngh_seg_min = min(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[n])[0]])
+                            ngh_seg_max = max(subcls.new_cl_id[np.where(subcls.seg == mn_seg_nghs[n])[0]])
+                            if ngh_seg_max in idx:
+                                dn_nghs.append(subcls.new_reach_id[0,pt_ind[seg_sort[0],vals[np.where(idx == ngh_seg_max)[0]]]][0])
+                                # subcls.reach_id[pt_ind[seg_sort[0],vals[np.where(idx == ngh_seg_max)[0]]]]
+                        dn_nghs = np.array(dn_nghs)
+                        dn_nghs = dn_nghs.reshape((len(dn_nghs), 1))
+                        if len(dn_nghs) > 0:
+                            subcls.new_reach_id[1:len(dn_nghs)+1, seg_sort[pts[mn_id]]] = dn_nghs #subcls.new_reach_id[:, seg_sort[pts[mn_id]]]
+                elif r == len(unq_rchs)-1:
+                    ### last reach of segment.
+                    pts = np.where(subcls.new_reach_id[0,seg_sort] == unq_rchs[r])[0]
+                    mn_id = np.where(subcls.new_cl_id[seg_sort[pts]] == min(subcls.new_cl_id[seg_sort[pts]]))[0]
+                    mx_id = np.where(subcls.new_cl_id[seg_sort[pts]] == max(subcls.new_cl_id[seg_sort[pts]]))[0]
+                    dn_nghs = unq_rchs[r-1]; dn_nghs = np.array([dn_nghs])
+                    dn_nghs = dn_nghs.reshape((len(dn_nghs), 1))
+                    subcls.new_reach_id[1:len(dn_nghs)+1, seg_sort[pts[mn_id]]] = dn_nghs #subcls.new_reach_id[:, seg_sort[pts[mn_id]]]
+                    #need to work out upstream reaches. 
+                    up_nghs = []
+                    if len(mx_seg_nghs) > 0:
+                        for n in list(range(len(mx_seg_nghs))):
+                            vals = np.where(subcls.seg[pt_ind[seg_sort[-1],:]] == mx_seg_nghs[n])[0]
+                            idx = subcls.new_cl_id[pt_ind[seg_sort[-1],vals]]
+                            ngh_seg_min = min(subcls.new_cl_id[np.where(subcls.seg == mx_seg_nghs[n])[0]])
+                            ngh_seg_max = max(subcls.new_cl_id[np.where(subcls.seg == mx_seg_nghs[n])[0]])
+                            if ngh_seg_min in idx:
+                                up_nghs.append(subcls.new_reach_id[0,pt_ind[seg_sort[-1],vals[np.where(idx == ngh_seg_min)[0]]]][0])
+                                # subcls.reach_id[pt_ind[seg_sort[0],vals[np.where(idx == ngh_seg_min)[0]]]]
+                        up_nghs = np.array(up_nghs)
+                        up_nghs = up_nghs.reshape((len(up_nghs), 1))
+                        if len(up_nghs) > 0:
+                            subcls.new_reach_id[1:len(up_nghs)+1, seg_sort[pts[mx_id]]] = up_nghs #subcls.new_reach_id[:, seg_sort[pts[mx_id]]]
+                else:
+                    ### middle reaches of segment. 
+                    pts = np.where(subcls.new_reach_id[0,seg_sort] == unq_rchs[r])[0]
+                    mn_id = np.where(subcls.new_cl_id[seg_sort[pts]] == min(subcls.new_cl_id[seg_sort[pts]]))[0]
+                    mx_id = np.where(subcls.new_cl_id[seg_sort[pts]] == max(subcls.new_cl_id[seg_sort[pts]]))[0]
+                    up_nghs = unq_rchs[r+1]; up_nghs = np.array([up_nghs])
+                    dn_nghs = unq_rchs[r-1]; dn_nghs = np.array([dn_nghs])
+                    subcls.new_reach_id[1:len(up_nghs)+1, seg_sort[pts[mx_id]]] = up_nghs #subcls.new_reach_id[:, seg_sort[pts[mx_id]]]
+                    subcls.new_reach_id[1:len(dn_nghs)+1, seg_sort[pts[mn_id]]] = dn_nghs #subcls.new_reach_id[:, seg_sort[pts[mn_id]]]
+
+###############################################################################
+
+def join_topology(subcls, centerlines, reaches):
+    join = np.where(subcls.add_flag == 3)[0]
+    join_pts = np.vstack((subcls.lon[join], subcls.lat[join])).T
+    sword_pts = np.vstack((centerlines.x, centerlines.y)).T
+    kdt2 = sp.cKDTree(sword_pts)
+    pt_dist2, pt_ind2 = kdt2.query(join_pts, k = 10)
+    for j in list(range(len(join))):
+        swd_ids = pt_ind2[j,:]
+        rchs = np.unique(centerlines.reach_id[0,swd_ids])
+        types = np.array([int(str(r)[-1]) for r in rchs])
+        if 6 in types:
+            end_rch = np.where(centerlines.reach_id[0,:] == rchs[np.where(types == 6)[0]])[0]
+            mx_id = np.where(centerlines.cl_id[end_rch] == max(centerlines.cl_id[end_rch]))[0]
+            #fill in sword topology. 
+            blank = min(np.where(centerlines.reach_id[:,end_rch[mx_id]]==0)[0])
+            centerlines.reach_id[blank,end_rch[mx_id]] = subcls.new_reach_id[0,join[j]] #centerlines.reach_id[1,end_rch]
+            ridx = np.where(reaches.id == rchs[np.where(types == 6)[0]])[0]
+            up_num = reaches.n_rch_up[ridx]
+            reaches.n_rch_up[ridx] = up_num+1
+            reaches.rch_id_up[up_num,ridx] = subcls.new_reach_id[0,join[j]] #need to check 
+            #fill in mhv topology. 
+            fill_id = min(np.where(subcls.new_reach_id[:,join[j]] == 0)[0])
+            subcls.new_reach_id[fill_id,join[j]] = reaches.id[ridx] #subcls.new_reach_id[:,join[j]]
+        else:
+            #trib junction. 
+            if len(rchs) == 1:
+                ds_rch = np.array([rchs[0]])
+            else:
+                ridx = np.where(np.in1d(reaches.id, rchs) == True)[0]
+                down_rchs = np.unique(reaches.rch_id_down[:,ridx])
+                down_rchs = down_rchs[down_rchs > 0]
+                ds_rch = rchs[np.where(np.in1d(rchs, down_rchs)==True)[0]]
+            #fill in sword topology.
+            if len(ds_rch) > 1:
+                ds_rch = np.array([ds_rch[0]]) 
+            ngh_rch = np.where(centerlines.reach_id[0,:] == ds_rch)[0]
+            mx_id = np.where(centerlines.cl_id[ngh_rch] == max(centerlines.cl_id[ngh_rch]))[0]
+            blank = min(np.where(centerlines.reach_id[:,ngh_rch[mx_id]]==0)[0])
+            centerlines.reach_id[blank,ngh_rch[mx_id]] = subcls.new_reach_id[0,join[j]] #centerlines.reach_id[:,ngh_rch[mx_id]]
+            ds_id = np.where(reaches.id == ds_rch)[0]
+            up_num = reaches.n_rch_up[ds_id]+1
+            reaches.n_rch_up[ds_id] = up_num
+            reaches.rch_id_up[up_num-1,ds_id] = subcls.new_reach_id[0,join[j]] #reaches.rch_id_up[:,ds_id]
+            #fill in mhv topology.
+            fill_id = min(np.where(subcls.new_reach_id[:,join[j]] == 0)[0])
+            subcls.new_reach_id[fill_id,join[j]] = ds_rch #subcls.new_reach_id[:,join[j]]
+
+###############################################################################
+
+def subreach_topo_variables(subreaches, subcls):
+    subreaches.n_rch_up = np.zeros(len(subreaches.id),dtype = int)
+    subreaches.n_rch_down = np.zeros(len(subreaches.id),dtype = int)
+    subreaches.rch_id_up = np.zeros([4,len(subreaches.id)],dtype = int)
+    subreaches.rch_id_down = np.zeros([4,len(subreaches.id)],dtype = int)
+    for r in list(range(len(subreaches.id))):
+        rch = np.where(subcls.new_reach_id[0,:] == subreaches.id[r])[0]
+        if 3 in subcls.add_flag[rch]:
+            mn_id = np.where(subcls.add_flag[rch] == 3)[0]
+        else:
+            mn_id = np.where(subcls.new_cl_id[rch] == min(subcls.new_cl_id[rch]))[0]
+        mx_id = np.where(subcls.new_cl_id[rch] == max(subcls.new_cl_id[rch]))[0]
+        up_rchs = subcls.new_reach_id[1:,rch[mx_id]]; up_rchs = up_rchs[up_rchs>0]
+        dn_rchs = subcls.new_reach_id[1:,rch[mn_id]]; dn_rchs = dn_rchs[dn_rchs>0]
+        num_up = len(up_rchs)
+        num_dn = len(dn_rchs)
+        if num_up > 0:
+            subreaches.n_rch_up[r] = num_up
+            subreaches.rch_id_up[0:num_up,r] = up_rchs #subreaches.rch_id_up[:,r]
+        if num_dn > 0:
+            subreaches.n_rch_down[r] = num_dn
+            subreaches.rch_id_down[0:num_dn,r] = dn_rchs #subreaches.rch_id_down[:,r]
+
+###############################################################################
+
+def renumber_cl_id(subcls, max_id):    
+    unq_segs = np.unique(subcls.seg)
+    subcls.new_cl_id = np.zeros(len(subcls.seg))
+    for s in list(range(len(unq_segs))):
+        seg = np.where(subcls.seg == unq_segs[s])[0]
+        if min(subcls.cl_id[seg]) == 1:
+            subcls.new_cl_id[seg] = subcls.cl_id[seg]+max_id
+        else:
+            temp_ids = (subcls.cl_id[seg]-min(subcls.cl_id[seg]))+1
+            subcls.new_cl_id[seg] = temp_ids+max_id
+        max_id = max(subcls.new_cl_id)
+
+###############################################################################
+
+def delete_mhv_reaches(data, rmv_ind):
+    data.lon = np.delete(data.lon, rmv_ind, axis=0)
+    data.lat = np.delete(data.lat, rmv_ind, axis=0)
+    data.strm = np.delete(data.strm, rmv_ind, axis=0)
+    data.sword_flag = np.delete(data.sword_flag, rmv_ind, axis=0)
+    data.cl_id = np.delete(data.cl_id, rmv_ind, axis=0)
+    data.x = np.delete(data.x, rmv_ind, axis=0)
+    data.y = np.delete(data.y, rmv_ind, axis=0)
+    data.wth = np.delete(data.wth, rmv_ind, axis=0)
+    data.elv = np.delete(data.elv, rmv_ind, axis=0)
+    data.facc = np.delete(data.facc, rmv_ind, axis=0)
+    data.nchan = np.delete(data.nchan, rmv_ind, axis=0)
+    data.manual = np.delete(data.manual, rmv_ind, axis=0)
+    data.eps = np.delete(data.eps, rmv_ind, axis=0)
+    data.lake = np.delete(data.lake, rmv_ind, axis=0)
+    data.delta = np.delete(data.delta, rmv_ind, axis=0)
+    data.grand = np.delete(data.grand, rmv_ind, axis=0)
+    data.grod = np.delete(data.grod, rmv_ind, axis=0)
+    data.grod_fid = np.delete(data.grod_fid, rmv_ind, axis=0)
+    data.hfalls_fid = np.delete(data.hfalls_fid, rmv_ind, axis=0)
+    data.basins = np.delete(data.basins, rmv_ind, axis=0)
+    data.num_obs = np.delete(data.num_obs, rmv_ind, axis=0)
+    data.orbits = np.delete(data.orbits, rmv_ind, axis=0)
+    data.lake_id = np.delete(data.lake_id, rmv_ind, axis=0)
+    data.sword_flag_filt = np.delete(data.sword_flag_filt, rmv_ind, axis=0)
+    data.reach_id = np.delete(data.reach_id, rmv_ind, axis=0)
+    data.rch_len6 = np.delete(data.rch_len6, rmv_ind, axis=0)
+    data.node_num = np.delete(data.node_num, rmv_ind, axis=0)
+    data.rch_eps = np.delete(data.rch_eps, rmv_ind, axis=0)
+    data.type = np.delete(data.type, rmv_ind, axis=0)
+    data.rch_ind6 = np.delete(data.rch_ind6, rmv_ind, axis=0)
+    data.rch_num = np.delete(data.rch_num, rmv_ind, axis=0)
+    data.node_id = np.delete(data.node_id, rmv_ind, axis=0)
+    data.rch_dist6 = np.delete(data.rch_dist6, rmv_ind, axis=0)
+    data.node_len = np.delete(data.node_len, rmv_ind, axis=0)
+    data.seg = np.delete(data.seg, rmv_ind, axis=0)
+    data.ind = np.delete(data.ind, rmv_ind, axis=0)
+    data.dist = np.delete(data.dist, rmv_ind, axis=0)
+    data.add_flag = np.delete(data.add_flag, rmv_ind, axis=0)
+    if "new_reach_id" in data.__dict__:
+        data.new_reach_id = np.delete(data.new_reach_id, rmv_ind, axis=1)
+        data.new_node_id = np.delete(data.new_node_id, rmv_ind, axis=1)
+        data.new_cl_id = np.delete(data.new_cl_id, rmv_ind, axis=0)
+    
+    return data
+
+###############################################################################
+
+def remove_ghost_juncs(subcls):
+    sub_type = np.array([int(str(r)[-1]) for r in subcls.new_reach_id[0,:]])
+    ghost_ind = np.where(sub_type == 6)[0]
+    ghost = np.unique(subcls.new_reach_id[0,ghost_ind])
+    rmv_ghost = []
+    for g in list(range(len(ghost))):
+        pts = np.where(subcls.new_reach_id[0,:] == ghost[g])[0]
+        mn_pt = np.where(subcls.new_cl_id[pts] == min(subcls.new_cl_id[pts]))[0]
+        dn_rchs = np.unique(subcls.new_reach_id[:,pts[0]])
+        dn_rchs = dn_rchs[dn_rchs != ghost[g]]
+        dn_rchs = dn_rchs[dn_rchs>0]
+        if len(dn_rchs) > 0:
+            dn_pts = np.where(subcls.new_reach_id[1,:] == dn_rchs)[0]
+            dn_nghs = np.unique(subcls.new_reach_id[0,dn_pts])
+            dn_nghs = dn_nghs[dn_nghs != ghost[g]]
+            if len(dn_nghs) > 0:
+                for dn in list(range(len(dn_nghs))):
+                    pts2 = np.where(subcls.new_reach_id[0,:] == dn_nghs[dn])[0]
+                    mn_pt2 = np.where(subcls.new_cl_id[pts2] == min(subcls.new_cl_id[pts2]))[0]
+                    if dn_rchs in subcls.new_reach_id[1:3,pts2[mn_pt2]]:
+                        ### update mhv topology and record to remove. 
+                        rmv_ghost.append(ghost[g])
+                        r1 = np.where(subcls.new_reach_id[1,:] == ghost[g])[0]
+                        r2 = np.where(subcls.new_reach_id[2,:] == ghost[g])[0]
+                        r3 = np.where(subcls.new_reach_id[3,:] == ghost[g])[0]
+                        if len(r1) > 0:
+                            for r in list(range(len(r1))):
+                                subcls.new_reach_id[1,r1] = 0
+                                if max(subcls.new_reach_id[1:3,r1]) > 0:
+                                    subcls.new_reach_id[1:3,r1] = np.sort(subcls.new_reach_id[1:3,r1])[::-1]
+                        if len(r2) > 0:
+                            for r in list(range(len(r2))):
+                                subcls.new_reach_id[2,r2] = 0
+                                if max(subcls.new_reach_id[1:3,r2]) > 0:
+                                    subcls.new_reach_id[1:3,r2] = np.sort(subcls.new_reach_id[1:3,r2])[::-1]
+                        if len(r3) > 0:
+                            for r in list(range(len(r3))):
+                                subcls.new_reach_id[3,r3] = 0
+                                if max(subcls.new_reach_id[1:3,r3]) > 0:
+                                    subcls.new_reach_id[1:3,r3] = np.sort(subcls.new_reach_id[1:3,r3])[::-1]
+    return rmv_ghost
 
 ###############################################################################

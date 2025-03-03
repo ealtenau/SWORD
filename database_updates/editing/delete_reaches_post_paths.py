@@ -752,15 +752,15 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'AS'
-version = 'v17'
+region = 'NA'
+version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 # rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/AS/as_ghost_deletions.csv'
 
 # rm_rch_df = pd.read_csv(rch_dir)
 # rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 # rm_rch = np.unique(rm_rch)
-rm_rch = np.array([34244800446,34244800451,34244800436,31243900256,31346000746,31320300056,33121001111,33121001136,34217800766,34217600616,34244800436,34244800451,34244800451,42254000316,42254000326,43470000706,43470000716,43504800186,43504800196,43504601726,43504601736,43506000386,43506001386,43507000316,43507000326,43427000826,43427000836,43447000896,43447000791,43447000806,43482801676,43482801686,43491400756,43491400721,43491400736,43465000586,43465000596,43492300526,43492300536,43496201826,43496201836,43496401786,43496401796,43508900616,43508900626,43684100306,43684100316,43900101166,43900101176,44403400236,44403400226,44542000336,44542000346,45100601006,45100601016,45248902346,45248902356,45403900626,45403900616,45404100696,45404100581,45404100596,45406104646,45406104494,45406104506,45406101306,45406101316,45406102286,45406102276,45406201106,45406201116,45408900756,45408900746]) #manual
+rm_rch = np.array([72195000243, 75214500251]) #manual
 rm_rch = np.unique(rm_rch)
 
 centerlines, nodes, reaches = read_data(sword_dir)
@@ -772,6 +772,9 @@ for ind in list(range(len(rm_rch))):
     rch_ind = np.where(reaches.id == rm_rch[ind])[0]
     node_ind = np.where(nodes.reach_id == rm_rch[ind])[0]
     cl_ind = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
+
+    if len(rch_ind) == 0:
+        print(rm_rch[ind], 'not in database')
 
     centerlines.cl_id = np.delete(centerlines.cl_id, cl_ind, axis=0)
     centerlines.x = np.delete(centerlines.x, cl_ind, axis=0)

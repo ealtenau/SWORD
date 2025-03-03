@@ -1052,33 +1052,54 @@ from scipy import spatial as sp
 import geopandas as gp
 import time
 import matplotlib.pyplot as plt
+import glob
+import os
 
-sword = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/shp/NA/na_sword_reaches_hb74_v17.shp')
-mhv = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/gpkg/NA/hb74_mhv_sword_pts_v18.gpkg')
+def aggregate_files(trib_files):
+    
+    for f in list(range(len(trib_files))):
+        gdf = gp.read_file(trib_files[f])
+        if f == 0:
+            gdf_all = gdf.copy()
+        else:
+            gdf_all = pd.concat([gdf_all, gdf], ignore_index=True)
 
-sword_len = np.sum(sword['reach_len'])
+    return gdf_all
+    
+region = 'NA'
+version='v18'
+# sword = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/shp/NA/na_sword_reaches_hb74_v18.shp')
+# mhv = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/gpkg/NA/additions/mhv_sword_hb74_pts_v18_additions.gpkg')
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+trib_fn = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/gpkg/NA/additions/'
+trib_files = glob.glob(os.path.join(trib_fn, '*.gpkg'))
+mhv = aggregate_files(trib_files)
 
-unq_rchs = np.unique(mhv['reach_id'])
+sword = nc.Dataset(nc_fn)
+sword_len = np.sum(np.array(sword['/reaches/reach_length/'][:]))
+
+keep = np.where(np.array(mhv['add_flag'])>0)[0]
+unq_rchs = np.unique(np.array(mhv['reach_id'])[keep])
 mhv_rch_len = np.zeros(len(unq_rchs))
 mhv_rch_strm = np.zeros(len(unq_rchs))
 mhv_rch_add = np.zeros(len(unq_rchs))
 for r in list(range(len(unq_rchs))):
     rch = np.where(mhv['reach_id'] == unq_rchs[r])[0]
-    mhv_rch_len[r] = np.unique(mhv['rch_len'][rch])
+    mhv_rch_len[r] = max(np.unique(mhv['rch_len'][rch]))
     mhv_rch_strm[r] = max(np.unique(mhv['strmorder'][rch]))
     mhv_rch_add[r] = max(mhv['add_flag'][rch])
 
-add = np.where(mhv_rch_add>0)[0]
-add2 = np.where((mhv_rch_add>0)&(mhv_rch_strm>=4))[0]
+# add = np.where(mhv_rch_add>0)[0]
+# add2 = np.where((mhv_rch_add>0)&(mhv_rch_strm>=4))[0]
 
-mhv_len = np.sum(mhv_rch_len[add]) #down to stream order 3
-mhv_len2 = np.sum(mhv_rch_len[add2]) #down to stream order 4
+mhv_len = np.sum(mhv_rch_len) #down to stream order 3
+# mhv_len2 = np.sum(mhv_rch_len[add2]) #down to stream order 4
 
 ((mhv_len+sword_len)-sword_len)/sword_len*100 #188% increase in database length
-((mhv_len2+sword_len)-sword_len)/sword_len*100 #59% increase in database length
+# ((mhv_len2+sword_len)-sword_len)/sword_len*100 #59% increase in database length
 
 mhv_len/(mhv_len+sword_len)*100 #additions would consitute 65% of new database length.
-mhv_len2/(mhv_len2+sword_len)*100 #additions would consitute 37% of new database length.
+# mhv_len2/(mhv_len2+sword_len)*100 #additions would consitute 37% of new database length.
 
 #overall that is a lot of data for one person to validate and for something to go wrong with non-consistent data bases. 
 
@@ -1339,3 +1360,639 @@ for r in list(range(len(unq_rchs))):
     nsegs = len(np.unique(subcls.seg[pts]))
     if nsegs > 1:
         print(r, unq_rchs[r], nsegs)
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+mhv_gpkg = gp.read_file('/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/gpkg/NA/additions/mhv_sword_hb91_pts_v18_additions.gpkg')
+mhv_nc = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf copy/NA/mhv_sword_hb91_pts_v18.nc','r+')
+
+add_flag = np.array(mhv_nc['/centerlines/add_flag/'][:])
+add_flag[:] = 0
+seg_id = np.array(mhv_nc['/centerlines/new_segs/'][:])
+cl_id = np.array(mhv_nc['/centerlines/cl_id/'][:])
+
+mhv_segs = np.array(mhv_gpkg['new_segs'][:])
+mhv_add = np.array(mhv_gpkg['add_flag'][:], dtype=int)
+mhv_id = np.array(mhv_gpkg['cl_id'][:])
+unq_segs = np.unique(mhv_segs)
+for s in list(range(len(unq_segs))):
+    print(s, len(unq_segs)-1)
+    swd_pts = np.where(seg_id == unq_segs[s])[0]
+    mhv_pts = np.where(mhv_segs == unq_segs[s])[0]
+    keep = np.where(mhv_add[mhv_pts]>0)[0]
+    swd_ids = cl_id[swd_pts]
+    mhv_ids = mhv_id[mhv_pts[keep]]
+    fill = np.where(np.in1d(swd_ids, mhv_ids)==True)[0]
+    add_flag[swd_pts[fill]] = mhv_add[mhv_pts[keep]]
+
+np.unique(add_flag); add_flag.shape
+
+mhv_nc['/centerlines/add_flag/'][:] = add_flag
+mhv_nc.close()
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+region = 'NA'
+version='v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword = nc.Dataset(nc_fn)
+np.where(sword.groups['centerlines'].variables['reach_id'][0,:] == 71181301243)[0]
+
+
+
+mhv = nc.Dataset('/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/NA/mhv_sword_hb83_pts_v18.nc')
+
+
+mhv_add_flag = np.array(mhv_nc['/centerlines/add_flag/'][:])
+ml2 = np.array([int(str(ind)[0:2]) for ind in mhv_rchs])
+rmv = np.where(ml2 == 83)[0]
+mhv_add_flag[rmv] = 0
+
+
+r = 71280000566 #something odd happening in centerline dimension topology in mhv only... 
+rch = np.where(subcls.new_reach_id[0,:] == r)[0]
+# rch = np.where(subcls.reach_id == 71140900013)[0]
+subcls.new_reach_id[0,rch]
+subcls.new_reach_id[1,rch]
+subcls.new_reach_id[2,rch]
+subcls.new_reach_id[3,rch]
+
+
+subcls.new_reach_id[0,rch] # (new) 71140700123 -> (old) 71140700103; # (new) 71140700103 -> (old) 71140700083
+subcls.seg[rch]
+subcls.reach_id[rch]
+## i think 10 is skipping the reach before 12 for upstream. check that 12's downstream reach is correct...
+# 71140900013
+
+# see what is happening in mhv reach 71140700103 should have  71140900013 upstream before 71140700123.
+
+r0 = np.where(subcls.new_reach_id[0,:] == 71140700103)[0]
+r1 = np.where(subcls.new_reach_id[0,:] == 71140700123)[0]
+r2 = np.where(subcls.new_reach_id[0,:] == 71140900013)[0]
+r0_sort = r0[np.argsort(subcls.new_cl_id[r0])]
+r1_sort = r1[np.argsort(subcls.new_cl_id[r1])]
+r2_sort = r2[np.argsort(subcls.new_cl_id[r2])]
+
+tx = subcls.lon[pt_ind[seg_sort[-1],vals[np.where(idx == ngh_seg_min)[0]]]]
+ty = subcls.lat[pt_ind[seg_sort[-1],vals[np.where(idx == ngh_seg_min)[0]]]]
+subcls.new_reach_id[0,pt_ind[seg_sort[-1],:]]
+
+
+plt.plot(subcls.lon[r0_sort], subcls.lat[r0_sort], c = 'black')
+plt.plot(subcls.lon[r1_sort], subcls.lat[r1_sort], c = 'gold')
+plt.plot(subcls.lon[r2_sort], subcls.lat[r2_sort], c = 'red')
+plt.scatter(tx, ty, c = 'cyan')
+plt.show()
+
+problems = np.where(np.diff(subcls.rch_dist6[r1_sort]) > 500)[0]
+
+
+
+71181300773
+71181301293 1763
+
+issues = []
+for s in list(range(len(unq_segs))):
+    seg = np.where(subcls.seg == unq_segs[s])[0]
+    seg_sort = seg[np.argsort(subcls.new_cl_id[seg])]
+    unq_rchs = np.unique(subcls.new_reach_id[0,seg_sort])
+    for r in list(range(len(unq_rchs))):
+        pts = np.where(subcls.new_reach_id[0,seg_sort] == unq_rchs[r])[0]
+        d = np.diff(subcls.rch_dist6[seg_sort[pts]])
+        prob = np.where(d > 1000)[0]
+        if len(prob) > 0:
+            issues.append(unq_rchs[r])
+
+
+rch = np.where(centerlines.reach_id[0,:] == r)[0]
+centerlines.reach_id[0,rch]
+centerlines.reach_id[1,rch]
+centerlines.reach_id[2,rch]
+centerlines.reach_id[3,rch]
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+### redo reach and node lengths with median in added mhv reaches... 
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+region = 'NA'
+version='v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword = nc.Dataset(nc_fn, 'r+')
+
+cl_rchs = np.array(sword['/centerlines/reach_id'][0,:])
+cl_nodes = np.array(sword['/centerlines/node_id'][0,:])
+cx = np.array(sword['/centerlines/x'][:])
+cy = np.array(sword['/centerlines/y'][:])
+reaches = np.array(sword['/reaches/reach_id'][:])
+rx = np.array(sword['/reaches/x'][:])
+ry = np.array(sword['/reaches/y'][:])
+nodes = np.array(sword['/nodes/node_id'][:])
+nx = np.array(sword['/nodes/x'][:])
+ny = np.array(sword['/nodes/y'][:])
+edit_flag = np.array(sword['/reaches/edit_flag'][:])
+
+update = reaches[np.where(edit_flag == '7')[0]]
+for r in list(range(len(update))):
+    print(r, len(update)-1)
+    cind = np.where(cl_rchs == update[r])[0]
+    rind = np.where(reaches == update[r])[0]
+    rx[rind] = np.median(cx[cind])
+    ry[rind] = np.median(cy[cind])
+    unq_nodes = np.unique(cl_nodes[cind])
+    for n in list(range(len(unq_nodes))):
+        cnind = np.where(cl_nodes == unq_nodes[n])[0]
+        nind = np.where(nodes == unq_nodes[n])[0]
+        nx[nind] = np.median(cx[cnind])
+        ny[nind] = np.median(cy[cnind])
+
+sword['/reaches/x'][:] = rx
+sword['/reaches/y'][:] = ry
+sword['/nodes/x'][:] = nx
+sword['/nodes/y'][:] = ny
+sword.close()
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+### redo negative reach and node lengths 
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+from geopy import distance
+
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
+
+region = 'NA'
+version='v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword = nc.Dataset(nc_fn, 'r+')
+
+cl_rchs = np.array(sword['/centerlines/reach_id'][0,:])
+cl_nodes = np.array(sword['/centerlines/node_id'][0,:])
+cl_id = np.array(sword['/centerlines/cl_id'][:])
+cx = np.array(sword['/centerlines/x'][:])
+cy = np.array(sword['/centerlines/y'][:])
+reaches = np.array(sword['/reaches/reach_id'][:])
+rch_len = np.array(sword['/reaches/reach_length'][:])
+nodes = np.array(sword['/nodes/node_id'][:])
+node_len = np.array(sword['/nodes/node_length'][:])
+
+rch_update = reaches[np.where(rch_len < 30)[0]]
+node_update = nodes[np.where(node_len < 30)[0]]
+
+for r in list(range(len(rch_update))):
+    cind = np.where(cl_rchs == rch_update[r])[0]
+    sort_ids = cind[np.argsort(cl_id[cind])]
+    rind = np.where(reaches == rch_update[r])[0]
+    x_coords = cx[sort_ids]
+    y_coords = cy[sort_ids]
+    diff = get_distances(x_coords,y_coords)
+    rlen = max(np.cumsum(diff))
+    # print(r, rch_len[rind], rlen)
+    rch_len[rind] = rlen
+
+for n in list(range(len(node_update))):
+    cind = np.where(cl_nodes == node_update[n])[0]
+    sort_ids = cind[np.argsort(cl_id[cind])]
+    nind = np.where(nodes == node_update[n])[0]
+    x_coords = cx[sort_ids]
+    y_coords = cy[sort_ids]
+    diff = get_distances(x_coords,y_coords)
+    nlen = max(np.cumsum(diff))
+    # print(n, node_len[nind], nlen)
+    node_len[nind] = nlen
+
+sword['/reaches/reach_length'][:] = rch_len
+sword['/nodes/node_length'][:] = node_len
+sword.close()
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+from geopy import distance
+
+region = 'NA'
+version='v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword = nc.Dataset(nc_fn,'r+')
+
+cl_rchs = np.array(sword['/centerlines/reach_id'][:])
+cl_id = np.array(sword['/centerlines/cl_id'][:])
+
+rch = np.where(cl_rchs[0,:] == 82247900161)[0]
+mn = np.where(cl_id[rch] == min(cl_id[rch]))[0]
+mx = np.where(cl_id[rch] == max(cl_id[rch]))[0]
+# cl_rchs[0,rch]
+cl_rchs[1,rch]
+cl_rchs[1,rch[mx]] = 82247900186
+
+
+cl_rchs[2,rch]
+cl_rchs[3,rch]
+
+sword['/centerlines/reach_id'][:] = cl_rchs
+sword.close()
+
+###############################################################################
+###############################################################################
+###############################################################################
+import matplotlib.pyplot as plt
+
+def find_boundaries(subcls):
+
+    # Combine lake and delta flags into one vector.
+    lake_coast_flag = np.copy(subcls.lake)
+    lake_coast_flag[np.where(subcls.delta > 0)] = 3
+
+    # Set variables.
+    reach_nums = np.zeros(len(subcls.ind))
+    Type = np.repeat(1,len(subcls.ind))
+    Len = np.zeros(len(subcls.ind))
+    cnt = 1
+
+    # Loop through each basin and identify SWOT orbit, lake, and dam boundaries.
+    uniq_basins = np.unique(subcls.basins)
+    for ind in list(range(len(uniq_basins))):
+        basin = np.where(subcls.basins == uniq_basins[ind])[0]
+        uniq_segs = np.unique(subcls.seg[basin])
+        for idx in list(range(len(uniq_segs))):
+            seg = np.where(subcls.seg[basin] == uniq_segs[idx])[0]
+            sort_ids = np.argsort(subcls.ind[basin[seg]])
+            ID = subcls.ind[basin[seg[sort_ids]]]
+            dist = subcls.dist[basin[seg[sort_ids]]]
+            lakes = lake_coast_flag[basin[seg[sort_ids]]]
+            grod = subcls.grod[basin[seg[sort_ids]]]
+            dams = np.where((grod > 0) & (grod <= 4))[0]
+
+            # Find lake and dam boundaries.
+            bounds = []
+            if max(lakes) > 0:
+                # print(idx)
+                bounds.extend(np.where(np.diff(lakes) != 0)[0])
+
+            if len(dams) > 0:
+                # print(idx)
+                for d in list(range(len(dams))):
+                    if dams[d] < 3:
+                        bounds.extend(np.array([5])) #first 5ish points are a dam
+                    if dams[d] > len(ID)-4:
+                        bounds.extend(np.array([len(ID) - 6])) #last 5ish points are a dam 
+                    else:
+                        b1 = np.array([dams[d] - 2])
+                        b2 = np.array([dams[d] + 2])
+                        bounds.extend(b1)
+                        bounds.extend(b2)
+            
+            # Account for odd basin boundaries
+            basin_breaks = np.where(np.diff(dist) > 250)[0]
+            if len(basin_breaks) > 0:
+                bounds.extend(basin_breaks+1)
+
+            if len(bounds) > 0:
+                bounds.extend(np.where(ID == np.min(ID))[0])
+                bounds.extend(np.where(ID == np.max(ID))[0])
+                bounds = np.sort(bounds)
+                ### number between boundaries
+                for b in list(range(len(bounds)-1)):
+                    reach_nums[basin[seg[sort_ids[bounds[b]:bounds[b+1]+1]]]] = cnt 
+                    cnt = cnt+1
+                    # reach_nums[basin[seg[sort_ids]]]
+            else:
+                reach_nums[basin[seg[sort_ids]]] = cnt 
+                cnt = cnt+1
+
+            # Create reach "type" flag based on boundaries.
+            unq_rchs = np.unique(reach_nums[basin[seg[sort_ids]]])
+            for r in list(range(len(unq_rchs))):
+                rind = np.where(reach_nums[basin[seg[sort_ids]]] == unq_rchs[r])[0]
+                Len[basin[seg[sort_ids[rind]]]] = max(dist[rind]) - min(dist[rind])
+                if max(lakes[rind]) > 0:
+                    Type[basin[seg[sort_ids[rind]]]] = 3
+                if max(lakes[rind]) == 3:
+                    Type[basin[seg[sort_ids[rind]]]] = 5
+                if max(grod[rind]) > 0:
+                    Type[basin[seg[sort_ids[rind]]]] = 4
+
+    return(reach_nums, Type, Len)
+
+
+
+
+subcls_rch_id0 = np.copy(subcls.rch_id0)
+subcls_rch_len0 = np.copy(subcls.rch_len0)
+subcls_dist = np.copy(subcls.dist)
+subcls_ind = np.copy(subcls.ind)
+max_dist = 20000
+def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
+                subcls_ind, max_dist):
+
+    # Setting variables.
+    cnt = np.max(subcls_rch_id0)+1
+    new_rch_id = np.copy(subcls_rch_id0)
+    new_rch_dist = np.copy(subcls_rch_len0)
+    uniq_rch = np.unique(subcls_rch_id0[np.where(subcls_rch_len0 >= max_dist)])
+
+    # Loop through each reach that is greater than the maximum distance and
+    # divide it into smaller reaches.
+    for ind in list(range(len(uniq_rch))):
+
+        # Finding current reach id and length.
+        rch = np.where(subcls_rch_id0 == uniq_rch[ind])[0]
+        sort_ids = np.argsort(subcls_ind[rch])
+        distance = subcls_dist[rch[sort_ids]]
+        ID = subcls_ind[rch[sort_ids]]
+        # Setting temporary variables.
+        temp_rch_id = np.zeros(len(rch))
+        temp_rch_dist = np.zeros(len(rch))
+        # Determining the number of divisions to cut the reach.
+        d = np.unique(subcls_rch_len0[rch])
+        divs = np.around(d/10000)
+        divs_dist = d/divs
+
+        # Determining new boundaries to cut the reaches.
+        break_index = np.zeros(int(divs-1))
+        for idx in range(int(divs)-1):
+            dist = divs_dist*(range(int(divs)-1)[idx]+1)+np.min(distance)
+            cut = np.where(abs(distance - dist) == np.min(abs(distance - dist)))[0][0]
+            break_index[idx] = cut
+        div_ends = np.array([np.where(ID == np.min(ID))[0][0],np.where(ID == np.max(ID))[0][0]])
+        borders = np.insert(div_ends, 0, break_index)
+        borders = np.sort(borders)
+
+        # Numbering the new cut reaches.
+        for idy in list(range(len(borders)-1)):
+            index1 = borders[idy]
+            index2 = borders[idy+1]
+
+            ID1 = ID[index1]
+            ID2 = ID[index2]
+
+            if ID1 > ID2:
+                vals = np.where((ID2 <= ID) &  (ID <= ID1))[0]
+            else:
+                vals = np.where((ID1 <= ID) &  (ID <= ID2))[0]
+
+            avg_dist = abs(np.max(distance[vals])-np.min(distance[vals]))
+            if avg_dist == 0:
+                temp_rch_dist[vals] = 90.0
+            else:
+                temp_rch_dist[vals] = avg_dist
+
+            temp_rch_id[vals] = cnt
+            cnt=cnt+1
+
+        new_rch_id[rch[sort_ids]] = temp_rch_id
+        new_rch_dist[rch[sort_ids]] = temp_rch_dist
+        #if np.max(new_rch_dist[rch])>max_dist:
+            #print(ind, 'max distance too long - likely an index problem')
+
+    return new_rch_id, new_rch_dist
+
+
+
+#### reach def checks 
+
+plt.plot(subcls.x[basin[seg[sort_ids]]], subcls.y[basin[seg[sort_ids]]], c='red')
+plt.scatter(subcls.x[basin[seg[sort_ids]]], subcls.y[basin[seg[sort_ids]]], c=reach_nums[basin[seg[sort_ids]]])
+plt.show()
+
+plt.scatter(subcls.x[basin[seg[sort_ids]]], subcls.y[basin[seg[sort_ids]]], c=Type[basin[seg[sort_ids]]])
+plt.show()
+
+plt.scatter(subcls.x[basin[seg[sort_ids]]], subcls.y[basin[seg[sort_ids]]], c=Len[basin[seg[sort_ids]]])
+plt.show()
+
+seg_check = np.where(subcls.seg == 22)[0]
+plt.scatter(subcls.x[seg_check], subcls.y[seg_check], c=reach_nums[seg_check])
+plt.show()
+
+
+#### cut reach checks 
+
+plt.plot(subcls.x[rch[sort_ids]], subcls.y[rch[sort_ids]], c='red')
+plt.scatter(subcls.x[rch[sort_ids]], subcls.y[rch[sort_ids]], c=subcls.rch_id0[rch[sort_ids]])
+plt.show()
+
+plt.plot(subcls.x[rch[sort_ids]], subcls.y[rch[sort_ids]], c='red')
+plt.scatter(subcls.x[rch[sort_ids]], subcls.y[rch[sort_ids]], c=new_rch_id[rch[sort_ids]])
+plt.show()
+
+plt.plot(subcls.x[rch[sort_ids]], subcls.y[rch[sort_ids]], c='red')
+plt.scatter(subcls.x[rch[sort_ids]], subcls.y[rch[sort_ids]], c=new_rch_dist[rch[sort_ids]])
+plt.show()
+
+#Check and correct reaches with odd index problems. 
+# issues = rdt.check_rchs(subcls.rch_id1, subcls.rch_dist1, subcls.rch_ind1)
+
+
+seg_check = np.where(subcls.seg == 22)[0]
+
+reaches = np.copy(subcls.rch_id6)
+unq_rchs = np.unique(reaches)
+# len(unq_rchs)
+for r in list(range(len(unq_rchs))):
+    rch = np.where(reaches == unq_rchs[r])[0]
+    diff = subcls.ind[rch]-subcls.rch_ind6[rch]
+    if max(diff) > 0:
+        print(r)
+
+#######################################################################################
+#######################################################################################
+#######################################################################################
+
+### reach def checks
+
+len(np.unique(subcls.rch_id0))
+len(np.unique(subcls.rch_id1))
+len(np.unique(subcls.rch_id2))
+len(np.unique(subcls.rch_id3))
+len(np.unique(subcls.rch_id4))
+len(np.unique(subcls.rch_id5))
+len(np.unique(subcls.reach_id))
+
+max(subcls.rch_len0)
+max(subcls.rch_len1)
+max(subcls.rch_len2)
+max(subcls.rch_len3)
+max(subcls.rch_len4)
+max(subcls.rch_len5)
+max(subcls.rch_len6)
+
+min(subcls.node_id)
+max(subcls.node_len)
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+### redo negative reach and node lengths 
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+region = 'SA'
+version='v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword = nc.Dataset(nc_fn, 'r+')
+
+edit_flag = sword['/reaches/edit_flag'][:]
+reach_id = sword['/reaches/reach_id'][:]
+node_rchs = sword['/nodes/reach_id'][:]
+l6 = np.array([int(str(rch)[0:6]) for rch in reach_id])
+
+np.unique(sword['/reaches/edit_flag'][:])
+np.unique(sword['/nodes/edit_flag'][:])
+sword['/reaches/edit_flag'][:] = np.repeat('NaN', len(sword['/reaches/edit_flag'][:]))
+sword['/nodes/edit_flag'][:] = np.repeat('NaN', len(sword['/nodes/edit_flag'][:]))
+np.unique(sword['/reaches/edit_flag'][:])
+np.unique(sword['/nodes/edit_flag'][:])
+
+### SA only
+# keep_rchs = np.where(l6 == 672099)[0]
+# sword['/reaches/edit_flag'][keep_rchs] = edit_flag[keep_rchs]
+# keep_nodes = np.where(np.in1d(node_rchs, reach_id[keep_rchs]) == True)[0]
+# sword['/nodes/edit_flag'][keep_nodes] = np.repeat('7', len(keep_nodes))
+# np.unique(sword['/reaches/edit_flag'][:])
+# np.unique(sword['/nodes/edit_flag'][:])
+
+sword.close()
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+### redo negative reach and node lengths 
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+import matplotlib.pyplot as plt
+
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/NA/mhv_sword_hb91_pts_v18.nc'
+mhv = nc.Dataset(nc_fn, 'r+')
+
+segs = np.array(mhv['/centerlines/new_segs/'][:])
+index = np.array(mhv['/centerlines/new_segs_ind/'][:])
+flag = np.array(mhv['/centerlines/add_flag/'][:])
+
+s = np.where(segs == 1908)[0]
+sub = np.where((index[s] < 31) & (index[s] > 7))[0]
+index[s[sub]]
+flag[s[sub]]
+
+
+s = np.where(segs == 575)[0]
+index[s[433]]
+
+mhv['/centerlines/add_flag/'][s[433]] = 3
+mhv.close()
+
+
+###############################################################################
+###############################################################################
+###############################################################################
+def remove_ghost_juncs(subcls):
+    sub_type = np.array([int(str(r)[-1]) for r in subcls.new_reach_id[0,:]])
+    ghost_ind = np.where(sub_type == 6)[0]
+    ghost = np.unique(subcls.new_reach_id[0,ghost_ind])
+    rmv_ghost = []
+    for g in list(range(len(ghost))):
+        pts = np.where(subcls.new_reach_id[0,:] == ghost[g])[0]
+        mn_pt = np.where(subcls.new_cl_id[pts] == min(subcls.new_cl_id[pts]))[0]
+        dn_rchs = np.unique(subcls.new_reach_id[:,pts[0]])
+        dn_rchs = dn_rchs[dn_rchs != ghost[g]]
+        dn_rchs = dn_rchs[dn_rchs>0]
+        if len(dn_rchs) > 0:
+            dn_pts = np.where(subcls.new_reach_id[1,:] == dn_rchs)[0]
+            dn_nghs = np.unique(subcls.new_reach_id[0,dn_pts])
+            dn_nghs = dn_nghs[dn_nghs != ghost[g]]
+            if len(dn_nghs) > 0:
+                for dn in list(range(len(dn_nghs))):
+                    pts2 = np.where(subcls.new_reach_id[0,:] == dn_nghs[dn])[0]
+                    mn_pt2 = np.where(subcls.new_cl_id[pts2] == min(subcls.new_cl_id[pts2]))[0]
+                    if dn_rchs in subcls.new_reach_id[1:3,pts2[mn_pt2]]:
+                        ### update mhv topology and record to remove. 
+                        rmv_ghost.append(ghost[g])
+                        r1 = np.where(subcls.new_reach_id[1,:] == ghost[g])[0]
+                        r2 = np.where(subcls.new_reach_id[2,:] == ghost[g])[0]
+                        r3 = np.where(subcls.new_reach_id[3,:] == ghost[g])[0]
+                        if len(r1) > 0:
+                            for r in list(range(len(r1))):
+                                subcls.new_reach_id[1,r1] = 0
+                                if max(subcls.new_reach_id[1:3,r1]) > 0:
+                                    subcls.new_reach_id[1:3,r1] = np.sort(subcls.new_reach_id[1:3,r1])[::-1]
+                        if len(r2) > 0:
+                            for r in list(range(len(r2))):
+                                subcls.new_reach_id[1,r2] = 0
+                                if max(subcls.new_reach_id[1:3,r2]) > 0:
+                                    subcls.new_reach_id[1:3,r2] = np.sort(subcls.new_reach_id[1:3,r2])[::-1]
+                        if len(r3) > 0:
+                            for r in list(range(len(r3))):
+                                subcls.new_reach_id[1,r3] = 0
+                                if max(subcls.new_reach_id[1:3,r3]) > 0:
+                                    subcls.new_reach_id[1:3,r3] = np.sort(subcls.new_reach_id[1:3,r3])[::-1]
+
+
+# test = np.array([1,2,3])
+# test[0] = 0
+# test[:] = np.sort(test)[::-1]

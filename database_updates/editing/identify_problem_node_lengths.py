@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 import netCDF4 as nc
 
-region = 'EU'
-version = 'v16'
+region = 'NA'
+version = 'v18'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
     +region.lower()+'_sword_'+version+'.nc'
 out_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
@@ -31,7 +31,7 @@ for r in list(range(len(rch18))):
         # print(max(node_cs), len18[r])
         # print(max(ndist18[nds]), dist18[r])
 
-# df = {'reach_id': np.array(problem).astype('int64'), 'len_diff': np.array(length).astype('int64')}
-# df = pd.DataFrame(df)
-# df.to_csv(out_dir+region.lower()+'_problematic_node_len.csv', index=False)
+df = {'reach_id': np.array(problem).astype('int64'), 'len_diff': np.array(length).astype('int64')}
+df = pd.DataFrame(df)
+df.to_csv(out_dir+region.lower()+'_problematic_node_len.csv', index=False)
 print('Done. Problem Reaches:', len(problem))

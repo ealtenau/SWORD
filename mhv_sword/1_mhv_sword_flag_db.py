@@ -534,7 +534,7 @@ sword_l2 = np.array([int(str(ind)[0:2]) for ind in sword_id])
 unq_l2 = np.unique(sword_l2)
 
 start_all = time.time()
-for ind in list(range(len(unq_l2))):
+for ind in list(range(4,len(unq_l2))):
     start_basin = time.time()
     print('Starting Basin ' + str(unq_l2[ind]))
     pts = np.where(sword_l2 == unq_l2[ind])[0]

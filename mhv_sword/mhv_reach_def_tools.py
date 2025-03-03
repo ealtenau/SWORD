@@ -174,18 +174,18 @@ def calc_segDist(subcls_lon, subcls_lat, subcls_rch_id, subcls_facc,
         #for a single reach, reproject lat-lon coordinates to utm.
         # print(ind, uniq_segs[ind])
         seg = np.where(subcls_rch_id == uniq_segs[ind])[0]
-        seg_lon = subcls_lon[seg]
-        seg_lat = subcls_lat[seg]
-        upa = subcls_facc[seg]
+        sort_ind = np.argsort(subcls_rch_ind[seg])
+        seg_lon = subcls_lon[seg[sort_ind]]
+        seg_lat = subcls_lat[seg[sort_ind]]
+        # upa = subcls_facc[seg[sort_ind]]
 
         #segment distance
-        sort_ind = np.argsort(subcls_rch_ind[seg])
-        x_coords = seg_lon[sort_ind]
-        y_coords = seg_lat[sort_ind]
+        x_coords = seg_lon
+        y_coords = seg_lat
         diff = get_distances(x_coords,y_coords)
         dist = np.cumsum(diff)
 
-        segDist[seg] = dist
+        segDist[seg[sort_ind]] = dist
         
         #format flow distance as array and determine flow direction by flowacc.
         # start = upa[np.where(dist == np.min(dist))[0][0]]
@@ -201,515 +201,87 @@ def calc_segDist(subcls_lon, subcls_lat, subcls_rch_id, subcls_facc,
 
 ###############################################################################
 
-def find_swot_bounds(seg, orbs, ID, dist, cnt):
-
-    """
-    FUNCTION:
-        Finds the boundaries of the SWOT orbits along the high-resolution
-        centerline locations. This is a sub-function of the "find_all_bounds"
-        function.
-
-    INPUTS
-        seg -- Current GRWL segment.
-        orbs -- SWOT orbits that cover the current segment.
-        ID -- Point indexes for the current segment.
-        dist -- Flow distance for the current segment.
-        cnt -- Count that numbers the various SWOT intersections.
-
-    OUTPUTS
-        binary_orbits -- A binary 1-D array containing SWOT orbit overpass
-            locations (1 = overpass boundary, 0 = no overpass boundary).
-        swot_id -- 1-D array containing reaches defined by the overpass
-            boundaries.
-        swot_dist -- 1-D array containing reach lengths for the SWOT defined
-            reaches.
-    """
-
-    # Identifying all swot orbit boundaries.
-    uniq_orbits = np.unique(orbs)
-    uniq_orbits = uniq_orbits[np.where(uniq_orbits>0)[0]]
-    binary_orbits = np.zeros(len(seg))
-    for idz in list(range(len(uniq_orbits))):
-        temp_array = np.zeros(len(seg))
-        rows = np.where(orbs == uniq_orbits[idz])[0]
-        temp_array[rows] = 1
-        bounds = np.where(np.diff(temp_array) != 0)[0]
-        binary_orbits[bounds] = 1
-
-    binary_orbits[np.where(ID == np.min(ID))] = 1
-    binary_orbits[np.where(ID == np.max(ID))] = 1
-
-    # Assigning an ID to the reaches defined by the swot orbit boundaries.
-    border_ids = ID[np.where(binary_orbits == 1)[0]]
-    borders = np.where(binary_orbits == 1)[0]
-    borders = borders[np.argsort(border_ids)]
-
-    # Empty arrays to fill.
-    swot_dist = np.zeros(len(seg))
-    swot_id = np.zeros(len(seg))
-    cnt=cnt
-
-    #condition for only one swot orbit.
-    if len(borders) <= 2:
-        swot_dist = np.max(dist)
-        swot_id = cnt
-        cnt=cnt+1
-
-    #condition for multiple swot orbits.
-    else:
-        for idy in list(range(len(borders)-1)):
-            index1 = borders[idy]
-            index2 = borders[idy+1]
-
-            ID1 = ID[index1]
-            ID2 = ID[index2]
-
-            if ID1 > ID2:
-                vals = np.where((ID2 <= ID) &  (ID <= ID1))[0]
-            else:
-                vals = np.where((ID1 <= ID) &  (ID <= ID2))[0]
-
-            swot_dist[vals] = abs(np.max(dist[vals])-np.min(dist[vals]))
-            swot_id[vals] = cnt
-            cnt=cnt+1
-            #print(np.unique(swot_dist[vals]), np.unique(swot_id[vals]))
-
-    return binary_orbits, swot_id, swot_dist
-
-###############################################################################
-
-def find_lake_bounds(seg, lakes, ID, dist, cnt):
-
-    """
-    FUNCTION:
-        Finds the boundaries of lakes residing along the high-resolution
-        centerline locations. This is a sub-function of the "find_all_bounds"
-        function.
-
-    INPUTS
-        seg -- Current GRWL segment.
-        lakes -- Lake IDs within the current segment.
-        ID -- Point indexes for the current segment.
-        dist -- Flow distance for the current segment.
-        cnt -- Count that numbers the various lake intersections.
-
-    OUTPUTS
-        lake_bounds -- A binary 1-D array containing lake intersection
-            locations (1 = lake boundary, 0 = no lake boundary).
-        lake_id -- 1-D array containing reaches defined by the intersecting
-            lakes.
-        lake_dist -- 1-D array containing reach lengths for the lake defined
-            reaches.
-    """
-
-    # Finding all lake intersection boundaries.
-    binary_lakes = np.zeros(len(seg))
-    bounds = np.where(np.diff(lakes) != 0)[0]
-    binary_lakes[bounds] = 1
-    binary_lakes[np.where(ID == np.min(ID))] = 1
-    binary_lakes[np.where(ID == np.max(ID))] = 1
-
-    # Assiging IDs to reaches defined by lake boundaries.
-    borders = np.where(binary_lakes == 1)[0]
-    # Empty arrays to fill.
-    lake_dist = np.zeros(len(seg))
-    lake_id = np.zeros(len(seg))
-    lake_bounds = np.zeros(len(seg))
-    cnt=cnt
-
-    #condition for one lake boundary.
-    if len(borders) <= 2:
-        mode = max(set(list(lakes)), key=list(lakes).count)
-        if mode > 0:
-            lake_dist = np.max(dist)
-            lake_id = cnt
-            lake_bounds[borders] = 1
-            cnt=cnt+1
-
-    #condition for multiple lake boundaries.
-    else:
-        for idy in list(range(len(borders)-1)):
-            index1 = borders[idy]
-            index2 = borders[idy+1]
-            id1 = ID[index1]
-            id2 = ID[index2]
-            if index2 == max(borders):
-                index2 = index2+1
-            #find values based on indexes.
-            if id1 > id2:
-                vals = np.where((ID >= id2) & (ID <= id1))[0]
-            else:
-                vals = np.where((ID >= id1) & (ID <= id2))[0]
-            # find mode values of grwl flag.
-            mode = max(set(list(lakes[vals])),
-                       key=list(lakes[vals]).count)
-            if mode > 0:
-                lake_dist[vals] = abs(dist[borders[idy+1]]-dist[borders[idy]])
-                lake_id[vals] = cnt
-                lake_bounds[index1] = 1
-                if index2 > np.max(borders):
-                    lake_bounds[index2-1] = 1
-                if index2 < np.max(borders):
-                    lake_bounds[index2] = 1
-                cnt=cnt+1
-
-    return lake_bounds, lake_id, lake_dist
-
-###############################################################################
-
-def find_dam_bounds(seg, dams, dist, cnt, ID, radius):
-
-    """
-    FUNCTION:
-        Finds the boundaries of dams residing along the high-resolution
-        centerline locations. This is a sub-function of the "find_all_bounds"
-        function.
-
-    INPUTS
-        seg -- Current GRWL segment.
-        dams -- Dam IDs within the current segment.
-        dist -- Flow distance for the current segment.
-        cnt -- Count that numbers the various dam intersections
-        radius -- Desired length of the reach to be formed around the dam.
-
-    OUTPUTS
-        dam_bounds -- A binary 1-D array containing dam reach boundaries
-            (1 = dam boundary, 0 = no dam boundary).
-        dam_id -- 1-D array containing reaches defined by the intersecting
-            dams.
-        dam_dist -- 1-D array containing reach lengths for the dam defined
-            reaches.
-    """
-
-    # Empty arrays to fill.
-    dam_bounds = np.zeros(len(seg))
-    dam_id = np.zeros(len(seg))
-    dam_dist = np.zeros(len(seg))
-    cnt = cnt
-    r = radius
-
-    # Loop through each dam location and define surrounding reach locations
-    # based on the specified radius.
-    for ind in list(range(len(dams))):
-        # Defining flow distances around dam location based on radius (aka desired dam length).
-        if dist[dams[ind]] <= r:
-            new_r = 400 - dist[dams[ind]]
-            lower_bound = np.min(dist)
-            upper_bound = dist[dams[ind]]+new_r
-
-        if dist[dams[ind]] >= (dist[dams[ind]]+r):
-            new_r = np.max(dist) - 400
-            lower_bound = new_r
-            upper_bound = np.max(dist)
-
-        elif r < dist[dams[ind]] < (dist[dams[ind]]+r):
-            lower_bound = dist[dams[ind]]-r
-            upper_bound = dist[dams[ind]]+r
-
-        # Finding existing flow distances closest to the calculated boundaries.
-        if dist[dams[ind]] == 0:
-            lower_dist = 0
-        else:
-            lower_dist = np.min(dist[np.where((dist-lower_bound) > 0)[0]])
-        upper_dist = np.max(dist[np.where((dist-upper_bound) < 0)[0]])
-        bound1 = int(np.where(dist == lower_dist)[0][0])
-        bound2 = int(np.where(dist == upper_dist)[0][0])
-        # Assigning a binary value to the identified locations.
-        dam_bounds[bound1] = 1
-        dam_bounds[bound2] = 1
-        index1 = ID[bound1]
-        index2 = ID[bound2]
-
-        # Assign IDs to reaches defined by the dam locations.
-        if index1 > index2:
-            vals = np.where((ID >= index2) & (ID <= index1))[0]
-            dam_dist[vals] = abs(dist[bound2] - dist[bound1])
-            dam_id[vals] = cnt
-            cnt = cnt+1
-        else:
-            vals = np.where((ID >= index1) & (ID <= index2))[0]
-            dam_dist[vals] = abs(dist[bound1] - dist[bound2])
-            dam_id[vals] = cnt
-            cnt = cnt+1
-
-    return dam_bounds, dam_id, dam_dist
-
-###############################################################################
-
-def find_all_bounds(subcls, radius):
-
-    """
-    FUNCTION:
-        Loops through each basin and finds SWOT orbit, lake, and dam boundaries,
-        and creates a type flag based on each boundary.
-
-    INPUTS
-        subcls -- Object containing attributes for the high-resolution
-            centerline.
-            [attributes used]:
-                seg -- GRWL segment values along the high-resolution centerline.
-                ind -- Point indexes for each GRWL segment along the
-                    high-resolution centerline.
-                basins -- Pfafstetter basin codes along the high-resolution
-                    centerline.
-                lake -- Water body type values along the high-resolution
-                    centerline (0 = river, 1 = lake/reservior, 2 = canal,
-                    3 = tidal).
-                delta -- Delta flag along the high-resolution centerline
-                    (0 = no delta, 1 = delta)
-                dist -- Flow distance along the high-resolution centerline.
-                orbits -- SWOT orbit locations along the high-resolution
-                    centerline.
-                grod -- GROD IDs along the high-resolution centerline.
-
-        radius -- Desired length for the dam reaches.
-
-    OUTPUTS
-        swot_bounds -- A binary 1-D array containing SWOT orbit overpass
-            locations (1 = overpass boundary, 0 = no overpass boundary).
-        swot_id -- 1-D array containing reaches defined by the overpass
-            boundaries.
-        swot_dist -- 1-D array containing reach lengths for the SWOT defined
-            reaches.
-        lake_bounds -- A binary 1-D array containing lake intersection
-            locations (1 = lake boundary, 0 = no lake boundary).
-        lake_id -- 1-D array containing reaches defined by the intersecting
-            lakes.
-        lake_dist -- 1-D array containing reach lengths for the lake defined
-            reaches.
-        dam_bounds -- A binary 1-D array containing dam reach boundaries
-            (1 = dam boundary, 0 = no dam boundary).
-        dam_id -- 1-D array containing reaches defined by the intersecting
-            dams.
-        dam_dist -- 1-D array containing reach lengths for the dam defined
-            reaches.
-        all_bounds -- All boundary locations.
-        Type -- Type of water body between each boundary (1 = river, 2 = lake,
-            3 = lake on river, 4 = dam, 5 = no topology)
-    """
+def find_boundaries(subcls):
 
     # Combine lake and delta flags into one vector.
     lake_coast_flag = np.copy(subcls.lake)
     lake_coast_flag[np.where(subcls.delta > 0)] = 3
 
     # Set variables.
-    uniq_basins = np.unique(subcls.basins)
-    lake_bounds = np.zeros(len(subcls.ind))
-    lake_dist = np.zeros(len(subcls.ind))
-    lake_id = np.zeros(len(subcls.ind))
-    swot_bounds = np.zeros(len(subcls.ind))
-    swot_dist = np.zeros(len(subcls.ind))
-    swot_id = np.zeros(len(subcls.ind))
-    dam_bounds = np.zeros(len(subcls.ind))
-    dam_dist = np.zeros(len(subcls.ind))
-    dam_id = np.zeros(len(subcls.ind))
-    swot_cnt = 1
-    lake_cnt = 1
-    dam_cnt = 1
-    radius = radius
+    reach_nums = np.zeros(len(subcls.ind))
+    Type = np.repeat(1,len(subcls.ind))
+    Len = np.zeros(len(subcls.ind))
+    cnt = 1
 
     # Loop through each basin and identify SWOT orbit, lake, and dam boundaries.
+    uniq_basins = np.unique(subcls.basins)
     for ind in list(range(len(uniq_basins))):
         basin = np.where(subcls.basins == uniq_basins[ind])[0]
         uniq_segs = np.unique(subcls.seg[basin])
         for idx in list(range(len(uniq_segs))):
             seg = np.where(subcls.seg[basin] == uniq_segs[idx])[0]
-            ID = subcls.ind[basin[seg]]
-            dist = subcls.dist[basin[seg]]
-            lakes = lake_coast_flag[basin[seg]]
-            orbs = subcls.orbits[basin[seg]]
-            grod = subcls.grod[basin[seg]]
+            sort_ids = np.argsort(subcls.ind[basin[seg]])
+            ID = subcls.ind[basin[seg[sort_ids]]]
+            dist = subcls.dist[basin[seg[sort_ids]]]
+            lakes = lake_coast_flag[basin[seg[sort_ids]]]
+            grod = subcls.grod[basin[seg[sort_ids]]]
             dams = np.where((grod > 0) & (grod <= 4))[0]
 
-            # Lake boundaries.
-            lb, li, ld = find_lake_bounds(seg, lakes, ID, dist, lake_cnt)
-            lake_bounds[basin[seg]] = lb
-            lake_dist[basin[seg]] = ld
-            lake_id[basin[seg]] = li
-            lake_cnt = np.max(lake_id)+1
-            # SWOT orbit boundaries.
-            sb, si, sd = find_swot_bounds(seg, orbs, ID, dist, swot_cnt)
-            swot_bounds[basin[seg]] = sb
-            swot_dist[basin[seg]] = sd
-            swot_id[basin[seg]] = si
-            swot_cnt = np.max(swot_id)+1
-            # Dam boundaries.
-            db, di, dd = find_dam_bounds(seg, dams, dist, dam_cnt, ID, radius)
-            dam_bounds[basin[seg]] = db
-            dam_dist[basin[seg]] = dd
-            dam_id[basin[seg]] = di
-            dam_cnt = np.max(dam_id)+1
-            #if np.min(dd) == 0:
-                #print(ind, idx)
+            # Find lake and dam boundaries.
+            bounds = []
+            if max(lakes) > 0:
+                # print(idx)
+                bounds.extend(np.where(np.diff(lakes) != 0)[0])
 
-        # Erase lake boundaries within dam boundaries.
-        lake_dam_bounds =  np.copy(lake_bounds)
-        lake_dam_bounds[np.where(dam_id > 0)] = 0
-        lake_dam_bounds[np.where(dam_bounds > 0)] = 1
+            if len(dams) > 0:
+                # print(idx)
+                for d in list(range(len(dams))):
+                    if dams[d] < 3:
+                        bounds.extend(np.array([5])) #first 5ish points are a dam
+                    if dams[d] > len(ID)-4:
+                        bounds.extend(np.array([len(ID) - 6])) #last 5ish points are a dam 
+                    else:
+                        b1 = np.array([dams[d] - 2])
+                        b2 = np.array([dams[d] + 2])
+                        bounds.extend(b1)
+                        bounds.extend(b2)
+            
+            # Account for odd basin boundaries
+            basin_breaks = np.where(np.diff(dist) > 250)[0]
+            if len(basin_breaks) > 0:
+                bounds.extend(basin_breaks+1)
 
-        # Combine all the boundaries into one binary, 1-D array.
-        all_bounds = np.copy(swot_bounds)
-        all_bounds[np.where(lake_id > 0)] = 0
-        all_bounds[np.where(dam_id > 0)] = 0
-        all_bounds[np.where(lake_dam_bounds > 0)] = 1
-
-        # Create reach "type" flag based on boundaries.
-        Type = np.zeros(len(subcls.ind))
-        Type[np.where(Type == 0)] = 1
-        Type[np.where(lake_id > 0)] = 3
-        Type[np.where(subcls.lake == 2)] = 1
-        Type[np.where(subcls.delta > 0)] = 5
-        Type[np.where(dam_id > 0)] = 4
-
-    return(lake_bounds, lake_dist, lake_id, dam_bounds, dam_dist, dam_id,
-           swot_bounds, swot_dist, swot_id, all_bounds, Type)
-
-###############################################################################
-
-def find_initial_reaches(seg, bounds, ID, dist, cnt):
-
-    """
-    FUNCTION:
-        Assigns a unique ID to each reach falling between a boundary. This is
-        a sub-function of the "number_reaches" function.
-
-    INPUTS
-        seg -- Current GRWL segment (1-D array).
-        bounds -- Identifies boundaries along the segment (1-D array).
-        ID -- Point indexes for the segment (1-D array).
-        dist -- Flow distance along the segment (1-D array).
-        cnt -- Start value for the unique IDs assigned to the reaches (value).
-
-    OUTPUTS
-        rch_id -- 1-D array of unique reach IDs.
-        rch_dist -- 1-D array of reach lengths (meters).
-    """
-
-    # Formatting boundaries.
-    binary_orbits = np.copy(bounds)
-    binary_orbits[np.where(ID == np.min(ID))] = 1
-    binary_orbits[np.where(ID == np.max(ID))] = 1
-    border_ids = ID[np.where(binary_orbits == 1)[0]]
-    # Adding first and last segment points to the boundaries array.
-    borders = np.where(binary_orbits == 1)[0]
-    borders = borders[np.argsort(border_ids)]
-
-    # Set variables.
-    rch_dist = np.zeros(len(seg))
-    rch_id = np.zeros(len(seg))
-    cnt=cnt
-
-    # Create ID for each reach between the boundaries.
-    if len(borders) <= 2:
-        rch_dist = np.max(dist)
-        if rch_dist == 0:
-            rch_dist = 30.0
-        rch_id = cnt
-        cnt=cnt+1
-
-    else:
-        for idy in list(range(len(borders)-1)):
-            index1 = borders[idy]
-            index2 = borders[idy+1]
-
-            ID1 = ID[index1]
-            ID2 = ID[index2]
-
-            if ID1 > ID2:
-                vals = np.where((ID2 <= ID) &  (ID <= ID1))[0]
+            if len(bounds) > 0:
+                bounds.extend(np.where(ID == np.min(ID))[0])
+                bounds.extend(np.where(ID == np.max(ID))[0])
+                bounds = np.sort(bounds)
+                ### number between boundaries
+                for b in list(range(len(bounds)-1)):
+                    reach_nums[basin[seg[sort_ids[bounds[b]:bounds[b+1]+1]]]] = cnt 
+                    cnt = cnt+1
+                    # reach_nums[basin[seg[sort_ids]]]
             else:
-                vals = np.where((ID1 <= ID) &  (ID <= ID2))[0]
+                reach_nums[basin[seg[sort_ids]]] = cnt 
+                cnt = cnt+1
 
-            #if index2 == max(borders):
-                #index2 = index2+1
+            # Create reach "type" flag based on boundaries.
+            unq_rchs = np.unique(reach_nums[basin[seg[sort_ids]]])
+            for r in list(range(len(unq_rchs))):
+                rind = np.where(reach_nums[basin[seg[sort_ids]]] == unq_rchs[r])[0]
+                Len[basin[seg[sort_ids[rind]]]] = max(dist[rind]) - min(dist[rind])
+                if max(lakes[rind]) > 0:
+                    Type[basin[seg[sort_ids[rind]]]] = 3
+                if max(lakes[rind]) == 3:
+                    Type[basin[seg[sort_ids[rind]]]] = 5
+                if max(grod[rind]) > 0:
+                    Type[basin[seg[sort_ids[rind]]]] = 4
 
-            dist_diff = abs(np.max(dist[vals])-np.min(dist[vals]))
-
-            if dist_diff == 0:
-                rch_dist[vals] = 30.0
-            else:
-                rch_dist[vals] = dist_diff
-
-            rch_id[vals] = cnt
-            cnt=cnt+1
-
-    return rch_id, rch_dist
-
-###############################################################################
-
-def number_reaches(subcls):
-
-    """
-    FUNCTION:
-        Loops through each basin and saves a unique ID to each reach defined
-        by the SWOT, lake, and dam boundaries.
-
-    INPUTS
-        subcls -- Object containing attributes along the high-resolution
-            centerline.
-            [attributes used]:
-                basins -- Pfafstetter basin codes along the high-resolution
-                    centerline.
-                seg -- GRWL segment values along the high-resolution centerline.
-                dist -- Flow distance along the high-resolution centerline.
-                ind -- Point indexes for each GRWL segment along the
-                    high-resolution centerline.
-                all_bnds -- All boundary locations for lakes, dams, and SWOT
-                    overpasses.
-
-    OUTPUTS
-        rch_id -- 1-D array of unique reach IDs.
-        rch_dist -- 1-D array of reach lengths (meters).
-    """
-
-    uniq_basins = np.unique(subcls.basins)
-    rch_dist = np.zeros(len(subcls.ind))
-    rch_id = np.zeros(len(subcls.ind))
-    all_cnt = 1
-    for ind in list(range(len(uniq_basins))):
-        basin = np.where(subcls.basins == uniq_basins[ind])[0]
-        uniq_segs = np.unique(subcls.seg[basin])
-        for idx in list(range(len(uniq_segs))):
-            seg = np.where(subcls.seg[basin] == uniq_segs[idx])[0]
-            ID = subcls.ind[basin[seg]]
-            dist = subcls.dist[basin[seg]]
-            all_bnds = subcls.all_bnds[basin[seg]]
-
-            ri, rd = find_initial_reaches(seg, all_bnds, ID, dist, all_cnt)
-            rch_dist[basin[seg]] = rd
-            rch_id[basin[seg]] = ri
-            all_cnt = np.max(rch_id)+1
-            #if np.min(rd) == 0:
-                #print(ind, idx, 'Reach Distance = 0')
-
-    return(rch_id, rch_dist)
+    return(reach_nums, Type, Len)
 
 ###############################################################################
 
 def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
                 subcls_ind, max_dist):
-
-    """
-    FUNCTION:
-        Divides reaches with lengths greater than a specified maximum distance
-        into smaller reaches of similar length.
-
-    INPUTS
-        subcls -- Object containing attributes along the high-resolution
-            centerline.
-            [attributes used]:
-                rch_id1 -- Reach numbers for the original reach boundaries.
-                rch_len1 -- Reach lengths for the original reach boundaries.
-                dist -- Flow distance along the high-resolution centerline.
-                ind -- Point indexes for each GRWL segment along the
-                    high-resolution centerline.
-        max_dist -- Desired maximum reach length. The script will cut reaches
-            greater than the specified max_dist.
-
-    OUTPUTS
-        new_rch_id -- 1-D array of updated reach IDs.
-        new_rch_dist -- 1-D array of updated reach lengths (meters).
-    """
 
     # Setting variables.
     cnt = np.max(subcls_rch_id0)+1
@@ -723,8 +295,9 @@ def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
 
         # Finding current reach id and length.
         rch = np.where(subcls_rch_id0 == uniq_rch[ind])[0]
-        distance = subcls_dist[rch]
-        ID = subcls_ind[rch]
+        sort_ids = np.argsort(subcls_ind[rch])
+        distance = subcls_dist[rch[sort_ids]]
+        ID = subcls_ind[rch[sort_ids]]
         # Setting temporary variables.
         temp_rch_id = np.zeros(len(rch))
         temp_rch_dist = np.zeros(len(rch))
@@ -741,8 +314,7 @@ def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
             break_index[idx] = cut
         div_ends = np.array([np.where(ID == np.min(ID))[0][0],np.where(ID == np.max(ID))[0][0]])
         borders = np.insert(div_ends, 0, break_index)
-        border_ids = ID[borders]
-        borders = borders[np.argsort(border_ids)]
+        borders = np.sort(borders)
 
         # Numbering the new cut reaches.
         for idy in list(range(len(borders)-1)):
@@ -759,15 +331,15 @@ def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
 
             avg_dist = abs(np.max(distance[vals])-np.min(distance[vals]))
             if avg_dist == 0:
-                temp_rch_dist[vals] = 30.0
+                temp_rch_dist[vals] = 90.0
             else:
                 temp_rch_dist[vals] = avg_dist
 
             temp_rch_id[vals] = cnt
             cnt=cnt+1
 
-        new_rch_id[rch] = temp_rch_id
-        new_rch_dist[rch] = temp_rch_dist
+        new_rch_id[rch[sort_ids]] = temp_rch_id
+        new_rch_dist[rch[sort_ids]] = temp_rch_dist
         #if np.max(new_rch_dist[rch])>max_dist:
             #print(ind, 'max distance too long - likely an index problem')
 
@@ -892,125 +464,6 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
     return ep1, ep2
 
 ###############################################################################
-
-# def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
-#                    basin_x, basin_y, rch_x, rch_y, rch_ind, rch_len, rch_id, rch):
-
-#     """
-#     FUNCTION:
-#         Finds neighboring reaches that are within the current reach's basin.
-#         This is a sub-function used in the following functions:
-#         "aggregate_rivers", "aggregate_lakes", "aggregate_dams", and
-#         "order_reaches."
-
-#     INPUTS
-#         basin_rch -- All reach IDs within the basin.
-#         basin_dist -- All reach lengths for the reaches in the basin.
-#         basin_flag -- All reach types for the basin.
-#         basin_acc -- All flow accumulation values for the reaches in the basin.
-#         basin_wse -- All elevation values for the reaches in the basin.
-#         basin_x -- Easting values for all points in the basin.
-#         basin_y -- Northing values for all points in the basin.
-#         rch_x -- Easting values for the current reach.
-#         rch_y -- Northing values for the current reach.
-#         rch_ind -- Point indexes for the current reach.
-#         rch_len -- Reach length for the current reach.
-#         rch_id -- ID of the current reach.
-#         rch -- Index locations for the current reach.
-
-#     OUTPUTS
-#         ep1 -- Array of neighboring reach attributes. for the first segment
-#             endpoint. The array row dimensions will depend on the number of
-#             neighbors for that endpoint, while the column dimension will always
-#             be equal to five and contain following attributes for each
-#             neighbor: (1) reach ID, (2) reach length, (3) reach type,
-#             (4) reach flow accumulation, and (5) reach water surface elevation).
-#             For example, if the segment endpoint has two neighbors the array
-#             size would be [2,5], and if the segment endpoint only has one
-#             neighbor the array size would be [1,5]).
-#         ep2 -- Array of neighboring reach attributes for the second segment
-#             endpoint. The array row dimensions will depend on the number of
-#             neighbors for that endpoint, while the column dimension will always
-#             be equal to five and contain following attributes for each
-#             neighbor: (1) reach ID, (2) reach length, (3) reach type,
-#             (4) reach flow accumulation, and (5) reach water surface elevation).
-#             For example, if the segment endpoint has two neighbors the array
-#             size would be [2,5], and if the segment endpoint only has one
-#             neighbor the array size would be [1,5]).
-#     """
-
-#     # Formatting all basin coordinate values.
-#     basin_pts = np.vstack((basin_x, basin_y)).T
-#     # Formatting the current reach's endpoint coordinates.
-#     if len(rch) == 1:
-#         eps = np.array([0,0])
-#     else:
-#         pt1 = np.where(rch_ind == np.min(rch_ind))[0][0]
-#         pt2 = np.where(rch_ind == np.max(rch_ind))[0][0]
-#         eps = np.array([pt1,pt2]).T
-
-#     # Performing a spatial query to get the closest points within the basin
-#     # to the current reach's endpoints.
-#     ep_pts = np.vstack((rch_x[eps], rch_y[eps])).T
-#     kdt = sp.cKDTree(basin_pts)
-
-#     #for grwl the values were 100 and 200 
-#     if rch_len < 300:
-#         pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 300.0)
-#     # elif 300 <= rch_len and rch_len <= 600:
-#     #     pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
-#     else:#elif rch_len > 600:
-#         pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 300.0)
-
-#     # Identifying endpoint neighbors.
-#     ep1_ind = pt_ind[0,:]
-#     ep1_dist = pt_dist[0,:]
-#     na1 = np.where(ep1_ind == len(basin_rch))
-#     ep1_dist = np.delete(ep1_dist, na1)
-#     ep1_ind = np.delete(ep1_ind, na1)
-#     s1 = np.where(basin_rch[ep1_ind] == rch_id)
-#     ep1_dist = np.delete(ep1_dist, s1)
-#     ep1_ind = np.delete(ep1_ind, s1)
-#     ep1_ngb = np.unique(basin_rch[ep1_ind])
-
-#     ep2_ind = pt_ind[1,:]
-#     ep2_dist = pt_dist[1,:]
-#     na2 = np.where(ep2_ind == len(basin_rch))
-#     ep2_dist = np.delete(ep2_dist, na2)
-#     ep2_ind = np.delete(ep2_ind, na2)
-#     s2 = np.where(basin_rch[ep2_ind] == rch_id)
-#     ep2_dist = np.delete(ep2_dist, s2)
-#     ep2_ind = np.delete(ep2_ind, s2)
-#     ep2_ngb = np.unique(basin_rch[ep2_ind])
-
-#     # Pulling attribute information for the endpoint neighbors.
-#     ep1_len = np.zeros(len(ep1_ngb))
-#     ep1_flg = np.zeros(len(ep1_ngb))
-#     ep1_acc = np.zeros(len(ep1_ngb))
-#     ep1_wse = np.zeros(len(ep1_ngb))
-#     for idy in list(range(len(ep1_ngb))):
-#         ep1_len[idy] = np.unique(basin_dist[np.where(basin_rch == ep1_ngb[idy])])
-#         ep1_flg[idy] = np.max(basin_flag[np.where(basin_rch == ep1_ngb[idy])])
-#         ep1_acc[idy] = np.median(basin_acc[np.where(basin_rch == ep1_ngb[idy])])
-#         ep1_wse[idy] = np.median(basin_wse[np.where(basin_rch == ep1_ngb[idy])])
-
-#     ep2_len = np.zeros(len(ep2_ngb))
-#     ep2_flg = np.zeros(len(ep2_ngb))
-#     ep2_acc = np.zeros(len(ep2_ngb))
-#     ep2_wse = np.zeros(len(ep2_ngb))
-#     for idy in list(range(len(ep2_ngb))):
-#         ep2_len[idy] = np.unique(basin_dist[np.where(basin_rch == ep2_ngb[idy])])
-#         ep2_flg[idy] = np.max(basin_flag[np.where(basin_rch == ep2_ngb[idy])])
-#         ep2_acc[idy] = np.median(basin_acc[np.where(basin_rch == ep2_ngb[idy])])
-#         ep2_wse[idy] = np.median(basin_wse[np.where(basin_rch == ep2_ngb[idy])])
-
-#     # Creating final arrays.
-#     ep1 = np.array([ep1_ngb, ep1_len, ep1_flg, ep1_acc, ep1_wse]).T
-#     ep2 = np.array([ep2_ngb, ep2_len, ep2_flg, ep2_acc, ep2_wse]).T
-
-#     return ep1, ep2
-
-###############################################################################
 ##### TAKE 3
 
 def update_rch_indexes(subcls, new_rch_id):
@@ -1022,15 +475,16 @@ def update_rch_indexes(subcls, new_rch_id):
     # Loop through each reach and re-order indexes.
     for ind in list(range(len(uniq_rch))):
         rch = np.where(new_rch_id == uniq_rch[ind])[0]
-        rch_ind = subcls.ind[rch]
-        rch_segs = subcls.seg[rch]
-        unq_segs = np.unique(subcls.seg[rch]) #subcls.seg[rch[index]]
+        sort_ids = np.argsort(subcls.ind[rch])
+        rch_ind = subcls.ind[rch[sort_ids]]
+        rch_segs = subcls.seg[rch[sort_ids]]
+        unq_segs = np.unique(rch_segs) #subcls.seg[rch[index]]
         if len(unq_segs) == 1:
-            new_rch_ind[rch] = subcls.ind[rch]
-            ep1 = np.where(subcls.ind[rch] == np.min(subcls.ind[rch]))[0]
-            ep2 = np.where(subcls.ind[rch] == np.max(subcls.ind[rch]))[0]
-            new_rch_eps[rch[ep1]] = 1
-            new_rch_eps[rch[ep2]] = 1
+            new_rch_ind[rch[sort_ids]] = subcls.ind[rch[sort_ids]]
+            ep1 = np.where(subcls.ind[rch[sort_ids]] == np.min(subcls.ind[rch[sort_ids]]))[0]
+            ep2 = np.where(subcls.ind[rch[sort_ids]] == np.max(subcls.ind[rch[sort_ids]]))[0]
+            new_rch_eps[rch[sort_ids[ep1]]] = 1
+            new_rch_eps[rch[sort_ids[ep2]]] = 1
             #reverse index order to have indexes increasing in the upstream direction.
             # if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
             #     new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))   
@@ -1064,217 +518,6 @@ def update_rch_indexes(subcls, new_rch_id):
                 print(ind, uniq_rch[ind], 'problem with indexes')
 
     return new_rch_ind, new_rch_eps
-
-
-
-
-###############################################################################
-##### TAKE 2
-
-# def update_rch_indexes(subcls, new_rch_id):
-#     # Set variables and find unique reaches.
-#     uniq_rch = np.unique(new_rch_id)
-#     new_rch_ind = np.zeros(len(subcls.ind))
-#     new_rch_eps = np.zeros(len(subcls.ind))
-
-#     # Loop through each reach and re-order indexes.
-#     for ind in list(range(len(uniq_rch))):
-#         rch = np.where(new_rch_id == uniq_rch[ind])[0]
-#         rch_lon = subcls.lon[rch]
-#         rch_lat = subcls.lat[rch]
-#         rch_x, rch_y, __, __ = reproject_utm(rch_lat, rch_lon)
-#         rch_pts = np.vstack((rch_x, rch_y)).T
-#         rch_segs = np.unique(subcls.seg[rch])
-#         rch_eps_all = np.zeros(len(rch))
-#         if len(rch_segs) == 1:
-#             new_rch_ind[rch] = subcls.ind[rch]
-#             ep1 = np.where(subcls.ind[rch] == np.min(subcls.ind[rch]))[0]
-#             ep2 = np.where(subcls.ind[rch] == np.max(subcls.ind[rch]))[0]
-#             new_rch_eps[rch[ep1]] = 1
-#             new_rch_eps[rch[ep2]] = 1
-#             #reverse index order to have indexes increasing in the upstream direction.
-#             if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
-#                 new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))
-            
-#         else:
-#             for r in list(range(len(rch_segs))):
-#                 seg = np.where(subcls.seg[rch] == rch_segs[r])[0]
-#                 mn = np.where(subcls.ind[rch[seg]] == np.min(subcls.ind[rch[seg]]))[0]
-#                 mx = np.where(subcls.ind[rch[seg]] == np.max(subcls.ind[rch[seg]]))[0]
-#                 rch_eps_all[seg[mn]] = 1
-#                 rch_eps_all[seg[mx]] = 1
-
-#             eps_ind = np.where(rch_eps_all>0)[0]
-#             ep_pts = np.vstack((rch_x[eps_ind], rch_y[eps_ind])).T
-#             kdt = sp.cKDTree(rch_pts)
-#             if len(rch) < 4: #use to be 5.
-#                 pt_dist, pt_ind = kdt.query(ep_pts, k = len(rch_segs)) 
-#             else:
-#                 pt_dist, pt_ind = kdt.query(ep_pts, k = 4)
-#             row_sums = np.sum(rch_eps_all[pt_ind], axis = 1)
-#             final_eps = np.where(row_sums == 1)[0]
-#             if len(final_eps) == 0:
-#                 print(ind, uniq_rch[ind], len(rch), 'index issue - short reach')
-#                 # final_eps = np.where(rch_eps_all == 1)[0]
-#                 final_eps = np.array([0,len(rch)-1])
-
-#             elif len(final_eps) > 2:
-#                 print(ind, uniq_rch[ind], len(rch), 'index issue - possible tributary')
-#                 # break
-
-#             # Re-ordering points based on updated endpoints.
-#             new_ind = np.zeros(len(rch))
-#             new_ind[eps_ind[final_eps[0]]]=1
-#             idz = eps_ind[final_eps[0]]
-#             count = 2
-#             while np.min(new_ind) == 0:
-#                 d = np.sqrt((rch_x[idz]-rch_x)**2 + (rch_y[idz]-rch_y)**2)
-#                 dzero = np.where(new_ind == 0)[0]
-#                 #vals = np.where(edits_segInd[dzero] eq 0)
-#                 next_pt = dzero[np.where(d[dzero] == np.min(d[dzero]))[0]][0]
-#                 new_ind[next_pt] = count
-#                 count = count+1
-#                 idz = next_pt
-
-#             new_rch_ind[rch] = new_ind
-#             ep1 = np.where(new_ind == np.min(new_ind))[0]
-#             ep2 = np.where(new_ind == np.max(new_ind))[0]
-#             new_rch_eps[rch[ep1]] = 1
-#             new_rch_eps[rch[ep2]] = 1
-#             #reverse index order to have indexes increasing in the upstream direction.
-#             if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
-#                 new_rch_ind[rch] = abs(new_ind - np.max(new_ind))
-
-#     return new_rch_ind, new_rch_eps
-
-###############################################################################
-
-# def update_rch_indexes(subcls, new_rch_id):
-
-#     """
-#     FUNCTION:
-#         Re-orders the point indexes within a reach and defines reach endpoints.
-
-#     INPUTS
-#         subcls -- Object containing attributes for the high-resolution
-#             centerline.
-#             [attributes used]:
-#                 lon -- Longitude values along the high-resolution centerline.
-#                 lat -- Latitude values along the high-resolution centerline.
-#                 seg -- GRWL segment values along the high-resolution centerline.
-#                 ind -- Point indexes for each GRWL segment along the
-#                     high-resolution centerline.
-#         new_rch_id -- 1-D array of the reach IDs to re-format the point
-#             indexes.
-
-#     OUTPUTS
-#         new_rch_ind -- Updated reach indexes (1-D array).
-#         new_rch_eps -- Updated reach endpoints (1-D array).
-#     """
-
-#     # Set variables and find unique reaches.
-#     uniq_rch = np.unique(new_rch_id)
-#     new_rch_ind = np.zeros(len(subcls.ind))
-#     new_rch_eps = np.zeros(len(subcls.ind))
-
-#     # Loop through each reach and re-order indexes.
-#     for ind in list(range(len(uniq_rch))):
-#         rch = np.where(new_rch_id == uniq_rch[ind])[0]
-#         rch_lon = subcls.lon[rch]
-#         rch_lat = subcls.lat[rch]
-#         rch_x, rch_y, __, __ = reproject_utm(rch_lat, rch_lon)
-#         rch_pts = np.vstack((rch_x, rch_y)).T
-#         rch_segs = subcls.seg[rch]
-#         # segs = np.unique(subcls.seg[rch])
-#         new_ind = np.zeros(len(rch))
-#         eps = np.zeros(len(rch))
-#         rch_dist = calc_segDist(rch_lon, rch_lat, new_rch_id[rch], subcls.facc[rch], subcls.ind[rch])
-
-#         ### added on 11/14/2023 to try and fix issue with short segments that have overlapping points. 
-#         if len(np.unique(rch_dist)) != len(rch_dist):
-#             unq_ind = np.unique(rch_dist, return_index=True)[1]
-#             segs = np.unique(subcls.seg[rch][unq_ind])
-#         else:
-#             segs = np.unique(subcls.seg[rch])
-
-#         # Reformat indexes if multiple segments are within a reach.
-#         if len(segs) > 1:
-#             # print(ind)
-#             # break
-#             for idx in list(range(len(segs))):
-#                 s = np.where(subcls.seg[rch] == segs[idx])[0]
-#                 mn = np.where(subcls.ind[rch[s]] == np.min(subcls.ind[rch[s]]))[0]
-#                 mx = np.where(subcls.ind[rch[s]] == np.max(subcls.ind[rch[s]]))[0]
-#                 eps[s[mn]] = 1
-#                 eps[s[mx]] = 1
-
-#             # Finding true endpoints from orginal GRWL segment extents within
-#             # the new reach extent.
-#             eps_ind = np.where(eps>0)[0]
-#             ep_pts = np.vstack((rch_x[eps_ind], rch_y[eps_ind])).T
-#             kdt = sp.cKDTree(rch_pts)
-#             if len(rch_segs) < 4: #use to be 5.
-#                 pt_dist, pt_ind = kdt.query(ep_pts, k = len(rch_segs)) 
-#             else:
-#                 pt_dist, pt_ind = kdt.query(ep_pts, k = 4) 
-
-#             real_eps = []
-#             for idy in list(range(len(eps_ind))):
-#                 neighbors = len(np.unique(rch_segs[pt_ind[idy,:]]))
-#                 if neighbors == 1:
-#                     real_eps.append(eps_ind[idy])
-#             real_eps = np.array(real_eps)
-
-#             if len(real_eps) == 1 or len(real_eps) == 2:
-#                 final_eps = real_eps
-
-#             else:
-#                 kdt2 = sp.cKDTree(ep_pts)
-#                 if len(ep_pts) < 4:
-#                     pt_dist2, pt_ind2 = kdt2.query(ep_pts, k = len(ep_pts))
-#                 else:
-#                     pt_dist2, pt_ind2 = kdt2.query(ep_pts, k = 4)
-#                 real_eps2 = np.where(pt_dist2== np.max(pt_dist2))[0]
-#                 final_eps = real_eps2
-
-#             if len(final_eps) == 0 or len(final_eps) > 2:
-#                 print(uniq_rch[ind], 'ind =', ind, len(final_eps), 'problem with indexes')
-#                 # break
-
-#             # Re-ordering points based on updated endpoints.
-#             new_ind[final_eps[0]]=1
-#             idz = final_eps[0]
-#             count = 2
-#             while np.min(new_ind) == 0:
-#                 d = np.sqrt((rch_x[idz]-rch_x)**2 + (rch_y[idz]-rch_y)**2)
-#                 dzero = np.where(new_ind == 0)[0]
-#                 #vals = np.where(edits_segInd[dzero] eq 0)
-#                 next_pt = dzero[np.where(d[dzero] == np.min(d[dzero]))[0]][0]
-#                 new_ind[next_pt] = count
-#                 count = count+1
-#                 idz = next_pt
-
-#             new_rch_ind[rch] = new_ind
-#             ep1 = np.where(new_ind == np.min(new_ind))[0]
-#             ep2 = np.where(new_ind == np.max(new_ind))[0]
-#             new_rch_eps[rch[ep1]] = 1
-#             new_rch_eps[rch[ep2]] = 1
-#             #reverse index order to have indexes increasing in the upstream direction.
-#             if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
-#                 new_rch_ind[rch] = abs(new_ind - np.max(new_ind))
-
-#         # If there are no combined segments within reach keep current indexes.
-#         else:
-#             new_rch_ind[rch] = subcls.ind[rch]
-#             ep1 = np.where(subcls.ind[rch] == np.min(subcls.ind[rch]))[0]
-#             ep2 = np.where(subcls.ind[rch] == np.max(subcls.ind[rch]))[0]
-#             new_rch_eps[rch[ep1]] = 1
-#             new_rch_eps[rch[ep2]] = 1
-#             #reverse index order to have indexes increasing in the upstream direction.
-#             if subcls.facc[rch[ep1]] < subcls.facc[rch[ep2]]:
-#                 new_rch_ind[rch] = abs(new_rch_ind[rch] - np.max(new_rch_ind[rch]))
-
-#     return new_rch_ind, new_rch_eps
 
 ###############################################################################
 
@@ -1323,15 +566,16 @@ def aggregate_rivers(subcls, min_dist):
         # print(ind, 'BASIN = ', uniq_basins[ind])
         # basin = np.where(level4 == uniq_basins[ind])[0]
         basin = np.where(subcls.seg == uniq_basins[ind])[0]
-        basin_l6 =  subcls.basins[basin]
-        basin_rch = subcls.rch_id1[basin]
-        basin_dist = subcls.rch_len1[basin]
-        basin_flag = subcls.type1[basin]
-        basin_acc = subcls.facc[basin]
-        basin_wse = subcls.elv[basin]
-        basin_lon = subcls.lon[basin]
-        basin_lat = subcls.lat[basin]
-        basin_ind = subcls.ind[basin]
+        sort_ids = np.argsort(subcls.ind[basin])
+        basin_l6 =  subcls.basins[basin[sort_ids]]
+        basin_rch = subcls.rch_id1[basin[sort_ids]]
+        basin_dist = subcls.rch_len1[basin[sort_ids]]
+        basin_flag = subcls.type1[basin[sort_ids]]
+        basin_acc = subcls.facc[basin[sort_ids]]
+        basin_wse = subcls.elv[basin[sort_ids]]
+        basin_lon = subcls.lon[basin[sort_ids]]
+        basin_lat = subcls.lat[basin[sort_ids]]
+        basin_ind = subcls.ind[basin[sort_ids]]
         # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
 
         # creating dummy vectors to help keep track of changes.
@@ -2217,9 +1461,9 @@ def aggregate_rivers(subcls, min_dist):
                 print(ind, 'LOOP STUCK')
 
         ### should be replaced after while loop.
-        new_rch_id[basin] = basin_rch
-        new_rch_dist[basin] = basin_dist
-        new_flag[basin] = basin_flag
+        new_rch_id[basin[sort_ids]] = basin_rch
+        new_rch_dist[basin[sort_ids]] = basin_dist
+        new_flag[basin[sort_ids]] = basin_flag
 
     return new_rch_id, new_rch_dist, new_flag
 
@@ -2271,15 +1515,16 @@ def aggregate_lakes(subcls, min_dist):
         #print(ind)
         # basin = np.where(level4 == uniq_basins[ind])[0]
         basin = np.where(subcls.seg == uniq_basins[ind])[0]
-        basin_l6 =  subcls.basins[basin]
-        basin_rch = subcls.rch_id2[basin]
-        basin_dist = subcls.rch_len2[basin]
-        basin_flag = subcls.type2[basin]
-        basin_acc = subcls.facc[basin]
-        basin_wse = subcls.elv[basin]
-        basin_lon = subcls.lon[basin]
-        basin_lat = subcls.lat[basin]
-        basin_ind = subcls.rch_ind2[basin]
+        sort_ids = np.argsort(subcls.ind[basin])
+        basin_l6 =  subcls.basins[basin[sort_ids]]
+        basin_rch = subcls.rch_id2[basin[sort_ids]]
+        basin_dist = subcls.rch_len2[basin[sort_ids]]
+        basin_flag = subcls.type2[basin[sort_ids]]
+        basin_acc = subcls.facc[basin[sort_ids]]
+        basin_wse = subcls.elv[basin[sort_ids]]
+        basin_lon = subcls.lon[basin[sort_ids]]
+        basin_lat = subcls.lat[basin[sort_ids]]
+        basin_ind = subcls.ind[basin[sort_ids]]
         # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
 
         #creating dummy vectors to help keep track of changes.
@@ -3025,9 +2270,9 @@ def aggregate_lakes(subcls, min_dist):
                 print(ind, 'LOOP STUCK')
 
         ### should be replaced after while loop.
-        new_rch_id[basin] = basin_rch
-        new_rch_dist[basin] = basin_dist
-        new_flag[basin] = basin_flag
+        new_rch_id[basin[sort_ids]] = basin_rch
+        new_rch_dist[basin[sort_ids]] = basin_dist
+        new_flag[basin[sort_ids]] = basin_flag
 
     return new_rch_id, new_rch_dist, new_flag
 
@@ -3082,15 +2327,16 @@ def aggregate_dams(subcls, min_dist):
         #print(ind)
         # basin = np.where(level4 == uniq_basins[ind])[0]
         basin = np.where(subcls.seg == uniq_basins[ind])[0]
-        basin_l6 =  subcls.basins[basin]
-        basin_rch = subcls.rch_id3[basin]
-        basin_dist = subcls.rch_len3[basin]
-        basin_flag = subcls.type3[basin]
-        basin_acc = subcls.facc[basin]
-        basin_wse = subcls.elv[basin]
-        basin_lon = subcls.lon[basin]
-        basin_lat = subcls.lat[basin]
-        basin_ind = subcls.rch_ind3[basin]
+        sort_ids = np.argsort(subcls.ind[basin])
+        basin_l6 =  subcls.basins[basin[sort_ids]]
+        basin_rch = subcls.rch_id3[basin[sort_ids]]
+        basin_dist = subcls.rch_len3[basin[sort_ids]]
+        basin_flag = subcls.type3[basin[sort_ids]]
+        basin_acc = subcls.facc[basin[sort_ids]]
+        basin_wse = subcls.elv[basin[sort_ids]]
+        basin_lon = subcls.lon[basin[sort_ids]]
+        basin_lat = subcls.lat[basin[sort_ids]]
+        basin_ind = subcls.ind[basin[sort_ids]]
         # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
 
         #creating dummy vectors to help keep track of changes.
@@ -3792,9 +3038,9 @@ def aggregate_dams(subcls, min_dist):
                 print(ind, 'LOOP STUCK')
 
         ### should be replaced after while loop.
-        new_rch_id[basin] = basin_rch
-        new_rch_dist[basin] = basin_dist
-        new_flag[basin] = basin_flag
+        new_rch_id[basin[sort_ids]] = basin_rch
+        new_rch_dist[basin[sort_ids]] = basin_dist
+        new_flag[basin[sort_ids]] = basin_flag
 
     return new_rch_id, new_rch_dist, new_flag
 
@@ -4340,9 +3586,10 @@ def node_reaches(subcls, node_len):
 
         # Current reach information.
         rch = np.where(subcls.rch_id5 == uniq_rch[ind])[0]
-        distance = subcls.rch_dist5[rch]
+        sort_ids = np.argsort(subcls.rch_ind5[rch])
+        distance = subcls.rch_dist5[rch[sort_ids]]
 
-        ID = subcls.rch_ind5[rch]
+        ID = subcls.rch_ind5[rch[sort_ids]]
 
         # Temporary fill variables.
         temp_node_id = np.zeros(len(rch))
@@ -4390,11 +3637,11 @@ def node_reaches(subcls, node_len):
         last_node = np.where(temp_node_id == np.max(temp_node_id))[0]
 
         if np.median(subcls.facc[rch[first_node]]) < np.median(subcls.facc[rch[last_node]]):
-            node_num[rch] = abs(temp_node_id - np.max(temp_node_id))+1
-            node_dist[rch] = temp_node_dist
+            node_num[rch[sort_ids]] = abs(temp_node_id - np.max(temp_node_id))+1
+            node_dist[rch[sort_ids]] = temp_node_dist
         else:
-            node_num[rch] = temp_node_id
-            node_dist[rch] = temp_node_dist
+            node_num[rch[sort_ids]] = temp_node_id
+            node_dist[rch[sort_ids]] = temp_node_dist
 
         #if np.max(node_dist[rch])>node_len*2:
             #print(ind, 'max distance too long - likely an index problem')
@@ -4403,14 +3650,14 @@ def node_reaches(subcls, node_len):
         for inz in list(range(len(rch))):
             #if len(str(int(node_num[rch[inz]]))) > 3:
                 #print(ind)
-            if len(str(int(node_num[rch[inz]]))) == 1:
+            if len(str(int(node_num[rch[sort_ids[inz]]]))) == 1:
                 fill = '00'
-                node_id[rch[inz]] = int(str(subcls.reach_id[rch[inz]])[:-1]+fill+str(int(node_num[rch[inz]]))+str(subcls.reach_id[rch[inz]])[10:11])
-            if len(str(int(node_num[rch[inz]]))) == 2:
+                node_id[rch[sort_ids[inz]]] = int(str(subcls.reach_id[rch[sort_ids[inz]]])[:-1]+fill+str(int(node_num[rch[sort_ids[inz]]]))+str(subcls.reach_id[rch[sort_ids[inz]]])[10:11])
+            if len(str(int(node_num[rch[sort_ids[inz]]]))) == 2:
                 fill = '0'
-                node_id[rch[inz]] = int(str(subcls.reach_id[rch[inz]])[:-1]+fill+str(int(node_num[rch[inz]]))+str(subcls.reach_id[rch[inz]])[10:11])
-            if len(str(int(node_num[rch[inz]]))) == 3:
-                node_id[rch[inz]] = int(str(subcls.reach_id[rch[inz]])[:-1]+str(int(node_num[rch[inz]]))+str(subcls.reach_id[rch[inz]])[10:11])
+                node_id[rch[sort_ids[inz]]] = int(str(subcls.reach_id[rch[sort_ids[inz]]])[:-1]+fill+str(int(node_num[rch[sort_ids[inz]]]))+str(subcls.reach_id[rch[sort_ids[inz]]])[10:11])
+            if len(str(int(node_num[rch[sort_ids[inz]]]))) == 3:
+                node_id[rch[sort_ids[inz]]] = int(str(subcls.reach_id[rch[sort_ids[inz]]])[:-1]+str(int(node_num[rch[sort_ids[inz]]]))+str(subcls.reach_id[rch[sort_ids[inz]]])[10:11])
 
     return node_id, node_dist, node_num
 
@@ -4692,14 +3939,15 @@ def update_netcdf(nc_file, centerlines):
 
 ###############################################################################
 
-def check_rchs(rch_id, dist):
+def check_rchs(rch_id, dist, indexes):
     issues = []
     unq_rch = np.unique(rch_id)
     for ind in list(range(len(unq_rch))):
         rch = np.where(rch_id == unq_rch[ind])[0]
+        sort_ids = rch[np.argsort(indexes[rch])]
         if len(rch) == 1:
             continue
-        diff = np.abs(np.diff(dist[rch]))
+        diff = np.abs(np.diff(dist[sort_ids]))
         if np.max(diff) > 1000:
             issues.append(unq_rch[ind])
     return issues

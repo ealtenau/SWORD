@@ -2,11 +2,11 @@ import numpy as np
 import netCDF4 as nc
 import pandas as pd
 
-region = 'AS'
-version = 'v17'
+region = 'NA'
+version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc')
-outpath = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/'+region.lower()+'_'+version+'_single_pt_rchs.csv'
+outpath = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'+region.lower()+'_'+version+'_single_pt_rchs.csv'
 
 #centerline variables to update.
 cl_ids = sword.groups['centerlines'].variables['cl_id'][:]

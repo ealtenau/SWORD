@@ -22,16 +22,16 @@ version = args.version
 basin = args.basin
 
 # region = 'NA'
-# basin = '73'
-# version = 'v17'
+# version = 'v18'
+# basin = '74'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 if basin == 'All':
-    # rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
-    #     +version+'/gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
-    rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+version+'/'+region+\
-        '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
+    rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
+        +version+'/gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
+    # rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+version+'/'+region+\
+    #     '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
 else:
     rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
         +version+'/shp/'+region+'/'+region.lower()+'_sword_reaches_hb'+basin+'_'+version+'.shp'

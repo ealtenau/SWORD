@@ -10,6 +10,8 @@ import glob
 from geopy import distance
 import matplotlib.pyplot as plt
 import argparse
+import warnings
+warnings.filterwarnings("ignore") #if code stops working may need to comment out to check warnings. 
 
 ###############################################################################
 
@@ -178,26 +180,31 @@ def overlapping_files(mhv_lon, mhv_lat, elv_paths):
     for fn in elv_paths:
         # Read raster extent
         # Open the raster file
-        raster_ds = gdal.Open(fn)
-        raster_geotransform = raster_ds.GetGeoTransform()
-        raster_extent = (
-            raster_geotransform[0],
-            raster_geotransform[0] + raster_geotransform[1] * raster_ds.RasterXSize,
-            raster_geotransform[3] + raster_geotransform[5] * raster_ds.RasterYSize,
-            raster_geotransform[3]
-        )
+        try:
+            raster_ds = gdal.Open(fn)
+            raster_geotransform = raster_ds.GetGeoTransform()
+            raster_extent = (
+                raster_geotransform[0],
+                raster_geotransform[0] + raster_geotransform[1] * raster_ds.RasterXSize,
+                raster_geotransform[3] + raster_geotransform[5] * raster_ds.RasterYSize,
+                raster_geotransform[3]
+            )
 
-        # Check for overlap
-        overlap = (
-            poly_box[0] < raster_extent[1] and
-            poly_box[1] > raster_extent[0] and
-            poly_box[2] < raster_extent[3] and
-            poly_box[3] > raster_extent[2]
-        )
+            # Check for overlap
+            overlap = (
+                poly_box[0] < raster_extent[1] and
+                poly_box[1] > raster_extent[0] and
+                poly_box[2] < raster_extent[3] and
+                poly_box[3] > raster_extent[2]
+            )
 
-        if overlap == True:
-            track_files.append(fn)
-    
+            if overlap == True:
+                track_files.append(fn)
+
+        except:
+            print('!!Read Error!!', fn)
+            continue
+        
     track_files = np.unique(track_files)
 
     return(track_files)
@@ -213,7 +220,7 @@ parser.add_argument("region", help="<Required> Region", type = str)
 args = parser.parse_args()
 
 region = args.region
-# region = 'NA'
+# region = 'AS'
 mh_elv_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MERIT_Hydro/'+region+'/elv/'
 mh_facc_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MERIT_Hydro/'+region+'/upa/'
 mh_wth_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MERIT_Hydro/'+region+'/wth/'
@@ -223,13 +230,18 @@ wth_paths = np.sort(np.array([file for file in getListOfFiles(mh_wth_dir) if '.t
 mhv_fn = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/'+region+'/'
 mhv_files = glob.glob(os.path.join(mhv_fn, '*.nc'))
 
-for f in list(range(len(mhv_files))):
+for f in list(range(len(mhv_files))): #having trouble with ind = 5 for AS (basin 35)
     print('Starting File:', mhv_files[f][-25:])
     mhv = nc.Dataset(mhv_files[f], 'r+')
     mhv_lon = mhv.groups['centerlines'].variables['x'][:].data
     mhv_lat = mhv.groups['centerlines'].variables['y'][:].data
     mhv_id = mhv.groups['centerlines'].variables['new_segs'][:].data
     mhv_ind = mhv.groups['centerlines'].variables['new_segs_ind'][:].data
+    #convert degrees over 180. 
+    convert = np.where(mhv_lon > 180)[0]
+    if len(convert) > 0:
+        mhv_lon[convert] = mhv_lon[convert]-360
+
     mhv_points = [(mhv_lon[i], mhv_lat[i]) for i in range(len(mhv_lon))]
     mhv_pts = np.array(mhv_points)
 
@@ -338,33 +350,48 @@ for f in list(range(len(mhv_files))):
     print('Finished Segments in: ' + str(np.round((end2-start2)/60, 2)) + ' min')
 
     print('======== Adding New Variables to NetCDF ========')
-    mhv.groups['centerlines'].createVariable('cl_id', 'i8', ('num_points',))
-    mhv.groups['centerlines'].createVariable('easting', 'f8', ('num_points',))
-    mhv.groups['centerlines'].createVariable('northing', 'f8', ('num_points',))
-    # mhv.groups['centerlines'].createVariable('segInd', 'f8', ('num_points',))
-    mhv.groups['centerlines'].createVariable('new_segDist', 'f8', ('num_points',))
-    mhv.groups['centerlines'].createVariable('p_width', 'f8', ('num_points',))
-    mhv.groups['centerlines'].createVariable('p_height', 'f8', ('num_points',))
-    mhv.groups['centerlines'].createVariable('flowacc', 'f8', ('num_points',))
-    mhv.groups['centerlines'].createVariable('nchan', 'i4', ('num_points',))
-    mhv.groups['centerlines'].createVariable('manual_add', 'i4', ('num_points',))
-    mhv.groups['centerlines'].createVariable('endpoints', 'i4', ('num_points',))
-    mhv.groups['centerlines'].createVariable('mh_tile', 'S7', ('num_points',))
-    mhv.groups['centerlines'].variables['mh_tile']._Encoding = 'ascii'
-
-    mhv.groups['centerlines'].variables['cl_id'][:] = mhv_cl_id
-    mhv.groups['centerlines'].variables['easting'][:] = mhv_x
-    mhv.groups['centerlines'].variables['northing'][:] = mhv_y
-    # mhv.groups['centerlines'].variables['segInd'][:] = mhv_ind
-    mhv.groups['centerlines'].variables['new_segDist'][:] = mhv_dist
-    mhv.groups['centerlines'].variables['p_width'][:] = mhv_wth
-    mhv.groups['centerlines'].variables['p_height'][:] = mhv_elv
-    mhv.groups['centerlines'].variables['flowacc'][:] = mhv_facc
-    mhv.groups['centerlines'].variables['nchan'][:] = mhv_nchan
-    mhv.groups['centerlines'].variables['manual_add'][:] = mhv_manual_add
-    mhv.groups['centerlines'].variables['endpoints'][:] = mhv_endpts
-    mhv.groups['centerlines'].variables['mh_tile'][:] = mhv_tile
-    mhv.close()
+    if 'flowacc' in mhv.groups['centerlines'].variables:
+        mhv.groups['centerlines'].variables['cl_id'][:] = mhv_cl_id
+        mhv.groups['centerlines'].variables['easting'][:] = mhv_x
+        mhv.groups['centerlines'].variables['northing'][:] = mhv_y
+        # mhv.groups['centerlines'].variables['segInd'][:] = mhv_ind
+        mhv.groups['centerlines'].variables['new_segDist'][:] = mhv_dist
+        mhv.groups['centerlines'].variables['p_width'][:] = mhv_wth
+        mhv.groups['centerlines'].variables['p_height'][:] = mhv_elv
+        mhv.groups['centerlines'].variables['flowacc'][:] = mhv_facc
+        mhv.groups['centerlines'].variables['nchan'][:] = mhv_nchan
+        mhv.groups['centerlines'].variables['manual_add'][:] = mhv_manual_add
+        mhv.groups['centerlines'].variables['endpoints'][:] = mhv_endpts
+        mhv.groups['centerlines'].variables['mh_tile'][:] = mhv_tile
+        mhv.close()
+    else:
+        mhv.groups['centerlines'].createVariable('cl_id', 'i8', ('num_points',))
+        mhv.groups['centerlines'].createVariable('easting', 'f8', ('num_points',))
+        mhv.groups['centerlines'].createVariable('northing', 'f8', ('num_points',))
+        # mhv.groups['centerlines'].createVariable('segInd', 'f8', ('num_points',))
+        mhv.groups['centerlines'].createVariable('new_segDist', 'f8', ('num_points',))
+        mhv.groups['centerlines'].createVariable('p_width', 'f8', ('num_points',))
+        mhv.groups['centerlines'].createVariable('p_height', 'f8', ('num_points',))
+        mhv.groups['centerlines'].createVariable('flowacc', 'f8', ('num_points',))
+        mhv.groups['centerlines'].createVariable('nchan', 'i4', ('num_points',))
+        mhv.groups['centerlines'].createVariable('manual_add', 'i4', ('num_points',))
+        mhv.groups['centerlines'].createVariable('endpoints', 'i4', ('num_points',))
+        mhv.groups['centerlines'].createVariable('mh_tile', 'S7', ('num_points',))
+        mhv.groups['centerlines'].variables['mh_tile']._Encoding = 'ascii'
+        # populating new variables.
+        mhv.groups['centerlines'].variables['cl_id'][:] = mhv_cl_id
+        mhv.groups['centerlines'].variables['easting'][:] = mhv_x
+        mhv.groups['centerlines'].variables['northing'][:] = mhv_y
+        # mhv.groups['centerlines'].variables['segInd'][:] = mhv_ind
+        mhv.groups['centerlines'].variables['new_segDist'][:] = mhv_dist
+        mhv.groups['centerlines'].variables['p_width'][:] = mhv_wth
+        mhv.groups['centerlines'].variables['p_height'][:] = mhv_elv
+        mhv.groups['centerlines'].variables['flowacc'][:] = mhv_facc
+        mhv.groups['centerlines'].variables['nchan'][:] = mhv_nchan
+        mhv.groups['centerlines'].variables['manual_add'][:] = mhv_manual_add
+        mhv.groups['centerlines'].variables['endpoints'][:] = mhv_endpts
+        mhv.groups['centerlines'].variables['mh_tile'][:] = mhv_tile
+        mhv.close()
 
 end_all = time.time()
 print('Finished '+region+' in: ' + str(np.round((end_all-start_all)/60, 2)) + ' min')

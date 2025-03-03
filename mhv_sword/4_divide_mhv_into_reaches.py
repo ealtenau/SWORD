@@ -35,7 +35,7 @@ if args.local_processing == 'True':
     main_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/'
 else:
     main_dir = '/afs/cas.unc.edu/depts/geological_sciences/pavelsky/students/ealtenau/SWORD_dev/inputs/'
-nc_file_list = glob.glob(os.path.join(main_dir+'MHV_SWORD/netcdf/'+region+'/', '*.nc'))
+nc_file_list = np.sort(glob.glob(os.path.join(main_dir+'MHV_SWORD/netcdf/'+region+'/', '*.nc')))
 
 ###loop, f = 4 is mississippi
 for f in list(range(len(nc_file_list))):
@@ -73,15 +73,8 @@ for f in list(range(len(nc_file_list))):
     #REACH DEFINITION
 
     print('Defining Intial Reaches')
-    # Find all reach boundaries.
-    dam_radius = 225
-    subcls.lake_bnds, subcls.lake_dist, subcls.lake_num,\
-     subcls.dam_bnds, subcls.dam_dist, subcls.dam_id, subcls.swot_bnds,\
-     subcls.swot_dist, subcls.swot_id, subcls.all_bnds, \
-     subcls.type0 = rdt.find_all_bounds(subcls, dam_radius)
-
     # Define inital reaches.
-    subcls.rch_id0, subcls.rch_len0 = rdt.number_reaches(subcls)
+    subcls.rch_id0, subcls.type0, subcls.rch_len0 = rdt.find_boundaries(subcls) #heavily modified for index ordering and odd basin boundaries... 
 
     print('Cutting Long Reaches')
     subcls.rch_id1, subcls.rch_len1 = rdt.cut_reaches(subcls.rch_id0,
@@ -101,7 +94,7 @@ for f in list(range(len(nc_file_list))):
 
     print('Aggregating River Reaches')
     # Aggregating river reach types.
-    river_min_dist = 10000
+    river_min_dist = 8000
     subcls.rch_id2, subcls.rch_len2,\
      subcls.type2 = rdt.aggregate_rivers(subcls, river_min_dist)
     # Updating reach indexes.
@@ -109,7 +102,7 @@ for f in list(range(len(nc_file_list))):
 
     print('Aggregating Lake Reaches')
     # Aggregating lake reach types.
-    lake_min_dist = 10000
+    lake_min_dist = 8000
     subcls.rch_id3, subcls.rch_len3,\
      subcls.type3 = rdt.aggregate_lakes(subcls, lake_min_dist)
     # Updating reach indexes.
@@ -141,8 +134,13 @@ for f in list(range(len(nc_file_list))):
 
     print('Checking Reaches')
     #Check and correct reaches with odd index problems. 
-    issues = rdt.check_rchs(subcls.rch_id5, subcls.rch_dist5)
-    rdt.correct_rchs(subcls, issues)
+    issues = rdt.check_rchs(subcls.rch_id5, subcls.rch_dist5, subcls.rch_ind5)
+    if len(issues) > 0:
+        print('~correcting reach length issues')
+        rdt.correct_rchs(subcls, issues)
+
+    ### maybe try to remove short reaches here. Those less than or equal to 3 points (unless a dam)?
+
 
     #########################################################################
     #TOPOLOGY
@@ -171,7 +169,7 @@ for f in list(range(len(nc_file_list))):
         subcls.type6[j] = int(str(subcls.reach_id[j])[-1])
 
     # Checking Reaches again for final percentage of issues.
-    issues_final = rdt.check_rchs(subcls.reach_id, subcls.rch_dist6)
+    issues_final = rdt.check_rchs(subcls.reach_id, subcls.rch_dist6, subcls.rch_ind6)
     subcls.rch_flag_final = np.zeros(len(subcls.seg))
     subcls.rch_flag_final[np.where(np.in1d(subcls.reach_id, issues_final)==True)[0]] = 1
 

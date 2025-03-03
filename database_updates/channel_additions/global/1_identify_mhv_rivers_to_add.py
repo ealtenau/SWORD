@@ -117,7 +117,7 @@ sword_l2 = np.array([int(str(ind)[0:2]) for ind in cl_rchs_all])
 rch_l2 = np.array([int(str(ind)[0:2]) for ind in rchs_all])
 mhv_l2 = np.array([int(ind[-13:-11]) for ind in mhv_files])
 uniq_level2 = np.unique(sword_l2)
-for ind in list(range(13,len(uniq_level2))):
+for ind in list(range(len(uniq_level2))):
     start = time.time()
     print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
     print('~~~~ STARTING BASIN', uniq_level2[ind], '~~~~')
@@ -147,6 +147,7 @@ for ind in list(range(13,len(uniq_level2))):
     mhv_ind = np.array(mhv['/centerlines/new_segs_ind'][:])
     mhv_wth = np.array(mhv['/centerlines/p_width'][:])
     mhv_rch_flag = np.array(mhv['/centerlines/rch_issue_flag'][:])
+    # mhv_old_segs = np.array(mhv['/centerlines/segID'][:])
 
     print('Filtering current MHV-SWORD flag')
     mhv_pts = np.vstack((mhv_x, mhv_y)).T
@@ -288,7 +289,16 @@ for ind in list(range(13,len(uniq_level2))):
     print('Filter narrow MHV reach additions')
     junc = np.where(add_flag == 3)[0]
     unq_segs = np.unique(mhv_segs[junc])
-    junc_wth = np.array([int(np.median(mhv_wth[np.where(mhv_segs == s)])) for s in unq_segs])
+    # junc_wth = np.array([int(np.median(mhv_wth[np.where(mhv_segs == s)])) for s in unq_segs]) #did not take zeros into account...
+    junc_wth = np.zeros(len(unq_segs))
+    for s in list(range(len(unq_segs))):
+        pts = np.where(mhv_segs == unq_segs[s])[0]
+        wth_keep = np.where(mhv_wth[pts]>0)[0]
+        if len(wth_keep)>0:
+            # junc_wth[s] = np.median(mhv_wth[pts[wth_keep]])   
+            junc_wth[s] = np.quantile(mhv_wth[pts[wth_keep]], 0.75)
+        else: 
+            junc_wth[s] = 0
     seg_keep = unq_segs[np.where(junc_wth >= 30)[0]]
     net_keep = np.unique(network[np.where(np.in1d(mhv_segs, seg_keep)==True)[0]])
     add_flag_cp = np.copy(add_flag)
@@ -400,7 +410,8 @@ for ind in list(range(13,len(uniq_level2))):
         np.array(mhv['/centerlines/new_segs_ind'][add_idx]),
         np.array(mhv['/centerlines/new_segDist'][add_idx]),
         # np.array(mhv['/centerlines/new_segs_eps'][add_idx]),
-        add_flag[add_idx],        
+        add_flag[add_idx],
+        network[add_idx],        
     ]).T
 
     #rename columns.
@@ -451,6 +462,7 @@ for ind in list(range(13,len(uniq_level2))):
             38:"new_segs_dist",
             # 42:"new_segs_eps",
             39:"add_flag",
+            40:"network",
             },inplace=True)
     
     points = points.apply(pd.to_numeric, errors='ignore') # points.dtypes
@@ -469,10 +481,13 @@ for ind in list(range(13,len(uniq_level2))):
     ### update netcdf with new flag.
     if 'add_flag' in mhv.groups['centerlines'].variables.keys():
         mhv.groups['centerlines'].variables['add_flag'][:] = add_flag
+        mhv.groups['centerlines'].variables['network'][:] = network
     else:
         mhv.groups['centerlines'].createVariable('add_flag', 'i4', ('num_points',), fill_value=-9999.)
+        mhv.groups['centerlines'].createVariable('network', 'i8', ('num_points',), fill_value=-9999.)
         #populate new variables.
         mhv.groups['centerlines'].variables['add_flag'][:] = add_flag
+        mhv.groups['centerlines'].variables['network'][:] = network
 
     end = time.time()
     print('Finished Basin', str(uniq_level2[ind]), 'in', str(np.round((end-start)/60,2)), 'min. Segment additions to check:', str(len(overlap_problem)))
@@ -570,3 +585,12 @@ print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
 # plt.scatter(mhv_x[pts], mhv_y[pts], s = 10, c = mhv_ind[pts], cmap = 'rainbow')
 # plt.show()
+
+# test = np.where(mhv_old_segs == 44833)[0]
+# mhv_segs[test]
+
+# s = 426
+
+# np.median(mhv_wth[np.where(mhv_segs == s)])
+
+# np.median(mhv_wth[np.where(mhv_segs == s)[0][np.where(mhv_wth[np.where(mhv_segs == s)] > 0)]])

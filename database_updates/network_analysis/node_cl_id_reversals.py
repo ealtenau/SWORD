@@ -211,13 +211,13 @@ issue_csv = pd.DataFrame({"reach_id": order_issues})
 issue_csv.to_csv(outpath+'order_problems.csv', index = False)
 
 #updating the netcdf. 
-print('Updating the NetCDF')
-sword.groups['nodes'].variables['node_id'][:] = nodes
-sword.groups['nodes'].variables['cl_ids'][:] = node_cl_ids
-sword.groups['nodes'].variables['dist_out'][:] = node_dist
-sword.groups['centerlines'].variables['cl_id'][:] = cl_ids
-sword.groups['centerlines'].variables['node_id'][:] = cl_nodes
-sword.groups['centerlines'].variables['reach_id'][:] = cl_rchs
+# print('Updating the NetCDF')
+# sword.groups['nodes'].variables['node_id'][:] = nodes
+# sword.groups['nodes'].variables['cl_ids'][:] = node_cl_ids
+# sword.groups['nodes'].variables['dist_out'][:] = node_dist
+# sword.groups['centerlines'].variables['cl_id'][:] = cl_ids
+# sword.groups['centerlines'].variables['node_id'][:] = cl_nodes
+# sword.groups['centerlines'].variables['reach_id'][:] = cl_rchs
 sword.close()
 end_all = time.time()
 print('*** '+region + ' Done in: '+str(np.round((end_all-start_all)/60,2))+' mins ***')

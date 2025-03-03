@@ -3,7 +3,7 @@ import netCDF4 as nc
 import geopandas as gp
 import sys
 
-region = 'SA'
+region = 'NA'
 version = 'v18'
 dist_update = 'True'
 
