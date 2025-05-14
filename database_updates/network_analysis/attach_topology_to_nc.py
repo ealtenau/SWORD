@@ -10,20 +10,20 @@ import matplotlib.pyplot as plt
 
 start = time.time()
 
-parser = argparse.ArgumentParser()
-parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
-parser.add_argument("version", help="version", type = str)
-parser.add_argument("basin", help="<Required> Level Two Pfafstetter Basin (i.e. 74)", type = str)
+# parser = argparse.ArgumentParser()
+# parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+# parser.add_argument("version", help="version", type = str)
+# parser.add_argument("basin", help="<Required> Level Two Pfafstetter Basin (i.e. 74)", type = str)
 
-args = parser.parse_args()
+# args = parser.parse_args()
 
-region = args.region
-version = args.version
-basin = args.basin
+# region = args.region
+# version = args.version
+# basin = args.basin
 
-# region = 'NA'
-# version = 'v18'
-# basin = '74'
+region = 'SA'
+version = 'v18'
+basin = 'All'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'

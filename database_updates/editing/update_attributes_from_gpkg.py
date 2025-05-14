@@ -2,10 +2,21 @@ import numpy as np
 import netCDF4 as nc
 import geopandas as gp
 import sys
+import argparse
 
-region = 'NA'
-version = 'v18'
-dist_update = 'True'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("dist_update", help="dist_update", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+dist_update = args.dist_update
+
+# region = 'NA'
+# version = 'v17b'
+# dist_update = 'True'
 
 # gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/gpkg/'\
 #     +region.lower()+'_sword_reaches_'+version+'.gpkg'
@@ -13,7 +24,6 @@ dist_update = 'True'
 #     +region.lower()+'_sword_reaches_hb67_'+version+'.shp'
 gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+version+'/'+region+\
         '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
-# gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/sa_sword_reaches_v17.gpkg'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
     +region.lower()+'_sword_'+version+'.nc'
 

@@ -13,17 +13,16 @@ start = time.time()
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
 parser.add_argument("version", help="version", type = str)
-parser.add_argument("basin", help="<Required> Level Two Pfafstetter Basin (i.e. 74)", type = str)
-
+parser.add_argument("basin", help="<Required> Level Two Pfafstetter Basin (i.e. 74 or 'All' for the whole region)", type = str)
 args = parser.parse_args()
 
 region = args.region
 version = args.version
 basin = args.basin
 
-# region = 'SA'
+# region = 'NA'
 # basin = 'All'
-# version = 'v17'
+# version = 'v18'
 
 # testing paths:
 # rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg copy/na_sword_reaches_v17_orig.gpkg'
@@ -36,6 +35,8 @@ nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
 if basin == 'All':
     rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
         +version+'/gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
+    # rch_shp_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+version+'/'+region+\
+    #     '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
     outdir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+version+'/'+region+\
         '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
 else:
@@ -67,6 +68,7 @@ shp_indexes = np.where(np.in1d(nc_reach_id, reaches) == True)[0]
 rch_id_up = nc_rch_id_up[:,shp_indexes]
 rch_id_dn = nc_rch_id_dn[:,shp_indexes]
 netcdf.close()
+
 
 if len(reaches) != len(nc_reach_id):
     print('!!! Reaches in NetCDF not equal to GPKG !!!')
@@ -122,7 +124,6 @@ while len(start_rchs) > 0:
     if loop > 5*len(reaches):
         print('!!! LOOP STUCK !!!')
         break
-
 
 # print('Updating NetCDF')
 

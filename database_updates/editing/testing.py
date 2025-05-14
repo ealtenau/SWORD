@@ -1996,3 +1996,1002 @@ def remove_ghost_juncs(subcls):
 # test = np.array([1,2,3])
 # test[0] = 0
 # test[:] = np.sort(test)[::-1]
+
+###################################################################
+###################################################################
+###################################################################
+import matplotlib.pyplot as plt
+
+flag = np.zeros(len(reaches))
+start_rch = np.array([reaches[np.where(n_rch_down == 0)[0]][0]])
+loop = 1
+while len(start_rch) > 0:
+    print(loop, start_rch)
+    rch = np.where(reaches == start_rch)[0]
+    #flagged reach is tagged for deletion and need to tag upstream reaches. 
+    if flag[rch] == 2:
+        flag[np.where(flag == 0)] = 2
+        #need to do stuff to fill in above flagged reaches... 
+        # up_rchs = np.unique(rch_id_up[:,rch]); up_rchs = up_rchs[up_rchs>0]
+        # while len(up_rchs) > 0:
+        #     fill = np.where(np.in1d(reaches, up_rchs) == True)[0]
+        #     flag[fill] = 2
+        #     up_rchs = np.unique(rch_id_up[:,fill]); up_rchs = up_rchs[up_rchs>0]
+        #find next start reach. 
+        # if min(flag) <= 0:
+        #     new_idx = np.where((flag == 0) & (n_rch_down == 0))[0]
+        #     if len(new_idx) > 0:
+        #         start_rch = np.array([reaches[new_idx[0]]])
+        #     else:# len(start_rch) == 0:
+        #         new_idx2 = np.where(flag == -1)[0]
+        #         if len(new_idx2) > 0:
+        #             start_rch = np.array([reaches[new_idx2[0]]])
+        #         else:# len(start_rch) == 0:
+        #             new_idx3 = np.where(flag == 2)[0]
+        #             if len(new_idx3) > 0:
+        #                 start_rch = np.array([reaches[new_idx3[0]]])
+        #             else:
+        #                 print(loop, start_rch, 'zeros left with zero downstream')
+        #                 start_rch = []
+        if min(flag) <= 0:
+            print(loop, start_rch, 'zeros left with zero downstream')
+            start_rch = []
+        else:
+            start_rch = []
+        loop = loop+1
+
+    #flagged reach is 0 or 1. 
+    else:
+        if flag[rch] <= 0:
+            flag[rch] = 1
+        #find upstream reaches.
+        up_rchs = np.unique(rch_id_up[:,rch]); up_rchs = up_rchs[up_rchs>0]
+        if len(up_rchs) > 0:
+            up_wth = np.array([width[np.where(reaches == r)] for r in up_rchs])
+            up_edit = np.array([edit_flag[np.where(reaches == r)] for r in up_rchs])
+            rmv = np.where((up_wth <= 0) & (up_edit == '7'))[0]
+            #upstream reaches to remove.
+            if len(rmv) > 0:
+                rmv_idx = np.where(np.in1d(reaches, up_rchs[rmv]) == True)[0]
+                flag[rmv_idx] = 2
+                #find next start reach. 
+                up_flag = np.array([flag[np.where(reaches == r)] for r in up_rchs])
+                up_idx = np.where(up_flag == 0)[0]
+                if len(up_idx) > 0:
+                    if len(up_idx) > 1:
+                        start_rch = np.array([up_rchs[up_idx[0]]])
+                        flag[np.where(np.in1d(reaches, up_rchs[1::]) == True)[0]] = -1
+                    else:
+                        start_rch = np.array([up_rchs[up_idx[0]]])
+                else: #len(start_rch) == 0:
+                    if min(flag) <= 0:
+                        new_idx = np.where((flag == 0) & (n_rch_down == 0))[0]
+                        if len(new_idx) > 0:
+                            start_rch = np.array([reaches[new_idx[0]]])
+                        else:# len(start_rch) == 0:
+                            new_idx2 = np.where(flag == -1)[0]
+                            if len(new_idx2) > 0:
+                                start_rch = np.array([reaches[new_idx2[0]]])
+                            else:# len(start_rch) == 0:
+                                new_idx3 = np.where(flag == 2)[0]
+                                if len(new_idx3) > 0:
+                                    start_rch = np.array([reaches[new_idx3[0]]])
+                                else:
+                                    print('zeros left with zero downstream')
+                                    start_rch = []
+                    else:
+                        start_rch = []
+                loop = loop+1
+            #no upstream reaches to remove.
+            else:
+                #find next start reach.
+                up_flag = np.array([flag[np.where(reaches == r)] for r in up_rchs])
+                up_idx = np.where(up_flag == 0)[0]
+                if len(up_idx) > 0:
+                    if len(up_idx) > 1:
+                        start_rch = np.array([up_rchs[up_idx[0]]])
+                        flag[np.where(np.in1d(reaches, up_rchs[1::]) == True)[0]] = -1
+                    else:
+                        start_rch = np.array([up_rchs[up_idx[0]]])
+                else: #len(start_rch) == 0:
+                    if min(flag) <= 0:
+                        new_idx = np.where((flag == 0) & (n_rch_down == 0))[0]
+                        if len(new_idx) > 0:
+                            start_rch = np.array([reaches[new_idx[0]]])
+                        else:# len(start_rch) == 0:
+                            new_idx2 = np.where(flag == -1)[0]
+                            if len(new_idx2) > 0:
+                                start_rch = np.array([reaches[new_idx2[0]]])
+                            else:# len(start_rch) == 0:
+                                new_idx3 = np.where(flag == 2)[0]
+                                if len(new_idx3) > 0:
+                                    start_rch = np.array([reaches[new_idx3[0]]])
+                                else:
+                                    print('zeros left with zero downstream')
+                                    start_rch = []
+                    else:
+                        start_rch = []
+                loop = loop+1
+        
+        #no upstream reaches for current reach. 
+        else:
+            #find next start reach.
+            if min(flag) <= 0:
+                new_idx = np.where((flag == 0) & (n_rch_down == 0))[0]
+                if len(new_idx) > 0:
+                    start_rch = np.array([reaches[new_idx[0]]])
+                else:# len(start_rch) == 0:
+                    new_idx2 = np.where(flag == -1)[0]
+                    if len(new_idx2) > 0:
+                        start_rch = np.array([reaches[new_idx2[0]]])
+                    else:# len(start_rch) == 0:
+                        new_idx3 = np.where(flag == 2)[0]
+                        if len(new_idx3) > 0:
+                            start_rch = np.array([reaches[new_idx3[0]]])
+                        else:
+                            print('zeros left with zero downstream')
+                            start_rch = []
+            else:
+                start_rch = []
+            loop = loop+1 
+
+    if loop > len(reaches) + 500:
+        print('LOOP STUCK')
+        break
+
+
+p_1 = np.where(flag == -1)[0]
+p0 = np.where(flag == 0)[0]
+p1 = np.where(flag == 1)[0]
+p2 = np.where(flag == 2)[0]
+
+plt.scatter(x[p_1],y[p_1],c='black', s = 10)
+plt.scatter(x[p0],y[p0],c='grey', s = 5)
+plt.scatter(x[p1],y[p1],c='cyan', s = 5)
+plt.scatter(x[p2],y[p2],c='red', s = 5)
+plt.show()
+
+###############################################################################
+###############################################################################
+###############################################################################
+
+### redo negative reach and node lengths 
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+from geopy import distance
+import matplotlib.pyplot as plt
+
+##################################################################
+
+def find_character_in_array(arr, char):
+    """
+    Finds the indices of a character within an array of strings.
+
+    Args:
+        arr: A list of strings.
+        char: The character to search for.
+
+    Returns:
+        A list of tuples, where each tuple contains:
+            - The index of the string in the array.
+            - The index of the character within that string.
+        Returns an empty list if the character is not found.
+    """
+    results = []
+    for i, string in enumerate(arr):
+        for j, c in enumerate(string):
+            if c == char:
+                results.append(i)
+    return results
+
+##################################################################
+
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
+
+##################################################################
+
+region = 'NA'
+version='v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'_testing.nc'
+outdir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
+sword = nc.Dataset(nc_fn)
+
+edit_flag = np.array(sword['/reaches/edit_flag'][:])
+reaches = np.array(sword['/reaches/reach_id'][:])
+rch_id_up = np.array(sword['/reaches/rch_id_up'][:])
+rch_id_dn = np.array(sword['/reaches/rch_id_dn'][:])
+cl_rchs = np.array(sword['/centerlines/reach_id'][:])
+cl_ids = np.array(sword['/centerlines/cl_id'][:])
+x = np.array(sword['/centerlines/x'][:])
+y = np.array(sword['/centerlines/y'][:])
+
+subset = find_character_in_array(edit_flag, '7')
+subset = np.array(subset) #np.unique(edit_flag[subset])
+
+new_reaches = reaches[subset]
+check = []
+for r in list(range(len(new_reaches))):
+    print(r, len(new_reaches)-1)
+    rch = np.where(cl_rchs[0,:] == new_reaches[r])[0]
+    if len(rch) <=5:
+        mn_id = np.where(cl_ids[rch] == min(cl_ids[rch]))
+        mx_id = np.where(cl_ids[rch] == max(cl_ids[rch]))
+        mn_x = x[rch[mn_id]]
+        mn_y = y[rch[mn_id]]
+        mx_x = x[rch[mx_id]]
+        mx_y = y[rch[mx_id]]
+        dn_nghs = cl_rchs[1::,rch[mn_id]]; dn_nghs = dn_nghs[dn_nghs>0]
+        up_nghs = cl_rchs[1::,rch[mx_id]]; up_nghs = up_nghs[up_nghs>0]
+        #get downstream neighbor coordinate at the maximum index.
+        dn_x = []
+        dn_y = []
+        for d in list(range(len(dn_nghs))):
+            dnr = np.where(cl_rchs[0,:] == dn_nghs[d])[0]
+            dnr_mx_id = np.where(cl_ids[dnr] == max(cl_ids[dnr]))[0]
+            dn_x.append(x[dnr[dnr_mx_id]])
+            dn_y.append(y[dnr[dnr_mx_id]])
+        dn_x = np.array(dn_x)
+        dn_y = np.array(dn_y)
+        #get upstream neighbor coordinate at the minimum index. 
+        up_x = []
+        up_y = []
+        for u in list(range(len(up_nghs))):
+            unr = np.where(cl_rchs[0,:] == up_nghs[u])[0]
+            unr_mn_id = np.where(cl_ids[unr] == min(cl_ids[unr]))[0]
+            up_x.append(x[unr[unr_mn_id]])
+            up_y.append(y[unr[unr_mn_id]])
+        up_x = np.array(up_x)
+        up_y = np.array(up_y)
+        #downstream neighbor distance difference.
+        x_coords1 = np.append(mn_x,dn_x)
+        y_coords1 = np.append(mn_y,dn_y) 
+        diff1 = get_distances(x_coords1,y_coords1)
+        #upstream neighbor distance difference. 
+        x_coords2 = np.append(mx_x,up_x)
+        y_coords2 = np.append(mx_y,up_y)
+        diff2 = get_distances(x_coords2,y_coords2)
+        if max(diff1) > 500 or max(diff2) > 500:
+            check.append(new_reaches[r])
+
+rch_csv = pd.DataFrame({"reach_id": check})
+rch_csv.to_csv(outdir+'short_reach_topo_check.csv', index = False)
+
+###############################################################################
+
+### redo negative reach and node lengths 
+
+import pandas as pd
+import numpy as np
+import netCDF4 as nc
+from scipy import spatial as sp
+import geopandas as gp
+import time
+from geopy import distance
+import matplotlib.pyplot as plt
+
+##################################################################
+
+def find_character_in_array(arr, char):
+    """
+    Finds the indices of a character within an array of strings.
+
+    Args:
+        arr: A list of strings.
+        char: The character to search for.
+
+    Returns:
+        A list of tuples, where each tuple contains:
+            - The index of the string in the array.
+            - The index of the character within that string.
+        Returns an empty list if the character is not found.
+    """
+    results = []
+    for i, string in enumerate(arr):
+        for j, c in enumerate(string):
+            if c == char:
+                results.append(i)
+    return results
+
+##################################################################
+
+region = 'NA'
+version='v18'
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword = nc.Dataset(nc_fn)
+
+edit_flag = np.array(sword['/reaches/edit_flag'][:])
+reaches = np.array(sword['/reaches/reach_id'][:])
+rch_id_up = np.array(sword['/reaches/rch_id_up'][:])
+rch_id_dn = np.array(sword['/reaches/rch_id_dn'][:])
+n_rch_up = np.array(sword['/reaches/n_rch_up'][:])
+n_rch_dn = np.array(sword['/reaches/n_rch_down'][:])
+rch_net = np.array(sword['/reaches/network'][:])
+rch_segs = np.array(sword['/reaches/path_segs'][:])
+rch_ms = np.array(sword['/reaches/main_side'][:])
+rch_ends = np.array(sword['/reaches/end_reach'][:])
+node_rchs = np.array(sword['/nodes/reach_id'][:])
+node_net = np.array(sword['/nodes/network'][:])
+node_segs = np.array(sword['/nodes/path_segs'][:])
+node_ms = np.array(sword['/nodes/main_side'][:])
+node_ends = np.array(sword['/nodes/end_reach'][:])
+l2_basins = np.array([int(str(ind)[0:2]) for ind in reaches])
+
+subset = find_character_in_array(edit_flag, '7')
+subset = np.array(subset) #np.unique(edit_flag[subset])
+add_rchs = reaches[subset]
+
+print('Creating New Flag')
+mhv_rch_flag = np.zeros(len(reaches))
+mhv_node_flag = np.zeros(len(node_rchs))
+nind = np.where(np.in1d(node_rchs, reaches[subset]) == True)[0]
+mhv_rch_flag[subset] = 1
+mhv_node_flag[nind] = 1
+
+#for outlets find all neighbors and fill in the network number. 
+print('Updating Network Variable')
+outlets = np.where(n_rch_dn == 0)[0]
+out_rchs = reaches[outlets]
+for out in list(range(len(out_rchs))):
+    print(out, len(out_rchs)-1)
+    rch = np.where(reaches == out_rchs[out])[0]
+    net = rch_net[rch]
+    up_rchs = np.unique(rch_id_up[:,rch]); up_rchs = up_rchs[up_rchs>0]
+    while len(up_rchs) > 0:
+        fill = np.where(np.in1d(reaches, up_rchs) == True)[0]
+        if min(rch_net[fill]) == 0:
+            update = np.where(rch_net[fill] == 0)[0]
+            rch_net[fill[update]] = net
+            #nodes 
+            nfill = np.where(np.in1d(node_rchs, reaches[fill[update]]) == True)[0]
+            node_net[nfill] = net
+        up_rchs = np.unique(rch_id_up[:,fill]); up_rchs = up_rchs[up_rchs>0]
+
+print('Updating End Reach Variable')
+hw = np.where(n_rch_up == 0)[0]
+ot = np.where(n_rch_dn == 0)[0]
+node_hw = np.where(np.in1d(node_rchs, reaches[hw]) == True)[0]
+node_ot = np.where(np.in1d(node_rchs, reaches[ot]) == True)[0]
+rch_ends[hw] = 1
+rch_ends[ot] = 2
+node_ends[node_hw] = 1
+node_ends[node_ot] = 2
+erse = np.where((rch_ends > 0) & (n_rch_up > 0))[0]
+nerse = np.where(np.in1d(node_rchs, reaches[erse]) == True)[0]
+rch_ends[erse] = 0
+node_ends[nerse] = 0
+#main_side 
+rch_ms[subset] = 0
+node_ms[nind] = 0
+
+sword['/reaches/network'][:] = rch_net
+sword['/reaches/end_reach'][:] = rch_ends
+sword['/reaches/main_side'][:] = rch_ms
+sword['/nodes/network'][:] = node_net
+sword['/nodes/end_reach'][:] = node_ends
+sword['/nodes/main_side'][:] = node_ms
+sword.groups['reaches'].createVariable('add_flag', 'i4', ('num_reaches',), fill_value=-9999.)
+sword.groups['nodes'].createVariable('add_flag', 'i4', ('num_nodes',), fill_value=-9999.)
+sword['/reaches/add_flag'][:] = mhv_rch_flag
+sword['/nodes/add_flag'][:] = mhv_node_flag
+sword.close()
+
+
+##################################################################
+##################################################################
+##################################################################
+
+def node_attributes(centerlines, nodes, reaches, 
+                    new_ids, clind, sort_ind, diff):
+    
+    subnodes = Object()
+    unq_nodes = np.unique(new_ids)
+    #create filler variables. 
+    subnodes.id = np.zeros(len(unq_nodes), dtype = int)
+    subnodes.cl_id = np.zeros([2,len(unq_nodes)], dtype = int)
+    subnodes.x = np.zeros(len(unq_nodes))
+    subnodes.y = np.zeros(len(unq_nodes))
+    subnodes.wse = np.zeros(len(unq_nodes))
+    subnodes.wse_var = np.zeros(len(unq_nodes))
+    subnodes.wth = np.zeros(len(unq_nodes))
+    subnodes.wth_var = np.zeros(len(unq_nodes))
+    subnodes.grod = np.zeros(len(unq_nodes))
+    subnodes.grod_fid = np.zeros(len(unq_nodes))
+    subnodes.hfalls_fid = np.zeros(len(unq_nodes))
+    subnodes.nchan_max = np.zeros(len(unq_nodes))
+    subnodes.nchan_mod = np.zeros(len(unq_nodes))
+    subnodes.reach_id = np.zeros(len(unq_nodes))
+    subnodes.facc = np.zeros(len(unq_nodes))
+    subnodes.lakeflag = np.zeros(len(unq_nodes))
+    subnodes.wth_coef = np.zeros(len(unq_nodes))
+    subnodes.ext_dist_coef = np.zeros(len(unq_nodes))
+    subnodes.max_wth = np.zeros(len(unq_nodes))
+    subnodes.meand_len = np.zeros(len(unq_nodes))
+    subnodes.river_name = np.repeat('NODATA', len(unq_nodes))
+    subnodes.manual_add = np.zeros(len(unq_nodes), dtype = int)
+    subnodes.sinuosity = np.zeros(len(unq_nodes))
+    subnodes.trib_flag = np.zeros(len(unq_nodes), dtype = int)
+    subnodes.path_freq = np.zeros(len(unq_nodes))
+    subnodes.path_order = np.zeros(len(unq_nodes))
+    subnodes.path_segs = np.zeros(len(unq_nodes))
+    subnodes.main_side = np.zeros(len(unq_nodes), dtype = int)
+    subnodes.strm_order = np.zeros(len(unq_nodes), dtype = int)
+    subnodes.end_rch = np.zeros(len(unq_nodes), dtype = int)
+    subnodes.network = np.zeros(len(unq_nodes), dtype = int)
+    subnodes.edit_flag = np.repeat('NaN', len(unq_nodes))
+    subnodes.dist_out = np.zeros(len(unq_nodes))
+    subnodes.len = np.zeros(len(unq_nodes))
+    # loop through and fill in new attributes. 
+    for n in list(range(len(unq_nodes))):
+        new_idx = np.where(new_ids == unq_nodes[n])[0]
+        old_idx = sort_ind[new_idx]
+        old_nodes = np.unique(centerlines.node_id[0,clind[old_idx]])
+        update_idx = np.where(np.in1d(nodes.id, old_nodes)==True)[0]
+        #create new nodes with attribute values based on old nodes. 
+        subnodes.id[n] = unq_nodes[n]
+        subnodes.cl_id[0,n] = min(centerlines.cl_id[clind[old_idx]])
+        subnodes.cl_id[1,n] = max(centerlines.cl_id[clind[old_idx]])
+        subnodes.x[n] = np.median(centerlines.x[clind[old_idx]])
+        subnodes.y[n] = np.median(centerlines.y[clind[old_idx]])
+        subnodes.len[n] = max(np.cumsum(diff[new_idx]))
+        subnodes.wse[n] = np.median(nodes.wse[update_idx])
+        subnodes.wse_var[n] = np.max(nodes.wse_var[update_idx])
+        subnodes.wth[n] = np.median(nodes.wth[update_idx])
+        subnodes.wth_var[n] = np.max(nodes.wth_var[update_idx])
+        subnodes.grod[n] = np.max(nodes.grod[update_idx])
+        subnodes.grod_fid[n] = np.max(nodes.grod_fid[update_idx])
+        subnodes.hfalls_fid[n] = np.max(nodes.hfalls_fid[update_idx])
+        subnodes.nchan_max[n] = np.max(nodes.nchan_max[update_idx])
+        subnodes.nchan_mod[n] = np.max(nodes.nchan_mod[update_idx])
+        subnodes.reach_id[n] = nodes.reach_id[update_idx][0]
+        subnodes.facc[n] = np.max(nodes.facc[update_idx])
+        subnodes.lakeflag[n] = np.max(nodes.lakeflag[update_idx])
+        subnodes.wth_coef[n] = np.max(nodes.wth_coef[update_idx])
+        subnodes.ext_dist_coef[n] = np.max(nodes.ext_dist_coef[update_idx])
+        subnodes.max_wth[n] = np.max(nodes.max_wth[update_idx])
+        subnodes.meand_len[n] = np.median(nodes.meand_len[update_idx])
+        subnodes.river_name[n] = nodes.river_name[update_idx][0]
+        subnodes.manual_add[n] = np.max(nodes.manual_add[update_idx])
+        subnodes.sinuosity[n] = np.median(nodes.sinuosity[update_idx])
+        subnodes.trib_flag[n] = np.max(nodes.trib_flag[update_idx])
+        subnodes.path_freq[n] = nodes.path_freq[update_idx][0]
+        subnodes.path_order[n] = nodes.path_order[update_idx][0]
+        subnodes.path_segs[n] = nodes.path_segs[update_idx][0]
+        subnodes.main_side[n] = nodes.main_side[update_idx][0]
+        subnodes.strm_order[n] = nodes.strm_order[update_idx][0]
+        subnodes.end_rch[n] = nodes.end_rch[update_idx][0]
+        subnodes.network[n] = nodes.network[update_idx][0]
+        # edit_flag
+        if nodes.edit_flag[update_idx][0] == 'NaN':
+            edit_val = '2'
+        elif '2' not in nodes.edit_flag[update_idx][0].split(','):
+            edit_val = nodes.edit_flag[update_idx][0] + ',2'
+        else:
+            edit_val = nodes.edit_flag[update_idx][0]
+        subnodes.edit_flag[n] = edit_val
+        
+    rch_idx = np.where(reaches.id == nodes.reach_id[update_idx][0])[0]
+    rch_length = reaches.len[rch_idx]
+    rch_dist = reaches.dist_out[rch_idx]
+    base_val = rch_dist - rch_length
+    node_cs = np.cumsum(subnodes.len)
+    subnodes.dist_out = node_cs+base_val
+
+    return subnodes
+
+
+subtest = node_attributes(centerlines, nodes, reaches, 
+                          new_ids, clind, sort_ind, diff)
+
+
+
+
+##################################################################
+##################################################################
+##################################################################
+
+import pandas as pd
+import numpy as np
+
+csv_fn = '/Users/ealtenau/Desktop/fiona_reach_set_sword_v18.csv'
+csv = pd.read_csv(csv_fn)
+
+unq_rchs = np.unique(csv['reach_id']) #39 reaches 
+pass_tile = []
+for rw in list(range(len(csv))):
+    vals = csv['pass_tile'][rw].replace(" ", "")
+    vals = vals.split(',')
+    vals = [v[1:-1] for v in vals]
+    pass_tile.extend(vals)
+pass_tile = np.array(pass_tile)
+unq_pass_tile = np.unique(pass_tile) #54 tiles 
+
+csv_out = pd.DataFrame({"pass_tile": unq_pass_tile})
+csv_out.to_csv('/Users/ealtenau/Desktop/sword_v18_pass_tile_test_list.csv', index = False)
+
+rchs = []
+pass_tile_reach = []
+for p in list(range(len(unq_pass_tile))):
+    for r in list(range(len(csv))):
+        pt = csv['pass_tile'][r]
+        if unq_pass_tile[p] in pt:
+            rchs.extend(csv['reach_id'][r])
+
+
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+
+csv_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/cnes_lake_intersections/'
+csv_files = os.listdir(csv_dir)
+
+f0 = pd.read_csv(csv_dir+csv_files[0])
+f1 = pd.read_csv(csv_dir+csv_files[1])
+f2 = pd.read_csv(csv_dir+csv_files[2])
+f3 = pd.read_csv(csv_dir+csv_files[3])
+f4 = pd.read_csv(csv_dir+csv_files[4])
+f5 = pd.read_csv(csv_dir+csv_files[5])
+f6 = pd.read_csv(csv_dir+csv_files[6])
+f7 = pd.read_csv(csv_dir+csv_files[7])
+f8 = pd.read_csv(csv_dir+csv_files[8])
+
+df = pd.concat([f0, f1, f2, f3, f4, f5, f6, f7, f8], axis=0)
+
+cat = np.array([str(ind)[-1] for ind in df['reach_id']])
+ratio = np.array(df['ratio'])
+rchs = np.array(df['reach_id'])
+
+river = np.where(cat == '1')[0]
+coast = np.where(cat == '5')[0]
+all = np.append(river, coast)
+test = np.where(ratio[all] >= 0.8)[0]
+
+len(test)/len(df)
+len(np.where(ratio[river] >= 0.8)[0])
+len(np.where(ratio[coast] >= 0.8)[0])
+
+update = np.where(ratio[river] >= 0.8)[0]
+change = river[update]
+
+new_df = df.iloc[change]
+new_df.to_csv('/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/cnes_lake_intersections/SWORD_v17_rivers_to_lakes.csv', index = False)
+
+
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+
+fn1 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17b/netcdf/as_sword_v17b.nc'
+fn2 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/as_sword_v17.nc'
+
+s1 = nc.Dataset(fn1)
+s2 = nc.Dataset(fn2)
+
+reaches1 = np.array(s1['/reaches/reach_id/'][:])
+reaches2 = np.array(s2['/reaches/reach_id/'][:])
+rch_len1 = np.array(s1['/reaches/reach_length/'][:])
+rch_len2 = np.array(s2['/reaches/reach_length/'][:])
+node_len1 = np.array(s1['/nodes/node_length/'][:])
+node_len2 = np.array(s2['/nodes/node_length/'][:])
+nodes1 = np.array(s1['/nodes/node_id/'][:])
+nodes2 = np.array(s2['/nodes/node_id/'][:])
+rch_dist1 = np.array(s1['/reaches/dist_out/'][:])
+rch_dist2 = np.array(s2['/reaches/dist_out/'][:])
+node_dist1 = np.array(s1['/nodes/dist_out/'][:])
+node_dist2 = np.array(s2['/nodes/dist_out/'][:])
+
+rch_len_diff = abs(rch_len1-rch_len2)
+node_len_diff = abs(node_len1-node_len2)
+
+len(np.where(node_len_diff > 0)[0])/len(node_len1)*100
+len(np.where(rch_len_diff > 0)[0])/len(rch_len1)*100
+
+###dist out
+# compare = np.where(np.in1d(reaches1, reaches2) == True)[0]
+
+len(nodes1)-len(nodes2)
+len(rch_len1)-len(rch_len2)
+rch_dist_diff = abs(rch_dist1-rch_dist2)
+len(np.where(rch_dist_diff > 0)[0])/len(rch_dist1)*100
+
+s1.close()
+s2.close()
+
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import geopandas as gp
+
+region = 'AS'
+version = 'v17b'
+
+fn1 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
+    +version+'/gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
+fn2 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Topology/'+version+'/'+region+\
+    '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
+f1 = gp.read_file(fn1)
+f2 = gp.read_file(fn2)
+
+np.unique(np.diff(np.array(f1['dist_out'])-np.array(f2['dist_out2'])))
+len(np.unique(np.diff(np.array(f1['dist_out'])-np.array(f2['dist_out2']))))
+
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+fn1 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17b/netcdf/as_sword_v17b.nc'
+sword = nc.Dataset(fn1)
+
+node_len = np.array(sword['/nodes/node_length/'][:])
+sword.close()
+
+np.quantile(node_len, 0.005) 
+np.quantile(node_len, 0.995)
+
+rng = np.where((node_len >= 100)&(node_len <=400))[0]
+len(rng)/len(node_len)*100
+
+# 99% of node length data between:
+# NA: 113.5-251.9 m
+# SA: 148.1-246.5 m
+# AS: 64.2-254.3 m
+# EU: 102.5-251.1 m
+# AF: 151.7-250.4 m
+# OC: 150.8-248.5 m
+
+#percent data between 100 and 400 meters length. 
+# NA: 99.73%
+# SA: 99.99%
+# AS: 99.92%
+# EU: 99.60%
+# AF: 99.99%
+# OC: 99.99% 
+
+
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+fn1 = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/AS/mhv_sword_hb31_pts_v18.nc'
+sword = nc.Dataset(fn1)
+sword.groups['centerlines']
+
+plt.scatter(sword.groups['centerlines'].variables['x'][:], sword.groups['centerlines'].variables['y'][:], c=np.log(sword.groups['centerlines'].variables['p_height'][:]), cmap = 'rainbow', s = 3)
+plt.show()
+
+plt.scatter(sword.groups['centerlines'].variables['x'][:], sword.groups['centerlines'].variables['y'][:], c=np.log(sword.groups['centerlines'].variables['p_width'][:]), cmap = 'rainbow', s = 3)
+plt.show()
+
+plt.scatter(sword.groups['centerlines'].variables['x'][:], sword.groups['centerlines'].variables['y'][:], c=np.log(sword.groups['centerlines'].variables['flowacc'][:]), cmap = 'rainbow', s = 3)
+plt.show()
+
+sword.close()
+
+######################################################################
+######################################################################
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+def check_sort_rch_topo(subcls):
+    cl_rchs = np.copy(subcls.new_reach_id)
+    cl_ids = np.copy(subcls.new_cl_id)
+    x = np.copy(subcls.lon)
+    y = np.copy(subcls.lat)
+    new_reaches = np.unique(cl_rchs[0,:])
+    check = []
+    for r in list(range(len(new_reaches))):
+        # print(r, len(new_reaches)-1)
+        rch = np.where(cl_rchs[0,:] == new_reaches[r])[0]
+        if len(rch) <=5:
+            mn_id = np.where(cl_ids[rch] == min(cl_ids[rch]))
+            mx_id = np.where(cl_ids[rch] == max(cl_ids[rch]))
+            mn_x = x[rch[mn_id]]
+            mn_y = y[rch[mn_id]]
+            mx_x = x[rch[mx_id]]
+            mx_y = y[rch[mx_id]]
+            dn_nghs = cl_rchs[1::,rch[mn_id]]; dn_nghs = dn_nghs[dn_nghs>0]
+            up_nghs = cl_rchs[1::,rch[mx_id]]; up_nghs = up_nghs[up_nghs>0]
+            #get downstream neighbor coordinate at the maximum index.
+            dn_x = []
+            dn_y = []
+            for d in list(range(len(dn_nghs))):
+                dnr = np.where(cl_rchs[0,:] == dn_nghs[d])[0]
+                dnr_mx_id = np.where(cl_ids[dnr] == max(cl_ids[dnr]))[0]
+                dn_x.append(x[dnr[dnr_mx_id]])
+                dn_y.append(y[dnr[dnr_mx_id]])
+            dn_x = np.array(dn_x)
+            dn_y = np.array(dn_y)
+            #get upstream neighbor coordinate at the minimum index. 
+            up_x = []
+            up_y = []
+            for u in list(range(len(up_nghs))):
+                unr = np.where(cl_rchs[0,:] == up_nghs[u])[0]
+                unr_mn_id = np.where(cl_ids[unr] == min(cl_ids[unr]))[0]
+                up_x.append(x[unr[unr_mn_id]])
+                up_y.append(y[unr[unr_mn_id]])
+            up_x = np.array(up_x)
+            up_y = np.array(up_y)
+            #downstream neighbor distance difference.
+            x_coords1 = np.append(mn_x,dn_x)
+            y_coords1 = np.append(mn_y,dn_y) 
+            diff1 = get_distances(x_coords1,y_coords1)
+            #upstream neighbor distance difference. 
+            x_coords2 = np.append(mx_x,up_x)
+            y_coords2 = np.append(mx_y,up_y)
+            diff2 = get_distances(x_coords2,y_coords2)
+            if max(diff1) > 500 or max(diff2) > 500:
+                check.append(new_reaches[r])
+    return check
+
+
+def correct_short_rchs(subcls, short_check):
+    for r in list(range(len(short_check))):
+        rch = np.where(subcls.new_reach_id[0,:] == short_check[r])[0]
+        ids = subcls.new_cl_id[rch]
+        correct_ds = subcls.new_reach_id[0,np.where(subcls.new_cl_id == min(ids)-1)[0]]
+        correct_up = subcls.new_reach_id[0,np.where(subcls.new_cl_id == max(ids)+1)[0]]
+        if correct_ds == correct_up:
+            #find neighbor topology to fix
+            correct_rch_topo = np.unique(subcls.new_reach_id[1::,rch])
+            correct_rch_topo = correct_rch_topo[correct_rch_topo>0]
+            correct_rch_topo = correct_rch_topo[correct_rch_topo!=correct_ds]
+            ngh_fix = np.where(subcls.new_reach_id[0,:] == correct_rch_topo)[0]
+            r1 = np.where(subcls.new_reach_id[1,ngh_fix] == short_check[r])[0]
+            r2 = np.where(subcls.new_reach_id[2,ngh_fix] == short_check[r])[0]
+            r3 = np.where(subcls.new_reach_id[3,ngh_fix] == short_check[r])[0]
+            subcls.new_reach_id[1,ngh_fix[r1]] = correct_ds
+            subcls.new_reach_id[2,ngh_fix[r2]] = correct_ds
+            subcls.new_reach_id[3,ngh_fix[r3]] = correct_ds
+            #fix reach topology of absorbing reach
+            new_rch = np.where(subcls.new_reach_id[0,:] == correct_ds)[0]
+            n1 = np.where(subcls.new_reach_id[1,new_rch] == short_check[r])[0]
+            n2 = np.where(subcls.new_reach_id[2,new_rch] == short_check[r])[0]
+            n3 = np.where(subcls.new_reach_id[3,new_rch] == short_check[r])[0]
+            subcls.new_reach_id[1,new_rch[n1]] = correct_rch_topo
+            subcls.new_reach_id[2,new_rch[n2]] = correct_rch_topo
+            subcls.new_reach_id[3,new_rch[n3]] = correct_rch_topo
+            #erase neighbors of short reach points.
+            subcls.new_reach_id[1::,rch] = 0
+            #update reach ids
+            subcls.new_reach_id[0,rch] = correct_ds
+            #update node ids
+            rch_update = np.where(subcls.new_reach_id[0,:] == correct_ds)[0]
+            sort_ids = np.argsort(subcls.new_cl_id[rch_update])
+            old_nodes = subcls.new_node_id[0,rch_update[sort_ids]]
+            breaks = np.diff(old_nodes); breaks = np.append(0,breaks)
+            divs = np.where(breaks != 0)[0]; divs = np.append(0,divs); divs = np.append(divs,len(old_nodes))
+            new_nums = np.zeros(len(old_nodes),dtype=int)
+            cnt = 1
+            for d in list(range(len(divs)-1)):
+                new_nums[divs[d]:divs[d+1]] = cnt 
+                cnt = cnt+1
+            #formatting the new node ids. 
+            new_node_ids = np.zeros(len(new_nums),dtype=int)
+            for n in list(range(len(new_nums))):
+                if len(str(new_nums[n])) == 1:
+                    fill = '00'
+                    new_node_ids[n] = int(str(correct_ds[0])[0:10]+fill+str(new_nums[n])+str(correct_ds[0])[-1])
+                if len(str(new_nums[n])) == 2:
+                    fill = '0'
+                    new_node_ids[n] = int(str(correct_ds[0])[0:10]+fill+str(new_nums[n])+str(correct_ds[0])[-1])
+                if len(str(new_nums[n])) == 3:
+                    new_node_ids[n] = int(str(correct_ds[0])[0:10]+str(new_nums[n])+str(correct_ds[0])[-1]) 
+            subcls.new_node_id[0,rch_update[sort_ids]] = new_node_ids
+
+
+
+# plt.scatter(x, y, c='lightgrey', s = 3)
+# plt.scatter(x[rch], y[rch], c='blue', s = 8)
+# plt.scatter(x[new_rch], y[new_rch], c='red', s = 8)
+# plt.scatter(x[ngh_fix], y[ngh_fix], c='gold', s = 8)
+# plt.show()
+
+
+# np.unique(subcls.new_reach_id[1::,new_rch])
+# np.unique(subcls.new_reach_id[1::,ngh_fix])
+
+######################################################################
+######################################################################
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+
+rch_update = np.where((mhv_rchs < 10000000000) & (mhv_basins > 0))[0]
+for r in list(range(len(rch_update))):
+    basin = str(mhv_basins[rch_update[r]])[0:6]
+    reach = str(mhv_rch_num[rch_update[r]])
+    node = str(mhv_node_num[rch_update[r]])
+    rtype = str(mhv_type[rch_update[r]])
+    # create string reach and node numbers. 
+    if len(reach) == 1:
+        rch_str = '000'+reach 
+    if len(reach) == 2:
+        rch_str = '00'+reach
+    if len(reach) == 3:
+        rch_str = '0'+reach
+    if len(reach) == 4:
+        rch_str = reach
+    ### node ids
+    if len(node) == 1:
+        node_str = '00'+node
+    if len(node) == 2:
+        node_str = '0'+node
+    if len(node) == 3:
+        node_str = node
+    new_rch_id = int(basin+rch_str+rtype)
+    new_node_id = int(basin+rch_str+node_str+rtype)
+    #update arrays. 
+    mhv_rchs[rch_update[r]] = new_rch_id
+    mhv_nodes[rch_update[r]] = new_rch_id
+
+######################################################################
+######################################################################
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+fn1 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/na_sword_v18.nc'
+sword = nc.Dataset(fn1)
+
+edit_flag = np.array(sword['/reaches/edit_flag'][:])
+unq = np.unique(edit_flag); unq
+
+val1 = np.where(edit_flag == unq[7])[0]
+val2 = np.where(edit_flag == unq[8])[0]
+val3 = np.where(edit_flag == unq[9])[0]
+
+edit_flag[val1] = '1'
+edit_flag[val2] = '1'
+edit_flag[val3] = '7,1'
+np.unique(edit_flag)
+
+sword['/reaches/edit_flag'][:] = edit_flag
+sword.close()
+
+### fix other continents 
+# fn1 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/oc_sword_v18.nc'
+# sword = nc.Dataset(fn1, 'r+')
+
+# np.unique(sword['/reaches/edit_flag'][:])
+
+# sword['/reaches/edit_flag'][:] = np.repeat('NaN', len(sword['/reaches/edit_flag'][:]))
+# np.unique(sword['/reaches/edit_flag'][:])
+# sword.close()
+
+######################################################################
+######################################################################
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+fn1 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/na_sword_v18.nc'
+sword = nc.Dataset(fn1)
+
+reaches = np.array(sword['/reaches/reach_id'][:])
+nodes = np.array(sword['/nodes/node_id'][:])
+cl_nodes = np.array(sword['/centerlines/node_id'][:])
+node_rchs = np.array(sword['/nodes/reach_id'][:])
+
+odd_rch_len = np.where(nodes < 10000000000)[0]
+odd_node_len = np.where(nodes < 10000000000000)[0]
+nodes[odd_node_len]
+node_rchs[odd_node_len]
+
+sword.close()
+
+######################################################################
+######################################################################
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/na_sword_v18.nc'
+nc_fn2 = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17b/netcdf/na_sword_v17b.nc'
+sword = nc.Dataset(nc_fn,'r+')
+sword17 = nc.Dataset(nc_fn2)
+
+ef17 = np.array(sword17['/reaches/edit_flag'][:])
+r17 = np.array(sword17['/reaches/reach_id'][:])
+ef18 = np.array(sword['/reaches/edit_flag'][:])
+r18 = np.array(sword['/reaches/reach_id'][:])
+
+update17 = np.where(ef17 != 'NaN')[0]
+update18 = np.where(np.in1d(r18, r17[update17])== True)[0]
+
+np.unique(ef18[update18])
+np.unique(ef17[update17])
+
+rmv = find_character_in_array(ef18[update18], '6')
+update1 = np.delete(update18, rmv)
+# update2 = np.delete(update18, rmv)
+
+# update2 = find_character_in_array(ef18, '6')
+
+np.unique(ef18[update1])
+# np.unique(ef18[update2])
+
+ef18[update1] = 'NaN'
+# ef18[update2] = '6'
+np.unique(ef18)
+
+sword['/reaches/edit_flag'][:] = ef18
+
+
+######################################################################
+######################################################################
+######################################################################
+
+import pandas as pd
+import numpy as np
+import os 
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+
+region = 'SA'
+version = 'v18'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+
+sword = nc.Dataset(sword_fn)
+nodes = np.array(sword['/nodes/node_id'][:])
+node_rchs = np.array(sword['/nodes/reach_id'][:])
+rchs = np.array(sword['/reaches/reach_id'][:])
+
+print('min node char len:', len(str(min(nodes))))
+print('max node char len:', len(str(max(nodes))))
+print('min reach char len:', len(str(min(rchs))))
+print('max reach char len:', len(str(max(rchs))))
+
+vals, cnt = np.unique(rchs, return_counts=True)
+check = vals[np.where(cnt>1)[0]]
+
+np.unique(node_rchs[np.where(nodes < 10000000000000)[0]])

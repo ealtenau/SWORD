@@ -5,9 +5,10 @@ import pandas as pd
 import time
 
 start_all = time.time()
-regions = 'na', 'sa', 'as', 'eu', 'af', 'oc'
-tile_fn = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/Tiles_ScienceOrbit/nom_tile_bounds_v1.shp'
-# tile_fn = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/Tiles_CalVal/tile_bounds_v4.shp'
+# regions = 'na', 'sa', 'as', 'eu', 'af', 'oc'
+regions = ['na']
+tile_fn = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Tiles_ScienceOrbit/nom_tile_bounds_v1.shp'
+# tile_fn = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/Tiles_CalVal/tile_bounds_v4.shp'
 
 tiles = gp.GeoDataFrame.from_file(tile_fn)   
 tile_list = []
@@ -15,7 +16,7 @@ reg_id = []
 for r in regions:
     start = time.time()
     print(r.upper())
-    sword_fn = '/Users/ealteanau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v16_official/gpkg/'+r+'_sword_reaches_v16.gpkg'
+    sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/gpkg/'+r+'_sword_reaches_v18.gpkg'
     reaches = gp.GeoDataFrame.from_file(sword_fn)
     intersect = gp.sjoin(reaches, tiles, how="inner") 
     tiles_all = np.unique(intersect.pass_tile)
@@ -36,12 +37,12 @@ for r in regions:
     rch_tiles = np.array(rch_tiles, dtype=object)
     tile_csv = pd.DataFrame([rchs, rch_tiles]).T
     tile_csv.rename(columns={0:"reach_id",1:"pass_tile",},inplace=True)
-    tile_csv.to_csv('/Users/ealteanau/Documents/SWORD_Dev/swot_data/SWORD_v16_PassTile/nominal/csv/'+r+'_sword_reaches_v16_pass_tile_nominal.csv', index=False)
-    # tile_csv.to_csv('/Users/ealteanau/Documents/SWORD_Dev/swot_data/SWORD_v16_PassTile/calval/csv/'+r+'_sword_reaches_v16_pass_tile_calval.csv', index=False)
+    tile_csv.to_csv('/Users/ealtenau/Documents/SWORD_Dev/swot_data/SWORD_v18_PassTile/nominal/csv/'+r+'_sword_reaches_v18_pass_tile_nominal.csv', index=False)
+    # tile_csv.to_csv('/Users/ealtenau/Documents/SWORD_Dev/swot_data/SWORD_v18_PassTile/calval/csv/'+r+'_sword_reaches_v18_pass_tile_calval.csv', index=False)
 
     reaches['pass_tile'] = rch_tiles
-    outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/SWORD_v16_PassTile/nominal/gpkg/'+r+'_sword_reaches_v16_pass_tile_nominal.gpkg'
-    # outgpkg = '/Users/ealteanau/Documents/SWORD_Dev/swot_data/SWORD_v16_PassTile/calval/gpkg/'+r+'_sword_reaches_v16_pass_tile_calval.gpkg'
+    outgpkg = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/SWORD_v18_PassTile/nominal/gpkg/'+r+'_sword_reaches_v18_pass_tile_nominal.gpkg'
+    # outgpkg = '/Users/ealtenau/Documents/SWORD_Dev/swot_data/SWORD_v18_PassTile/calval/gpkg/'+r+'_sword_reaches_v18_pass_tile_calval.gpkg'
     reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
 
     end = time.time()
@@ -53,8 +54,8 @@ reg_id = np.array([item for items in reg_id for item in items])
 
 csv_df = pd.DataFrame([tile_list, reg_id]).T
 csv_df.rename(columns={0:"pass_tile",1:"sword_region",},inplace=True)
-csv_df.to_csv('/Users/ealteanau/Documents/SWORD_Dev/swot_data/SWORD_v16_PassTile/nominal/csv/Pass_Tile_Nominal_SWORD_v16_Region.csv', index=False)
-# csv_df.to_csv('/Users/ealteanau/Documents/SWORD_Dev/swot_data/SWORD_v16_PassTile/calval/csv/Pass_Tile_CalVal_SWORD_v16_Region.csv', index=False)
+csv_df.to_csv('/Users/ealtenau/Documents/SWORD_Dev/swot_data/SWORD_v18_PassTile/nominal/csv/Pass_Tile_Nominal_SWORD_v18_Region.csv', index=False)
+# csv_df.to_csv('/Users/ealtenau/Documents/SWORD_Dev/swot_data/SWORD_v18_PassTile/calval/csv/Pass_Tile_CalVal_SWORD_v18_Region.csv', index=False)
 
 end_all = time.time() 
 print('Finished all in: '+str(np.round((end_all-start_all)/60,2))+' min')

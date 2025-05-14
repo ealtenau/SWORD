@@ -2,25 +2,31 @@ import netCDF4 as nc
 import pandas as pd
 import numpy as np
 
-region = 'NA'
+region = 'SA'
 version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
     '/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 csv_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+\
     '/'+region.lower()+'_incorrect_ghost_reaches.csv'
-# csv_dir ='/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/NA/na_v17_stlaurence_type_updates.csv'
+# csv_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/cnes_lake_intersections/SWORD_v17_rivers_to_lakes.csv'
 
 sword = nc.Dataset(sword_dir, 'r+')
 updates = pd.read_csv(csv_dir)
 
 #loop 
 for row in list(range(len(updates))):
-    rch = np.where(sword.groups['reaches'].variables['reach_id'] == updates['reach_id'][row])[0]
-    nodes_rch = np.where(sword.groups['nodes'].variables['reach_id'] == updates['reach_id'][row])[0]
+    print(row, len(updates)-1)
+    rch = np.where(sword.groups['reaches'].variables['reach_id'][:] == updates['reach_id'][row])[0]
+    if len(rch) == 0:
+        continue
+    
+    nodes_rch = np.where(sword.groups['nodes'].variables['reach_id'][:] == updates['reach_id'][row])[0]
     if sword.groups['reaches'].variables['edit_flag'][rch] == 'NaN':
         edit_val = '1'
+    elif '1' not in str(sword.groups['reaches'].variables['edit_flag'][rch]).split(','):
+        edit_val = str(sword.groups['reaches'].variables['edit_flag'][rch])[2:-2] + ',1'
     else:
-        edit_val = str(sword.groups['reaches'].variables['edit_flag'][rch][0]) + ',1'
+        edit_val = str(sword.groups['reaches'].variables['edit_flag'][rch])[2:-2]
                     
     rch_up1 = np.where(sword.groups['reaches'].variables['rch_id_up'][0,:] == updates['reach_id'][row])[0]
     rch_up2 = np.where(sword.groups['reaches'].variables['rch_id_up'][1,:] == updates['reach_id'][row])[0]
@@ -90,5 +96,6 @@ for row in list(range(len(updates))):
 print('Cl Dimensions:', len(np.unique(sword.groups['centerlines'].variables['cl_id'][:])), len(sword.groups['centerlines'].variables['cl_id'][:]))
 print('Node Dimensions:', len(np.unique(sword.groups['centerlines'].variables['node_id'][0,:])), len(sword.groups['nodes'].variables['node_id'][:]), len(sword.groups['nodes'].variables['node_id'][:]))
 print('Rch Dimensions:', len(np.unique(sword.groups['centerlines'].variables['reach_id'][0,:])), len(np.unique(sword.groups['nodes'].variables['reach_id'][:])), len(np.unique(sword.groups['reaches'].variables['reach_id'][:])),len(sword.groups['reaches'].variables['reach_id'][:]))
+print('Edit Flag Values:', np.unique(sword.groups['reaches'].variables['edit_flag'][:]))
 sword.close()
 print('UPDATES DONE')

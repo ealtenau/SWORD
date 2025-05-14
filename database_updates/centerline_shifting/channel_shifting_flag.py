@@ -133,7 +133,7 @@ jrc_files = os.listdir(jrc_dir)
 jrc_files = np.array([f for f in jrc_files if '.tif' in f])
 
 #### loop through jrc tiles. 
-for f in list(range(len(jrc_files))):
+for f in list(range(478,len(jrc_files))):
 
     jrc_tile = jrc_files[f][11:18]
     print(f, len(jrc_files)-1, jrc_tile)
@@ -223,7 +223,7 @@ for f in list(range(len(jrc_files))):
     df = gp.GeoDataFrame(df)
     df.set_geometry(col='geometry')
     df = df.set_crs(4326, allow_override=True)
-    outgpkg=jrc_dir+region+'/'+jrc_tile+'_sword_v17_shift_flag.gpkg'
+    outgpkg=jrc_dir+region+'/'+jrc_tile+'_sword_'+version+'_shift_flag.gpkg'
     df.to_file(outgpkg, driver='GPKG', layer='headwaters')
 
     del jrc; del jrc_arr; del df; del df_geom; del jrc_pts; del kdt; del pt_ind; del pt_dist

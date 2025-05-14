@@ -9,16 +9,19 @@ import matplotlib.pyplot as plt
 from scipy import spatial as sp
 
 start_all = time.time()
-parser = argparse.ArgumentParser()
-parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
-parser.add_argument("version", help="version", type = str)
-args = parser.parse_args()
+# parser = argparse.ArgumentParser()
+# parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+# parser.add_argument("version", help="version", type = str)
+# parser.add_argument("update", help="update", type = str)
+# args = parser.parse_args()
 
-region = args.region
-version = args.version
+# region = args.region
+# version = args.version
+# update_nc = args.update
 
-# region = 'SA'
-# version = 'v18'
+region = 'NA'
+version = 'v18'
+update_nc = 'False'
 
 # nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/netcdf/na_sword_v17_reversal_testing.nc'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -33,6 +36,7 @@ rch_id_dn = np.array(sword.groups['reaches'].variables['rch_id_dn'][:])
 rch_dist = np.array(sword.groups['reaches'].variables['dist_out'][:])
 n_rch_up = np.array(sword.groups['reaches'].variables['n_rch_up'][:])
 n_rch_dn = np.array(sword.groups['reaches'].variables['n_rch_down'][:])
+edit_flag = np.array(sword.groups['reaches'].variables['edit_flag'][:])
 cl_ids = np.array(sword.groups['centerlines'].variables['cl_id'][:])
 cl_rchs = np.array(sword.groups['centerlines'].variables['reach_id'][:])
 cl_nodes = np.array(sword.groups['centerlines'].variables['node_id'][:])
@@ -205,19 +209,22 @@ cl_nodes[1:4,update] = id_arr[update,1:4].T
 print('Writing CSV Files')
 cl_csv = pd.DataFrame({"reach_id": cl_rev})
 cl_csv.to_csv(outpath+'centerline_reversals.csv', index = False)
-node_csv = pd.DataFrame({"reach_id": node_rev})
+rev_flag = edit_flag[np.where(np.in1d(reaches, node_rev)==True)[0]]
+node_csv = pd.DataFrame({"reach_id": node_rev, "edit_flag": rev_flag})
 node_csv.to_csv(outpath+'node_reversals.csv', index = False)
 issue_csv = pd.DataFrame({"reach_id": order_issues})
 issue_csv.to_csv(outpath+'order_problems.csv', index = False)
 
 #updating the netcdf. 
-# print('Updating the NetCDF')
-# sword.groups['nodes'].variables['node_id'][:] = nodes
-# sword.groups['nodes'].variables['cl_ids'][:] = node_cl_ids
-# sword.groups['nodes'].variables['dist_out'][:] = node_dist
-# sword.groups['centerlines'].variables['cl_id'][:] = cl_ids
-# sword.groups['centerlines'].variables['node_id'][:] = cl_nodes
-# sword.groups['centerlines'].variables['reach_id'][:] = cl_rchs
+if update_nc == 'True':
+    print('Updating the NetCDF')
+    sword.groups['nodes'].variables['node_id'][:] = nodes
+    sword.groups['nodes'].variables['cl_ids'][:] = node_cl_ids
+    sword.groups['nodes'].variables['dist_out'][:] = node_dist
+    sword.groups['centerlines'].variables['cl_id'][:] = cl_ids
+    sword.groups['centerlines'].variables['node_id'][:] = cl_nodes
+    sword.groups['centerlines'].variables['reach_id'][:] = cl_rchs
+
 sword.close()
 end_all = time.time()
 print('*** '+region + ' Done in: '+str(np.round((end_all-start_all)/60,2))+' mins ***')

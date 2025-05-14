@@ -10,8 +10,8 @@ import numpy as np
 from scipy import spatial as sp
 import pandas as pd
 
-region = 'NA'
-new_v = 'v17'
+region = 'OC'
+new_v = 'v17b'
 old_v = 'v16'
 
 fn_sword_new = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+new_v+'/netcdf/'+region.lower()+'_sword_'+new_v+'.nc'

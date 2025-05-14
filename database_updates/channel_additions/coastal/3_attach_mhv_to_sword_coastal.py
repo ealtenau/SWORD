@@ -8,8 +8,8 @@ from shapely.geometry import Point
 import geopandas as gp
 import glob
 import os
-os.chdir('/Users/ealtenau/Documents/SWORD_Dev/src/SWORD/database_updates/channel_additions/global/')
-import mhv_to_sword_tools as mst
+os.chdir('/Users/ealtenau/Documents/SWORD_Dev/src/SWORD/database_updates/channel_additions/coastal/')
+import mhv_to_sword_coastal_tools as mst
 
 ###############################################################################
 ###############################################################################
@@ -32,8 +32,10 @@ max_id = max(centerlines.cl_id)
 
 ### loop through mhv level 2 basins. 
 for f in list(range(len(mhv_nc_files))):
-    print('Starting Basin:', mhv_nc_files[f][-13:-11])
-    
+    print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+    print('~~~~ Starting Basin:', mhv_nc_files[f][-13:-11], '~~~~')
+    print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+
     ### read in data. 
     subcls = mst.read_mhv_sword(mhv_nc_files[f])
     if len(subcls.cl_id) == 0:
@@ -57,6 +59,11 @@ for f in list(range(len(mhv_nc_files))):
     ### delete identified indexes.
     mst.delete_mhv_reaches(subcls, rmv)
 
+    ### delete networks that have zero basins. 
+    # rmv_nets = np.unique(subcls.network[np.where(subcls.reach_id < 10000000000)[0]])
+    # rmv2 = np.where(np.in1d(subcls.network, rmv_nets) == True)[0]
+    # mst.delete_mhv_reaches(subcls, rmv2)
+
     ### make sure centerline ids are unique. 
     print('Reformat Cl IDs')
     mst.renumber_cl_id(subcls, max_id)     
@@ -64,7 +71,7 @@ for f in list(range(len(mhv_nc_files))):
 
     ### renumber based on sword reaches. 
     print('Renumber MHV Reaches')
-    subcls.basins = np.array([int(str(r)[0:6]) for r in subcls.reach_id])
+    subcls.basins = np.array([int(str(r)[0:6]) for r in subcls.basins])
     subcls.new_reach_id = np.zeros([4,len(subcls.basins)], dtype=int)
     subcls.new_node_id = np.zeros([4,len(subcls.basins)], dtype=int)
     subcls.new_reach_id[0,:], subcls.new_node_id[0,:] = mst.renumber_reaches(subcls, sword_rch_basins, sword_rch_nums)
@@ -80,18 +87,11 @@ for f in list(range(len(mhv_nc_files))):
         rmv2 = np.where(np.in1d(subcls.new_reach_id[0,:], rmv_ghost)==True)[0] #subcls.new_reach_id[0,rmv2]
         mst.delete_mhv_reaches(subcls, rmv2) #np.where(subcls.new_reach_id == rmv_ghost[0])[1]
     print('~~~ ghost reaches removed:', len(rmv_ghost))
-
-    print('Ensuring Join Points after Deletions')
-    mst.fill_missing_join_pts(subcls)
     
     print('Checking Short Reach Topology')
     short_check = mst.check_sort_rch_topo(subcls)
     mst.correct_short_rchs(subcls, short_check)
     print('~~~ short reaches fixed:', len(short_check))
-
-    ### find sword joining reaches and update topology. 
-    print('SWORD Topology')
-    mst.join_topology(subcls, centerlines, reaches)
 
     ### create reach and node dimensions for mhv. 
     print('Creating Node Attributes')
@@ -175,7 +175,15 @@ for f in list(range(len(mhv_nc_files))):
     subreaches.orbits = subreaches.orbits.T
     subreaches.iceflag = subreaches.iceflag.T
 
-    ### append data. 
+    if min(subreaches.id) < 10000000000:
+        print('!!! Zero Basin Issue !!!')
+        break
+
+    dup_check = np.where(np.in1d(reaches.id, subreaches.id) == True)[0]
+    if len(dup_check) > 0:
+        print('!!! Duplicate Reach IDs !!!', int(reaches.id[dup_check][0]))
+        break
+    
     # Append new data to existing data. 
     mst.append_data(centerlines, nodes, reaches, subcls, subnodes, subreaches)
     # print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
@@ -239,7 +247,5 @@ mst.write_database_nc(centerlines, reaches, nodes, region, sword_fn)
 print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
 print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
 print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(np.unique(reaches.id)),len(reaches.id))
-
-
-
-# np.where(subcls.new_reach_id[:] == short_check[0])
+print('Max Reach ID:', int(max(reaches.id)))
+print('Min Reach ID:', int(min(reaches.id)))

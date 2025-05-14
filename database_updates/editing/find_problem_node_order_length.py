@@ -1,6 +1,18 @@
-import netCDF4 as nc
-import pandas as pd
 import numpy as np
+import netCDF4 as nc
+import geopandas as gp
+from geopy import Point, distance
+from shapely.geometry import LineString, Point
+from geopandas import GeoSeries
+import pandas as pd
+import time
+import argparse
+import os
+import utm
+from pyproj import Proj
+import matplotlib.pyplot as plt
+import glob
+from scipy import stats as st
 
 ###############################################################################
 ###############################################################################
@@ -110,43 +122,56 @@ def read_data(filename):
     data.close()    
 
     return centerlines, nodes, reaches
-    
-###############################################################################    
+
+###############################################################################
 ###############################################################################
 ###############################################################################
 
-region = 'SA'
+'''
+This script goes through and finds incorrect node ordering or large/small node 
+lengths (i.e. node length = 0 or node length > 1000) to be updated in 
+"fix_problem_node_order_lengths.py".
+
+(c) E. Altenau 4/22/2025.
+'''
+
+start_all = time.time()
+region = 'AS'
 version = 'v18'
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+multi_file = 'True'
+ 
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 out_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
-centerlines, nodes, reaches = read_data(sword_dir)
 
-reaches.type = np.array([int(str(rch)[-1]) for rch in reaches.id])
-correct = np.where((reaches.n_rch_up > 0)&(reaches.n_rch_down > 0)&(reaches.type == 6))[0]
-missing_ghost_headwater = np.where((reaches.n_rch_up == 0)&(reaches.type < 6))[0]
-missing_ghost_outlet = np.where((reaches.n_rch_down == 0)&(reaches.type < 6))[0]
-all_missing = np.append(missing_ghost_headwater,missing_ghost_outlet)
+#read sword
+centerlines, nodes, reaches = read_data(nc_fn)
+cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in centerlines.node_id[0,:]])
 
-hw_end = np.repeat(1,len(missing_ghost_headwater))
-out_end = np.repeat(2,len(missing_ghost_outlet))
-all_ends = np.append(hw_end,out_end)
+unq_rchs = np.unique(reaches.id)
+fixed_rchs = []
+for r in list(range(len(unq_rchs))):
+    print(r, unq_rchs[r], len(unq_rchs)-1)
+    cl_r = np.where(centerlines.reach_id[0,:] == unq_rchs[r])[0]
+    order_ids = np.argsort(centerlines.cl_id[cl_r])
+    nodes_rch =  cl_node_num_int[cl_r[order_ids]]
+    nodes_diff = np.abs(np.diff(nodes_rch))
+    node_issues = np.where(nodes_diff > 1)[0]
+    if len(node_issues) > 0:
+        fixed_rchs.append(unq_rchs[r])
 
-subreaches = reaches.id[correct]
-new_type = []
-for r in list(range(len(subreaches))):
-    # print(r)
-    rch = np.where(reaches.id == subreaches[r])[0]
-    up_type = reaches.type[np.where(np.in1d(reaches.id, reaches.rch_id_up[:,rch])==True)[0]]
-    dn_type = reaches.type[np.where(np.in1d(reaches.id, reaches.rch_id_down[:,rch])==True)[0]]
-    all_types = np.append(up_type,dn_type)
-    new_type.append(max(all_types[np.where(all_types<6)[0]]))
+# find long node lengths
+long_nodes = np.unique(nodes.reach_id[np.where(nodes.len > 1000)[0]])
+# find zero node lengths 
+zero_len = np.unique(nodes.reach_id[np.where(nodes.len == 0)[0]])
+# combine length problems. 
+len_issues = np.unique(np.append(long_nodes, zero_len))
 
-ghost = {'reach_id': np.array(reaches.id[correct]).astype('int64'), 'new_type': np.array(new_type).astype('int64')}
-ghost = pd.DataFrame(ghost)
-ends = {'reach_id': np.array(reaches.id[all_missing]).astype('int64'), 'hw_out': np.array(all_ends).astype('int64')}
-ends = pd.DataFrame(ends)
+order_problems = {'reach_id': np.array(fixed_rchs).astype('int64')}
+order_problems = pd.DataFrame(order_problems)
+length_problems = {'reach_id': np.array(len_issues).astype('int64')}
+length_problems = pd.DataFrame(length_problems)
 
-ghost.to_csv(out_dir+region.lower()+'_incorrect_ghost_reaches.csv', index=False)
-ends.to_csv(out_dir+region.lower()+'_missing_ghost_reaches.csv', index=False)
-print("incorrect ghost:", len(ghost), ", missing ghost:", len(ends))
+order_problems.to_csv(out_dir+region.lower()+'_node_order_problems.csv', index=False)
+length_problems.to_csv(out_dir+region.lower()+'_node_length_probems.csv', index=False)
+print("order problems:", len(order_problems), ", length problems:", len(length_problems))
 print('DONE')

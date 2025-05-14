@@ -1,6 +1,9 @@
-import netCDF4 as nc
-import pandas as pd
+from __future__ import division
 import numpy as np
+import time
+import netCDF4 as nc
+from statistics import mode
+import pandas as pd
 
 ###############################################################################
 ###############################################################################
@@ -112,41 +115,71 @@ def read_data(filename):
     return centerlines, nodes, reaches
     
 ###############################################################################    
+
+def delete_rchs(reaches, rm_rch):
+    for ind in list(range(len(rm_rch))):
+        # print(ind, len(rm_rch))
+        rch_ind = np.where(reaches.id == rm_rch[ind])[0]
+        reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
+        reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
+        reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
+        reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
+        reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
+        reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
+        reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
+        reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
+        reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
+        reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
+        reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
+        reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
+        reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
+        reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
+        reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
+        reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
+        reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
+        reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
+        reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
+        reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
+        reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
+        reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
+        reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
+        reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
+        reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
+        reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
+        reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
+        reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
+        reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
+        reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
+        reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
+        reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
+        reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
+        reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
+        reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
+        reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
+        reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
+        reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
+        reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
+        reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
+        reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
+        reaches.network = np.delete(reaches.network, rch_ind, axis = 0)
+
+###############################################################################
 ###############################################################################
 ###############################################################################
 
 region = 'SA'
 version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-out_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
+
+### read data. 
 centerlines, nodes, reaches = read_data(sword_dir)
 
-reaches.type = np.array([int(str(rch)[-1]) for rch in reaches.id])
-correct = np.where((reaches.n_rch_up > 0)&(reaches.n_rch_down > 0)&(reaches.type == 6))[0]
-missing_ghost_headwater = np.where((reaches.n_rch_up == 0)&(reaches.type < 6))[0]
-missing_ghost_outlet = np.where((reaches.n_rch_down == 0)&(reaches.type < 6))[0]
-all_missing = np.append(missing_ghost_headwater,missing_ghost_outlet)
-
-hw_end = np.repeat(1,len(missing_ghost_headwater))
-out_end = np.repeat(2,len(missing_ghost_outlet))
-all_ends = np.append(hw_end,out_end)
-
-subreaches = reaches.id[correct]
-new_type = []
-for r in list(range(len(subreaches))):
-    # print(r)
-    rch = np.where(reaches.id == subreaches[r])[0]
-    up_type = reaches.type[np.where(np.in1d(reaches.id, reaches.rch_id_up[:,rch])==True)[0]]
-    dn_type = reaches.type[np.where(np.in1d(reaches.id, reaches.rch_id_down[:,rch])==True)[0]]
-    all_types = np.append(up_type,dn_type)
-    new_type.append(max(all_types[np.where(all_types<6)[0]]))
-
-ghost = {'reach_id': np.array(reaches.id[correct]).astype('int64'), 'new_type': np.array(new_type).astype('int64')}
-ghost = pd.DataFrame(ghost)
-ends = {'reach_id': np.array(reaches.id[all_missing]).astype('int64'), 'hw_out': np.array(all_ends).astype('int64')}
-ends = pd.DataFrame(ends)
-
-ghost.to_csv(out_dir+region.lower()+'_incorrect_ghost_reaches.csv', index=False)
-ends.to_csv(out_dir+region.lower()+'_missing_ghost_reaches.csv', index=False)
-print("incorrect ghost:", len(ghost), ", missing ghost:", len(ends))
-print('DONE')
+#checking dimensions
+print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
+print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
+print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(np.unique(reaches.id)), len(reaches.id))
+print('min node char len:', len(str(np.min(nodes.id))))
+print('max node char len:', len(str(np.max(nodes.id))))
+print('min reach char len:', len(str(np.min(reaches.id))))
+print('max reach char len:', len(str(np.max(reaches.id))))
+print('Edit flag values:', np.unique(reaches.edit_flag))

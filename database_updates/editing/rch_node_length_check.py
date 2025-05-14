@@ -5,7 +5,7 @@ from geopy import distance
 import pandas as pd
 import random
 
-region = 'NA'
+region = 'AS'
 version = 'v18'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
@@ -21,20 +21,25 @@ node_dist = np.array(sword.groups['nodes'].variables['dist_out'][:])
 node_rch = np.array(sword.groups['nodes'].variables['reach_id'][:])
 sword.close()
 
-rand = random.sample(range(0,len(reaches)), 500)
-for ind in list(range(len(rand))):
-    test = np.where(node_rch == reaches[rand[ind]])[0]
-    print(reaches[rand[ind]], 
-          abs(np.round(sum(node_len[test])-rch_len[rand[ind]])), 
-          abs(np.round(max(node_dist[test])-rch_dist[rand[ind]])))
+nlen_diff = np.zeros(len(reaches))
+do_diff = np.zeros(len(reaches))
+for ind in list(range(len(reaches))):
+    test = np.where(node_rch == reaches[ind])[0]
+    nlen_diff[ind] = np.abs(np.round(sum(node_len[test])-rch_len[ind]))
+    do_diff[ind] = np.abs(np.round(max(node_dist[test])-rch_dist[ind]))
 
+len_diff_perc = len(np.where(nlen_diff != 0)[0])/len(reaches)*100
+do_diff_perc = len(np.where(do_diff != 0)[0])/len(reaches)*100
+
+print('Percent Length Differences:', np.round(len_diff_perc, 2), ", Max Diff:", np.max(nlen_diff))
+print('Percent DistOut Differences:', np.round(do_diff_perc,2), ", Max Diff:", np.max(do_diff))
 print('DONE')
 
-# np.median(rch_len)
-# np.median(node_len)
+# rand = random.sample(range(0,len(reaches)), 1000)
+# for ind in list(range(len(rand))):
+#     test = np.where(node_rch == reaches[rand[ind]])[0]
+#     print(reaches[rand[ind]], 
+#           abs(np.round(sum(node_len[test])-rch_len[rand[ind]])), 
+#           abs(np.round(max(node_dist[test])-rch_dist[rand[ind]])))
+# print('DONE')
 
-# check = np.where(reaches == 71140700123)[0]
-# test = np.where(node_rch == reaches[check])[0]
-# print(reaches[check], 
-#       abs(np.round(sum(node_len[test])-rch_len[check])), 
-#       abs(np.round(max(node_dist[test])-rch_dist[check])))

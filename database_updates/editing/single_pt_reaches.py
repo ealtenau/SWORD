@@ -2,7 +2,7 @@ import numpy as np
 import netCDF4 as nc
 import pandas as pd
 
-region = 'NA'
+region = 'SA'
 version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'
 sword = nc.Dataset(sword_dir+region.lower()+'_sword_'+version+'.nc')
@@ -38,7 +38,7 @@ rch_id_dn = sword.groups['reaches'].variables['rch_id_dn'][:,:]
 
 single_pt_rchs = []
 for ind in list(range(len(rchs))):
-    print(ind)
+    print(ind, len(rchs)-1)
     pts = np.where(cl_rchs[0,:] == rchs[ind])[0]
     if len(pts) == 1:
         single_pt_rchs.append(ind)

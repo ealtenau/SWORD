@@ -2,8 +2,8 @@ import os
 import numpy as np
 import geopandas as gp
 
-region = 'NA'
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17/gpkg/'+region.lower()+'_sword_reaches_v17.gpkg'
+region = 'EU'
+sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v17b/gpkg/'+region.lower()+'_sword_reaches_v17b.gpkg'
 jrc_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/JRC_Water_Occurance/'+region+'/'
 jrc_files = os.listdir(jrc_dir)
 jrc_files = np.array([f for f in jrc_files if 'sword' in f])
@@ -30,7 +30,7 @@ for f in list(range(len(jrc_files))):
             flag[rch] = 1
 
 sword['shift_flag'] = flag
-sword.to_file(jrc_dir+region+'_shift_flag_v17.gpkg', driver='GPKG', layer='reaches')
+sword.to_file(jrc_dir+region+'_shift_flag_v17b.gpkg', driver='GPKG', layer='reaches')
 
 All = np.where(flag > 0)[0]
 small = np.where(flag == 1)[0]

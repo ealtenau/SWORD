@@ -1,8 +1,18 @@
-from __future__ import division
 import numpy as np
-import time
 import netCDF4 as nc
+import geopandas as gp
+from geopy import Point, distance
+from shapely.geometry import LineString, Point
+from geopandas import GeoSeries
 import pandas as pd
+import time
+import argparse
+import os
+import utm
+from pyproj import Proj
+import matplotlib.pyplot as plt
+import glob
+from scipy import stats as st
 
 ###############################################################################
 ###############################################################################
@@ -14,6 +24,18 @@ class Object(object):
         Creates class object to assign attributes to.
     """
     pass 
+
+###############################################################################
+
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
 
 ###############################################################################
 
@@ -113,7 +135,84 @@ def read_data(filename):
 
     return centerlines, nodes, reaches
     
-###############################################################################    
+###############################################################################
+
+def delete_rch_nodes(node_ind):
+    nodes.id = np.delete(nodes.id, node_ind, axis = 0)
+    nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
+    nodes.x = np.delete(nodes.x, node_ind, axis = 0)
+    nodes.y = np.delete(nodes.y, node_ind, axis = 0)
+    nodes.len = np.delete(nodes.len, node_ind, axis = 0)
+    nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
+    nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
+    nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
+    nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
+    nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
+    nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
+    nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
+    nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
+    nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
+    nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
+    nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
+    nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
+    nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
+    nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
+    nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
+    nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
+    nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
+    nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
+    nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
+    nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
+    nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
+    nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
+    nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
+    nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
+    nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
+    nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
+    nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
+    nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
+    nodes.network = np.delete(nodes.network, node_ind, axis = 0)
+
+###############################################################################
+
+def append_nodes(nodes, subnodes):
+
+    nodes.id = np.append(nodes.id, subnodes.id)
+    nodes.cl_id = np.append(nodes.cl_id, subnodes.cl_id, axis=1)
+    nodes.x = np.append(nodes.x, subnodes.x)
+    nodes.y = np.append(nodes.y, subnodes.y)
+    nodes.len = np.append(nodes.len, subnodes.len)
+    nodes.wse = np.append(nodes.wse, subnodes.wse)
+    nodes.wse_var = np.append(nodes.wse_var, subnodes.wse_var)
+    nodes.wth = np.append(nodes.wth, subnodes.wth)
+    nodes.wth_var = np.append(nodes.wth_var, subnodes.wth_var)
+    nodes.grod = np.append(nodes.grod, subnodes.grod)
+    nodes.grod_fid = np.append(nodes.grod_fid, subnodes.grod_fid)
+    nodes.hfalls_fid = np.append(nodes.hfalls_fid, subnodes.hfalls_fid)
+    nodes.nchan_max = np.append(nodes.nchan_max, subnodes.nchan_max)
+    nodes.nchan_mod = np.append(nodes.nchan_mod, subnodes.nchan_mod)
+    nodes.dist_out = np.append(nodes.dist_out, subnodes.dist_out)
+    nodes.reach_id = np.append(nodes.reach_id, subnodes.reach_id)
+    nodes.facc = np.append(nodes.facc, subnodes.facc)
+    nodes.lakeflag = np.append(nodes.lakeflag, subnodes.lakeflag)
+    nodes.wth_coef = np.append(nodes.wth_coef, subnodes.wth_coef)
+    nodes.ext_dist_coef = np.append(nodes.ext_dist_coef, subnodes.ext_dist_coef)
+    nodes.max_wth = np.append(nodes.max_wth, subnodes.max_wth)
+    nodes.meand_len = np.append(nodes.meand_len, subnodes.meand_len)
+    nodes.river_name = np.append(nodes.river_name, subnodes.river_name)
+    nodes.manual_add = np.append(nodes.manual_add, subnodes.manual_add)
+    nodes.sinuosity = np.append(nodes.sinuosity, subnodes.sinuosity)
+    nodes.edit_flag = np.append(nodes.edit_flag, subnodes.edit_flag)
+    nodes.trib_flag = np.append(nodes.trib_flag, subnodes.trib_flag)
+    nodes.path_freq = np.append(nodes.path_freq, subnodes.path_freq)
+    nodes.path_order = np.append(nodes.path_order, subnodes.path_order)
+    nodes.path_segs = np.append(nodes.path_segs, subnodes.path_segs)
+    nodes.main_side = np.append(nodes.main_side, subnodes.main_side)
+    nodes.strm_order = np.append(nodes.strm_order, subnodes.strm_order)
+    nodes.end_rch = np.append(nodes.end_rch, subnodes.end_rch)
+    nodes.network = np.append(nodes.network, subnodes.network)
+
+###############################################################################
 
 def write_database_nc(centerlines, reaches, nodes, region, outfile):
 
@@ -574,171 +673,175 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     #cont_str = nc.stringtochar(np.array(['NA'], 'S2'))
     #Name[:] = cont_str
 
+    cl_sort = np.argsort(centerlines.cl_id)
+    node_sort = np.argsort(nodes.id)
+    rch_sort = np.argsort(reaches.id)
+
     # centerline data
-    cl_id[:] = centerlines.cl_id
-    cl_x[:] = centerlines.x
-    cl_y[:] = centerlines.y
-    reach_id[:,:] = centerlines.reach_id
-    node_id[:,:] = centerlines.node_id
+    cl_id[:] = centerlines.cl_id[cl_sort]
+    cl_x[:] = centerlines.x[cl_sort]
+    cl_y[:] = centerlines.y[cl_sort]
+    reach_id[:,:] = centerlines.reach_id[:,cl_sort]
+    node_id[:,:] = centerlines.node_id[:,cl_sort]
 
     # node data
-    Node_ID[:] = nodes.id
-    node_cl_id[:,:] = nodes.cl_id
-    node_x[:] = nodes.x
-    node_y[:] = nodes.y
-    node_len[:] = nodes.len
-    node_rch_id[:] = nodes.reach_id
-    node_wse[:] = nodes.wse
-    node_wse_var[:] = nodes.wse_var
-    node_wth[:] = nodes.wth
-    node_wth_var[:] = nodes.wth_var
-    node_chan_max[:] = nodes.nchan_max
-    node_chan_mod[:] = nodes.nchan_mod
-    node_grod_id[:] = nodes.grod
-    node_grod_fid[:] = nodes.grod_fid
-    node_hfalls_fid[:] = nodes.hfalls_fid
-    node_dist_out[:] = nodes.dist_out
-    node_wth_coef[:] = nodes.wth_coef
-    node_ext_dist_coef[:] = nodes.ext_dist_coef
-    node_facc[:] = nodes.facc
-    node_lakeflag[:] = nodes.lakeflag
-    #node_lake_id[:] = nodes.lake_id
-    node_max_wth[:] = nodes.max_wth
-    node_meand_len[:] = nodes.meand_len
-    node_sinuosity[:] = nodes.sinuosity
-    node_river_name[:] = nodes.river_name
-    node_manual_add[:] = nodes.manual_add
-    node_edit_flag[:] = nodes.edit_flag
-    node_trib_flag[:] = nodes.trib_flag
-    node_path_freq[:] = nodes.path_freq
-    node_path_order[:] = nodes.path_order
-    node_path_seg[:] = nodes.path_segs
-    node_strm_order[:] = nodes.strm_order
-    node_main_side[:] = nodes.main_side
-    node_end_rch[:] = nodes.end_rch
-    node_network[:] = nodes.network
+    Node_ID[:] = nodes.id[node_sort]
+    node_cl_id[:,:] = nodes.cl_id[:,node_sort]
+    node_x[:] = nodes.x[node_sort]
+    node_y[:] = nodes.y[node_sort]
+    node_len[:] = nodes.len[node_sort]
+    node_rch_id[:] = nodes.reach_id[node_sort]
+    node_wse[:] = nodes.wse[node_sort]
+    node_wse_var[:] = nodes.wse_var[node_sort]
+    node_wth[:] = nodes.wth[node_sort]
+    node_wth_var[:] = nodes.wth_var[node_sort]
+    node_chan_max[:] = nodes.nchan_max[node_sort]
+    node_chan_mod[:] = nodes.nchan_mod[node_sort]
+    node_grod_id[:] = nodes.grod[node_sort]
+    node_grod_fid[:] = nodes.grod_fid[node_sort]
+    node_hfalls_fid[:] = nodes.hfalls_fid[node_sort]
+    node_dist_out[:] = nodes.dist_out[node_sort]
+    node_wth_coef[:] = nodes.wth_coef[node_sort]
+    node_ext_dist_coef[:] = nodes.ext_dist_coef[node_sort]
+    node_facc[:] = nodes.facc[node_sort]
+    node_lakeflag[:] = nodes.lakeflag[node_sort]
+    #node_lake_id[:] = nodes.lake_id[node_sort]
+    node_max_wth[:] = nodes.max_wth[node_sort]
+    node_meand_len[:] = nodes.meand_len[node_sort]
+    node_sinuosity[:] = nodes.sinuosity[node_sort]
+    node_river_name[:] = nodes.river_name[node_sort]
+    node_manual_add[:] = nodes.manual_add[node_sort]
+    node_edit_flag[:] = nodes.edit_flag[node_sort]
+    node_trib_flag[:] = nodes.trib_flag[node_sort]
+    node_path_freq[:] = nodes.path_freq[node_sort]
+    node_path_order[:] = nodes.path_order[node_sort]
+    node_path_seg[:] = nodes.path_segs[node_sort]
+    node_strm_order[:] = nodes.strm_order[node_sort]
+    node_main_side[:] = nodes.main_side[node_sort]
+    node_end_rch[:] = nodes.end_rch[node_sort]
+    node_network[:] = nodes.network[node_sort]
 
     # reach data
-    Reach_ID[:] = reaches.id
-    rch_cl_id[:,:] = reaches.cl_id
-    rch_x[:] = reaches.x
-    rch_x_min[:] = reaches.x_min
-    rch_x_max[:] = reaches.x_max
-    rch_y[:] = reaches.y
-    rch_y_min[:] = reaches.y_min
-    rch_y_max[:] = reaches.y_max
-    rch_len[:] = reaches.len
-    num_nodes[:] = reaches.rch_n_nodes
-    rch_wse[:] = reaches.wse
-    rch_wse_var[:] = reaches.wse_var
-    rch_wth[:] = reaches.wth
-    rch_wth_var[:] = reaches.wth_var
-    rch_facc[:] = reaches.facc
-    rch_chan_max[:] = reaches.nchan_max
-    rch_chan_mod[:] = reaches.nchan_mod
-    rch_grod_id[:] = reaches.grod
-    rch_grod_fid[:] = reaches.grod_fid
-    rch_hfalls_fid[:] = reaches.hfalls_fid
-    rch_slope[:] = reaches.slope
-    rch_dist_out[:] = reaches.dist_out
-    n_rch_up[:] = reaches.n_rch_up
-    n_rch_down[:] = reaches.n_rch_down
-    rch_id_up[:,:] = reaches.rch_id_up
-    rch_id_down[:,:] = reaches.rch_id_down
-    rch_lakeflag[:] = reaches.lakeflag
-    rch_iceflag[:,:] = reaches.iceflag
-    #rch_lake_id[:] = reaches.lake_id
-    rch_swot_obs[:] = reaches.max_obs
-    rch_orbits[:,:] = reaches.orbits
-    rch_river_name[:] = reaches.river_name
-    rch_max_wth[:] = reaches.max_wth
-    rch_low_slope[:] = reaches.low_slope
-    rch_edit_flag[:] = reaches.edit_flag
-    rch_trib_flag[:] = reaches.trib_flag
-    rch_path_freq[:] = reaches.path_freq
-    rch_path_order[:] = reaches.path_order
-    rch_path_seg[:] = reaches.path_segs
-    rch_strm_order[:] = reaches.strm_order
-    rch_main_side[:] = reaches.main_side
-    rch_end_rch[:] = reaches.end_rch
-    rch_network[:] = reaches.network
+    Reach_ID[:] = reaches.id[rch_sort]
+    rch_cl_id[:,:] = reaches.cl_id[:,rch_sort]
+    rch_x[:] = reaches.x[rch_sort]
+    rch_x_min[:] = reaches.x_min[rch_sort]
+    rch_x_max[:] = reaches.x_max[rch_sort]
+    rch_y[:] = reaches.y[rch_sort]
+    rch_y_min[:] = reaches.y_min[rch_sort]
+    rch_y_max[:] = reaches.y_max[rch_sort]
+    rch_len[:] = reaches.len[rch_sort]
+    num_nodes[:] = reaches.rch_n_nodes[rch_sort]
+    rch_wse[:] = reaches.wse[rch_sort]
+    rch_wse_var[:] = reaches.wse_var[rch_sort]
+    rch_wth[:] = reaches.wth[rch_sort]
+    rch_wth_var[:] = reaches.wth_var[rch_sort]
+    rch_facc[:] = reaches.facc[rch_sort]
+    rch_chan_max[:] = reaches.nchan_max[rch_sort]
+    rch_chan_mod[:] = reaches.nchan_mod[rch_sort]
+    rch_grod_id[:] = reaches.grod[rch_sort]
+    rch_grod_fid[:] = reaches.grod_fid[rch_sort]
+    rch_hfalls_fid[:] = reaches.hfalls_fid[rch_sort]
+    rch_slope[:] = reaches.slope[rch_sort]
+    rch_dist_out[:] = reaches.dist_out[rch_sort]
+    n_rch_up[:] = reaches.n_rch_up[rch_sort]
+    n_rch_down[:] = reaches.n_rch_down[rch_sort]
+    rch_id_up[:,:] = reaches.rch_id_up[:,rch_sort]
+    rch_id_down[:,:] = reaches.rch_id_down[:,rch_sort]
+    rch_lakeflag[:] = reaches.lakeflag[rch_sort]
+    rch_iceflag[:,:] = reaches.iceflag[:,rch_sort]
+    #rch_lake_id[:] = reaches.lake_id[rch_sort]
+    rch_swot_obs[:] = reaches.max_obs[rch_sort]
+    rch_orbits[:,:] = reaches.orbits[:,rch_sort]
+    rch_river_name[:] = reaches.river_name[rch_sort]
+    rch_max_wth[:] = reaches.max_wth[rch_sort]
+    rch_low_slope[:] = reaches.low_slope[rch_sort]
+    rch_edit_flag[:] = reaches.edit_flag[rch_sort]
+    rch_trib_flag[:] = reaches.trib_flag[rch_sort]
+    rch_path_freq[:] = reaches.path_freq[rch_sort]
+    rch_path_order[:] = reaches.path_order[rch_sort]
+    rch_path_seg[:] = reaches.path_segs[rch_sort]
+    rch_strm_order[:] = reaches.strm_order[rch_sort]
+    rch_main_side[:] = reaches.main_side[rch_sort]
+    rch_end_rch[:] = reaches.end_rch[rch_sort]
+    rch_network[:] = reaches.network[rch_sort]
     # subgroup1 - area fits
-    h_break[:,:] = reaches.h_break
-    w_break[:,:] = reaches.w_break
-    h_variance[:] = reaches.wse_var
-    w_variance[:] = reaches.wth_var
-    hw_covariance[:] = reaches.hw_covariance
-    h_err_stdev[:] = reaches.h_err_stdev
-    w_err_stdev[:] = reaches.w_err_stdev
-    h_w_nobs[:] = reaches.h_w_nobs
-    fit_coeffs[:,:,:] = reaches.fit_coeffs
-    med_flow_area[:] = reaches.med_flow_area
+    h_break[:,:] = reaches.h_break[:,rch_sort]
+    w_break[:,:] = reaches.w_break[:,rch_sort]
+    h_variance[:] = reaches.wse_var[rch_sort]
+    w_variance[:] = reaches.wth_var[rch_sort]
+    hw_covariance[:] = reaches.hw_covariance[rch_sort]
+    h_err_stdev[:] = reaches.h_err_stdev[rch_sort]
+    w_err_stdev[:] = reaches.w_err_stdev[rch_sort]
+    h_w_nobs[:] = reaches.h_w_nobs[rch_sort]
+    fit_coeffs[:,:,:] = reaches.fit_coeffs[:,:,rch_sort]
+    med_flow_area[:] = reaches.med_flow_area[rch_sort]
     # ucmod1
-    uc_metroman_Abar[:] = reaches.metroman_abar
-    uc_metroman_ninf[:] = reaches.metroman_ninf
-    uc_metroman_p[:] = reaches.metroman_p
-    uc_metroman_Abar_stdev[:] = reaches.metroman_abar_stdev
-    uc_metroman_ninf_stdev[:] = reaches.metroman_ninf_stdev
-    uc_metroman_p_stdev[:] = reaches.metroman_p_stdev
-    uc_metroman_ninf_p_cor[:] = reaches.metroman_ninf_p_cor
-    uc_metroman_ninf_Abar_cor[:] = reaches.metroman_ninf_abar_cor
-    uc_metroman_p_Abar_cor[:] = reaches.metroman_p_abar_cor
-    uc_metroman_sbQ_rel[:] = reaches.metroman_sbQ_rel
+    uc_metroman_Abar[:] = reaches.metroman_abar[rch_sort]
+    uc_metroman_ninf[:] = reaches.metroman_ninf[rch_sort]
+    uc_metroman_p[:] = reaches.metroman_p[rch_sort]
+    uc_metroman_Abar_stdev[:] = reaches.metroman_abar_stdev[rch_sort]
+    uc_metroman_ninf_stdev[:] = reaches.metroman_ninf_stdev[rch_sort]
+    uc_metroman_p_stdev[:] = reaches.metroman_p_stdev[rch_sort]
+    uc_metroman_ninf_p_cor[:] = reaches.metroman_ninf_p_cor[rch_sort]
+    uc_metroman_ninf_Abar_cor[:] = reaches.metroman_ninf_abar_cor[rch_sort]
+    uc_metroman_p_Abar_cor[:] = reaches.metroman_p_abar_cor[rch_sort]
+    uc_metroman_sbQ_rel[:] = reaches.metroman_sbQ_rel[rch_sort]
     # ucmod2
-    uc_bam_Abar[:] = reaches.bam_abar
-    uc_bam_n[:] = reaches.bam_n
-    uc_bam_sbQ_rel[:] = reaches.bam_sbQ_rel
+    uc_bam_Abar[:] = reaches.bam_abar[rch_sort]
+    uc_bam_n[:] = reaches.bam_n[rch_sort]
+    uc_bam_sbQ_rel[:] = reaches.bam_sbQ_rel[rch_sort]
     # ucmod3
-    uc_hivdi_Abar[:] = reaches.hivdi_abar
-    uc_hivdi_alpha[:] = reaches.hivdi_alpha
-    uc_hivdi_beta[:] = reaches.hivdi_beta
-    uc_hivdi_sbQ_rel[:] = reaches.hivdi_sbQ_rel
+    uc_hivdi_Abar[:] = reaches.hivdi_abar[rch_sort]
+    uc_hivdi_alpha[:] = reaches.hivdi_alpha[rch_sort]
+    uc_hivdi_beta[:] = reaches.hivdi_beta[rch_sort]
+    uc_hivdi_sbQ_rel[:] = reaches.hivdi_sbQ_rel[rch_sort]
     # ucmod4
-    uc_momma_B[:] = reaches.momma_b
-    uc_momma_H[:] = reaches.momma_h
-    uc_momma_Save[:] = reaches.momma_save
-    uc_momma_sbQ_rel[:] = reaches.momma_sbQ_rel
+    uc_momma_B[:] = reaches.momma_b[rch_sort]
+    uc_momma_H[:] = reaches.momma_h[rch_sort]
+    uc_momma_Save[:] = reaches.momma_save[rch_sort]
+    uc_momma_sbQ_rel[:] = reaches.momma_sbQ_rel[rch_sort]
     # ucmod5
-    uc_sads_Abar[:] = reaches.sads_abar
-    uc_sads_n[:] = reaches.sads_n
-    uc_sads_sbQ_rel[:] = reaches.sads_sbQ_rel
+    uc_sads_Abar[:] = reaches.sads_abar[rch_sort]
+    uc_sads_n[:] = reaches.sads_n[rch_sort]
+    uc_sads_sbQ_rel[:] = reaches.sads_sbQ_rel[rch_sort]
     # ucmod6
-    uc_sic4d_Abar[:] = reaches.sic4d_abar
-    uc_sic4d_n[:] = reaches.sic4d_n
-    uc_sic4d_sbQ_rel[:] = reaches.sic4d_sbQ_rel
+    uc_sic4d_Abar[:] = reaches.sic4d_abar[rch_sort]
+    uc_sic4d_n[:] = reaches.sic4d_n[rch_sort]
+    uc_sic4d_sbQ_rel[:] = reaches.sic4d_sbQ_rel[rch_sort]
     # cmod1
-    c_metroman_Abar[:] = reaches.metroman_abar
-    c_metroman_ninf[:] = reaches.metroman_ninf
-    c_metroman_p[:] = reaches.metroman_p
-    c_metroman_Abar_stdev[:] = reaches.metroman_abar_stdev
-    c_metroman_ninf_stdev[:] = reaches.metroman_ninf_stdev
-    c_metroman_p_stdev[:] = reaches.metroman_p_stdev
-    c_metroman_ninf_p_cor[:] = reaches.metroman_ninf_p_cor
-    c_metroman_ninf_Abar_cor[:] = reaches.metroman_ninf_abar_cor
-    c_metroman_p_Abar_cor[:] = reaches.metroman_p_abar_cor
-    c_metroman_sbQ_rel[:] = reaches.metroman_sbQ_rel
+    c_metroman_Abar[:] = reaches.metroman_abar[rch_sort]
+    c_metroman_ninf[:] = reaches.metroman_ninf[rch_sort]
+    c_metroman_p[:] = reaches.metroman_p[rch_sort]
+    c_metroman_Abar_stdev[:] = reaches.metroman_abar_stdev[rch_sort]
+    c_metroman_ninf_stdev[:] = reaches.metroman_ninf_stdev[rch_sort]
+    c_metroman_p_stdev[:] = reaches.metroman_p_stdev[rch_sort]
+    c_metroman_ninf_p_cor[:] = reaches.metroman_ninf_p_cor[rch_sort]
+    c_metroman_ninf_Abar_cor[:] = reaches.metroman_ninf_abar_cor[rch_sort]
+    c_metroman_p_Abar_cor[:] = reaches.metroman_p_abar_cor[rch_sort]
+    c_metroman_sbQ_rel[:] = reaches.metroman_sbQ_rel[rch_sort]
     # cmod2
-    c_bam_Abar[:] = reaches.bam_abar
-    c_bam_n[:] = reaches.bam_n
-    c_bam_sbQ_rel[:] = reaches.bam_sbQ_rel
+    c_bam_Abar[:] = reaches.bam_abar[rch_sort]
+    c_bam_n[:] = reaches.bam_n[rch_sort]
+    c_bam_sbQ_rel[:] = reaches.bam_sbQ_rel[rch_sort]
     # cmod3
-    c_hivdi_Abar[:] = reaches.hivdi_abar
-    c_hivdi_alpha[:] = reaches.hivdi_alpha
-    c_hivdi_beta[:] = reaches.hivdi_beta
-    c_hivdi_sbQ_rel[:] = reaches.hivdi_sbQ_rel
+    c_hivdi_Abar[:] = reaches.hivdi_abar[rch_sort]
+    c_hivdi_alpha[:] = reaches.hivdi_alpha[rch_sort]
+    c_hivdi_beta[:] = reaches.hivdi_beta[rch_sort]
+    c_hivdi_sbQ_rel[:] = reaches.hivdi_sbQ_rel[rch_sort]
     # cmod4
-    c_momma_B[:] = reaches.momma_b
-    c_momma_H[:] = reaches.momma_h
-    c_momma_Save[:] = reaches.momma_save
-    c_momma_sbQ_rel[:] = reaches.momma_sbQ_rel
+    c_momma_B[:] = reaches.momma_b[rch_sort]
+    c_momma_H[:] = reaches.momma_h[rch_sort]
+    c_momma_Save[:] = reaches.momma_save[rch_sort]
+    c_momma_sbQ_rel[:] = reaches.momma_sbQ_rel[rch_sort]
     # cmod5
-    c_sads_Abar[:] = reaches.sads_abar
-    c_sads_n[:] = reaches.sads_n
-    c_sads_sbQ_rel[:] = reaches.sads_sbQ_rel
+    c_sads_Abar[:] = reaches.sads_abar[rch_sort]
+    c_sads_n[:] = reaches.sads_n[rch_sort]
+    c_sads_sbQ_rel[:] = reaches.sads_sbQ_rel[rch_sort]
     # cmod6
-    c_sic4d_Abar[:] = reaches.sic4d_abar
-    c_sic4d_n[:] = reaches.sic4d_n
-    c_sic4d_sbQ_rel[:] = reaches.sic4d_sbQ_rel
+    c_sic4d_Abar[:] = reaches.sic4d_abar[rch_sort]
+    c_sic4d_n[:] = reaches.sic4d_n[rch_sort]
+    c_sic4d_sbQ_rel[:] = reaches.sic4d_sbQ_rel[rch_sort]
 
     root_grp.close()
 
@@ -752,154 +855,169 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'NA'
+'''
+This script goes through and re-creates the nodes for an indentified reach. 
+Used mostly for incorrect node ordering or large/small node lengths
+(i.e. node length = 0 or node length > 1000).
+
+(c) E. Altenau 4/22/2025.
+'''
+
+start_all = time.time()
+region = 'AS'
 version = 'v18'
-sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/AS/as_ghost_deletions.csv'
+multi_file = 'True'
+ 
+nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
+    '/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+csv_dir1 = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+\
+    '/'+region.lower()+'_node_order_problems.csv'
+csv_dir2 = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+\
+    '/'+region.lower()+'_node_length_probems.csv'
 
-# rm_rch_df = pd.read_csv(rch_dir)
-# rm_rch = np.array(rm_rch_df['reach_id']) #csv file
-# rm_rch = np.unique(rm_rch)
-rm_rch = np.array([72195000243, 75214500251]) #manual
-rm_rch = np.unique(rm_rch)
+#read sword
+centerlines, nodes, reaches = read_data(nc_fn)
+cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in centerlines.node_id[0,:]])
 
-centerlines, nodes, reaches = read_data(sword_dir)
-rch_check = reaches.id
+#read csv 
+redo_order_df = pd.read_csv(csv_dir1) 
+redo_len_df = pd.read_csv(csv_dir2) 
 
-#### LOOP
-for ind in list(range(len(rm_rch))):
-    print(ind, len(rm_rch))
-    rch_ind = np.where(reaches.id == rm_rch[ind])[0]
-    node_ind = np.where(nodes.reach_id == rm_rch[ind])[0]
-    cl_ind = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
+redo_order = np.array(redo_order_df['reach_id']) 
+redo_len = np.array(redo_len_df['reach_id']) 
+redo_rch = np.append(redo_order, redo_len)
 
-    if len(rch_ind) == 0:
-        print(rm_rch[ind], 'not in database')
+unq_rchs = np.unique(redo_rch)
+for r in list(range(len(unq_rchs))):
+    print(r, unq_rchs[r], len(unq_rchs)-1)
+    cl_r = np.where(centerlines.reach_id[0,:] == unq_rchs[r])[0]
+    order_ids = np.argsort(centerlines.cl_id[cl_r])
+    nodes_rch =  cl_node_num_int[cl_r[order_ids]]
+    ## redo nodes for reach. 
+    subnodes = Object()
+    old_nums = centerlines.node_id[0,cl_r[order_ids]]
+    num_nodes = len(np.unique(old_nums))
+    cl_ids = centerlines.cl_id[cl_r[order_ids]]
+    break_int = np.ceil(len(cl_ids)/num_nodes)
+    breaks = np.arange(0,len(cl_ids),int(break_int))
+    breaks = np.append(breaks, len(cl_ids))
+    new_nums = np.zeros(len(cl_ids),dtype=int)
+    cnt = 1
+    for b in list(range(len(breaks)-1)):
+        rng = breaks[b+1]-breaks[b]
+        if rng <= 3:
+            count = cnt-1
+        else:
+            count = cnt
+        #create actual id
+        if len(str(count)) == 1:
+            fill = '00'
+            new_nums[breaks[b]:breaks[b+1]] = int(str(int(unq_rchs[r]))[:-1]+fill+str(count)+str(int(unq_rchs[r]))[-1])
+        if len(str(count)) == 2:
+            fill = '0'
+            new_nums[breaks[b]:breaks[b+1]] = int(str(int(unq_rchs[r]))[:-1]+fill+str(count)+str(int(unq_rchs[r]))[-1])
+        if len(str(count)) == 3:
+            new_nums[breaks[b]:breaks[b+1]] = int(str(int(unq_rchs[r]))[:-1]+str(count)+str(int(unq_rchs[r]))[-1])
+        cnt = cnt+1
 
-    centerlines.cl_id = np.delete(centerlines.cl_id, cl_ind, axis=0)
-    centerlines.x = np.delete(centerlines.x, cl_ind, axis=0)
-    centerlines.y = np.delete(centerlines.y, cl_ind, axis=0)
-    centerlines.reach_id = np.delete(centerlines.reach_id, cl_ind, axis=1)
-    centerlines.node_id = np.delete(centerlines.node_id, cl_ind, axis=1)
+    #update centerline level
+    centerlines.node_id[0,cl_r[order_ids]] = new_nums
 
-    nodes.id = np.delete(nodes.id, node_ind, axis = 0)
-    nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
-    nodes.x = np.delete(nodes.x, node_ind, axis = 0)
-    nodes.y = np.delete(nodes.y, node_ind, axis = 0)
-    nodes.len = np.delete(nodes.len, node_ind, axis = 0)
-    nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
-    nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
-    nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
-    nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
-    nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
-    nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
-    nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
-    nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
-    nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
-    nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
-    nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
-    nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
-    nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
-    nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
-    nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
-    nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
-    nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
-    nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
-    nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
-    nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
-    nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
-    nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
-    nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
-    nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
-    nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
-    nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
-    nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
-    nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
-    nodes.network = np.delete(nodes.network, node_ind, axis = 0)
+    #update n_nodes for reach level...
+    current = np.where(reaches.id == unq_rchs[r])[0]
+    reaches.rch_n_nodes[current] = len(np.unique(new_nums))
+    x_coords = centerlines.x[cl_r[order_ids]]
+    y_coords = centerlines.y[cl_r[order_ids]]
+    rdiff = get_distances(x_coords,y_coords)
 
-    reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
-    reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
-    reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
-    reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
-    reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
-    reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
-    reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
-    reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
-    reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
-    reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
-    reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
-    reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
-    reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
-    reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
-    reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
-    reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
-    reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
-    reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
-    reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
-    reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
-    reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
-    reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
-    reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
-    reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
-    reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
-    reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
-    reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
-    reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
-    reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
-    reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
-    reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
-    reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
-    reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
-    reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
-    reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
-    reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
-    reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
-    reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
-    reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
-    reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
-    reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
-    reaches.network = np.delete(reaches.network, rch_ind, axis = 0)
+    #create fill variables
+    unq_nodes = np.unique(new_nums)
+    subnodes.id = np.zeros(len(unq_nodes), dtype=int)
+    subnodes.cl_id = np.zeros((2,len(unq_nodes)))
+    subnodes.x = np.zeros(len(unq_nodes))
+    subnodes.y = np.zeros(len(unq_nodes))
+    subnodes.len = np.zeros(len(unq_nodes))
+    subnodes.wse = np.zeros(len(unq_nodes))
+    subnodes.wse_var = np.zeros(len(unq_nodes))
+    subnodes.wth = np.zeros(len(unq_nodes))
+    subnodes.wth_var = np.zeros(len(unq_nodes))
+    subnodes.grod = np.zeros(len(unq_nodes))
+    subnodes.grod_fid = np.zeros(len(unq_nodes))
+    subnodes.hfalls_fid = np.zeros(len(unq_nodes))
+    subnodes.nchan_max = np.zeros(len(unq_nodes))
+    subnodes.nchan_mod = np.zeros(len(unq_nodes))
+    subnodes.dist_out = np.zeros(len(unq_nodes))
+    subnodes.reach_id = np.zeros(len(unq_nodes))
+    subnodes.facc = np.zeros(len(unq_nodes))
+    subnodes.lakeflag = np.zeros(len(unq_nodes))
+    subnodes.wth_coef = np.zeros(len(unq_nodes))
+    subnodes.ext_dist_coef = np.zeros(len(unq_nodes))
+    subnodes.max_wth = np.zeros(len(unq_nodes))
+    subnodes.meand_len = np.zeros(len(unq_nodes))
+    subnodes.river_name = np.repeat('NODATA', len(unq_nodes))
+    subnodes.manual_add = np.zeros(len(unq_nodes))
+    subnodes.sinuosity = np.zeros(len(unq_nodes))
+    subnodes.edit_flag = np.repeat('NaN', len(unq_nodes))
+    subnodes.trib_flag = np.zeros(len(unq_nodes))
+    subnodes.path_freq = np.zeros(len(unq_nodes))
+    subnodes.path_order = np.zeros(len(unq_nodes))
+    subnodes.path_segs = np.zeros(len(unq_nodes))
+    subnodes.main_side = np.zeros(len(unq_nodes))
+    subnodes.strm_order = np.zeros(len(unq_nodes))
+    subnodes.end_rch = np.zeros(len(unq_nodes))
+    subnodes.network = np.zeros(len(unq_nodes))
 
-    #removing residual neighbors with deleted reach id in centerline and reach groups. 
-    cl_ind1 = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
-    cl_ind2 = np.where(centerlines.reach_id[1,:] == rm_rch[ind])[0]
-    cl_ind3 = np.where(centerlines.reach_id[2,:] == rm_rch[ind])[0]
-    cl_ind4 = np.where(centerlines.reach_id[3,:] == rm_rch[ind])[0]
-    if len(cl_ind1) > 0:
-        centerlines.reach_id[0,cl_ind1] = 0
-    if len(cl_ind2) > 0:
-        centerlines.reach_id[1,cl_ind2] = 0
-    if len(cl_ind3) > 0:
-        centerlines.reach_id[2,cl_ind3] = 0
-    if len(cl_ind4) > 0:
-        centerlines.reach_id[3,cl_ind4] = 0
+    #loop through them and add attributes 
+    for n in list(range(len(unq_nodes))):
+        pts = np.where(new_nums == unq_nodes[n])[0]
+        old_node = np.where(nodes.id == st.mode(old_nums[pts])[0])[0]
+            
+        subnodes.id[n] = unq_nodes[n]
+        subnodes.cl_id[0,n] = min(cl_ids[pts])
+        subnodes.cl_id[1,n] = max(cl_ids[pts])
+        subnodes.x[n] = np.median(centerlines.x[cl_r[order_ids[pts]]])
+        subnodes.y[n] = np.median(centerlines.y[cl_r[order_ids[pts]]])
+        subnodes.wse[n] = nodes.wse[old_node][0]
+        subnodes.wse_var[n] = nodes.wse_var[old_node][0]
+        subnodes.wth[n] = nodes.wth[old_node][0]
+        subnodes.wth_var[n] = nodes.wth_var[old_node][0]
+        subnodes.grod[n] = nodes.grod[old_node][0]
+        subnodes.grod_fid[n] = nodes.grod_fid[old_node][0]
+        subnodes.hfalls_fid[n] = nodes.hfalls_fid[old_node][0]
+        subnodes.nchan_max[n] = nodes.nchan_max[old_node][0]
+        subnodes.nchan_mod[n] = nodes.nchan_mod[old_node][0]
+        subnodes.reach_id[n] = nodes.reach_id[old_node][0]
+        subnodes.facc[n] = nodes.facc[old_node][0]
+        subnodes.lakeflag[n] = nodes.lakeflag[old_node][0]
+        subnodes.wth_coef[n] = nodes.wth_coef[old_node][0]
+        subnodes.ext_dist_coef[n] = nodes.ext_dist_coef[old_node][0]
+        subnodes.max_wth[n] = nodes.max_wth[old_node][0]
+        subnodes.meand_len[n] = nodes.meand_len[old_node][0]
+        subnodes.river_name[n] = nodes.river_name[old_node][0]
+        subnodes.manual_add[n] = nodes.manual_add[old_node][0]
+        subnodes.sinuosity[n] = nodes.sinuosity[old_node][0]
+        subnodes.edit_flag[n] = nodes.edit_flag[old_node][0]
+        subnodes.trib_flag[n] = nodes.trib_flag[old_node][0]
+        subnodes.path_freq[n] = nodes.path_freq[old_node][0]
+        subnodes.path_order[n] = nodes.path_order[old_node][0]
+        subnodes.path_segs[n] = nodes.path_segs[old_node][0]
+        subnodes.main_side[n] = nodes.main_side[old_node][0]
+        subnodes.strm_order[n] = nodes.strm_order[old_node][0]
+        subnodes.end_rch[n] = nodes.end_rch[old_node][0]
+        subnodes.network[n] = nodes.network[old_node][0]
+        subnodes.len[n] = max(np.cumsum(rdiff[pts]))
+        
+    sort_nodes = np.argsort(subnodes.id)
+    base_val = reaches.dist_out[current] - reaches.len[current] 
+    node_cs = np.cumsum(subnodes.len[sort_nodes])
+    subnodes.dist_out[sort_nodes] = node_cs+base_val 
 
-    rch_up_ind1 = np.where(reaches.rch_id_up[0,:] == rm_rch[ind])[0]
-    rch_up_ind2 = np.where(reaches.rch_id_up[1,:] == rm_rch[ind])[0]
-    rch_up_ind3 = np.where(reaches.rch_id_up[2,:] == rm_rch[ind])[0]
-    rch_up_ind4 = np.where(reaches.rch_id_up[3,:] == rm_rch[ind])[0]
-    if len(rch_up_ind1) > 0:
-        reaches.rch_id_up[0,rch_up_ind1] = 0
-    if len(rch_up_ind2) > 0:
-        reaches.rch_id_up[1,rch_up_ind2] = 0
-    if len(rch_up_ind3) > 0:
-        reaches.rch_id_up[2,rch_up_ind3] = 0
-    if len(rch_up_ind4) > 0:
-        reaches.rch_id_up[3,rch_up_ind4] = 0
+    #delete old nodes
+    node_ind = np.where(nodes.reach_id == unq_rchs[r])[0]
+    delete_rch_nodes(node_ind)
 
-    rch_dn_ind1 = np.where(reaches.rch_id_down[0,:] == rm_rch[ind])[0]
-    rch_dn_ind2 = np.where(reaches.rch_id_down[1,:] == rm_rch[ind])[0]
-    rch_dn_ind3 = np.where(reaches.rch_id_down[2,:] == rm_rch[ind])[0]
-    rch_dn_ind4 = np.where(reaches.rch_id_down[3,:] == rm_rch[ind])[0]
-    if len(rch_dn_ind1) > 0:
-        reaches.rch_id_down[0,rch_dn_ind1] = 0
-    if len(rch_dn_ind2) > 0:
-        reaches.rch_id_down[1,rch_dn_ind2] = 0
-    if len(rch_dn_ind3) > 0:
-        reaches.rch_id_down[2,rch_dn_ind3] = 0
-    if len(rch_dn_ind4) > 0:
-        reaches.rch_id_down[3,rch_dn_ind4] = 0
-
+    #append new nodes
+    append_nodes(nodes, subnodes)
 
 ###############################################################################
 ### Filler variables
@@ -947,6 +1065,27 @@ reaches.sic4d_abar = np.repeat(-9999, len(reaches.id))
 reaches.sic4d_n = np.repeat(-9999, len(reaches.id))
 reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
 
-new_rch_num = len(rch_check) - len(rm_rch)
-if len(reaches.id) == new_rch_num:
-    write_database_nc(centerlines, reaches, nodes, region, sword_dir)
+#write the new data.
+write_database_nc(centerlines, reaches, nodes, region, nc_fn)
+end_all = time.time()
+print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
+print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(np.unique(reaches.id)),len(reaches.id))
+print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
+print('zero node lengths:', len(np.where(nodes.len == 0)[0]), ', long node lengths:', len(np.where(nodes.len > 1000)[0]))
+print('min node char len:', len(str(np.min(nodes.id))))
+print('max node char len:', len(str(np.max(nodes.id))))
+print('min reach char len:', len(str(np.min(reaches.id))))
+print('max reach char len:', len(str(np.max(reaches.id))))
+print('Edit flag values:', np.unique(reaches.edit_flag))
+
+# '''
+
+# plt.scatter(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c=centerlines.node_id[0,cl_r[order_ids]], s=5)
+# plt.title('new ids')
+# plt.show()
+
+# plt.scatter(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c=old_nums, s=5)
+# plt.title('old ids')
+# plt.show()
+
+# '''

@@ -91,7 +91,7 @@ def get_distances(lon,lat):
 ###############################################################################
 ###############################################################################
 
-region = 'NA'
+region = 'SA'
 version = 'v18'
 
 gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -101,17 +101,20 @@ gpkg_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 
-reach = [71222400251]
+reach = [63309100256]
 
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]
 
 sword = nc.Dataset(nc_fn,'r+')
-cl_rchs = sword.groups['centerlines'].variables['reach_id']
-cl_nodes = sword.groups['centerlines'].variables['node_id']
-cl_lon = sword.groups['centerlines'].variables['x']
-cl_lat = sword.groups['centerlines'].variables['y']
-cl_id = sword.groups['centerlines'].variables['cl_id']
+cl_rchs = np.array(sword.groups['centerlines'].variables['reach_id'])
+cl_nodes = np.array(sword.groups['centerlines'].variables['node_id'])
+cl_lon = np.array(sword.groups['centerlines'].variables['x'])
+cl_lat = np.array(sword.groups['centerlines'].variables['y'])
+cl_id = np.array(sword.groups['centerlines'].variables['cl_id'])
+rch_id = np.array(sword.groups['reaches'].variables['reach_id'])
+rch_len = np.array(sword.groups['reaches'].variables['reach_length'])
+rch_dist = np.array(sword.groups['reaches'].variables['dist_out'])
 
 for r in list(range(len(reach))):
     print(r, len(reach)-1)
@@ -186,19 +189,20 @@ for r in list(range(len(reach))):
     node_x = np.zeros(len(unq_nodes))
     node_y = np.zeros(len(unq_nodes))
     for n in list(range(len(unq_nodes))):
-        pts = np.where(cl_nodes[0,rch] == unq_nodes[n])[0]
-        node_x[n] = np.median(cl_lon[rch[pts]])
-        node_y[n] = np.median(cl_lat[rch[pts]])
-        # node_len[n] = np.max(dist[pts])-np.min(dist[pts])
-        node_len[n] = max(np.cumsum(dist[pts]))
-        # node_len[n] = max(np.cumsum(diff[pts]))
+        pts = np.where(cl_nodes[0,rch[order_ids]] == unq_nodes[n])[0]
+        node_x[n] = np.median(cl_lon[rch[order_ids[pts]]])
+        node_y[n] = np.median(cl_lat[rch[order_ids[pts]]])
+        node_len[n] = max(np.cumsum(diff[pts]))
         if len(pts) == 1:
             node_len[n] = 30
 
     # plt.scatter(node_x, node_y, c=unq_nodes, s=15)
     # plt.show()
-
+    rind = np.where(rch_id == reach[r])[0]
+    base_val = rch_dist[rind] - rch_len[rind]
     new_rch_len = np.max(dist)
+    new_rch_dist = new_rch_len+base_val
+    new_node_dist = np.cumsum(node_len)+base_val
 
     #update netcdf
     sword.groups['centerlines'].variables['x'][rch] = cl_lon[rch]
@@ -212,12 +216,14 @@ for r in list(range(len(reach))):
     sword.groups['reaches'].variables['y_min'][nc_rch] = np.min(cl_lat[rch])
     sword.groups['reaches'].variables['x_max'][nc_rch] = np.max(cl_lon[rch])
     sword.groups['reaches'].variables['y_max'][nc_rch] = np.max(cl_lat[rch])
+    sword.groups['reaches'].variables['dist_out'][nc_rch] = new_rch_dist
 
     for n2 in list(range(len(unq_nodes))):
         nc_node = np.where(sword.groups['nodes'].variables['node_id'][:] == unq_nodes[n2])[0]
-        sword.groups['nodes'].variables['node_length'][nc_node ] = node_len[n2]
-        sword.groups['nodes'].variables['x'][nc_node ] = node_x[n2]
-        sword.groups['nodes'].variables['y'][nc_node ] = node_y[n2]
+        sword.groups['nodes'].variables['node_length'][nc_node] = node_len[n2]
+        sword.groups['nodes'].variables['x'][nc_node] = node_x[n2]
+        sword.groups['nodes'].variables['y'][nc_node] = node_y[n2]
+        sword.groups['nodes'].variables['dist_out'][nc_node] = new_node_dist[n2]
 
 sword.close()
 

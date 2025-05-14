@@ -91,7 +91,7 @@ def get_distances(lon,lat):
 ###############################################################################
 
 start_all = time.time()
-region = 'NA'
+region = 'OC'
 version = 'v18'
 
 # Input file(s).
@@ -202,6 +202,10 @@ for ind in list(range(len(uniq_level2))):
     add_segs = np.array(add_segs)
     add_all = np.append(trib_add,add_segs)
 
+    if len(add_all) == 0:
+        print('*** NO ADDITIONS IDENTIFIED ***')
+        continue 
+
     print('Identify upstream MHV reaches')
     #trace upstream mhv reaches. 
     pt_dist3, pt_ind3 = kdt2.query(mhv_pts, k = 10)
@@ -308,7 +312,7 @@ for ind in list(range(len(uniq_level2))):
     unq_segs = np.unique(mhv_segs[np.where(add_flag == 3)[0]])
     for s in list(range(len(unq_segs))):
         pts = np.where(mhv_segs == unq_segs[s])[0]
-        break_ind = mhv_ind[pts[np.where(add_flag[pts] == 3)[0]]]
+        break_ind = max(mhv_ind[pts[np.where(add_flag[pts] == 3)[0]]]) #added max() on 4/19/2025. Deals with duplicate points. 
         erse_pts = np.where(mhv_ind[pts] < break_ind)[0]
         add_flag[pts[erse_pts]] = 0
 

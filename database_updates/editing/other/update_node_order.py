@@ -5,8 +5,8 @@ import pandas as pd
 from scipy import spatial as sp
 import matplotlib.pyplot as plt
 
-region = 'OC'
-version = 'v17'
+region = 'NA'
+version = 'v17b'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
     '/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 csv_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+\

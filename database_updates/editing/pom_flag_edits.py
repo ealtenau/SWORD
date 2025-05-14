@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 # region = args.region
 # version = args.version
 
-region = 'NA'
+region = 'SA'
 version = 'v18'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
@@ -88,11 +88,11 @@ for idx in list(range(len(reaches))):
 
 
 #updating the netcdf. 
-print('Updating the NetCDF')
-sword.groups['nodes'].variables['dist_out'][:] = node_dist
-sword.groups['reaches'].variables['dist_out'][:] = rch_dist
-sword.groups['reaches'].variables['n_nodes'][:] = rch_nnodes
-sword.close()
+# print('Updating the NetCDF')
+# sword.groups['nodes'].variables['dist_out'][:] = node_dist
+# sword.groups['reaches'].variables['dist_out'][:] = rch_dist
+# sword.groups['reaches'].variables['n_nodes'][:] = rch_nnodes
+# sword.close()
 
 print('number of ghost reach distances updated:', len(ghost_flag))
 print('number of nodes in reach updated:', len(nnode_flag))

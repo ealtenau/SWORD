@@ -3,6 +3,7 @@ import netCDF4 as nc
 import geopandas as gp
 from geopy import distance
 import pandas as pd
+import argparse
 
 ################################################################################################
 
@@ -18,8 +19,16 @@ def get_distances(lon,lat):
 
 ################################################################################################
 
-region = 'NA'
-version = 'v18'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+
+# region = 'SA'
+# version = 'v17b'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\
     +region.lower()+'_sword_'+version+'.nc'
@@ -52,9 +61,9 @@ for r in list(range(len(reaches))):
     rch_len[r] = max(rch_dist)
     # np.median(diff) #should be closer to 30.... 
     
-    unq_nodes = np.unique(cl_nodes[rch])
+    unq_nodes = np.unique(cl_nodes[sort_ind])
     for n in list(range(len(unq_nodes))):
-        nds = np.where(cl_nodes[rch] == unq_nodes[n])[0]
+        nds = np.where(cl_nodes[sort_ind] == unq_nodes[n])[0]
         nind = np.where(nodes == unq_nodes[n])[0]
         node_len[nind] = max(np.cumsum(diff[nds]))
 
@@ -63,12 +72,12 @@ sword.groups['nodes'].variables['node_length'][:] = node_len
 sword.close()
 
 import random
-rand = random.sample(range(0,len(reaches)), 100)
+rand = random.sample(range(0,len(reaches)), 1000)
 for ind in list(range(len(rand))):
     test = np.where(node_rch == reaches[rand[ind]])[0]
     print(reaches[rand[ind]], 
-          abs(np.round(sum(node_len[test])-rch_len[rand[ind]])), 
-          abs(np.round(max(node_dist[test])-rch_dist[rand[ind]])))
+          abs(np.round(sum(node_len[test])-rch_len[rand[ind]]))) 
+        #   abs(np.round(max(node_dist[test])-rch_dist[rand[ind]])))
 
 print('DONE')
 
