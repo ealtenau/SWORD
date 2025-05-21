@@ -16,11 +16,10 @@ import mhv_to_sword_tools as mst
 ###############################################################################
 
 start_all = time.time()
-region = 'SA'
+region = 'OC'
 version = 'v18'
 
 sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-# sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'_pre_add.nc'
 mhv_nc_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_nc_files = np.sort(glob.glob(os.path.join(mhv_nc_dir, '*.nc')))
 

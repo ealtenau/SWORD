@@ -6,7 +6,7 @@ from shapely.geometry import Point
 
 ###############################################################################
 
-region = 'NA'
+region = 'AF'
 version = 'v18'
 sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'

@@ -2,7 +2,7 @@ import netCDF4 as nc
 import pandas as pd
 import numpy as np
 
-region = 'AS'
+region = 'OC'
 version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
     '/netcdf/'+region.lower()+'_sword_'+version+'.nc'

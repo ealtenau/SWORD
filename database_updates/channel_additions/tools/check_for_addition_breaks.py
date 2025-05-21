@@ -9,7 +9,7 @@ import geopandas as gp
 import glob
 import os
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 
 #reading in sword data.

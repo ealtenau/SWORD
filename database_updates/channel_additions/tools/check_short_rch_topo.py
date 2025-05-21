@@ -40,7 +40,7 @@ def get_distances(lon,lat):
 
 ##################################################################
 
-region = 'SA'
+region = 'OC'
 version='v18'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 outdir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'

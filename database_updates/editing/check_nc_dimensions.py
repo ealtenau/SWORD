@@ -167,7 +167,7 @@ def delete_rchs(reaches, rm_rch):
 ###############################################################################
 ###############################################################################
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 

@@ -10,7 +10,7 @@ from scipy import spatial as sp
 
 start_all = time.time()
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 update_nc = 'False'
 

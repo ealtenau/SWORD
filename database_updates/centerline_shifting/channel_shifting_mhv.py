@@ -1,9 +1,13 @@
-from __future__ import division
+import itertools
 import numpy as np
-import time
 import netCDF4 as nc
-from statistics import mode
+import matplotlib.pyplot as plt
+import glob 
+import os
+from scipy import spatial as sp
+import time
 import pandas as pd
+from geopy import Point, distance
 
 ###############################################################################
 ###############################################################################
@@ -15,6 +19,18 @@ class Object(object):
         Creates class object to assign attributes to.
     """
     pass 
+
+##############################################################################
+
+def get_distances(lon,lat):
+    traces = len(lon) -1
+    distances = np.zeros(traces)
+    for i in range(traces):
+        start = (lat[i], lon[i])
+        finish = (lat[i+1], lon[i+1])
+        distances[i] = distance.geodesic(start, finish).m
+    distances = np.append(0,distances)
+    return distances
 
 ###############################################################################
 
@@ -806,413 +822,145 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-start = time.time()
+start_all = time.time()
 
-region = 'OC'
-version = 'v18'
+region = 'NA'
+version = 'v18_shift_test'
+save_plots = 'False'
+
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-out_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
+# rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/shifting/'
+rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v18/'+region+'/shifting/'
+rch_files = np.sort(glob.glob(os.path.join(rch_dir, '*.csv')))
+mhv_nc_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/' + region +'/'
+mhv_nc_files = np.sort(glob.glob(os.path.join(mhv_nc_dir, '*.nc')))
+plotdir = '/Users/ealtenau/Documents/SWORD_Dev/shift_testing/plots/'
 
-#testing path
-# sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/v18/netcdf/na_sword_v18.nc pre 1 node aggregation'
-
-### read data. 
+### read sword data. 
 centerlines, nodes, reaches = read_data(sword_dir)
+old_x = np.copy(centerlines.x)
+old_y = np.copy(centerlines.y)
 
-### find single node reaches that are not ghost reaches. 
-group = np.array([str(ind)[-1] for ind in reaches.id])
-agg_ind = np.where((reaches.rch_n_nodes == 1)&(group != '6'))[0]
-rmv_dams = np.where(group[agg_ind] == '4')[0] #removing any single node dam reaches from aggregation.
-agg_ind = np.delete(agg_ind, rmv_dams)
-agg = reaches.id[agg_ind]
+rch_file_l2 = np.array([int(rf[-17:-15]) for rf in rch_files])
+mhv_file_l2 = np.array([int(mf[-13:-11]) for mf in mhv_nc_files])
 
-### combine with neighbor reach - ideally downstream neighbor.
-print('Aggregating 1-Node Reaches')
-rmv_agg = []
-multi_dn = []
-multi_both = []
-max_id = np.max(centerlines.cl_id)
-for r in list(range(len(agg))):
-    # print(r, len(agg)-1)
-    rch = np.where(reaches.id == agg[r])[0]
-    nds = np.where(nodes.reach_id == agg[r])[0]
+check_rch = []
+for f in list(range(len(rch_files))):
+    start = time.time()
     
-    ### if more than one node are identified update reach n nodes and move on. 
-    if len(nds) > 1:
-        print(agg[r], '*** reach has more than 1 node ***')
-        rmv_agg.append(r)
-        reaches.rch_n_nodes[rch] = len(nds)
-        continue 
+    print('Starting Basin:', rch_file_l2[f])
+    shift_df = pd.read_csv(rch_files[f])
+    shift_rchs = np.array(shift_df['reach_id'])
 
-    ### aggregate 
-    #######################
-    #   1 Downstream 
-    #######################
-    n_rch_dn = reaches.n_rch_down[rch]
-    if n_rch_dn == 1:
-        downstream = reaches.rch_id_down[np.where(reaches.rch_id_down[:,rch]>0)[0],rch][0]
-        ngh_dn_rchs_up = reaches.n_rch_up[np.where(reaches.id == downstream)[0]]
-        if ngh_dn_rchs_up > 1:
-            ### need to make upstream condition. 
-            n_rch_up = reaches.n_rch_up[rch]
-            if n_rch_up == 1:
-                upstream = reaches.rch_id_up[np.where(reaches.rch_id_up[:,rch]>0)[0],rch][0]
-                ngh_up_rchs_dn = reaches.n_rch_down[np.where(reaches.id == upstream)[0]]
-                if ngh_up_rchs_dn == 1:
-                    print('multiple reaches downstream:', agg[r])
-                    multi_dn.append(agg[r])
-                    
-                    new_rch_id = reaches.rch_id_up[np.where(reaches.rch_id_up[:,rch]>0)[0],rch][0]            
-                    new_num = 1
-                    new_node_id = int(str(new_rch_id)[0:-1]+'00'+str(new_num)+str(new_rch_id)[-1])
-                    #update neighboring node ids to increase by one. 
-                    ngh_nds = np.where(nodes.reach_id == new_rch_id)[0]
-                    cl_ngh_nds = np.where(centerlines.reach_id[0,:] == new_rch_id)[0]
-                    nodes.id[ngh_nds] = nodes.id[ngh_nds]+10
-                    centerlines.node_id[0,cl_ngh_nds] = centerlines.node_id[0,cl_ngh_nds]+10
-                    ### update centerline variables with new ids. 
-                    cind = np.where(centerlines.node_id[0,:]== nodes.id[nds])[0]
-                    old_cind = np.where(centerlines.reach_id[0,:]== new_rch_id)[0]
-                    #nodes
-                    centerlines.node_id[0,cind] = new_node_id
-                    centerlines.node_id[1,cind] = new_node_id
-                    centerlines.node_id[2,cind] = new_node_id
-                    centerlines.node_id[3,cind] = new_node_id
-                    #reaches
-                    mn_ind = np.where(centerlines.cl_id[old_cind] == np.min(centerlines.cl_id[old_cind]))[0]
-                    mx_ind = np.where(centerlines.cl_id[cind] == np.max(centerlines.cl_id[cind]))[0]
-                    centerlines.reach_id[0,cind] = new_rch_id
-                    centerlines.reach_id[1,cind[mx_ind]] = 0
-                    centerlines.reach_id[2,cind[mx_ind]] = 0
-                    centerlines.reach_id[3,cind[mx_ind]] = 0
-                    centerlines.reach_id[1,old_cind[mn_ind]] = 0
-                    centerlines.reach_id[2,old_cind[mn_ind]] = 0
-                    centerlines.reach_id[3,old_cind[mn_ind]] = 0
-                    #centerline ids
-                    old_cl_ids = centerlines.cl_id[old_cind] - np.min(centerlines.cl_id[old_cind]) + 1
-                    agg_cl_ids = centerlines.cl_id[cind] - np.min(centerlines.cl_id[cind]) + 1
-                    agg_cl_ids = agg_cl_ids+max_id
-                    old_cl_ids = old_cl_ids+np.max(agg_cl_ids)
-                    centerlines.cl_id[old_cind] = old_cl_ids
-                    centerlines.cl_id[cind] = agg_cl_ids
-                    max_id = np.max(centerlines.cl_id)
-                    
-                    ### update node variables 
-                    nodes.id[nds] = new_node_id
-                    nodes.reach_id[nds] = new_rch_id
-                    new_node_cl_ids = np.array([np.min(centerlines.cl_id[cind]), np.max(centerlines.cl_id[cind])]).reshape(2,1)
-                    nodes.cl_id[:,nds] = new_node_cl_ids
+    mhv_read = np.where(mhv_file_l2 == rch_file_l2[f])[0]
+    mhv = nc.Dataset(mhv_nc_files[mhv_read[0]])
+    mhv_x = np.array(mhv['/centerlines/x'][:])
+    mhv_y = np.array(mhv['/centerlines/y'][:])
+    mhv_flag = np.array(mhv['/centerlines/swordflag_filt'][:])
+    keep = np.where(mhv_flag > 0)[0]
+    mhv_x = mhv_x[keep]
+    mhv_y = mhv_y[keep]
+    pts = np.array([(mhv_x[i], mhv_y[i]) for i in range(len(mhv_x))])
 
-                    ### update reach variables
-                    #important ids
-                    update_ids = np.where(centerlines.reach_id[0,:]== new_rch_id)[0]
-                    new_rch = np.where(reaches.id == new_rch_id)[0]
-                    new_rch_nodes = np.where(nodes.reach_id == new_rch_id)[0]
-                    #updating values
-                    new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
-                    reaches.cl_id[:,new_rch] = new_cl_ids
-                    reaches.x[new_rch] = np.median(centerlines.x[update_ids])
-                    reaches.x_min[new_rch] = np.min(centerlines.x[update_ids])
-                    reaches.x_max[new_rch] = np.max(centerlines.x[update_ids])
-                    reaches.y[new_rch] = np.median(centerlines.y[update_ids])
-                    reaches.y_min[new_rch] = np.min(centerlines.y[update_ids])
-                    reaches.y_max[new_rch] = np.max(centerlines.y[update_ids])
-                    reaches.rch_n_nodes[new_rch] = reaches.rch_n_nodes[new_rch]+1
-                    reaches.len[new_rch] = reaches.len[new_rch]+nodes.len[nds] #add node length to reach length
-                    # reaches.dist_out[new_rch] = nodes.dist_out[nds] #new dist out shouldn't change with upstream neighbor
-                    #node based values
-                    reaches.wse[new_rch] = np.median(nodes.wse[new_rch_nodes])
-                    reaches.wse_var[new_rch] = max(nodes.wse_var[new_rch_nodes])
-                    reaches.wth[new_rch] = np.median(nodes.wth[new_rch_nodes])
-                    reaches.wth_var[new_rch] = max(nodes.wth_var[new_rch_nodes])
-                    reaches.nchan_max[new_rch] = max(nodes.nchan_max[new_rch_nodes])
-                    reaches.nchan_mod[new_rch] = mode(nodes.nchan_mod[new_rch_nodes])
-                    reaches.grod[new_rch] = max(nodes.grod[new_rch_nodes])
-                    reaches.grod_fid[new_rch] = max(nodes.grod_fid[new_rch_nodes])
-                    reaches.hfalls_fid[new_rch] = max(nodes.hfalls_fid[new_rch_nodes])
-                    reaches.lakeflag[new_rch] = mode(nodes.lakeflag[new_rch_nodes])
-                    reaches.max_wth[new_rch] = max(nodes.max_wth[new_rch_nodes])
-                    #slope 
-                    order_ids = np.argsort(nodes.id[new_rch_nodes])
-                    slope_pts = np.vstack([nodes.dist_out[new_rch_nodes[order_ids]]/1000, np.ones(len(new_rch_nodes))]).T
-                    slope, intercept = np.linalg.lstsq(slope_pts, nodes.wse[new_rch_nodes[order_ids]], rcond=None)[0]
-                    reaches.slope[new_rch] = abs(slope) # m/km
-                    ### update edit flag for boundary change. 
-                    if reaches.edit_flag[new_rch] == 'NaN':
-                        edit_val = '6'
-                    elif '6' not in reaches.edit_flag[new_rch][0].split(','):
-                        edit_val = reaches.edit_flag[new_rch] + ',6'
-                    else:
-                        edit_val = reaches.edit_flag[new_rch]
-                    reaches.edit_flag[new_rch] = edit_val
-                    nodes.edit_flag[np.where(nodes.reach_id == new_rch_id)[0]] = edit_val
-                    ### topology 
-                    #replace new reach upstream neighbors with current reach upstream neighbors. 
-                    reaches.n_rch_down[new_rch] = reaches.n_rch_down[rch]
-                    reaches.rch_id_down[:,new_rch] = reaches.rch_id_down[:,rch]
-                    dn_ngh_rchs = reaches.rch_id_down[:,rch]; dn_ngh_rchs = dn_ngh_rchs[dn_ngh_rchs>0]
-                    #replace all new upstream neighbors downstream neighbors with new reach id. 
-                    for dr in list(range(len(dn_ngh_rchs))):
-                        dn_rch = np.where(reaches.id == dn_ngh_rchs[dr])[0]
-                        val = np.where(reaches.rch_id_up[:,dn_rch] == agg[r])[0]
-                        if len(val) == 0:
-                            print('!!! TOPOLOGY ISSUE !!!', agg[r])
-                            break
-                        reaches.rch_id_up[val,dn_rch] = new_rch_id
-                else:
-                    print('multiple upstream and downstream reaches:', agg[r])
-                    multi_both.append(agg[r])
-                    rmv_agg.append(r)
-                    continue
-            else:
-                print('multiple upstream and downstream reaches:', agg[r])
-                multi_both.append(agg[r])
-                rmv_agg.append(r)
-                continue
-                
+    sx = np.arange(-0.01, 0.01, 0.0003)
+    sy = np.arange(-0.01, 0.01, 0.0003)
+    shift_coords = list(itertools.product(sx, sy)) #4489 permutations
+
+    for r in list(range(len(shift_rchs))):
+        print(r, len(shift_rchs)-1)
+        rch = np.where(centerlines.reach_id[0,:] == shift_rchs[r])[0]
+        #find mhv points within 2 km bounding box of rch
+        mn_x = np.min(centerlines.x[rch])-0.02
+        mx_x = np.max(centerlines.x[rch])+0.02
+        mn_y = np.min(centerlines.y[rch])-0.02
+        mx_y = np.max(centerlines.y[rch])+0.02
+        ll = np.array([mn_x, mn_y])  # lower-left
+        ur = np.array([mx_x, mx_y])  # upper-right
+
+        idx = np.all(np.logical_and(ll <= pts, pts <= ur), axis=1)
+        mhv_x_clip = mhv_x[idx]
+        mhv_y_clip = mhv_y[idx]
+        if len(mhv_x_clip) == 0:
+            check_rch.append(shift_rchs[r])
+            print('No MHV points within 2 km of reach:', shift_rchs[r])
+            continue 
         else:
-            new_rch_id = reaches.rch_id_down[np.where(reaches.rch_id_down[:,rch]>0)[0],rch][0]
-            #get new node number. for downstream reach it should be the max node number plus one. 
-            ngh_nds = np.where(nodes.reach_id == new_rch_id)[0]
-            rch_node_nums = np.array([int(str(ind)[10:13]) for ind in nodes.id[ngh_nds]])
-            new_num = max(rch_node_nums)+1
-            if len(str(new_num)) == 1:
-                fill = '00'
-                new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_num)+str(new_rch_id)[-1])
-            if len(str(new_num)) == 2:
-                fill = '0'
-                new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_num)+str(new_rch_id)[-1])
-            if len(str(new_num)) == 3:
-                new_node_id = int(str(new_rch_id)[0:-1]+str(new_num)+str(new_rch_id)[-1])
+            mhv_pts = np.vstack((mhv_x_clip, mhv_y_clip)).T
 
-            # if new_rch_id == 71181300371:
-            #     break
+        offset = np.zeros(len(shift_coords))
+        for ind in list(range(len(shift_coords))):
+            nx = centerlines.x[rch]+shift_coords[ind][0]
+            ny = centerlines.y[rch]+shift_coords[ind][1]
+            #spatial query between mhv and shifted x-y. 
+            shift_pts = np.vstack((nx, ny)).T
+            kdt = sp.cKDTree(mhv_pts)
+            pt_dist, pt_ind = kdt.query(shift_pts, k = 1)
+            #median difference between spatial query coords. 
+            x_diff = np.abs(nx-mhv_x_clip[pt_ind])
+            y_diff = np.abs(ny-mhv_y_clip[pt_ind])
+            x_diff_med = np.median(x_diff)
+            y_diff_med = np.median(y_diff)
+            add = abs(x_diff_med)+abs(y_diff_med) 
+            offset[ind] = add
+            
+        min_ind = np.where(offset == min(offset))[0]
+        new_x = centerlines.x[rch]+shift_coords[min_ind[0]][0]
+        new_y = centerlines.y[rch]+shift_coords[min_ind[0]][1]
 
-            ### update centerline variables
-            cind = np.where(centerlines.node_id[0,:]== nodes.id[nds])[0]
-            old_cind = np.where(centerlines.reach_id[0,:]== new_rch_id)[0]
-            #nodes
-            centerlines.node_id[0,cind] = new_node_id
-            centerlines.node_id[1,cind] = new_node_id
-            centerlines.node_id[2,cind] = new_node_id
-            centerlines.node_id[3,cind] = new_node_id
-            #reaches
-            mn_ind = np.where(centerlines.cl_id[cind] == np.min(centerlines.cl_id[cind]))[0]
-            mx_ind = np.where(centerlines.cl_id[old_cind] == np.max(centerlines.cl_id[old_cind]))[0]
-            centerlines.reach_id[0,cind] = new_rch_id
-            centerlines.reach_id[1,cind[mn_ind]] = 0
-            centerlines.reach_id[2,cind[mn_ind]] = 0
-            centerlines.reach_id[3,cind[mn_ind]] = 0
-            centerlines.reach_id[1,old_cind[mx_ind]] = 0
-            centerlines.reach_id[2,old_cind[mx_ind]] = 0
-            centerlines.reach_id[3,old_cind[mx_ind]] = 0
-            #centerline ids
-            old_cl_ids = centerlines.cl_id[old_cind] - np.min(centerlines.cl_id[old_cind]) + 1
-            agg_cl_ids = centerlines.cl_id[cind] - np.min(centerlines.cl_id[cind]) + 1
-            old_cl_ids = old_cl_ids+max_id
-            agg_cl_ids = agg_cl_ids+np.max(old_cl_ids)
-            centerlines.cl_id[old_cind] = old_cl_ids
-            centerlines.cl_id[cind] = agg_cl_ids
-            max_id = np.max(centerlines.cl_id)
+        #### update netcdf variables. 
+        centerlines.x[rch] = new_x
+        centerlines.y[rch] = new_y 
 
-            ### update node variables 
-            nodes.id[nds] = new_node_id
-            nodes.reach_id[nds] = new_rch_id
-            new_node_cl_ids = np.array([np.min(centerlines.cl_id[cind]), np.max(centerlines.cl_id[cind])]).reshape(2,1)
-            nodes.cl_id[:,nds] = new_node_cl_ids
+        rind = np.where(reaches.id == shift_rchs[r])[0]
+        reaches.x[rind] = np.median(new_x)
+        reaches.y[rind] = np.median(new_y)
+        reaches.x_min[rind] = np.min(new_x)
+        reaches.x_max[rind] = np.max(new_x)
+        reaches.y_min[rind] = np.min(new_y)
+        reaches.y_max[rind] = np.max(new_y)
+        
+        order_ids = np.argsort(centerlines.cl_id[rch])
+        x_coords = centerlines.x[rch[order_ids]]
+        y_coords = centerlines.y[rch[order_ids]]
+        diff = get_distances(x_coords,y_coords)
+        dist = np.cumsum(diff)
 
-            ### update reach variables
-            #important ids
-            update_ids = np.where(centerlines.reach_id[0,:]== new_rch_id)[0]
-            new_rch = np.where(reaches.id == new_rch_id)[0]
-            new_rch_nodes = np.where(nodes.reach_id == new_rch_id)[0]
-            #updating values
-            new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
-            reaches.cl_id[:,new_rch] = new_cl_ids
-            reaches.x[new_rch] = np.median(centerlines.x[update_ids])
-            reaches.x_min[new_rch] = np.min(centerlines.x[update_ids])
-            reaches.x_max[new_rch] = np.max(centerlines.x[update_ids])
-            reaches.y[new_rch] = np.median(centerlines.y[update_ids])
-            reaches.y_min[new_rch] = np.min(centerlines.y[update_ids])
-            reaches.y_max[new_rch] = np.max(centerlines.y[update_ids])
-            reaches.rch_n_nodes[new_rch] = reaches.rch_n_nodes[new_rch]+1
-            reaches.len[new_rch] = reaches.len[new_rch]+nodes.len[nds] #add node length to reach length
-            reaches.dist_out[new_rch] = nodes.dist_out[nds] #new dist out should be the node dist out given it is the new max node. 
-            #node based values
-            reaches.wse[new_rch] = np.median(nodes.wse[new_rch_nodes])
-            reaches.wse_var[new_rch] = max(nodes.wse_var[new_rch_nodes])
-            reaches.wth[new_rch] = np.median(nodes.wth[new_rch_nodes])
-            reaches.wth_var[new_rch] = max(nodes.wth_var[new_rch_nodes])
-            reaches.nchan_max[new_rch] = max(nodes.nchan_max[new_rch_nodes])
-            reaches.nchan_mod[new_rch] = mode(nodes.nchan_mod[new_rch_nodes])
-            reaches.grod[new_rch] = max(nodes.grod[new_rch_nodes])
-            reaches.grod_fid[new_rch] = max(nodes.grod_fid[new_rch_nodes])
-            reaches.hfalls_fid[new_rch] = max(nodes.hfalls_fid[new_rch_nodes])
-            reaches.lakeflag[new_rch] = mode(nodes.lakeflag[new_rch_nodes])
-            reaches.max_wth[new_rch] = max(nodes.max_wth[new_rch_nodes])
-            #slope 
-            order_ids = np.argsort(nodes.id[new_rch_nodes])
-            slope_pts = np.vstack([nodes.dist_out[new_rch_nodes[order_ids]]/1000, np.ones(len(new_rch_nodes))]).T
-            slope, intercept = np.linalg.lstsq(slope_pts, nodes.wse[new_rch_nodes[order_ids]], rcond=None)[0]
-            reaches.slope[new_rch] = abs(slope) # m/km
-            ### update edit flag for boundary change. 
-            if reaches.edit_flag[new_rch] == 'NaN':
-                edit_val = '6'
-            elif '6' not in reaches.edit_flag[new_rch][0].split(','):
-                edit_val = reaches.edit_flag[new_rch] + ',6'
-            else:
-                edit_val = reaches.edit_flag[new_rch]
-            reaches.edit_flag[new_rch] = edit_val
-            nodes.edit_flag[np.where(nodes.reach_id == new_rch_id)[0]] = edit_val
-            ### topology 
-            #replace new reach upstream neighbors with current reach upstream neighbors. 
-            reaches.n_rch_up[new_rch] = reaches.n_rch_up[rch]
-            reaches.rch_id_up[:,new_rch] = reaches.rch_id_up[:,rch]
-            up_ngh_rchs = reaches.rch_id_up[:,rch]; up_ngh_rchs = up_ngh_rchs[up_ngh_rchs>0]
-            #replace all new upstream neighbors downstream neighbors with new reach id. 
-            for ur in list(range(len(up_ngh_rchs))):
-                up_rch = np.where(reaches.id == up_ngh_rchs[ur])[0]
-                val = np.where(reaches.rch_id_down[:,up_rch] == agg[r])[0]
-                if len(val) == 0:
-                    print('!!! TOPOLOGY ISSUE !!!', agg[r])
-                    break
-                reaches.rch_id_down[val,up_rch] = new_rch_id
-    #######################
-    #   Multi Downstream 
-    #######################
-    else:
-        n_rch_up = reaches.n_rch_up[rch]
-        if n_rch_up == 1:
-            upstream = reaches.rch_id_up[np.where(reaches.rch_id_up[:,rch]>0)[0],rch][0]
-            ngh_up_rchs_dn = reaches.n_rch_down[np.where(reaches.id == upstream)[0]]
-            if ngh_up_rchs_dn == 1:
-                print('multiple reaches downstream:', agg[r])
-                multi_dn.append(agg[r])
-                    
-                new_rch_id = reaches.rch_id_up[np.where(reaches.rch_id_up[:,rch]>0)[0],rch][0]            
-                new_num = 1
-                new_node_id = int(str(new_rch_id)[0:-1]+'00'+str(new_num)+str(new_rch_id)[-1])
-                #update neighboring node ids to increase by one. 
-                ngh_nds = np.where(nodes.reach_id == new_rch_id)[0]
-                cl_ngh_nds = np.where(centerlines.reach_id[0,:] == new_rch_id)[0]
-                nodes.id[ngh_nds] = nodes.id[ngh_nds]+10
-                centerlines.node_id[0,cl_ngh_nds] = centerlines.node_id[0,cl_ngh_nds]+10
-                ### update centerline variables with new ids. 
-                cind = np.where(centerlines.node_id[0,:]== nodes.id[nds])[0]
-                old_cind = np.where(centerlines.reach_id[0,:]== new_rch_id)[0]
-                #nodes
-                centerlines.node_id[0,cind] = new_node_id
-                centerlines.node_id[1,cind] = new_node_id
-                centerlines.node_id[2,cind] = new_node_id
-                centerlines.node_id[3,cind] = new_node_id
-                #reaches
-                mn_ind = np.where(centerlines.cl_id[old_cind] == np.min(centerlines.cl_id[old_cind]))[0]
-                mx_ind = np.where(centerlines.cl_id[cind] == np.max(centerlines.cl_id[cind]))[0]
-                centerlines.reach_id[0,cind] = new_rch_id
-                centerlines.reach_id[1,cind[mx_ind]] = 0
-                centerlines.reach_id[2,cind[mx_ind]] = 0
-                centerlines.reach_id[3,cind[mx_ind]] = 0
-                centerlines.reach_id[1,old_cind[mn_ind]] = 0
-                centerlines.reach_id[2,old_cind[mn_ind]] = 0
-                centerlines.reach_id[3,old_cind[mn_ind]] = 0
-                #centerline ids
-                old_cl_ids = centerlines.cl_id[old_cind] - np.min(centerlines.cl_id[old_cind]) + 1
-                agg_cl_ids = centerlines.cl_id[cind] - np.min(centerlines.cl_id[cind]) + 1
-                agg_cl_ids = agg_cl_ids+max_id
-                old_cl_ids = old_cl_ids+np.max(agg_cl_ids)
-                centerlines.cl_id[old_cind] = old_cl_ids
-                centerlines.cl_id[cind] = agg_cl_ids
-                max_id = np.max(centerlines.cl_id)
-                    
-                ### update node variables 
-                nodes.id[nds] = new_node_id
-                nodes.reach_id[nds] = new_rch_id
-                new_node_cl_ids = np.array([np.min(centerlines.cl_id[cind]), np.max(centerlines.cl_id[cind])]).reshape(2,1)
-                nodes.cl_id[:,nds] = new_node_cl_ids
+        reaches.len[rind] = np.max(dist)
 
-                ### update reach variables
-                #important ids
-                update_ids = np.where(centerlines.reach_id[0,:]== new_rch_id)[0]
-                new_rch = np.where(reaches.id == new_rch_id)[0]
-                new_rch_nodes = np.where(nodes.reach_id == new_rch_id)[0]
-                #updating values
-                new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
-                reaches.cl_id[:,new_rch] = new_cl_ids
-                reaches.x[new_rch] = np.median(centerlines.x[update_ids])
-                reaches.x_min[new_rch] = np.min(centerlines.x[update_ids])
-                reaches.x_max[new_rch] = np.max(centerlines.x[update_ids])
-                reaches.y[new_rch] = np.median(centerlines.y[update_ids])
-                reaches.y_min[new_rch] = np.min(centerlines.y[update_ids])
-                reaches.y_max[new_rch] = np.max(centerlines.y[update_ids])
-                reaches.rch_n_nodes[new_rch] = reaches.rch_n_nodes[new_rch]+1
-                reaches.len[new_rch] = reaches.len[new_rch]+nodes.len[nds] #add node length to reach length
-                # reaches.dist_out[new_rch] = nodes.dist_out[nds] #new dist out shouldn't change with upstream neighbor
-                #node based values
-                reaches.wse[new_rch] = np.median(nodes.wse[new_rch_nodes])
-                reaches.wse_var[new_rch] = max(nodes.wse_var[new_rch_nodes])
-                reaches.wth[new_rch] = np.median(nodes.wth[new_rch_nodes])
-                reaches.wth_var[new_rch] = max(nodes.wth_var[new_rch_nodes])
-                reaches.nchan_max[new_rch] = max(nodes.nchan_max[new_rch_nodes])
-                reaches.nchan_mod[new_rch] = mode(nodes.nchan_mod[new_rch_nodes])
-                reaches.grod[new_rch] = max(nodes.grod[new_rch_nodes])
-                reaches.grod_fid[new_rch] = max(nodes.grod_fid[new_rch_nodes])
-                reaches.hfalls_fid[new_rch] = max(nodes.hfalls_fid[new_rch_nodes])
-                reaches.lakeflag[new_rch] = mode(nodes.lakeflag[new_rch_nodes])
-                reaches.max_wth[new_rch] = max(nodes.max_wth[new_rch_nodes])
-                #slope 
-                order_ids = np.argsort(nodes.id[new_rch_nodes])
-                slope_pts = np.vstack([nodes.dist_out[new_rch_nodes[order_ids]]/1000, np.ones(len(new_rch_nodes))]).T
-                slope, intercept = np.linalg.lstsq(slope_pts, nodes.wse[new_rch_nodes[order_ids]], rcond=None)[0]
-                reaches.slope[new_rch] = abs(slope) # m/km
-                ### update edit flag for boundary change. 
-                if reaches.edit_flag[new_rch] == 'NaN':
-                    edit_val = '6'
-                elif '6' not in reaches.edit_flag[new_rch][0].split(','):
-                    edit_val = reaches.edit_flag[new_rch] + ',6'
-                else:
-                    edit_val = reaches.edit_flag[new_rch]
-                reaches.edit_flag[new_rch] = edit_val
-                nodes.edit_flag[np.where(nodes.reach_id == new_rch_id)[0]] = edit_val
-                ### topology 
-                #replace new reach upstream neighbors with current reach upstream neighbors. 
-                reaches.n_rch_down[new_rch] = reaches.n_rch_down[rch]
-                reaches.rch_id_down[:,new_rch] = reaches.rch_id_down[:,rch]
-                dn_ngh_rchs = reaches.rch_id_down[:,rch]; dn_ngh_rchs = dn_ngh_rchs[dn_ngh_rchs>0]
-                #replace all new upstream neighbors downstream neighbors with new reach id. 
-                for dr in list(range(len(dn_ngh_rchs))):
-                    dn_rch = np.where(reaches.id == dn_ngh_rchs[dr])[0]
-                    val = np.where(reaches.rch_id_up[:,dn_rch] == agg[r])[0]
-                    if len(val) == 0:
-                        print('!!! TOPOLOGY ISSUE !!!', agg[r])
-                        break
-                    reaches.rch_id_up[val,dn_rch] = new_rch_id
-            else:
-                print('multiple upstream and downstream reaches:', agg[r])
-                multi_both.append(agg[r])
-                rmv_agg.append(r)
-                continue
-        else:
-            print('multiple upstream and downstream reaches:', agg[r])
-            multi_both.append(agg[r])
-            rmv_agg.append(r)
-            continue
+        unq_nodes = np.unique(centerlines.node_id[0,rch])
+        node_len = np.zeros(len(unq_nodes))
+        node_x = np.zeros(len(unq_nodes))
+        node_y = np.zeros(len(unq_nodes))
+        for n in list(range(len(unq_nodes))):
+            nind = np.where(nodes.id == unq_nodes[n])[0]
+            npts = np.where(centerlines.node_id[0,rch[order_ids]] == unq_nodes[n])[0]
+            nodes.x[nind] = np.median(centerlines.x[rch[order_ids[npts]]])
+            nodes.y[nind] = np.median(centerlines.y[rch[order_ids[npts]]])
+            nodes.len[nind] = max(np.cumsum(diff[npts]))
+            if len(npts) == 1:
+                nodes.len[nind] = 30
 
-### delete aggregated reaches. 
-print('Deleting 1-Node Reaches')
-agg_final = np.delete(agg, rmv_agg)
-delete_rchs(reaches, agg_final)
+        base_val = reaches.dist_out[rind] - reaches.len[rind]
+        reaches.dist_out[rind] = reaches.len[rind]+base_val
+        nr = np.where(nodes.reach_id == shift_rchs[r])
+        nodes.dist_out[nr] = np.cumsum(nodes.len[nr])+base_val
 
-multi_dn_csv = {'reach_id': np.array(multi_dn).astype('int64')}
-multi_dn_csv = pd.DataFrame(multi_dn_csv)
-multi_dn_csv.to_csv(out_dir+region.lower()+'_multi_ds_1node_rchs.csv', index=False)
-
-multi_both_csv = {'reach_id': np.array(multi_both).astype('int64')}
-multi_both_csv = pd.DataFrame(multi_both_csv)
-multi_both_csv.to_csv(out_dir+region.lower()+'_multi_us_ds_1node_rchs.csv', index=False)
-
-all_agg_csv = {'reach_id': np.array(agg).astype('int64')}
-all_agg_csv = pd.DataFrame(all_agg_csv)
-all_agg_csv.to_csv(out_dir+region.lower()+'_1node_rchs.csv', index=False)
+        #output these figures for testing.
+        if save_plots == 'True':
+            plt.scatter(old_x[rch], old_y[rch], c = 'red', s=3)
+            plt.scatter(centerlines.x[rch], centerlines.y[rch], c = 'cyan', s=3)
+            plt.scatter(mhv_x_clip, mhv_y_clip, c = 'black', s=1)
+            plt.title('Reach: '+str(shift_rchs[r]))
+            plt.xlabel('lon')
+            plt.ylabel('lat')
+            plt.xlim(mn_x+0.001, mx_x+0.001)
+            plt.ylim(mn_y+0.001, mx_y+0.001)
+            # plt.show()
+            plt.savefig(plotdir+'rch_'+str(shift_rchs[r]))
+            plt.close()
+    
+    end = time.time()
+    print('Finished Basin', rch_file_l2[f], 'in', str(np.round((end-start)/60, 2)) + ' min')
 
 ###############################################################################
 ### Filler variables
@@ -1263,12 +1011,9 @@ reaches.sic4d_sbQ_rel = np.repeat(-9999, len(reaches.id))
 print('Writing New NetCDF')
 write_database_nc(centerlines, reaches, nodes, region, sword_dir)
 
-#checking dimensions
-end = time.time()
-print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
-print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
-print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(np.unique(reaches.id)), len(reaches.id))
-print('Reaches with multiple downstream neighbors:', len(multi_dn))
-print('Reaches with multiple upstream and downstream neighbors:', len(multi_both))
-print('Edit flag values:', np.unique(reaches.edit_flag))
-print('DONE IN:', str(np.round((end-start)/60, 2)), 'mins')
+issue_csv = {'reach_id': np.array(check_rch).astype('int64')}
+issue_csv = pd.DataFrame(issue_csv)
+issue_csv.to_csv(rch_dir+region.lower()+'_mhv_mismatches.csv', index=False)
+
+end_all = time.time()
+print('Finished', region, 'in', str(np.round((end_all-start_all)/60, 2)) + ' min')

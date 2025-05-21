@@ -132,7 +132,7 @@ import time
 
 start = time.time()
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 

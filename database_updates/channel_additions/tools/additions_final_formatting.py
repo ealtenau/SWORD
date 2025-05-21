@@ -27,7 +27,7 @@ def find_character_in_array(arr, char):
 
 ##################################################################
 
-region = 'AS'
+region = 'OC'
 version='v18'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 sword = nc.Dataset(nc_fn,'r+')

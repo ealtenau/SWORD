@@ -21,7 +21,7 @@ start = time.time()
 # version = args.version
 # basin = args.basin
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 basin = 'All'
 

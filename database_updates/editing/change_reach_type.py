@@ -2,13 +2,12 @@ import netCDF4 as nc
 import pandas as pd
 import numpy as np
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+\
     '/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 csv_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+\
     '/'+region.lower()+'_incorrect_ghost_reaches.csv'
-# csv_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v17/cnes_lake_intersections/SWORD_v17_rivers_to_lakes.csv'
 
 sword = nc.Dataset(sword_dir, 'r+')
 updates = pd.read_csv(csv_dir)

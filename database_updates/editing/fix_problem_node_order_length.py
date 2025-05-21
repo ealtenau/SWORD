@@ -864,7 +864,7 @@ Used mostly for incorrect node ordering or large/small node lengths
 '''
 
 start_all = time.time()
-region = 'AS'
+region = 'OC'
 version = 'v18'
 multi_file = 'True'
  

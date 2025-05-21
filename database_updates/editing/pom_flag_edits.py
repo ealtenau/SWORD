@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 # region = args.region
 # version = args.version
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'\

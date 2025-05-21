@@ -5,7 +5,7 @@ from geopy import distance
 import pandas as pd
 import random
 
-region = 'AS'
+region = 'OC'
 version = 'v18'
 
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'\

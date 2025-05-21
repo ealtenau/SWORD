@@ -2995,3 +2995,111 @@ vals, cnt = np.unique(rchs, return_counts=True)
 check = vals[np.where(cnt>1)[0]]
 
 np.unique(node_rchs[np.where(nodes < 10000000000000)[0]])
+
+######################################################################
+######################################################################
+######################################################################
+
+
+import itertools
+import numpy as np
+import netCDF4 as nc
+import matplotlib.pyplot as plt
+import glob 
+import os
+from scipy import spatial as sp
+
+
+region = 'NA'
+version = 'v17b'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+mhv_nc_dir = '/Users/ealtenau/Documents/SWORD_Dev/inputs/MHV_SWORD/netcdf/' + region +'/'
+mhv_nc_files = np.sort(glob.glob(os.path.join(mhv_nc_dir, '*.nc')))
+outdir = '/Users/ealtenau/Documents/SWORD_Dev/shift_testing/plots/'
+
+sword = nc.Dataset(sword_fn)
+mhv = nc.Dataset(mhv_nc_files[7])
+
+cl_rchs = np.array(sword['/centerlines/reach_id'][0,:])
+cl_x = np.array(sword['/centerlines/x'][:])
+cl_y = np.array(sword['/centerlines/y'][:])
+
+mhv_x = np.array(mhv['/centerlines/x'][:])
+mhv_y = np.array(mhv['/centerlines/y'][:])
+mhv_flag = np.array(mhv['/centerlines/swordflag_filt'][:])
+keep = np.where(mhv_flag > 0)[0]
+mhv_x = mhv_x[keep]
+mhv_y = mhv_y[keep]
+pts = np.array([(mhv_x[i], mhv_y[i]) for i in range(len(mhv_x))])
+
+#3, 4, and 7 are weird... 
+test_rchs = [78270600191, 78270600201, 78270600216, 78270600181, 78270600171, 78270600161, 78270600141, 78270600131]
+
+sx = np.arange(-0.01, 0.01, 0.0003)
+sy = np.arange(-0.01, 0.01, 0.0003)
+shift_coords = list(itertools.product(sx, sy)) #4489 permutations
+
+for r in list(range(len(test_rchs))):
+    print(r, len(test_rchs)-1)
+    rch = np.where(cl_rchs == test_rchs[r])[0]
+    #find mhv points within 2 km bounding box of rch
+    mn_x = np.min(cl_x[rch])-0.02
+    mx_x = np.max(cl_x[rch])+0.02
+    mn_y = np.min(cl_y[rch])-0.02
+    mx_y = np.max(cl_y[rch])+0.02
+    ll = np.array([mn_x, mn_y])  # lower-left
+    ur = np.array([mx_x, mx_y])  # upper-right
+
+    idx = np.all(np.logical_and(ll <= pts, pts <= ur), axis=1)
+    mhv_x_clip = mhv_x[idx]
+    mhv_y_clip = mhv_y[idx]
+    mhv_pts = np.vstack((mhv_x_clip, mhv_y_clip)).T
+
+    offset = np.zeros(len(shift_coords))
+    for ind in list(range(len(shift_coords))):
+        nx = cl_x[rch]+shift_coords[ind][0]
+        ny = cl_y[rch]+shift_coords[ind][1]
+        #spatial query between mhv and shifted x-y. 
+        shift_pts = np.vstack((nx, ny)).T
+        kdt = sp.cKDTree(mhv_pts)
+        pt_dist, pt_ind = kdt.query(shift_pts, k = 1)
+        #median difference between spatial query coords. 
+        x_diff = np.abs(nx-mhv_x_clip[pt_ind])
+        y_diff = np.abs(ny-mhv_y_clip[pt_ind])
+        x_diff_med = np.median(x_diff)
+        y_diff_med = np.median(y_diff)
+        add = abs(x_diff_med)+abs(y_diff_med) 
+        offset[ind] = add
+          
+    min_ind = np.where(offset == min(offset))[0]
+    new_x = cl_x[rch]+shift_coords[min_ind[0]][0]
+    new_y = cl_y[rch]+shift_coords[min_ind[0]][1]
+
+    #output these figures for testing.
+    plt.scatter(cl_x[rch], cl_y[rch], c = 'red', s=3)
+    plt.scatter(new_x, new_y, c = 'cyan', s=3)
+    plt.scatter(mhv_x_clip, mhv_y_clip, c = 'black', s=1)
+    plt.title('Reach: '+str(test_rchs[r]))
+    plt.xlabel('lon')
+    plt.ylabel('lat')
+    plt.xlim(mn_x+0.001, mx_x+0.001)
+    plt.ylim(mn_y+0.001, mx_y+0.001)
+    # plt.show()
+    plt.savefig(outdir+'rch_'+str(test_rchs[r]))
+    plt.close()
+
+######################################################################
+######################################################################
+######################################################################
+
+import numpy as np
+import netCDF4 as nc
+
+region = 'OC'
+version = 'v17b'
+sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword = nc.Dataset(sword_fn)
+
+rchs = np.array(sword['/reaches/reach_id'][:])
+rchs.shape
+sword.close()

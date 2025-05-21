@@ -16,7 +16,7 @@ import mhv_to_sword_coastal_tools as mst
 ###############################################################################
 
 start_all = time.time()
-region = 'SA'
+region = 'OC'
 version = 'v18'
 
 sword_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'

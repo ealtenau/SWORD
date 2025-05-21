@@ -752,16 +752,16 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 sword_dir = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v18/SA/solo_rch_deletions.csv'
+rch_dir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/v18/OC/solo_rch_deletions.csv'
 
 rm_rch_df = pd.read_csv(rch_dir)
 rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 rm_rch = np.unique(rm_rch)
 
-# rm_rch = np.array([61670900843, 63307100011]) #manual
+# rm_rch = np.array([11600200243, 11600201666, 11600200293, 11600200303, 11600201656, 11710500031, 11710500011, 11710500286, 11710600011, 11710600416]) #manual
 # rm_rch = np.unique(rm_rch)
 
 centerlines, nodes, reaches = read_data(sword_dir)
@@ -769,7 +769,7 @@ rch_check = reaches.id
 
 #### LOOP
 for ind in list(range(len(rm_rch))):
-    print(ind, len(rm_rch))
+    print(ind, len(rm_rch)-1)
     rch_ind = np.where(reaches.id == rm_rch[ind])[0]
     node_ind = np.where(nodes.reach_id == rm_rch[ind])[0]
     cl_ind = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]

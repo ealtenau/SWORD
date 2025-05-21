@@ -786,7 +786,7 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
 ###############################################################################
 ###############################################################################
 
-region = 'SA'
+region = 'OC'
 version = 'v18'
 multi_file = 'True'
  
@@ -809,8 +809,8 @@ reach = np.array(tribs['reach_id'])
 break_id = np.array(tribs['cl_id']) 
 
 #manual
-# reach = np.array([52177000235])
-# break_id = np.array([4231240])
+# reach = np.array([13265000111])
+# break_id = np.array([14147935])
 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):
@@ -1037,7 +1037,7 @@ for r in list(range(len(unq_rchs))):
                 if mn in existing_nghs and mx not in existing_nghs:
                     #updating new neighbors at the centerline level. 
                     centerlines.reach_id[1:,cl_r[order_ids[pts[mx]]]] = 0
-                    centerlines.reach_id[1:,cl_r[order_ids[pts[mx]+1]]] = 0
+                    centerlines.reach_id[1:,cl_r[order_ids[pts[mx]+1]]] = 0 
                     centerlines.reach_id[1,cl_r[order_ids[pts[mx]]]] = centerlines.reach_id[0,cl_r[order_ids[pts[mx]+1]]][0] #centerlines.reach_id[:,cl_r[order_ids[pts[mx]]]]
                     centerlines.reach_id[1,cl_r[order_ids[pts[mx]+1]]] = centerlines.reach_id[0,cl_r[order_ids[pts[mx]]]][0] #centerlines.reach_id[:,cl_r[order_ids[pts[mx]+1]]]
                     #updating new neighbors at the reach level.

@@ -136,7 +136,7 @@ lengths (i.e. node length = 0 or node length > 1000) to be updated in
 '''
 
 start_all = time.time()
-region = 'AS'
+region = 'OC'
 version = 'v18'
 multi_file = 'True'
  

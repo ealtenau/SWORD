@@ -3,7 +3,7 @@ import numpy as np
 import netCDF4 as nc
 from geopy import distance
 
-region = 'SA'
+region = 'OC'
 version='v18'
 nc_fn = '/Users/ealtenau/Documents/SWORD_Dev/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 outdir = '/Users/ealtenau/Documents/SWORD_Dev/update_requests/'+version+'/'+region+'/'
