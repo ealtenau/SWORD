@@ -33,6 +33,6 @@ SWORD can be downloaded from two sources:
 - **Development publication:** Altenau, E. H., Pavelsky, T. M., Durand, M. T., Yang, X., Frasson, R. P. D. M., & Bendezu, L. (2021). The Surface Water and Ocean Topography (SWOT) Mission River Database (SWORD): A global river network for satellite data products. Water Resources Research, 57(7), e2021WR030054.
 - **Database DOI:** Elizabeth H. Altenau, Tamlin M. Pavelsky, Michael T. Durand, Xiao Yang, Renato P. d. M. Frasson, & Liam Bendezu. (2025). SWOT River Database (SWORD) (Version v17b) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.15299138
 
-![alt text](https://drive.google.com/file/d/1RMfGavn7ZHib9YrwE_PXb3pAQ-8qjFXj/view?usp=sharing) 
+[![Fig1](https://drive.google.com/file/d/1RMfGavn7ZHib9YrwE_PXb3pAQ-8qjFXj/view?usp=sharing)]
 
-![alt text](https://drive.google.com/file/d/1GgHjDXNjkNz3Dyejz6ltdjXdHdqbkXL9/view?usp=sharing)
+[![Fig2](https://drive.google.com/file/d/1GgHjDXNjkNz3Dyejz6ltdjXdHdqbkXL9/view?usp=sharing)]
