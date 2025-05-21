@@ -1,6 +1,7 @@
 <p align="center">
-    <img src="https://github.com/ealtenau/SWORD/blob/main/docs/figures%20/SWORD_Logo.png" width="100">
+    <img src="https://github.com/ealtenau/SWORD/blob/main/docs/figures%20/SWORD_Logo.png" width="200">
 </p>
+
 # SWOT River Database (SWORD)
 Source code for developing, updating, and maintaining the SWOT River Database (SWORD).
 
