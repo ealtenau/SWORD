@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://github.com/ealtenau/SWORD/blob/main/docs/figures%20/SWORD_Logo.png" width="200">
+    <img src="https://github.com/ealtenau/SWORD/blob/main/docs/figures%20/SWORD_Logo.png" width="300">
 </p>
 
 # SWOT River Database (SWORD)
