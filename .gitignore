@@ -182,3 +182,8 @@ cython_debug/
 
 # Early Development Files 
 development_pre2023/
+
+# Folder view configuration files
+.DS_Store
+Desktop.ini
+.Rhistory
