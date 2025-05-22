@@ -183,6 +183,9 @@ cython_debug/
 # Early Development Files 
 development_pre2023/
 
+# VS Code Specific Files
+.vscode/
+
 # Folder view configuration files
 .DS_Store
 Desktop.ini
