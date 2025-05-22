@@ -436,6 +436,7 @@ def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
 ###############################################################################
 ##################### Topology and Attribute Functions ########################
 ###############################################################################
+
 def simple_rch_ids(centerlines, sword_basins, sword_rch_nums):
     unq_rchs = np.unique(centerlines.rch_id5)
     reach_id = np.zeros(len(centerlines.lon), dtype=int)
