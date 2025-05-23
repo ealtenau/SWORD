@@ -186,7 +186,15 @@ development_pre2023/
 # VS Code Specific Files
 .vscode/
 
-# Folder view configuration files
+# Configuration files
 .DS_Store
 Desktop.ini
 .Rhistory
+.RData
+
+# Folders
+data/
+temp/
+
+#files
+src/updates/tools/testing.py

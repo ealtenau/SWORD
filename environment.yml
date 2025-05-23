@@ -241,4 +241,3 @@ dependencies:
     - dash-bootstrap-templates==1.0.7
     - dash-html-components==2.0.0
     - dash-table==5.0.0
-prefix: /afs/cas.unc.edu/users/e/a/ealtenau/anaconda3/envs/sword
