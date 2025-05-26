@@ -170,7 +170,7 @@ def delete_rchs(reaches, rm_rch):
 ###############################################################################
 
 region = 'OC'
-version = 'v18'
+version = 'v17b'
 sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 
 ### read data. 
