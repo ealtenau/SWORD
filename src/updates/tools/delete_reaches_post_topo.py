@@ -927,7 +927,6 @@ for ind in list(range(len(rm_rch))):
         dn4 = np.unique(reaches.rch_id_down[:,rch_dn_ind4]); dn4 = dn4[dn4>0]
         reaches.n_rch_down[rch_dn_ind4] = len(dn4)
 
-
 ###############################################################################
 ### Filler variables
 # discharge subgroup 1
