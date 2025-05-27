@@ -21,12 +21,12 @@ dist_update = args.dist_update
 # version = 'v17b'
 # dist_update = 'True'
 
-# gpkg_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg/'\
-#     +region.lower()+'_sword_reaches_'+version+'.gpkg'
+gpkg_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg/'\
+    +region.lower()+'_sword_reaches_'+version+'.gpkg'
 # gpkg_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/shp/SA/'\
 #     +region.lower()+'_sword_reaches_hb67_'+version+'.shp'
-gpkg_fn = main_dir+'/data/outputs/Topology/'+version+'/'+region+\
-        '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
+# gpkg_fn = main_dir+'/data/outputs/Topology/'+version+'/'+region+\
+#         '/dist_out_updates/'+region.lower()+'_sword_reaches_'+version+'_distout_update.gpkg'
 nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'\
     +region.lower()+'_sword_'+version+'.nc'
 

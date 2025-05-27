@@ -1,30 +1,43 @@
 from __future__ import division
 import os
-main_dir = os.getcwd()
 import numpy as np
 import time
 from statistics import mode
 import pandas as pd
-import updates.tools.sword_utils as st
+import argparse
+import updates.sword_utils as st
 
 start = time.time()
 
-region = 'OC'
-version = 'v18'
-sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-out_dir = main_dir+'/data/update_requests/'+version+'/'+region+'/'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
 
-### read data. 
-centerlines, nodes, reaches = st.read_nc(sword_dir)
+region = args.region
+version = args.version
 
-### find single node reaches that are not ghost reaches. 
+# Line-by-line degugging. 
+# region = 'OC'
+# version = 'v18'
+
+# File paths. 
+main_dir = os.getcwd()
+paths = st.prepare_paths(main_dir, region, version)
+sword_fn = paths['nc_dir']+paths['nc_fn']
+out_dir = paths['update_dir']
+
+# Read data. 
+centerlines, nodes, reaches = st.read_nc(sword_fn)
+
+# Find single node reaches that are not ghost reaches. 
 group = np.array([str(ind)[-1] for ind in reaches.id])
 agg_ind = np.where((reaches.rch_n_nodes == 1)&(group != '6'))[0]
 rmv_dams = np.where(group[agg_ind] == '4')[0] #removing any single node dam reaches from aggregation.
 agg_ind = np.delete(agg_ind, rmv_dams)
 agg = reaches.id[agg_ind]
 
-### combine with neighbor reach - ideally downstream neighbor.
+# Combine with neighbor reach - ideally downstream neighbor.
 print('Aggregating 1-Node Reaches')
 rmv_agg = []
 multi_dn = []
@@ -418,7 +431,7 @@ st.discharge_attr_nc(reaches)
 
 # Write Data.
 print('Writing New NetCDF')
-st.write_nc(centerlines, reaches, nodes, region, sword_dir)
+st.write_nc(centerlines, reaches, nodes, region, sword_fn)
 
 #checking dimensions.
 end = time.time()

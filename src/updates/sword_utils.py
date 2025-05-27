@@ -13,8 +13,6 @@ import os
 import numpy as np
 import time
 import netCDF4 as nc
-from statistics import mode
-import pandas as pd
 
 ###############################################################################
 
@@ -1200,4 +1198,47 @@ def append_data(centerlines, nodes, reaches,
     reaches.end_rch = np.append(reaches.end_rch, subreaches.end_rch)
     reaches.network = np.append(reaches.network, subreaches.network)
     
+###############################################################################
+
+def prepare_paths(main_dir, region, version):
+    
+    # Create dictionary of directories
+    paths = dict()
+
+    # input/output shapefile directory.
+    paths['shp_dir'] = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/shp/'+region+'/'
+    # input/output geopackage directory.
+    paths['gpkg_dir'] = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg/'
+    # input/output netcdf directory.
+    paths['nc_dir'] = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'
+    # updates directory. 
+    paths['update_dir'] = main_dir+'/data/update_requests/'+version+'/'+region+'/'
+    # topology directory. 
+    paths['topo_dir'] = main_dir+'/data/outputs/Topology/'+version+'/'+region+'/'
+    # version directory. 
+    paths['version_dir'] = main_dir+'/data/outputs/Version_Differences/'+version+'/'
+
+    # input/output netcdf filename. 
+    paths['nc_fn'] = region.lower()+'_sword_'+version+'.nc'
+    # input/output geopackage filename. 
+    paths['gpkg_fn'] = region.lower()+'_sword_reaches_'+version+'.gpkg'
+    # input/output shapefile filename. 
+    paths['shp_fn'] = region.lower()+'_sword_reaches_hbXX_'+version+'.shp'
+    
+    # Create directories if they don't exist.
+    if os.path.isdir(paths['shp_dir']) is False:
+        os.makedirs(paths['shp_dir'])
+    if os.path.isdir(paths['gpkg_dir']) is False:
+        os.makedirs(paths['gpkg_dir'])
+    if os.path.isdir(paths['nc_dir']) is False:
+        os.makedirs(paths['nc_dir'])
+    if os.path.isdir(paths['update_dir']) is False:
+        os.makedirs(paths['update_dir'])
+    if os.path.isdir(paths['topo_dir']) is False:
+        os.makedirs(paths['topo_dir'])
+    if os.path.isdir(paths['version_dir']) is False:
+        os.makedirs(paths['version_dir'])
+
+    return paths
+
 ###############################################################################
