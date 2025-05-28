@@ -1,21 +1,17 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Oct 09 12:56:58 2019
-"""
 from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import time
 import netCDF4 as nc
 import geopandas as gp
 from shapely.geometry import Point
 import pandas as pd
-import argparse 
-
-#########################################################NA######################
-###############################################################################
-###############################################################################
+import argparse
+import src.updates.sword_utils as swd 
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="continental region", type = str)
@@ -25,12 +21,13 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-outdir  = main_dir+'/data/outputs/Reaches_Nodes/'
-outpath = outdir+version+'/'
-fn = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
+paths = swd.prepare_paths(main_dir, region, version)
+sword_fn = paths['nc_dir']+paths['nc_fn']
+outpath_gpkg = paths['gpkg_dir']
+outpath_shp = paths['shp_dir']
 
 # read originial data.
-data = nc.Dataset(fn)
+data = nc.Dataset(sword_fn)
 unq_nodes = data.groups['nodes'].variables['node_id'][:]
 node_type = np.array([int(str(rch)[-1]) for rch in unq_nodes])
 
@@ -114,34 +111,21 @@ nodes.set_geometry(col='geometry')
 nodes = nodes.set_crs(4326, allow_override=True)
 
 print('Writing GeoPackage File')
-
 #write geopackage (continental scale)
-if os.path.exists(outpath+'gpkg/'):
-    outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_nodes_' + version + '.gpkg'
-else:
-    os.makedirs(outpath+'gpkg/')
-    outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_nodes_' + version + '.gpkg'
-
 start = time.time()
-nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
+nodes.to_file(outpath_gpkg+paths['gpkg_node_fn'], driver='GPKG', layer='nodes')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
 #write as shapefile per level2 basin.
-print('Writing Shapefiles')
-if os.path.exists(outpath + 'shp/' + region + '/'):
-    shpdir = outpath + 'shp/' + region + '/'
-else:
-    os.makedirs(outpath + 'shp/' + region + '/')
-    shpdir = outpath + 'shp/' + region + '/'
-
 start = time.time()
 level2 = np.array([int(str(n)[0:2]) for n in nodes['node_id']])
 unq_l2 = np.unique(level2)
 nodes_cp = nodes.copy(); nodes_cp['level2'] = level2
 for lvl in list(range(len(unq_l2))):
     print(unq_l2[lvl])
-    outshp = shpdir + region.lower() + "_sword_nodes_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
+    outshp = outpath_shp + paths['shp_node_fn']
+    outshp = outshp.replace("XX",str(unq_l2[lvl]))
     subset = nodes_cp[nodes_cp['level2'] == unq_l2[lvl]]
     subset = subset.drop(columns=['level2'])
     subset.to_file(outshp)

@@ -1,11 +1,9 @@
-'''
-This script uses an anxillary data set with pre identified common reaches 
-for junctions to try and allow for better connectivity and junctions 
-meeting at one point. 
-'''
-
+# -*- coding: utf-8 -*-
+from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc
 import geopandas as gp
@@ -15,6 +13,7 @@ from geopandas import GeoSeries
 import pandas as pd
 import time
 import argparse
+import src.updates.sword_utils as swd 
 
 #############################################################################################
 
@@ -213,10 +212,11 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-outdir = main_dir+'/data/outputs/Reaches_Nodes/'
-outpath = outdir+version+'/'
-fn1 = outpath+'netcdf/'+region.lower()+'_sword_'+version+'.nc'
-fn2 = outpath+'reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
+paths = swd.prepare_paths(main_dir, region, version)
+fn1 = paths['nc_dir']+paths['nc_fn']
+fn2 = paths['geom_dir']+paths['geom_fn']
+outpath_gpkg = paths['gpkg_dir']
+outpath_shp = paths['shp_dir']
 
 data1 = nc.Dataset(fn1)
 data2 = nc.Dataset(fn2)
@@ -342,33 +342,23 @@ reaches = gp.GeoDataFrame(reaches)
 reaches.set_geometry(col='geometry') #removed "inplace=True" option on leopold. 
 reaches = reaches.set_crs(4326, allow_override=True)
 
-# write geopackage (continental scale)
 print('Writing GeoPackage File')
-if os.path.exists(outpath+'gpkg/'):
-    outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_reaches_' + version + '.gpkg'
-else:
-    os.makedirs(outpath+'gpkg/')
-    outgpkg = outpath + 'gpkg/' + region.lower() + '_sword_reaches_' + version + '.gpkg'
-
+# write geopackage (continental scale)
 start = time.time()
+outgpkg = outpath_gpkg+paths['gpkg_rch_fn']
 reaches.to_file(outgpkg, driver='GPKG', layer='reaches')
 end = time.time()
 print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
 # write as shapefile per level2 basin.
 print('Writing Shapefiles')
-if os.path.exists(outpath + 'shp/' + region + '/'):
-    shpdir = outpath + 'shp/' + region + '/'
-else:
-    os.makedirs(outpath + 'shp/' + region + '/')
-    shpdir = outpath + 'shp/' + region + '/'
-
 start = time.time()
 level2 = np.array([int(str(r)[0:2]) for r in reaches['reach_id']])
 unq_l2 = np.unique(level2)
 rch_cp = reaches.copy(); rch_cp['level2'] = level2
 for lvl in list(range(len(unq_l2))):
-    outshp = shpdir + region.lower() + "_sword_reaches_hb" + str(unq_l2[lvl]) + "_" + version + '.shp'
+    outshp = outpath_shp + paths['shp_rch_fn']
+    outshp = outshp.replace("XX",str(unq_l2[lvl]))
     subset = rch_cp[rch_cp['level2'] == unq_l2[lvl]]
     subset = subset.drop(columns=['level2'])
     subset.to_file(outshp)

@@ -1,7 +1,9 @@
-
+# -*- coding: utf-8 -*-
 from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import time
 import netCDF4 as nc
@@ -9,15 +11,8 @@ import pandas as pd
 from scipy import spatial as sp
 from shapely.geometry import Point
 import geopandas as gp
-
-###############################################################################
-
-class Object(object):
-    """
-    FUNCTION:
-        Creates class object to assign attributes to.
-    """
-    pass
+import argparse
+import src.updates.sword_utils as swd 
 
 ###############################################################################
 
@@ -89,25 +84,27 @@ def find_tributary_junctions(centerlines):
     return tribs
 
 #####################################################################################################
-#####################################################################################################
-#####################################################################################################
 
 start_all = time.time()
-region = 'EU'
-version = 'v17'
 
-sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
-outgpkg=main_dir+'/data/outputs/Reaches_Nodes/'+version+'/network_building/'+region+'/'+region.lower()+'_sword_tributaries_'+version+'.gpkg'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="continental region", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("csv", help="csv file of reaches to delete", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+
+# region = 'OC'
+# version = 'v18'
+paths = swd.prepare_paths(main_dir, region, version)
+sword_fn = paths['geom_dir']+paths['geom_fn']
+outgpkg = paths['update_dir']+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 
 #reading in sword data.
-sword = nc.Dataset(sword_dir)
-centerlines = Object()
-centerlines.id= sword.groups['centerlines'].variables['cl_id'][:]
-centerlines.x = sword.groups['centerlines'].variables['x'][:]
-centerlines.y = sword.groups['centerlines'].variables['y'][:]
-centerlines.reach_id = sword.groups['centerlines'].variables['reach_id'][:]
-centerlines.node_id = sword.groups['centerlines'].variables['node_id'][:]
-sword.close()
+sword = nc.Dataset(sword_fn)
+centerlines, nodes, reaches = swd.read_nc(sword_fn)
 
 tribs = find_tributary_junctions(centerlines)
 

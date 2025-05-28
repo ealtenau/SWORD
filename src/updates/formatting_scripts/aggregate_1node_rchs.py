@@ -1,11 +1,15 @@
+# -*- coding: utf-8 -*-
 from __future__ import division
+import sys
 import os
+main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import time
 from statistics import mode
 import pandas as pd
 import argparse
-import updates.sword_utils as st
+import src.updates.sword_utils as swd 
 
 start = time.time()
 
@@ -22,13 +26,12 @@ version = args.version
 # version = 'v18'
 
 # File paths. 
-main_dir = os.getcwd()
-paths = st.prepare_paths(main_dir, region, version)
+paths = swd.prepare_paths(main_dir, region, version)
 sword_fn = paths['nc_dir']+paths['nc_fn']
 out_dir = paths['update_dir']
 
 # Read data. 
-centerlines, nodes, reaches = st.read_nc(sword_fn)
+centerlines, nodes, reaches = swd.read_nc(sword_fn)
 
 # Find single node reaches that are not ghost reaches. 
 group = np.array([str(ind)[-1] for ind in reaches.id])
@@ -411,7 +414,7 @@ for r in list(range(len(agg))):
 # Delete aggregated reaches. 
 print('Deleting 1-Node Reaches')
 agg_final = np.delete(agg, rmv_agg)
-st.delete_rchs(reaches, agg_final)
+swd.delete_rchs(reaches, agg_final)
 
 # Write csv files of aggregated reach ids. 
 multi_dn_csv = {'reach_id': np.array(multi_dn).astype('int64')}
@@ -427,11 +430,11 @@ all_agg_csv = pd.DataFrame(all_agg_csv)
 all_agg_csv.to_csv(out_dir+region.lower()+'_1node_rchs.csv', index=False)
 
 # Filler variables.
-st.discharge_attr_nc(reaches)
+swd.discharge_attr_nc(reaches)
 
 # Write Data.
 print('Writing New NetCDF')
-st.write_nc(centerlines, reaches, nodes, region, sword_fn)
+swd.write_nc(centerlines, reaches, nodes, region, sword_fn)
 
 #checking dimensions.
 end = time.time()

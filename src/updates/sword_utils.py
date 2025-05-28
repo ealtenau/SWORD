@@ -1,6 +1,7 @@
+# -*- coding: utf-8 -*-
 """
 
-SWORD Utilities (sword_tools.py)
+SWORD Utilities (sword_utils.py)
 =======================================
 
 Utilities for reading, writing, managing, and processing the SWORD 
@@ -759,6 +760,63 @@ def write_nc(centerlines, reaches, nodes, region, outfile):
 
 ###############################################################################
 
+def write_con_nc(centerlines, outfile):
+
+    start = time.time()
+
+    # global attributes
+    root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
+    root_grp.x_min = np.min(centerlines.x)
+    root_grp.x_max = np.max(centerlines.x)
+    root_grp.y_min = np.min(centerlines.y)
+    root_grp.y_max = np.max(centerlines.y)
+    root_grp.Name = region
+    root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
+    #root_grp.history = 'Created ' + time.ctime(time.time())
+
+    # groups
+    cl_grp = root_grp.createGroup('centerlines')
+
+    # dimensions
+    #root_grp.createDimension('d1', 2)
+    cl_grp.createDimension('num_points', len(centerlines.cl_id))
+    cl_grp.createDimension('num_domains', 4)
+
+    # centerline variables
+    cl_id = cl_grp.createVariable(
+        'cl_id', 'i8', ('num_points',), fill_value=-9999.)
+    cl_x = cl_grp.createVariable(
+        'x', 'f8', ('num_points',), fill_value=-9999.)
+    cl_x.units = 'degrees east'
+    cl_y = cl_grp.createVariable(
+        'y', 'f8', ('num_points',), fill_value=-9999.)
+    cl_y.units = 'degrees north'
+    reach_id = cl_grp.createVariable(
+        'reach_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
+    reach_id.format = 'CBBBBBRRRRT'
+    common = cl_grp.createVariable(
+        'common', 'i4', ('num_points',), fill_value=-9999.)
+
+    # saving data
+    print("saving nc")
+
+    # centerline data
+    cl_id[:] = centerlines.cl_id
+    cl_x[:] = centerlines.x
+    cl_y[:] = centerlines.y
+    reach_id[:,:] = centerlines.neighbors
+    common[:] = centerlines.common
+
+    root_grp.close()
+
+    end = time.time()
+
+    print("Ended Saving NetCDF in: ", str(np.round((end-start)/60, 2)), " min")
+
+    return outfile
+
+###############################################################################
+
 def discharge_attr_nc(reaches):
     """
     FUNCTION
@@ -1211,19 +1269,29 @@ def prepare_paths(main_dir, region, version):
     paths['gpkg_dir'] = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg/'
     # input/output netcdf directory.
     paths['nc_dir'] = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'
+    # input/output connectivity netcdf directory. 
+    paths['geom_dir'] = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/reach_geometry/'
     # updates directory. 
     paths['update_dir'] = main_dir+'/data/update_requests/'+version+'/'+region+'/'
     # topology directory. 
     paths['topo_dir'] = main_dir+'/data/outputs/Topology/'+version+'/'+region+'/'
     # version directory. 
     paths['version_dir'] = main_dir+'/data/outputs/Version_Differences/'+version+'/'
+    # 30 m centerline points gpkg directory. 
+    paths['pts_gpkg_dir'] = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg_30m/'+region+'/'
 
     # input/output netcdf filename. 
     paths['nc_fn'] = region.lower()+'_sword_'+version+'.nc'
-    # input/output geopackage filename. 
-    paths['gpkg_fn'] = region.lower()+'_sword_reaches_'+version+'.gpkg'
-    # input/output shapefile filename. 
-    paths['shp_fn'] = region.lower()+'_sword_reaches_hbXX_'+version+'.shp'
+    # input/output reaches geopackage filename. 
+    paths['gpkg_rch_fn'] = region.lower()+'_sword_reaches_'+version+'.gpkg'
+    # input/output nodes geopackage filename. 
+    paths['gpkg_node_fn'] = region.lower()+'_sword_nodes_'+version+'.gpkg'
+    # input/output reaches shapefile filename. 
+    paths['shp_rch_fn'] = region.lower()+'_sword_reaches_hbXX_'+version+'.shp'
+    # input/output nodes shapefile filename. 
+    paths['shp_node_fn'] = region.lower()+'_sword_nodes_hbXX_'+version+'.shp'
+    # input/output connectivity netcdf filename. 
+    paths['geom_fn'] = region.lower()+'_sword_'+version+'_connectivity.nc'
     
     # Create directories if they don't exist.
     if os.path.isdir(paths['shp_dir']) is False:
@@ -1232,12 +1300,16 @@ def prepare_paths(main_dir, region, version):
         os.makedirs(paths['gpkg_dir'])
     if os.path.isdir(paths['nc_dir']) is False:
         os.makedirs(paths['nc_dir'])
+    if os.path.isdir(paths['geom_dir']) is False:
+        os.makedirs(paths['geom_dir'])
     if os.path.isdir(paths['update_dir']) is False:
         os.makedirs(paths['update_dir'])
     if os.path.isdir(paths['topo_dir']) is False:
         os.makedirs(paths['topo_dir'])
     if os.path.isdir(paths['version_dir']) is False:
         os.makedirs(paths['version_dir'])
+    if os.path.isdir(paths['pts_gpkg_dir']) is False:
+        os.makedirs(paths['pts_gpkg_dir'])
 
     return paths
 

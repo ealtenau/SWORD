@@ -1,3 +1,15 @@
+# -*- coding: utf-8 -*-
+from __future__ import division
+import sys
+import os
+main_dir = os.getcwd()
+sys.path.append(main_dir)
+import numpy as np
+import netCDF4 as nc
+import argparse
+import time
+import src.updates.sword_utils as swd 
+
 def check_topology(domain_reachids,domain_reach_data,Output):
 
     """ 
@@ -126,21 +138,23 @@ def check_topology(domain_reachids,domain_reach_data,Output):
 ###############################################################################################
 ###############################################################################################
 
-import os
-main_dir = os.getcwd()
-import numpy as np
-import netCDF4 as nc
-import time
-
 start = time.time()
 
-region = 'OC'
-version = 'v18'
-nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-subset = False
-Lxbasin='XX' #the two digit pfafstetter basin number. 
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("subset", nargs="?", default="All", help="basin to subset", type = str)
+args = parser.parse_args()
 
-sword_dataset=nc.Dataset(nc_fn)
+region = args.region
+version = args.version
+subset = args.subset
+
+#reading data
+paths = swd.prepare_paths(main_dir, region, version)
+sword_fn = paths['nc_dir']+paths['nc_fn']
+
+sword_dataset=nc.Dataset(sword_fn)
 sword_point_reachids=sword_dataset['centerlines/reach_id'][0,:][:]
 swordx=sword_dataset['centerlines/x'][:]
 swordy=sword_dataset['centerlines/y'][:]
@@ -154,14 +168,14 @@ sword_n_rch_up=sword_dataset['reaches/n_rch_up'][:]
 sword_n_rch_down=sword_dataset['reaches/n_rch_down'][:]
 sword_dataset.close()
 
-if subset == True:
-    BasinLevel=len(Lxbasin)
+if subset != 'All':
+    BasinLevel=len(subset)
     domain_reachids=[]
     for reachid in swordreachids:
         reachidstr=str(reachid)
-        if reachidstr[0:BasinLevel] == Lxbasin:
+        if reachidstr[0:BasinLevel] == subset:
             domain_reachids.append(reachid)
-    print('there are a total of ',len(domain_reachids),'reaches in SWORD for', Lxbasin)
+    print('there are a total of ',len(domain_reachids),'reaches in SWORD for basin', subset)
 
 else:
     domain_reachids = swordreachids
