@@ -16,8 +16,7 @@ import numpy as np
 import pandas as pd
 import time
 import argparse
-from scipy import stats as st
-import src.updates.sword_utils as swd 
+from src.updates.sword import SWORD
 
 start_all = time.time()
 
@@ -33,20 +32,18 @@ version = args.version
 # region = 'OC'
 # version = 'v18'
  
-paths = swd.prepare_paths(main_dir, region, version)
-sword_fn = paths['nc_dir']+paths['nc_fn']
-out_dir = paths['update_dir']
+sword = SWORD(main_dir, region, version)
+out_dir = sword.paths['update_dir']
 
-#read data. 
-centerlines, nodes, reaches = swd.read_nc(sword_fn)
-cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in centerlines.node_id[0,:]])
+#get node numbers. 
+cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in sword.centerlines.node_id[0,:]])
 
-unq_rchs = np.unique(reaches.id)
+unq_rchs = np.unique(sword.reaches.id)
 fixed_rchs = []
 for r in list(range(len(unq_rchs))):
     print(r, unq_rchs[r], len(unq_rchs)-1)
-    cl_r = np.where(centerlines.reach_id[0,:] == unq_rchs[r])[0]
-    order_ids = np.argsort(centerlines.cl_id[cl_r])
+    cl_r = np.where(sword.centerlines.reach_id[0,:] == unq_rchs[r])[0]
+    order_ids = np.argsort(sword.centerlines.cl_id[cl_r])
     nodes_rch =  cl_node_num_int[cl_r[order_ids]]
     nodes_diff = np.abs(np.diff(nodes_rch))
     node_issues = np.where(nodes_diff > 1)[0]
@@ -54,9 +51,9 @@ for r in list(range(len(unq_rchs))):
         fixed_rchs.append(unq_rchs[r])
 
 # find long node lengths
-long_nodes = np.unique(nodes.reach_id[np.where(nodes.len > 1000)[0]])
+long_nodes = np.unique(sword.nodes.reach_id[np.where(sword.nodes.len > 1000)[0]])
 # find zero node lengths 
-zero_len = np.unique(nodes.reach_id[np.where(nodes.len == 0)[0]])
+zero_len = np.unique(sword.nodes.reach_id[np.where(sword.nodes.len == 0)[0]])
 # combine length problems. 
 len_issues = np.unique(np.append(long_nodes, zero_len))
 

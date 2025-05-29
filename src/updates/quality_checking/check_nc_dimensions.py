@@ -6,7 +6,7 @@ main_dir = os.getcwd()
 sys.path.append(main_dir)
 import numpy as np
 import argparse
-import src.updates.sword_utils as swd 
+from src.updates.sword import SWORD
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -16,20 +16,15 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-# region = 'OC'
-# version = 'v17b'
-
 #reading data
-paths = swd.prepare_paths(main_dir, region, version)
-sword_fn = paths['nc_dir']+paths['nc_fn']
-centerlines, nodes, reaches = swd.read_nc(sword_fn)
+sword = SWORD(main_dir, region, version)
 
 #checking dimensions
-print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
-print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
-print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(np.unique(reaches.id)), len(reaches.id))
-print('min node char len:', len(str(np.min(nodes.id))))
-print('max node char len:', len(str(np.max(nodes.id))))
-print('min reach char len:', len(str(np.min(reaches.id))))
-print('max reach char len:', len(str(np.max(reaches.id))))
-print('Edit flag values:', np.unique(reaches.edit_flag))
+print('Cl Dimensions:', len(np.unique(sword.centerlines.cl_id)), len(sword.centerlines.cl_id))
+print('Node Dimensions:', len(np.unique(sword.centerlines.node_id[0,:])), len(np.unique(sword.nodes.id)), len(sword.nodes.id))
+print('Rch Dimensions:', len(np.unique(sword.centerlines.reach_id[0,:])), len(np.unique(sword.nodes.reach_id)), len(np.unique(sword.reaches.id)), len(sword.reaches.id))
+print('min node char len:', len(str(np.min(sword.nodes.id))))
+print('max node char len:', len(str(np.max(sword.nodes.id))))
+print('min reach char len:', len(str(np.min(sword.reaches.id))))
+print('max reach char len:', len(str(np.max(sword.reaches.id))))
+print('Edit flag values:', np.unique(sword.reaches.edit_flag))

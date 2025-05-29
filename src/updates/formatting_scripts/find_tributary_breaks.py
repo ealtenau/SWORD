@@ -12,7 +12,7 @@ from scipy import spatial as sp
 from shapely.geometry import Point
 import geopandas as gp
 import argparse
-import src.updates.sword_utils as swd 
+from src.updates.sword import SWORD
 
 ###############################################################################
 
@@ -98,21 +98,17 @@ version = args.version
 
 # region = 'OC'
 # version = 'v18'
-paths = swd.prepare_paths(main_dir, region, version)
-sword_fn = paths['geom_dir']+paths['geom_fn']
-outgpkg = paths['update_dir']+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 
-#reading in sword data.
-sword = nc.Dataset(sword_fn)
-centerlines, nodes, reaches = swd.read_nc(sword_fn)
+sword = SWORD(main_dir, region, version)
+outgpkg = sword.paths['update_dir']+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 
-tribs = find_tributary_junctions(centerlines)
+tribs = find_tributary_junctions(sword.centerlines)
 
 tributaries = np.where(tribs == 1)[0]
-df = pd.DataFrame(np.array([centerlines.x[tributaries], 
-                            centerlines.y[tributaries], 
-                            centerlines.reach_id[0,tributaries],
-                            centerlines.id[tributaries]]).T)
+df = pd.DataFrame(np.array([sword.centerlines.x[tributaries], 
+                            sword.centerlines.y[tributaries], 
+                            sword.centerlines.reach_id[0,tributaries],
+                            sword.centerlines.id[tributaries]]).T)
 df.rename(
     columns={
         0:"x",
@@ -121,11 +117,11 @@ df.rename(
         3:"cl_id",
         },inplace=True)
 
-geom = gp.GeoSeries(map(Point, zip(centerlines.x[tributaries], centerlines.y[tributaries])))
+geom = gp.GeoSeries(map(Point, zip(sword.centerlines.x[tributaries], sword.centerlines.y[tributaries])))
 df['geometry'] = geom
 df = gp.GeoDataFrame(df)
 df.set_geometry(col='geometry')
 df = df.set_crs(4326, allow_override=True)
 df.to_file(outgpkg, driver='GPKG', layer='tribs')
-print('DONE', 'breaks', len(tributaries), 'reaches', len(np.unique(centerlines.reach_id[0,:])))
+print('DONE', 'breaks', len(tributaries), 'reaches', len(np.unique(sword.centerlines.reach_id[0,:])))
 

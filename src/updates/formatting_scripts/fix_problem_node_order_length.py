@@ -17,7 +17,7 @@ import pandas as pd
 import time
 import argparse
 from scipy import stats as st
-import src.updates.sword_utils as swd
+from src.updates.sword import SWORD
 import src.updates.calc_utils as ct 
 
 start_all = time.time()
@@ -31,14 +31,12 @@ args = parser.parse_args()
 region = args.region
 version = args.version
  
-paths = swd.prepare_paths(main_dir, region, version)
-sword_fn = paths['geom_dir']+paths['geom_fn']
-csv_dir1 = paths['update_dir']+region.lower()+'_node_order_problems.csv'
-csv_dir2 = paths['update_dir']+region.lower()+'_node_length_probems.csv'
+sword = SWORD(main_dir, region, version)
+csv_dir1 = sword.paths['update_dir']+region.lower()+'_node_order_problems.csv'
+csv_dir2 = sword.paths['update_dir']+region.lower()+'_node_length_probems.csv'
 
-#read sword
-centerlines, nodes, reaches = swd.read_nc(sword_fn)
-cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in centerlines.node_id[0,:]])
+#get node numbers
+cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in sword.centerlines.node_id[0,:]])
 
 #read csv 
 redo_order_df = pd.read_csv(csv_dir1) 
@@ -51,14 +49,14 @@ redo_rch = np.append(redo_order, redo_len)
 unq_rchs = np.unique(redo_rch)
 for r in list(range(len(unq_rchs))):
     print(r, unq_rchs[r], len(unq_rchs)-1)
-    cl_r = np.where(centerlines.reach_id[0,:] == unq_rchs[r])[0]
-    order_ids = np.argsort(centerlines.cl_id[cl_r])
+    cl_r = np.where(sword.centerlines.reach_id[0,:] == unq_rchs[r])[0]
+    order_ids = np.argsort(sword.centerlines.cl_id[cl_r])
     nodes_rch =  cl_node_num_int[cl_r[order_ids]]
     ## redo nodes for reach. 
-    subnodes = swd.Object()
-    old_nums = centerlines.node_id[0,cl_r[order_ids]]
+    subnodes = ct.Object()
+    old_nums = sword.centerlines.node_id[0,cl_r[order_ids]]
     num_nodes = len(np.unique(old_nums))
-    cl_ids = centerlines.cl_id[cl_r[order_ids]]
+    cl_ids = sword.centerlines.cl_id[cl_r[order_ids]]
     break_int = np.ceil(len(cl_ids)/num_nodes)
     breaks = np.arange(0,len(cl_ids),int(break_int))
     breaks = np.append(breaks, len(cl_ids))
@@ -82,13 +80,13 @@ for r in list(range(len(unq_rchs))):
         cnt = cnt+1
 
     #update centerline level
-    centerlines.node_id[0,cl_r[order_ids]] = new_nums
+    sword.centerlines.node_id[0,cl_r[order_ids]] = new_nums
 
     #update n_nodes for reach level...
-    current = np.where(reaches.id == unq_rchs[r])[0]
-    reaches.rch_n_nodes[current] = len(np.unique(new_nums))
-    x_coords = centerlines.x[cl_r[order_ids]]
-    y_coords = centerlines.y[cl_r[order_ids]]
+    current = np.where(sword.reaches.id == unq_rchs[r])[0]
+    sword.reaches.rch_n_nodes[current] = len(np.unique(new_nums))
+    x_coords = sword.centerlines.x[cl_r[order_ids]]
+    y_coords = sword.centerlines.y[cl_r[order_ids]]
     rdiff = ct.get_distances(x_coords,y_coords)
 
     #create fill variables
@@ -131,77 +129,76 @@ for r in list(range(len(unq_rchs))):
     #loop through them and add attributes 
     for n in list(range(len(unq_nodes))):
         pts = np.where(new_nums == unq_nodes[n])[0]
-        old_node = np.where(nodes.id == st.mode(old_nums[pts])[0])[0]
+        old_node = np.where(sword.nodes.id == st.mode(old_nums[pts])[0])[0]
             
         subnodes.id[n] = unq_nodes[n]
         subnodes.cl_id[0,n] = min(cl_ids[pts])
         subnodes.cl_id[1,n] = max(cl_ids[pts])
-        subnodes.x[n] = np.median(centerlines.x[cl_r[order_ids[pts]]])
-        subnodes.y[n] = np.median(centerlines.y[cl_r[order_ids[pts]]])
-        subnodes.wse[n] = nodes.wse[old_node][0]
-        subnodes.wse_var[n] = nodes.wse_var[old_node][0]
-        subnodes.wth[n] = nodes.wth[old_node][0]
-        subnodes.wth_var[n] = nodes.wth_var[old_node][0]
-        subnodes.grod[n] = nodes.grod[old_node][0]
-        subnodes.grod_fid[n] = nodes.grod_fid[old_node][0]
-        subnodes.hfalls_fid[n] = nodes.hfalls_fid[old_node][0]
-        subnodes.nchan_max[n] = nodes.nchan_max[old_node][0]
-        subnodes.nchan_mod[n] = nodes.nchan_mod[old_node][0]
-        subnodes.reach_id[n] = nodes.reach_id[old_node][0]
-        subnodes.facc[n] = nodes.facc[old_node][0]
-        subnodes.lakeflag[n] = nodes.lakeflag[old_node][0]
-        subnodes.wth_coef[n] = nodes.wth_coef[old_node][0]
-        subnodes.ext_dist_coef[n] = nodes.ext_dist_coef[old_node][0]
-        subnodes.max_wth[n] = nodes.max_wth[old_node][0]
-        subnodes.meand_len[n] = nodes.meand_len[old_node][0]
-        subnodes.river_name[n] = nodes.river_name[old_node][0]
-        subnodes.manual_add[n] = nodes.manual_add[old_node][0]
-        subnodes.sinuosity[n] = nodes.sinuosity[old_node][0]
-        subnodes.edit_flag[n] = nodes.edit_flag[old_node][0]
-        subnodes.trib_flag[n] = nodes.trib_flag[old_node][0]
-        subnodes.path_freq[n] = nodes.path_freq[old_node][0]
-        subnodes.path_order[n] = nodes.path_order[old_node][0]
-        subnodes.path_segs[n] = nodes.path_segs[old_node][0]
-        subnodes.main_side[n] = nodes.main_side[old_node][0]
-        subnodes.strm_order[n] = nodes.strm_order[old_node][0]
-        subnodes.end_rch[n] = nodes.end_rch[old_node][0]
-        subnodes.network[n] = nodes.network[old_node][0]
+        subnodes.x[n] = np.median(sword.centerlines.x[cl_r[order_ids[pts]]])
+        subnodes.y[n] = np.median(sword.centerlines.y[cl_r[order_ids[pts]]])
+        subnodes.wse[n] = sword.nodes.wse[old_node][0]
+        subnodes.wse_var[n] = sword.nodes.wse_var[old_node][0]
+        subnodes.wth[n] = sword.nodes.wth[old_node][0]
+        subnodes.wth_var[n] = sword.nodes.wth_var[old_node][0]
+        subnodes.grod[n] = sword.nodes.grod[old_node][0]
+        subnodes.grod_fid[n] = sword.nodes.grod_fid[old_node][0]
+        subnodes.hfalls_fid[n] = sword.nodes.hfalls_fid[old_node][0]
+        subnodes.nchan_max[n] = sword.nodes.nchan_max[old_node][0]
+        subnodes.nchan_mod[n] = sword.nodes.nchan_mod[old_node][0]
+        subnodes.reach_id[n] = sword.nodes.reach_id[old_node][0]
+        subnodes.facc[n] = sword.nodes.facc[old_node][0]
+        subnodes.lakeflag[n] = sword.nodes.lakeflag[old_node][0]
+        subnodes.wth_coef[n] = sword.nodes.wth_coef[old_node][0]
+        subnodes.ext_dist_coef[n] = sword.nodes.ext_dist_coef[old_node][0]
+        subnodes.max_wth[n] = sword.nodes.max_wth[old_node][0]
+        subnodes.meand_len[n] = sword.nodes.meand_len[old_node][0]
+        subnodes.river_name[n] = sword.nodes.river_name[old_node][0]
+        subnodes.manual_add[n] = sword.nodes.manual_add[old_node][0]
+        subnodes.sinuosity[n] = sword.nodes.sinuosity[old_node][0]
+        subnodes.edit_flag[n] = sword.nodes.edit_flag[old_node][0]
+        subnodes.trib_flag[n] = sword.nodes.trib_flag[old_node][0]
+        subnodes.path_freq[n] = sword.nodes.path_freq[old_node][0]
+        subnodes.path_order[n] = sword.nodes.path_order[old_node][0]
+        subnodes.path_segs[n] = sword.nodes.path_segs[old_node][0]
+        subnodes.main_side[n] = sword.nodes.main_side[old_node][0]
+        subnodes.strm_order[n] = sword.nodes.strm_order[old_node][0]
+        subnodes.end_rch[n] = sword.nodes.end_rch[old_node][0]
+        subnodes.network[n] = sword.nodes.network[old_node][0]
         subnodes.len[n] = max(np.cumsum(rdiff[pts]))
         
     sort_nodes = np.argsort(subnodes.id)
-    base_val = reaches.dist_out[current] - reaches.len[current] 
+    base_val = sword.reaches.dist_out[current] - sword.reaches.len[current] 
     node_cs = np.cumsum(subnodes.len[sort_nodes])
     subnodes.dist_out[sort_nodes] = node_cs+base_val 
 
     #delete old nodes
-    node_ind = np.where(nodes.reach_id == unq_rchs[r])[0]
-    swd.delete_nodes(nodes, node_ind)
+    node_ind = np.where(sword.nodes.reach_id == unq_rchs[r])[0]
+    sword.delete_nodes(node_ind)
 
     #append new nodes
-    swd.append_nodes(nodes, subnodes)
+    sword.append_nodes(subnodes)
 
 #write the new data.
-swd.discharge_attr_nc(reaches)
-swd.write_nc(centerlines, reaches, nodes, region, sword_fn)
+sword.save_nc()
 
 end_all = time.time()
-print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
-print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(np.unique(reaches.id)),len(reaches.id))
-print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
-print('zero node lengths:', len(np.where(nodes.len == 0)[0]), ', long node lengths:', len(np.where(nodes.len > 1000)[0]))
-print('min node char len:', len(str(np.min(nodes.id))))
-print('max node char len:', len(str(np.max(nodes.id))))
-print('min reach char len:', len(str(np.min(reaches.id))))
-print('max reach char len:', len(str(np.max(reaches.id))))
-print('Edit flag values:', np.unique(reaches.edit_flag))
+print('Cl Dimensions:', len(np.unique(sword.centerlines.cl_id)), len(sword.centerlines.cl_id))
+print('Rch Dimensions:', len(np.unique(sword.centerlines.reach_id[0,:])), len(np.unique(sword.nodes.reach_id)), len(np.unique(sword.reaches.id)),len(sword.reaches.id))
+print('Node Dimensions:', len(np.unique(sword.centerlines.node_id[0,:])), len(np.unique(sword.nodes.id)), len(sword.nodes.id))
+print('zero node lengths:', len(np.where(sword.nodes.len == 0)[0]), ', long node lengths:', len(np.where(sword.nodes.len > 1000)[0]))
+print('min node char len:', len(str(np.min(sword.nodes.id))))
+print('max node char len:', len(str(np.max(sword.nodes.id))))
+print('min reach char len:', len(str(np.min(sword.reaches.id))))
+print('max reach char len:', len(str(np.max(sword.reaches.id))))
+print('Edit flag values:', np.unique(sword.reaches.edit_flag))
 
 # '''
 
-# plt.scatter(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c=centerlines.node_id[0,cl_r[order_ids]], s=5)
+# plt.scatter(sword.centerlines.x[cl_r[order_ids]], sword.centerlines.y[cl_r[order_ids]], c=sword.centerlines.node_id[0,cl_r[order_ids]], s=5)
 # plt.title('new ids')
 # plt.show()
 
-# plt.scatter(centerlines.x[cl_r[order_ids]], centerlines.y[cl_r[order_ids]], c=old_nums, s=5)
+# plt.scatter(sword.centerlines.x[cl_r[order_ids]], sword.centerlines.y[cl_r[order_ids]], c=old_nums, s=5)
 # plt.title('old ids')
 # plt.show()
 

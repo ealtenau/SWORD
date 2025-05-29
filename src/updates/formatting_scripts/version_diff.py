@@ -9,7 +9,7 @@ import pandas as pd
 from scipy import spatial as sp
 import pandas as pd
 import argparse
-import src.updates.sword_utils as swd
+from src.updates.sword import SWORD
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -27,27 +27,21 @@ old_v = args.old_version
 # new_v = 'v17b'
 # old_v = 'v16'
 
-new_version_paths = swd.prepare_paths(main_dir, region, new_v)
-old_version_paths = swd.prepare_paths(main_dir, region, old_v)
-fn_sword_new = new_version_paths['nc_dir']+new_version_paths['nc_fn']
-fn_sword_old = old_version_paths['nc_dir']+old_version_paths['nc_fn']
-rch_outpath = new_version_paths['version_dir']+region+'_ReachIDs_'+new_v+'_vs_'+old_v+'.csv'
-node_outpath = new_version_paths['version_dir']+region+'_NodeIDs_'+new_v+'_vs_'+old_v+'.csv'
-
-# read in global data
-new_cls, new_nodes, new_reaches = swd.read_nc(fn_sword_new)
-old_cls, old_nodes, old_reaches = swd.read_nc(fn_sword_old)
+new_sword = SWORD(main_dir, region, new_v)
+old_sword = SWORD(main_dir, region, old_v)
+rch_outpath = new_sword.paths['version_dir']+region+'_ReachIDs_'+new_v+'_vs_'+old_v+'.csv'
+node_outpath = new_sword.paths['version_dir']+region+'_NodeIDs_'+new_v+'_vs_'+old_v+'.csv'
 
 # find closest points.     
-old_pts = np.vstack((old_nodes.x, old_nodes.y)).T
-new_pts = np.vstack((new_nodes.x, new_nodes.y)).T
+old_pts = np.vstack((old_sword.nodes.x, old_sword.nodes.y)).T
+new_pts = np.vstack((new_sword.nodes.x, new_sword.nodes.y)).T
 kdt = sp.cKDTree(old_pts)
 eps_dist, eps_ind = kdt.query(new_pts, k = 2) 
 
 indexes = eps_ind[:,0]
 dist = eps_dist[:,0]
-old_node_ids = old_nodes.id[indexes]
-old_reach_ids = old_nodes.reach_id[indexes]
+old_node_ids = old_sword.nodes.id[indexes]
+old_reach_ids = old_sword.nodes.reach_id[indexes]
 
 # Flag any nodes with a previous version node greater than 500 m away or with edit_flag = '7' (i.e. new centerline channel).
 new_cls = np.where(dist > 0.005)[0]
@@ -62,8 +56,8 @@ boundary_flag = np.zeros(len(old_reach_ids),dtype=int)
 boundary_perc = np.zeros(len(old_reach_ids),dtype=int)
 dominant_rch = np.zeros(len(old_reach_ids),dtype=int)
 number_of_rchs = np.zeros(len(old_reach_ids),dtype=int)
-for r in list(range(len(new_reaches.id))):
-    pts = np.where(new_nodes.reach_id == new_reaches.id[r])[0]
+for r in list(range(len(new_sword.reaches.id))):
+    pts = np.where(new_sword.nodes.reach_id == new_sword.reaches.id[r])[0]
     unique_elements, counts = np.unique(old_reach_ids[pts], return_counts=True)
     keep = np.where(unique_elements>0)[0]
     unq_elements = unique_elements[keep]
@@ -78,14 +72,14 @@ for r in list(range(len(new_reaches.id))):
         dominant_rch[pts] = unq_elements[max_cnt]
 
 print('calculating reach dimension')
-rch_bnd_flag = np.zeros(len(new_reaches.id),dtype=int)
-rch_bnd_perc = np.zeros(len(new_reaches.id),dtype=int)
-rch_dom = np.zeros(len(new_reaches.id),dtype=int)
-num_rch = np.zeros(len(new_reaches.id),dtype=int)
-old_rch_id = np.zeros(len(new_reaches.id),dtype=int)
-for ind in list(range(len(new_reaches.id))):
+rch_bnd_flag = np.zeros(len(new_sword.reaches.id),dtype=int)
+rch_bnd_perc = np.zeros(len(new_sword.reaches.id),dtype=int)
+rch_dom = np.zeros(len(new_sword.reaches.id),dtype=int)
+num_rch = np.zeros(len(new_sword.reaches.id),dtype=int)
+old_rch_id = np.zeros(len(new_sword.reaches.id),dtype=int)
+for ind in list(range(len(new_sword.reaches.id))):
     # print(ind)
-    pts2 = np.where(new_nodes.reach_id == new_reaches.id[ind])[0]
+    pts2 = np.where(new_sword.nodes.reach_id == new_sword.reaches.id[ind])[0]
     rch_bnd_flag[ind] = np.unique(boundary_flag[pts2])[0]
     rch_bnd_perc[ind] = np.unique(boundary_perc[pts2])[0]
     rch_dom[ind] = np.unique(dominant_rch[pts2])[0]
@@ -96,9 +90,9 @@ for ind in list(range(len(new_reaches.id))):
         old_rch_id[ind] = np.unique(old_reach_ids[pts2])[0]
     
 # output reach differences in csv format. 
-data = pd.DataFrame(np.array([new_reaches.x, 
-                              new_reaches.y, 
-                              new_reaches.id, 
+data = pd.DataFrame(np.array([new_sword.reaches.x, 
+                              new_sword.reaches.y, 
+                              new_sword.reaches.id, 
                               old_rch_id, 
                               rch_bnd_flag, 
                               rch_bnd_perc, 
@@ -121,10 +115,10 @@ for i in data.columns[2::]:
 data.to_csv(rch_outpath,index=False)
 
 # output node differences in csv format.
-data2 = pd.DataFrame(np.array([new_nodes.x, 
-                               new_nodes.y, 
-                               new_nodes.id, 
-                               new_nodes.reach_id, 
+data2 = pd.DataFrame(np.array([new_sword.nodes.x, 
+                               new_sword.nodes.y, 
+                               new_sword.nodes.id, 
+                               new_sword.nodes.reach_id, 
                                old_node_ids, 
                                old_reach_ids, 
                                shift_flag, 

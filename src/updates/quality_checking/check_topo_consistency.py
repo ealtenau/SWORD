@@ -5,10 +5,9 @@ import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import numpy as np
-import netCDF4 as nc
 import argparse
 import time
-import src.updates.sword_utils as swd 
+from src.updates.sword import SWORD 
 
 def check_topology(domain_reachids,domain_reach_data,Output):
 
@@ -151,34 +150,19 @@ version = args.version
 subset = args.subset
 
 #reading data
-paths = swd.prepare_paths(main_dir, region, version)
-sword_fn = paths['nc_dir']+paths['nc_fn']
-
-sword_dataset=nc.Dataset(sword_fn)
-sword_point_reachids=sword_dataset['centerlines/reach_id'][0,:][:]
-swordx=sword_dataset['centerlines/x'][:]
-swordy=sword_dataset['centerlines/y'][:]
-swordreachids=sword_dataset["reaches/reach_id"][:].tolist()
-sword_names=sword_dataset['reaches/river_name'][:]
-sword_drainage_area=sword_dataset['reaches/facc'][:]
-sword_swot_orbits=sword_dataset['reaches/swot_orbits'][:]
-sword_rch_id_up=sword_dataset['reaches/rch_id_up'][:]
-sword_rch_id_dn=sword_dataset['reaches/rch_id_dn'][:]
-sword_n_rch_up=sword_dataset['reaches/n_rch_up'][:]
-sword_n_rch_down=sword_dataset['reaches/n_rch_down'][:]
-sword_dataset.close()
+sword = SWORD(main_dir, region, version)
 
 if subset != 'All':
     BasinLevel=len(subset)
     domain_reachids=[]
-    for reachid in swordreachids:
+    for reachid in sword.reaches.id:
         reachidstr=str(reachid)
         if reachidstr[0:BasinLevel] == subset:
             domain_reachids.append(reachid)
     print('there are a total of ',len(domain_reachids),'reaches in SWORD for basin', subset)
 
 else:
-    domain_reachids = swordreachids
+    domain_reachids = sword.reaches.id.tolist()
 
 domain_reach_data={}
 
@@ -187,22 +171,23 @@ domain_reach_data={}
 for reach in domain_reachids:
     reachstr=str(reach)
     # deal with points
-    indxs=np.argwhere(sword_point_reachids.data==int(reach))   
+    indxs=np.argwhere(sword.centerlines.reach_id[0,:]==int(reach))   
     indxs=indxs[:,0]
     points=[]
     for indx in indxs:           
-        points.append(tuple([swordy[indx],swordx[indx]]))       
+        points.append(tuple([sword.centerlines.y[indx],sword.centerlines.x[indx]]))       
     # deal with reaches
-    indx = swordreachids.index(int(reach))
+    # indx = swordreachids.index(int(reach))
+    indx = domain_reachids.index(int(reach))
     domain_reach_data[reachstr]={}
     domain_reach_data[reachstr]['clpoints']=points
-    domain_reach_data[reachstr]['river_name']=sword_names[indx]
-    domain_reach_data[reachstr]['drainage_area_km2']=sword_drainage_area[indx]
-    domain_reach_data[reachstr]['swot_orbits']=sword_swot_orbits[:,indx]
-    domain_reach_data[reachstr]['rch_id_up']=sword_rch_id_up[:,indx]
-    domain_reach_data[reachstr]['rch_id_dn']=sword_rch_id_dn[:,indx]    
-    domain_reach_data[reachstr]['n_rch_up']=sword_n_rch_up[indx]
-    domain_reach_data[reachstr]['n_rch_down']=sword_n_rch_down[indx]    
+    domain_reach_data[reachstr]['river_name']=sword.reaches.river_name[indx]
+    domain_reach_data[reachstr]['drainage_area_km2']=sword.reaches.facc[indx]
+    domain_reach_data[reachstr]['swot_orbits']=sword.reaches.orbits[:,indx]
+    domain_reach_data[reachstr]['rch_id_up']=sword.reaches.rch_id_up[:,indx]
+    domain_reach_data[reachstr]['rch_id_dn']=sword.reaches.rch_id_down[:,indx]    
+    domain_reach_data[reachstr]['n_rch_up']=sword.reaches.n_rch_up[indx]
+    domain_reach_data[reachstr]['n_rch_down']=sword.reaches.n_rch_down[indx]    
 
 #run topology checker
 Verbose=1

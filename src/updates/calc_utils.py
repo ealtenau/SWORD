@@ -23,6 +23,15 @@ from geopy import Point, distance
 
 ###############################################################################
 
+class Object(object):
+    """
+    FUNCTION:
+        Creates an empty class object to assign SWORD attributes to.
+    """
+    pass 
+
+###############################################################################
+
 def get_distances(lon,lat):
     traces = len(lon) -1
     distances = np.zeros(traces)

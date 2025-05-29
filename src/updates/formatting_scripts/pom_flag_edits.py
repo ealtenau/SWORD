@@ -12,7 +12,7 @@ sys.path.append(main_dir)
 import numpy as np
 import argparse
 import time
-import src.updates.sword_utils as swd
+from src.updates.sword import SWORD
 # import matplotlib.pyplot as plt
 
 start_all = time.time()
@@ -27,61 +27,56 @@ version = args.version
 # region = 'OC'
 # version = 'v18'
 
-paths = swd.prepare_paths(main_dir, region, version)
-sword_fn = paths['geom_dir']+paths['geom_fn']
-outpath = paths['topo_dir']
+sword = SWORD(main_dir, region, version)
+Type = np.array([int(str(r)[-1]) for r in sword.reaches.id])
+outpath = sword.paths['topo_dir']
 
-#read data. 
-centerlines, nodes, reaches = swd.read_nc(sword_fn)
-Type = np.array([int(str(r)[-1]) for r in reaches.id])
-
-#correcting dist_out for created ghost reaches. 
-ghost_rchs = reaches[np.where(Type == 6)[0]]
+#correcting dist_out for created ghost sword.reaches. 
+ghost_rchs = sword.reaches.id[np.where(Type == 6)[0]]
 ghost_flag = []
 for ind in list(range(len(ghost_rchs))):
-    rch = np.where(reaches.id == ghost_rchs[ind])[0]
+    rch = np.where(sword.reaches.id == ghost_rchs[ind])[0]
     #headwater
-    if reaches.n_rch_up[rch] == 0:
-        nghs = reaches.rch_id_down[:,rch]; nghs = nghs[nghs>0]
-        ngh_dist = np.array([reaches.dist_out[np.where(reaches.id == n)][0] for n in nghs])
-        diff = abs(reaches.dist_out[rch]-ngh_dist)
+    if sword.reaches.n_rch_up[rch] == 0:
+        nghs = sword.reaches.rch_id_down[:,rch]; nghs = nghs[nghs>0]
+        ngh_dist = np.array([sword.reaches.dist_out[np.where(sword.reaches.id == n)][0] for n in nghs])
+        diff = abs(sword.reaches.dist_out[rch]-ngh_dist)
         if min(diff) < 1:
             ghost_flag.append(ghost_rchs[ind])
-            ngh_ind = np.where(reaches.id == nghs[np.where(diff < 1)[0]])[0]
-            reaches.dist_out[ngh_ind] = reaches.dist_out[ngh_ind] - reaches.len[rch]
+            ngh_ind = np.where(sword.reaches.id == nghs[np.where(diff < 1)[0]])[0]
+            sword.reaches.dist_out[ngh_ind] = sword.reaches.dist_out[ngh_ind] - sword.reaches.len[rch]
     #outlet
     else:
-        nghs = reaches.rch_id_up[:,rch]; nghs = nghs[nghs>0]
-        ngh_dist = np.array([reaches.dist_out[np.where(reaches.id == n)][0] for n in nghs])
-        diff = abs(reaches.dist_out[rch]-ngh_dist)
+        nghs = sword.reaches.rch_id_up[:,rch]; nghs = nghs[nghs>0]
+        ngh_dist = np.array([sword.reaches.dist_out[np.where(sword.reaches.id == n)][0] for n in nghs])
+        diff = abs(sword.reaches.dist_out[rch]-ngh_dist)
         if min(diff) < 1:
             ghost_flag.append(ghost_rchs[ind])
-            reaches.dist_out[rch] = reaches.len[rch]
+            sword.reaches.dist_out[rch] = sword.reaches.len[rch]
 
 
 # correcting number of nodes in reach and node dist_out trend. 
 nnode_flag = []
 ndist_flag = []
-for idx in list(range(len(reaches.id))):
-    nind = np.where(nodes.reach_id == reaches.id[idx])[0]
+for idx in list(range(len(sword.reaches.id))):
+    nind = np.where(sword.nodes.reach_id == sword.reaches.id[idx])[0]
     #updating number of nodes in a reach if not correct. 
-    if len(nind) != reaches.rch_n_nodes[idx]:
+    if len(nind) != sword.reaches.rch_n_nodes[idx]:
         # print(idx)
-        nnode_flag.append(reaches[idx])
-        reaches.rch_n_nodes[idx] = len(nind)
+        nnode_flag.append(sword.reaches.id[idx])
+        sword.reaches.rch_n_nodes[idx] = len(nind)
     #reversing distance from outlet in nodes if opposite trend from node ids. 
-    mn = np.where(nodes[nind] == min(nodes[nind]))[0]
-    mx = np.where(nodes[nind] == max(nodes[nind]))[0]
-    if nodes.dist_out[nind[mn]] > nodes.dist_out[nind[mx]]:
+    mn = np.where(sword.nodes.id[nind] == min(sword.nodes.id[nind]))[0]
+    mx = np.where(sword.nodes.id[nind] == max(sword.nodes.id[nind]))[0]
+    if sword.nodes.dist_out[nind[mn]] > sword.nodes.dist_out[nind[mx]]:
         # print(idx)
-        ndist_flag.append(reaches[idx])
-        nodes.dist_out[nind] = nodes.dist_out[nind][::-1]
+        ndist_flag.append(sword.reaches.id[idx])
+        sword.nodes.dist_out[nind] = sword.nodes.dist_out[nind][::-1]
 
 
 #updating the netcdf. 
 print('Updating the NetCDF')
-swd.discharge_attr_nc(reaches)
-swd.write_nc(centerlines, nodes, reaches, sword_fn)
+sword.save_nc()
 
 print('number of ghost reach distances updated:', len(ghost_flag))
 print('number of nodes in reach updated:', len(nnode_flag))

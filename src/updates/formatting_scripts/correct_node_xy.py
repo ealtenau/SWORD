@@ -7,7 +7,8 @@ sys.path.append(main_dir)
 import numpy as np
 import time
 import argparse
-import src.updates.sword_utils as swd 
+import src.updates.sword_utils as swd
+from src.updates.sword import SWORD
 
 ###############################################################################
 ###############################################################################
@@ -27,23 +28,17 @@ version = args.version
 # version = 'v16'
 
 #read data
-paths = swd.prepare_paths(main_dir, region, version)
-sword_fn = paths['nc_dir']+paths['nc_fn']
-centerlines, nodes, reaches = swd.read_nc(sword_fn)
+sword = SWORD(main_dir, region, version)
 
 #recalculating node x-y values. 
-node_x = np.zeros(len(nodes))
-node_y = np.zeros(len(nodes))
-for n in list(range(len(nodes.id))):
-    print(n, len(nodes.id)-1)
-    pts = np.where(centerlines.node_id[0,:] == nodes.id[n])[0]
-    nodes.x[n] = np.median(centerlines.x[pts])
-    nodes.y[n] = np.median(centerlines.y[pts])
+for n in list(range(len(sword.nodes.id))):
+    print(n, len(sword.nodes.id)-1)
+    pts = np.where(sword.centerlines.node_id[0,:] == sword.nodes.id[n])[0]
+    sword.nodes.x[n] = np.median(sword.centerlines.x[pts])
+    sword.nodes.y[n] = np.median(sword.centerlines.y[pts])
 
-#filler variables
-swd.discharge_attr_nc(reaches)
 #write data
-swd.write_nc(centerlines, reaches, nodes, region, sword_fn)
+sword.save_nc()
 
 end = time.time()
 print('DONE IN:', str(np.round((end-start)/60, 2)), 'mins')
