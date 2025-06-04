@@ -5,6 +5,11 @@ SWORD (sword.py)
 Class for reading, writing, and running processing commands
 on the SWOT River Database (SWORD).
 
+also add useful plots... ?
+        - plotting reach as polyline and nodes in order 
+        - plot centerline points for specific reach in order
+        - plot node wse?
+
 """
 from __future__ import division
 import sys
@@ -12,20 +17,53 @@ import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import numpy as np
-import netCDF4 as nc
 import src.updates.sword_utils as swd
+
 
 class SWORD:
     """
-    Class description... 
+    The SWORD class organizes data and processing methods for the 
+    three SWORD spatial dimensions: centerlines, nodes, reaches.  
 
-    also add useful plots... ?
-        - plotting reach as polyline and nodes in order 
-        - plot centerline points for specific reach in order
-        - plot node wse?
     """
     
+    ###############################################################################
+
     def __init__(self, main_dir, region, version):
+        """
+        Initializes the SWORD class.
+
+        Parameters
+        ----------
+        main_dir: str
+            The directory where SWORD data is stored and exported. This will be
+            the main directory where all data sub-directories are contained or 
+            written.
+        region: str
+            Two-letter acronymn for a SWORD region (i.e. NA).
+        version: str
+            SWORD version (i.e. v18).
+        
+        Attributes
+        ----------
+        region: str
+            Two-letter acronymn for a SWORD region (i.e. NA).
+        version: str
+            SWORD version (i.e. v18).
+        paths: dict
+            Contains the import and export paths for SWORD.
+        centerlines: obj
+            Stores the centerline dimension of SWORD and associated attributes.
+            For attribute details see read_nc in swot_utils.py.
+        nodes: obj
+            Stores the node dimension of SWORD and associated attributes.
+            For attribute details see read_nc in swot_utils.py.
+        reaches: obj
+            Stores the reach dimension of SWORD and associated attributes.
+            For attribute details see read_nc in swot_utils.py.
+        
+        """
+        
         self.region = region
         self.version = version
         #defining filnames and relative input and output paths below the specified directory. 
@@ -33,8 +71,22 @@ class SWORD:
         #populating centerline, node, and reach attribute data. 
         self.centerlines, self.nodes, self.reaches = swd.read_nc(self.paths['nc_dir']+self.paths['nc_fn'])
 
+    ###############################################################################
 
     def save_nc(self):
+        """
+        Save SWORD data as a netCDF file. File is saved at self.paths['nc_dir'].
+
+        Parameters
+        ----------
+        None.
+        
+        Returns
+        -------
+        None.
+        
+        """
+
         #add discharge place holder attributes if missing. 
         if 'h_break' not in self.reaches.__dict__.keys():
             swd.discharge_attr_nc(self.reaches)
@@ -45,30 +97,67 @@ class SWORD:
                      self.region, 
                      self.paths['nc_dir']+self.paths['nc_fn'])
 
+    ###############################################################################
 
-    def save_vectors(self, export='all'):
+    def save_vectors(self, export):
+        """
+        Saves SWORD data in vector formats (shapfile and geopackage). 
+        Files are saved at self.paths['shp_dir'] and self.paths['gpkg_dir'].
+
+        Parameters
+        ----------
+        export: str
+            'All' - writes both reach and node files.
+            'nodes' - writes node files only.
+            'reaches' - writes reach files only. 
+        
+        Returns
+        -------
+        None.
+        
+        """
         #saving reach polylines. 
-        if export == 'all' or export == 'nodes':
+        if export == 'All' or export == 'reaches':
             #finding common points at reach junctions. 
+            print('STARTING REACHES')
+            print('Determining Reach Connectivity')
             common = swd.find_common_points(self.centerlines, self.reaches)
-            #creating reach geometry.   
+            #creating reach geometry.  
+            print('Creating Geometry') 
             threshold = 500 #meters
             geom, rm_ind = swd.define_geometry(np.unique(self.reaches.id),
-                                                self.reaches.id, 
+                                                self.centerlines.reach_id, 
                                                 self.centerlines.x, 
                                                 self.centerlines.y, 
                                                 self.centerlines.cl_id, 
                                                 common, 
                                                 threshold, 
                                                 self.region)
-            #writing reach geopackage and shapefiles.     
+            #writing reach geopackage and shapefiles.
+            print('Writing Reaches')      
             swd.write_rchs(self.reaches, geom, rm_ind, self.paths)
         #saving node points. 
-        if export == 'all' or export == 'nodes':
+        if export == 'All' or export == 'nodes':
+            print('STARTING NODES')
             swd.write_nodes(self.nodes, self.paths)
 
+    ###############################################################################
 
     def delete_rchs(self, rm_rch):
+        """
+        Deletes reaches from the SWORD reaches object.
+
+        Parameters
+        ----------
+        rm_rch: list
+            List of reach IDs to be deleted. 
+        
+        Returns
+        -------
+        None.
+        
+        """
+
         for ind in list(range(len(rm_rch))):
             # print(ind, len(rm_rch))
             rch_ind = np.where(self.reaches.id == rm_rch[ind])[0]
@@ -116,8 +205,23 @@ class SWORD:
             self.reaches.network = np.delete(self.reaches.network, rch_ind, axis = 0)
             self.reaches.add_flag = np.delete(self.reaches.add_flag, rch_ind, axis = 0)
 
+    ###############################################################################
 
     def delete_nodes(self, node_ind):
+        """
+        Deletes nodes from the SWORD nodes object.
+
+        Parameters
+        ----------
+        node_ind: list
+            List containing node IDs to be deleted. 
+        
+        Returns
+        -------
+        None.
+        
+        """
+
         self.nodes.id = np.delete(self.nodes.id, node_ind, axis = 0)
         self.nodes.cl_id = np.delete(self.nodes.cl_id, node_ind, axis = 1)
         self.nodes.x = np.delete(self.nodes.x, node_ind, axis = 0)
@@ -154,8 +258,23 @@ class SWORD:
         self.nodes.network = np.delete(self.nodes.network, node_ind, axis = 0)
         self.nodes.add_flag = np.delete(self.nodes.add_flag, node_ind, axis = 0)
 
+    ###############################################################################
 
     def append_nodes(self, subnodes):
+        """
+        Appends nodes and associated attributes to existing SWORD class.
+
+        Parameters
+        ----------
+        subnodes: obj
+            Object containing nodes and associated attributes in the same format 
+            as the SWORD class nodes object.
+        
+        Returns
+        -------
+        None.
+        
+        """
 
         self.nodes.id = np.append(self.nodes.id, subnodes.id)
         self.nodes.cl_id = np.append(self.nodes.cl_id, subnodes.cl_id, axis=1)
@@ -193,8 +312,24 @@ class SWORD:
         self.nodes.network = np.append(self.nodes.network, subnodes.network)
         self.nodes.add_flag = np.append(self.nodes.add_flag, subnodes.add_flag)
 
+    ###############################################################################
 
     def delete_data(self, rm_rch):
+        """
+        Deletes attributes associated with specific reach IDs across 
+        all objects in the SWORD class.
+
+        Parameters
+        ----------
+        rm_rch: list
+            List containing reach IDs to be deleted. 
+        
+        Returns
+        -------
+        None.
+        
+        """
+
         for ind in list(range(len(rm_rch))):
             print(ind, len(rm_rch)-1)
             rch_ind = np.where(self.reaches.id == rm_rch[ind])[0]
@@ -354,8 +489,29 @@ class SWORD:
                 dn4 = np.unique(self.reaches.rch_id_down[:,rch_dn_ind4]); dn4 = dn4[dn4>0]
                 self.reaches.n_rch_down[rch_dn_ind4] = len(dn4)
 
+    ###############################################################################
 
     def append_data(self, subcls, subnodes, subreaches):
+        """
+        Appends objects and associated attributes in existing SWORD class.
+
+        Parameters
+        ----------
+        subcls: obj
+            Object containing centerlines and associated attributes in the same format 
+            as the SWORD class centerlines object.
+        subnodes: obj
+            Object containing nodes and associated attributes in the same format 
+            as the SWORD class nodes object.
+        subreaches: obj
+            Object containing reaches and associated attributes in the same format 
+            as the SWORD class reaches object.
+        
+        Returns
+        -------
+        None.
+        
+        """
 
         self.centerlines.cl_id = np.append(self.centerlines.cl_id, subcls.new_cl_id)
         self.centerlines.x = np.append(self.centerlines.x, subcls.lon)

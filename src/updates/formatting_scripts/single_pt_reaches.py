@@ -5,7 +5,6 @@ import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import numpy as np
-import netCDF4 as nc
 import pandas as pd
 import argparse
 from src.updates.sword import SWORD

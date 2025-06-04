@@ -1,15 +1,25 @@
 # -*- coding: utf-8 -*-
+"""
+Checking SWORD Topology (check_topo_consistency.py)
+=====================
+Script for checking the node and reach lengths
+match in the SWOT River Database (SWORD).
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v18).
+
+Execution example (terminal):
+    python rch_node_length_check.py NA v18 
+
+"""
+
 from __future__ import division
 import sys
 import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import numpy as np
-import netCDF4 as nc
-import geopandas as gp
-from geopy import distance
-import pandas as pd
-import random
 import argparse
 from src.updates.sword import SWORD
 
@@ -38,6 +48,7 @@ print('Percent Length Differences:', np.round(len_diff_perc, 2), ", Max Diff:", 
 print('Percent DistOut Differences:', np.round(do_diff_perc,2), ", Max Diff:", np.max(do_diff))
 print('DONE')
 
+### checks a random sample of 1000 sword reaches. 
 # rand = random.sample(range(0,len(sword.reaches.id)), 1000)
 # for ind in list(range(len(rand))):
 #     test = np.where(sword.nodes.reach_id == sword.reaches.id[rand[ind]])[0]

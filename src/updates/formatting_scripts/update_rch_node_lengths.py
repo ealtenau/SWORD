@@ -7,7 +7,7 @@ sys.path.append(main_dir)
 import numpy as np
 import argparse
 from src.updates.sword import SWORD
-import src.updates.calc_utils as ct
+import src.updates.aux_utils as aux
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -29,7 +29,7 @@ for r in list(range(len(sword.reaches.id))):
     sort_ind = rch[np.argsort(sword.centerlines.cl_id[rch])] 
     x_coords = sword.centerlines.x[sort_ind]
     y_coords = sword.centerlines.y[sort_ind]
-    diff = ct.get_distances(x_coords,y_coords)
+    diff = aux.get_distances(x_coords,y_coords)
     rch_dist = np.cumsum(diff)
     sword.reaches.len[r] = max(rch_dist)
     #nodes     

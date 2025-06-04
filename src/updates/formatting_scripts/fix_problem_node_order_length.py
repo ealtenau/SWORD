@@ -18,7 +18,7 @@ import time
 import argparse
 from scipy import stats as st
 from src.updates.sword import SWORD
-import src.updates.calc_utils as ct 
+import src.updates.aux_utils as aux 
 
 start_all = time.time()
 
@@ -53,7 +53,7 @@ for r in list(range(len(unq_rchs))):
     order_ids = np.argsort(sword.centerlines.cl_id[cl_r])
     nodes_rch =  cl_node_num_int[cl_r[order_ids]]
     ## redo nodes for reach. 
-    subnodes = ct.Object()
+    subnodes = aux.Object()
     old_nums = sword.centerlines.node_id[0,cl_r[order_ids]]
     num_nodes = len(np.unique(old_nums))
     cl_ids = sword.centerlines.cl_id[cl_r[order_ids]]
@@ -87,7 +87,7 @@ for r in list(range(len(unq_rchs))):
     sword.reaches.rch_n_nodes[current] = len(np.unique(new_nums))
     x_coords = sword.centerlines.x[cl_r[order_ids]]
     y_coords = sword.centerlines.y[cl_r[order_ids]]
-    rdiff = ct.get_distances(x_coords,y_coords)
+    rdiff = aux.get_distances(x_coords,y_coords)
 
     #create fill variables
     unq_nodes = np.unique(new_nums)

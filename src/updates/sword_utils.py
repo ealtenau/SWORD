@@ -4,8 +4,9 @@
 SWORD Utilities (sword_utils.py)
 =======================================
 
-Utilities for reading, writing, managing, and processing the SWORD 
-database. SWORD formats include netCDF, shapefile, and geopackage. 
+Utilities for reading, writing, managing, and processing the SWOT 
+River Database (SWORD). SWORD formats include netCDF, shapefile, 
+and geopackage. 
 
 """
 
@@ -24,15 +25,45 @@ import pandas as pd
 
 class Object(object):
     """
-    FUNCTION:
-        Creates an empty class object to assign SWORD attributes to.
+    Creates an empty class object to assign SWOT River Database 
+    (SWORD) attributes to.
+        
+    SWORD has 3 spatial dimensions: centerlines, nodes, reaches. 
+    Each dimension is stored as an object containing it's own specific
+    attributes. 
+        
+    SWORD data is read in from the netCDF file in the read_nc function. 
+
     """
+    
     pass 
 
 ###############################################################################
 
 def prepare_paths(main_dir, region, version):
+    """
+    Populates SWORD reaches object with necessary placeholder attributes needed for 
+    writing the SWORD netCDF files. These attributes pertain to the SWOT discharge 
+    algorithms and are calculated by the Dishcarge Algorithm Working Group (DAWG). 
+
+    Parmeters
+    ---------
+    main_dir: str
+        The directory where SWORD data is stored and exported. This will be
+        the main directory where all data sub-directories are contained or 
+        written.
+    region: str
+        Two-letter acronymn for a SWORD region (i.e. NA).
+    version: str
+        SWORD version (i.e. v18).
+
+    Returns
+    -------
+    paths: dict 
+        Contains the import and export paths for SWORD.
     
+    """
+        
     # Create dictionary of directories
     paths = dict()
 
@@ -89,6 +120,313 @@ def prepare_paths(main_dir, region, version):
 ###############################################################################
 
 def read_nc(filename):
+    """
+    Reads SWORD data from the netCDF file and stores each spatial 
+    dimension in a separate class object with associated attributes. 
+
+    Parmeters
+    ---------
+    filename: str
+        The directory to the SWORD netCDF file. 
+    
+    Returns
+    -------
+    centerlines: obj 
+        Object containing attributes associated with the SWORD 
+        centerlines. 
+        
+        Attributes: type [dimension]
+        ----------------------------
+        cl_id: numpy.array() [number of points]
+            Unique ID associated with each centerline point. 
+        x: numpy.array() [number of points]
+            Longitude (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of points]
+            Latitude (WGS 84, EPSG:4326).
+        reach_id: numpy.array() [4, number of points]
+            Reach ID associated with a centerline point. The first row 
+            contains the reach IDs associated with each centerline 
+            point. Rows 2-4 are reach IDs of neighboring reaches.  
+        node_id: numpy.array() [4, number of points]
+            Node ID associated with a centerline point. The first row 
+            contains the node IDs associated with each centerline 
+            point. Rows 2-4 are node IDs of neighboring nodes.
+
+    nodes: obj
+        Object containing attributes associated with the SWORD 
+        nodes. 
+
+        Attributes: type [dimension]
+        ----------------------------
+        id: numpy.array() [number of nodes]
+            Unique Node ID. 
+        cl_ids: numpy.array() [2, number of nodes]
+            Minimum (row 1) and maximum (row 2) centerline 
+            point ids associated with each node.
+        x: numpy.array() [number of nodes]
+            Longitude (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of nodes]
+            Latitude (WGS 84, EPSG:4326). 
+        len: numpy.array() [number of nodes]
+            Node length (meters). 
+        wse: numpy.array() [number of nodes]
+            Water surface elevation (meters). 
+        wse_var: numpy.array() [number of nodes]
+            Water surface elevation variance (squared meters).
+        wth: numpy.array() [number of nodes]
+            Width (meters).
+        wth_var: numpy.array() [number of nodes]
+            Width variance (squared meters).
+        grod: numpy.array() [number of nodes]
+            Type of obstruction for each node based on GROD and
+            HydroFALLS databases. Obstr_type values: 
+            0 - No Dam, 
+            1 - Dam, 
+            2 - Lock, 
+            3 - Low Permeable Dam, 
+            4 - Waterfall.
+        grod_fid: numpy.array() [number of nodes]
+            GROD database ID. 
+        hfalls_fid: numpy.array() [number of nodes]
+            HydroFALLS database ID. 
+        nchan_max: numpy.array() [number of nodes]
+            Maximum number of channels for each node.
+        nchan_mod: numpy.array() [number of nodes]
+            Mode of the number of channels for each node.
+        dist_out: numpy.array() [number of nodes]
+            Distance from the river outlet (meters).
+        reach_id: numpy.array() [number of nodes]
+            Reach ID the node is associated with.
+        facc: numpy.array() [number of nodes]
+            Flow accumulation (squared kilometers).
+        lakeflag: numpy.array() [number of nodes]
+            GRWL water body identifier for each node: 
+            0 - river, 
+            1 - lake/reservoir, 
+            2 - canal , 
+            3 - tidally influenced river.
+        wth_coef: numpy.array() [number of nodes]
+            Coefficient that is multiplied by the width to
+            inform the search window for SWOT data.
+        ext_dist_coef: numpy.array() [number of nodes]
+            Coefficient that informs the maximum search
+            window for SWOT data.
+        max_wth: numpy.array() [number of nodes]
+            Maximum width value across the channel that
+            includes any island and bar areas (meters).
+        meand_len: numpy.array() [number of nodes]
+            Length of the meander that a node belongs to, 
+            measured from beginning of the meander to 
+            its end (meters).
+        river_name: numpy.array() [number of nodes]
+            All river names associated with a node. If there are 
+            multiple names they are listed in alphabetical order 
+            and separated by a semicolon.
+        manual_add: numpy.array() [number of nodes]
+            Binary flag indicating whether the node was manually added. 
+            0 - Not manually added. 
+            1 - Manually added. 
+        sinuosity: numpy.array() [number of nodes]
+            The total reach length the node belongs to divided by the 
+            Euclidean distance between the reach end points (meters).
+        edit_flag: numpy.array() [number of nodes]
+            Numerical flag indicating the type of update applied to
+            SWORD nodes from the previous version. Flag descriptions:
+            1 - reach type change,
+            2 - node order change,
+            3 - reach neighbor change,
+            41 - flow accumulation update,
+            42 - elevation update,
+            43 - width update,
+            44 - slope update,
+            45 - river name update,
+            5 - reach id change,
+            6 - reach boundary change,
+            7 - reach/node addition
+            Multiple updates will be separated by a comma (i.e. "41,2")
+        trib_flag: numpy.array() [number of nodes]
+            Binary flag indicating if a large tributary not represented in
+            SWORD is entering a node. 
+            0 - no tributary, 
+            1 - tributary.
+        path_freq: numpy.array() [number of nodes]
+            The number of times a node is traveled along get to any 
+            given headwater point.
+        path_order: numpy.array() [number of nodes]
+            Unique values representing continuous paths from the
+            river outlet to the headwaters ordered from the longest
+            path (1) to the shortest path (N).
+        path_segs: numpy.array() [number of nodes]
+            Unique values indicating continuous river segments
+            between river junctions.
+        strm_order: numpy.array() [number of nodes]
+            Stream order based on the log scale of the path frequency.
+            Stream order is calculated for the main network only (see
+            “main_side” description).
+        main_side: numpy.array() [number of nodes]
+            Value indicating whether a node is on the:
+            0 - main network
+            1 - side network 
+            2 - secondary outlet
+        end_rch: numpy.array() [number of nodes]
+            Value indicating whether a node is:
+            0 - main stem 
+            1 - headwater
+            2 - outlet
+            3 - junction
+        network: numpy.array() [number of nodes]
+            Unique value for each connected river network.
+        add_flag: numpy.array() [number of nodes]
+            Binary flag indicating if the node was added
+            to the current SWORD version based on the 
+            MERIT Hydro Vector database. 
+            0 - not added, 
+            1 - added. 
+
+    reaches: obj
+        Object containing attributes associated with the SWORD 
+        reaches. 
+
+        Attributes: type [dimension]
+        ----------------------------
+        id: numpy.array() [number of reaches]
+            Unique Reach ID. 
+        cl_ids: numpy.array() [2, number of reaches]
+            Minimum (row 1) and maximum (row 2) centerline 
+            point ids associated with each reach.
+        x: numpy.array() [number of reaches]
+            Longitude (WGS 84, EPSG:4326). 
+        x_min: numpy.array() [number of reaches]
+            Minimum longitude of a reach (WGS 84, EPSG:4326). 
+        x_max: numpy.array() [number of reaches]
+            Maximum longitude of a reach (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of reaches]
+            Latitude (WGS 84, EPSG:4326). 
+        y_min: numpy.array() [number of reaches]
+            Minimum latitude of a reach (WGS 84, EPSG:4326).
+        y_max: numpy.array() [number of reaches]
+            Maximum latitude of a reach (WGS 84, EPSG:4326).
+        len: numpy.array() [number of reaches]
+            Reach length (meters). 
+        wse: numpy.array() [number of reaches]
+            Water surface elevation (meters). 
+        wse_var: numpy.array() [number of reaches]
+            Water surface elevation variance (squared meters).
+        wth: numpy.array() [number of reaches]
+            Width (meters).
+        wth_var: numpy.array() [number of reaches]
+            Width variance (squared meters).
+        grod: numpy.array() [number of reaches]
+            Type of obstruction for each reach based on GROD and
+            HydroFALLS databases. Obstr_type values: 
+            0 - No Dam, 
+            1 - Dam, 
+            2 - Lock, 
+            3 - Low Permeable Dam, 
+            4 - Waterfall.
+        grod_fid: numpy.array() [number of reaches]
+            GROD database ID. 
+        hfalls_fid: numpy.array() [number of reaches]
+            HydroFALLS database ID. 
+        nchan_max: numpy.array() [number of reaches]
+            Maximum number of channels for each reach.
+        nchan_mod: numpy.array() [number of reaches]
+            Mode of the number of channels for each reach.
+        dist_out: numpy.array() [number of reaches]
+            Distance from the river outlet (meters).
+        rch_n_nodes: numpy.array() [number of reaches]
+            Number of nodes in a reach.
+        slope: [number of reaches]
+            Reach slope (meters per kilometer).
+        n_rch_up: [number of reaches]
+            Number of upstream neighbors.
+        n_rch_down: [number of reaches]
+            Number of downstream neighbors.
+        rch_id_up: [4, number of reaches]
+            Reach IDs of upstream neighbors (4 maximum).
+        rch_id_down: [4, number of reaches]
+            Reach IDs of downstream neighbors (4 maximum).
+        max_obs: [number of reaches]
+            Maximum number of SWOT passes to intersect each 
+            reach during the ~21 day orbit cycle.
+        orbits: [75, number of reaches]
+            SWOT orbit pass_tile IDs that intersect each reach 
+            during the 21 day orbit cycle. One ID per row (75 maximum).
+        iceflag: [number of reaches]
+        low_slope: [number of reaches]
+            Binary flag where a value of 1 indicates the reach 
+            slope is too low for effective discharge estimation
+            for SWOT discharge algorithms.
+        facc: numpy.array() [number of reaches]
+            Flow accumulation (squared kilometers).
+        lakeflag: numpy.array() [number of reaches]
+            GRWL water body identifier for each reach: 
+            0 - river, 
+            1 - lake/reservoir, 
+            2 - canal , 
+            3 - tidally influenced river.
+        max_wth: numpy.array() [number of reaches]
+            Maximum width value across the channel that
+            includes any island and bar areas (meters).
+        river_name: numpy.array() [number of reaches]
+            All river names associated with a reach. If there are 
+            multiple names they are listed in alphabetical order 
+            and separated by a semicolon.
+        edit_flag: numpy.array() [number of reaches]
+            Numerical flag indicating the type of update applied to
+            SWORD reaches from the previous version. Flag descriptions:
+            1 - reach type change,
+            2 - node order change,
+            3 - reach neighbor change,
+            41 - flow accumulation update,
+            42 - elevation update,
+            43 - width update,
+            44 - slope update,
+            45 - river name update,
+            5 - reach id change,
+            6 - reach boundary change,
+            7 - reach/node addition
+            Multiple updates will be separated by a comma (i.e. "41,2")
+        trib_flag: numpy.array() [number of reaches]
+            Binary flag indicating if a large tributary not represented in
+            SWORD is entering a reach. 
+            0 - no tributary, 
+            1 - tributary.
+        path_freq: numpy.array() [number of reaches]
+            The number of times a reach is traveled along get to any 
+            given headwater point.
+        path_order: numpy.array() [number of reaches]
+            Unique values representing continuous paths from the
+            river outlet to the headwaters ordered from the longest
+            path (1) to the shortest path (N).
+        path_segs: numpy.array() [number of reaches]
+            Unique values indicating continuous river segments
+            between river junctions.
+        strm_order: numpy.array() [number of reaches]
+            Stream order based on the log scale of the path frequency.
+            Stream order is calculated for the main network only (see
+            “main_side” description).
+        main_side: numpy.array() [number of reaches]
+            Value indicating whether a reach is on the:
+            0 - main network
+            1 - side network 
+            2 - secondary outlet
+        end_rch: numpy.array() [number of reaches]
+            Value indicating whether a reach is:
+            0 - main stem 
+            1 - headwater
+            2 - outlet
+            3 - junction
+        network: numpy.array() [number of reaches]
+            Unique value for each connected river network.
+        add_flag: numpy.array() [number of reaches]
+            Binary flag indicating if the reach was added
+            to the current SWORD version based on the 
+            MERIT Hydro Vector database. 
+            0 - not added, 
+            1 - added.
+    
+    """
 
     centerlines = Object()
     nodes = Object()
@@ -189,7 +527,37 @@ def read_nc(filename):
 ###############################################################################    
 
 def find_common_points(centerlines, reaches):
-    # function: find_common_points
+    """
+    Finds centerlines points in the SWORD database that are 
+    associated with more than two reaches and determines 
+    which point is the common neighbor. Output is used as a 
+    parameter in the define_geometry function. 
+
+    Parmeters
+    ---------
+    centerlines: obj
+        Object containing SWORD centerline attributes.
+    reaches: obj
+        Object containing SWORD reach attributes.
+
+    Returns
+    -------
+    common: numpy.array()  
+        Numpy array containing binary values of 0 or 1 
+        where 1 indicates a common point between reach neighbors. 
+    
+    """
+    centerlines.neighbors = np.copy(centerlines.reach_id)
+
+    #flag points with multiple neighbors.
+    reach_id_binary = np.copy(centerlines.neighbors)
+    reach_id_binary[np.where(reach_id_binary > 0)] = 1
+    row_sums = np.sum(reach_id_binary, axis = 0)
+    multi = np.zeros(len(row_sums))
+    multi[np.where(row_sums == 2)] = 1
+    multi[np.where(row_sums > 2)] = 2
+    centerlines.multi_flag = multi
+
     multi_pts = np.where(centerlines.multi_flag == 2)[0]
     common = np.zeros(len(centerlines.x), dtype=int)
     for ind in list(range(len(multi_pts))):
@@ -262,20 +630,18 @@ def find_common_points(centerlines, reaches):
 
 def discharge_attr_nc(reaches):
     """
-    FUNCTION
-    --------
-        Populates SWORD reaches object with necessary placeholder attributes needed for 
-        writing the SWORD netCDF files. These attributes pertain to the SWOT discharge 
-        algorithms and are calculated by the Dishcarge Algorithm Working Group (DAWG). 
+    Populates SWORD reaches object with necessary placeholder attributes needed for 
+    writing the SWORD netCDF files. These attributes pertain to the SWOT discharge 
+    algorithms and are calculated by the Dishcarge Algorithm Working Group (DAWG). 
 
-    INPUTS
-    ------
-        reaches: Object containing lcation and attribute information for
-            each reach.
+    Parameters
+    ----------
+        reaches: obj
+            Object containing SWORD reach attributes.
 
-    OUTPUTS
+    Returns
     -------
-        None. Fill attributes are added to existing SWORD reaches object. 
+        None. Fill attributes are added to existing reaches object. 
     """
     
     ### Filler variables
@@ -325,390 +691,424 @@ def discharge_attr_nc(reaches):
 
 ###############################################################################
 
-def delete_nodes(nodes, node_ind):
-    nodes.id = np.delete(nodes.id, node_ind, axis = 0)
-    nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
-    nodes.x = np.delete(nodes.x, node_ind, axis = 0)
-    nodes.y = np.delete(nodes.y, node_ind, axis = 0)
-    nodes.len = np.delete(nodes.len, node_ind, axis = 0)
-    nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
-    nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
-    nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
-    nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
-    nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
-    nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
-    nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
-    nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
-    nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
-    nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
-    nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
-    nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
-    nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
-    nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
-    nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
-    nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
-    nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
-    nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
-    nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
-    nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
-    nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
-    nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
-    nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
-    nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
-    nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
-    nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
-    nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
-    nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
-    nodes.network = np.delete(nodes.network, node_ind, axis = 0)
-    nodes.add_flag = np.delete(nodes.add_flag, node_ind, axis = 0)
+# def delete_nodes(nodes, node_ind):
+#     nodes.id = np.delete(nodes.id, node_ind, axis = 0)
+#     nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
+#     nodes.x = np.delete(nodes.x, node_ind, axis = 0)
+#     nodes.y = np.delete(nodes.y, node_ind, axis = 0)
+#     nodes.len = np.delete(nodes.len, node_ind, axis = 0)
+#     nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
+#     nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
+#     nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
+#     nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
+#     nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
+#     nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
+#     nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
+#     nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
+#     nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
+#     nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
+#     nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
+#     nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
+#     nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
+#     nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
+#     nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
+#     nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
+#     nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
+#     nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
+#     nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
+#     nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
+#     nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
+#     nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
+#     nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
+#     nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
+#     nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
+#     nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
+#     nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
+#     nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
+#     nodes.network = np.delete(nodes.network, node_ind, axis = 0)
+#     nodes.add_flag = np.delete(nodes.add_flag, node_ind, axis = 0)
 
-###############################################################################
+# ###############################################################################
 
-def append_nodes(nodes, subnodes):
+# def append_nodes(nodes, subnodes):
 
-    nodes.id = np.append(nodes.id, subnodes.id)
-    nodes.cl_id = np.append(nodes.cl_id, subnodes.cl_id, axis=1)
-    nodes.x = np.append(nodes.x, subnodes.x)
-    nodes.y = np.append(nodes.y, subnodes.y)
-    nodes.len = np.append(nodes.len, subnodes.len)
-    nodes.wse = np.append(nodes.wse, subnodes.wse)
-    nodes.wse_var = np.append(nodes.wse_var, subnodes.wse_var)
-    nodes.wth = np.append(nodes.wth, subnodes.wth)
-    nodes.wth_var = np.append(nodes.wth_var, subnodes.wth_var)
-    nodes.grod = np.append(nodes.grod, subnodes.grod)
-    nodes.grod_fid = np.append(nodes.grod_fid, subnodes.grod_fid)
-    nodes.hfalls_fid = np.append(nodes.hfalls_fid, subnodes.hfalls_fid)
-    nodes.nchan_max = np.append(nodes.nchan_max, subnodes.nchan_max)
-    nodes.nchan_mod = np.append(nodes.nchan_mod, subnodes.nchan_mod)
-    nodes.dist_out = np.append(nodes.dist_out, subnodes.dist_out)
-    nodes.reach_id = np.append(nodes.reach_id, subnodes.reach_id)
-    nodes.facc = np.append(nodes.facc, subnodes.facc)
-    nodes.lakeflag = np.append(nodes.lakeflag, subnodes.lakeflag)
-    nodes.wth_coef = np.append(nodes.wth_coef, subnodes.wth_coef)
-    nodes.ext_dist_coef = np.append(nodes.ext_dist_coef, subnodes.ext_dist_coef)
-    nodes.max_wth = np.append(nodes.max_wth, subnodes.max_wth)
-    nodes.meand_len = np.append(nodes.meand_len, subnodes.meand_len)
-    nodes.river_name = np.append(nodes.river_name, subnodes.river_name)
-    nodes.manual_add = np.append(nodes.manual_add, subnodes.manual_add)
-    nodes.sinuosity = np.append(nodes.sinuosity, subnodes.sinuosity)
-    nodes.edit_flag = np.append(nodes.edit_flag, subnodes.edit_flag)
-    nodes.trib_flag = np.append(nodes.trib_flag, subnodes.trib_flag)
-    nodes.path_freq = np.append(nodes.path_freq, subnodes.path_freq)
-    nodes.path_order = np.append(nodes.path_order, subnodes.path_order)
-    nodes.path_segs = np.append(nodes.path_segs, subnodes.path_segs)
-    nodes.main_side = np.append(nodes.main_side, subnodes.main_side)
-    nodes.strm_order = np.append(nodes.strm_order, subnodes.strm_order)
-    nodes.end_rch = np.append(nodes.end_rch, subnodes.end_rch)
-    nodes.network = np.append(nodes.network, subnodes.network)
-    nodes.add_flag = np.append(nodes.add_flag, subnodes.add_flag)
+#     nodes.id = np.append(nodes.id, subnodes.id)
+#     nodes.cl_id = np.append(nodes.cl_id, subnodes.cl_id, axis=1)
+#     nodes.x = np.append(nodes.x, subnodes.x)
+#     nodes.y = np.append(nodes.y, subnodes.y)
+#     nodes.len = np.append(nodes.len, subnodes.len)
+#     nodes.wse = np.append(nodes.wse, subnodes.wse)
+#     nodes.wse_var = np.append(nodes.wse_var, subnodes.wse_var)
+#     nodes.wth = np.append(nodes.wth, subnodes.wth)
+#     nodes.wth_var = np.append(nodes.wth_var, subnodes.wth_var)
+#     nodes.grod = np.append(nodes.grod, subnodes.grod)
+#     nodes.grod_fid = np.append(nodes.grod_fid, subnodes.grod_fid)
+#     nodes.hfalls_fid = np.append(nodes.hfalls_fid, subnodes.hfalls_fid)
+#     nodes.nchan_max = np.append(nodes.nchan_max, subnodes.nchan_max)
+#     nodes.nchan_mod = np.append(nodes.nchan_mod, subnodes.nchan_mod)
+#     nodes.dist_out = np.append(nodes.dist_out, subnodes.dist_out)
+#     nodes.reach_id = np.append(nodes.reach_id, subnodes.reach_id)
+#     nodes.facc = np.append(nodes.facc, subnodes.facc)
+#     nodes.lakeflag = np.append(nodes.lakeflag, subnodes.lakeflag)
+#     nodes.wth_coef = np.append(nodes.wth_coef, subnodes.wth_coef)
+#     nodes.ext_dist_coef = np.append(nodes.ext_dist_coef, subnodes.ext_dist_coef)
+#     nodes.max_wth = np.append(nodes.max_wth, subnodes.max_wth)
+#     nodes.meand_len = np.append(nodes.meand_len, subnodes.meand_len)
+#     nodes.river_name = np.append(nodes.river_name, subnodes.river_name)
+#     nodes.manual_add = np.append(nodes.manual_add, subnodes.manual_add)
+#     nodes.sinuosity = np.append(nodes.sinuosity, subnodes.sinuosity)
+#     nodes.edit_flag = np.append(nodes.edit_flag, subnodes.edit_flag)
+#     nodes.trib_flag = np.append(nodes.trib_flag, subnodes.trib_flag)
+#     nodes.path_freq = np.append(nodes.path_freq, subnodes.path_freq)
+#     nodes.path_order = np.append(nodes.path_order, subnodes.path_order)
+#     nodes.path_segs = np.append(nodes.path_segs, subnodes.path_segs)
+#     nodes.main_side = np.append(nodes.main_side, subnodes.main_side)
+#     nodes.strm_order = np.append(nodes.strm_order, subnodes.strm_order)
+#     nodes.end_rch = np.append(nodes.end_rch, subnodes.end_rch)
+#     nodes.network = np.append(nodes.network, subnodes.network)
+#     nodes.add_flag = np.append(nodes.add_flag, subnodes.add_flag)
 
-###############################################################################
+# ###############################################################################
 
-def delete_rchs(reaches, rm_rch):
-    for ind in list(range(len(rm_rch))):
-        # print(ind, len(rm_rch))
-        rch_ind = np.where(reaches.id == rm_rch[ind])[0]
-        reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
-        reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
-        reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
-        reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
-        reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
-        reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
-        reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
-        reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
-        reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
-        reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
-        reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
-        reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
-        reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
-        reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
-        reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
-        reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
-        reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
-        reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
-        reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
-        reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
-        reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
-        reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
-        reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
-        reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
-        reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
-        reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
-        reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
-        reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
-        reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
-        reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
-        reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
-        reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
-        reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
-        reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
-        reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
-        reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
-        reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
-        reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
-        reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
-        reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
-        reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
-        reaches.network = np.delete(reaches.network, rch_ind, axis = 0)
-        reaches.add_flag = np.delete(reaches.add_flag, rch_ind, axis = 0)
+# def delete_rchs(reaches, rm_rch):
+#     for ind in list(range(len(rm_rch))):
+#         # print(ind, len(rm_rch))
+#         rch_ind = np.where(reaches.id == rm_rch[ind])[0]
+#         reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
+#         reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
+#         reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
+#         reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
+#         reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
+#         reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
+#         reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
+#         reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
+#         reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
+#         reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
+#         reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
+#         reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
+#         reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
+#         reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
+#         reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
+#         reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
+#         reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
+#         reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
+#         reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
+#         reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
+#         reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
+#         reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
+#         reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
+#         reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
+#         reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
+#         reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
+#         reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
+#         reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
+#         reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
+#         reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
+#         reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
+#         reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
+#         reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
+#         reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
+#         reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
+#         reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
+#         reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
+#         reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
+#         reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
+#         reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
+#         reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
+#         reaches.network = np.delete(reaches.network, rch_ind, axis = 0)
+#         reaches.add_flag = np.delete(reaches.add_flag, rch_ind, axis = 0)
 
-###############################################################################
+# ###############################################################################
 
-def delete_data(centerlines, nodes, reaches, rm_rch):
+# def delete_data(centerlines, nodes, reaches, rm_rch):
     
-    for ind in list(range(len(rm_rch))):
-        print(ind, len(rm_rch)-1)
-        rch_ind = np.where(reaches.id == rm_rch[ind])[0]
-        node_ind = np.where(nodes.reach_id == rm_rch[ind])[0]
-        cl_ind = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
+#     for ind in list(range(len(rm_rch))):
+#         print(ind, len(rm_rch)-1)
+#         rch_ind = np.where(reaches.id == rm_rch[ind])[0]
+#         node_ind = np.where(nodes.reach_id == rm_rch[ind])[0]
+#         cl_ind = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
 
-        if len(rch_ind) == 0:
-            print(rm_rch[ind], 'not in database')
+#         if len(rch_ind) == 0:
+#             print(rm_rch[ind], 'not in database')
 
-        centerlines.cl_id = np.delete(centerlines.cl_id, cl_ind, axis=0)
-        centerlines.x = np.delete(centerlines.x, cl_ind, axis=0)
-        centerlines.y = np.delete(centerlines.y, cl_ind, axis=0)
-        centerlines.reach_id = np.delete(centerlines.reach_id, cl_ind, axis=1)
-        centerlines.node_id = np.delete(centerlines.node_id, cl_ind, axis=1)
+#         centerlines.cl_id = np.delete(centerlines.cl_id, cl_ind, axis=0)
+#         centerlines.x = np.delete(centerlines.x, cl_ind, axis=0)
+#         centerlines.y = np.delete(centerlines.y, cl_ind, axis=0)
+#         centerlines.reach_id = np.delete(centerlines.reach_id, cl_ind, axis=1)
+#         centerlines.node_id = np.delete(centerlines.node_id, cl_ind, axis=1)
 
-        nodes.id = np.delete(nodes.id, node_ind, axis = 0)
-        nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
-        nodes.x = np.delete(nodes.x, node_ind, axis = 0)
-        nodes.y = np.delete(nodes.y, node_ind, axis = 0)
-        nodes.len = np.delete(nodes.len, node_ind, axis = 0)
-        nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
-        nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
-        nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
-        nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
-        nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
-        nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
-        nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
-        nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
-        nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
-        nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
-        nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
-        nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
-        nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
-        nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
-        nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
-        nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
-        nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
-        nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
-        nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
-        nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
-        nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
-        nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
-        nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
-        nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
-        nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
-        nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
-        nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
-        nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
-        nodes.network = np.delete(nodes.network, node_ind, axis = 0)
-        nodes.add_flag = np.delete(nodes.add_flag, node_ind, axis = 0)
+#         nodes.id = np.delete(nodes.id, node_ind, axis = 0)
+#         nodes.cl_id = np.delete(nodes.cl_id, node_ind, axis = 1)
+#         nodes.x = np.delete(nodes.x, node_ind, axis = 0)
+#         nodes.y = np.delete(nodes.y, node_ind, axis = 0)
+#         nodes.len = np.delete(nodes.len, node_ind, axis = 0)
+#         nodes.wse = np.delete(nodes.wse, node_ind, axis = 0)
+#         nodes.wse_var = np.delete(nodes.wse_var, node_ind, axis = 0)
+#         nodes.wth = np.delete(nodes.wth, node_ind, axis = 0)
+#         nodes.wth_var = np.delete(nodes.wth_var, node_ind, axis = 0)
+#         nodes.grod = np.delete(nodes.grod, node_ind, axis = 0)
+#         nodes.grod_fid = np.delete(nodes.grod_fid, node_ind, axis = 0)
+#         nodes.hfalls_fid = np.delete(nodes.hfalls_fid, node_ind, axis = 0)
+#         nodes.nchan_max = np.delete(nodes.nchan_max, node_ind, axis = 0)
+#         nodes.nchan_mod = np.delete(nodes.nchan_mod, node_ind, axis = 0)
+#         nodes.dist_out = np.delete(nodes.dist_out, node_ind, axis = 0)
+#         nodes.reach_id = np.delete(nodes.reach_id, node_ind, axis = 0)
+#         nodes.facc = np.delete(nodes.facc, node_ind, axis = 0)
+#         nodes.lakeflag = np.delete(nodes.lakeflag, node_ind, axis = 0)
+#         nodes.wth_coef = np.delete(nodes.wth_coef, node_ind, axis = 0)
+#         nodes.ext_dist_coef = np.delete(nodes.ext_dist_coef, node_ind, axis = 0)
+#         nodes.max_wth = np.delete(nodes.max_wth, node_ind, axis = 0)
+#         nodes.meand_len = np.delete(nodes.meand_len, node_ind, axis = 0)
+#         nodes.river_name = np.delete(nodes.river_name, node_ind, axis = 0)
+#         nodes.manual_add = np.delete(nodes.manual_add, node_ind, axis = 0)
+#         nodes.sinuosity = np.delete(nodes.sinuosity, node_ind, axis = 0)
+#         nodes.edit_flag = np.delete(nodes.edit_flag, node_ind, axis = 0)
+#         nodes.trib_flag = np.delete(nodes.trib_flag, node_ind, axis = 0)
+#         nodes.path_freq = np.delete(nodes.path_freq, node_ind, axis = 0)
+#         nodes.path_order = np.delete(nodes.path_order, node_ind, axis = 0)
+#         nodes.path_segs = np.delete(nodes.path_segs, node_ind, axis = 0)
+#         nodes.main_side = np.delete(nodes.main_side, node_ind, axis = 0)
+#         nodes.strm_order = np.delete(nodes.strm_order, node_ind, axis = 0)
+#         nodes.end_rch = np.delete(nodes.end_rch, node_ind, axis = 0)
+#         nodes.network = np.delete(nodes.network, node_ind, axis = 0)
+#         nodes.add_flag = np.delete(nodes.add_flag, node_ind, axis = 0)
 
-        reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
-        reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
-        reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
-        reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
-        reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
-        reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
-        reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
-        reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
-        reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
-        reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
-        reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
-        reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
-        reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
-        reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
-        reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
-        reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
-        reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
-        reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
-        reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
-        reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
-        reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
-        reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
-        reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
-        reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
-        reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
-        reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
-        reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
-        reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
-        reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
-        reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
-        reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
-        reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
-        reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
-        reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
-        reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
-        reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
-        reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
-        reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
-        reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
-        reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
-        reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
-        reaches.network = np.delete(reaches.network, rch_ind, axis = 0)
-        reaches.add_flag = np.delete(reaches.add_flag, rch_ind, axis = 0)
+#         reaches.id = np.delete(reaches.id, rch_ind, axis = 0)
+#         reaches.cl_id = np.delete(reaches.cl_id, rch_ind, axis = 1)
+#         reaches.x = np.delete(reaches.x, rch_ind, axis = 0)
+#         reaches.x_min = np.delete(reaches.x_min, rch_ind, axis = 0)
+#         reaches.x_max = np.delete(reaches.x_max, rch_ind, axis = 0)
+#         reaches.y = np.delete(reaches.y, rch_ind, axis = 0)
+#         reaches.y_min = np.delete(reaches.y_min, rch_ind, axis = 0)
+#         reaches.y_max = np.delete(reaches.y_max, rch_ind, axis = 0)
+#         reaches.len = np.delete(reaches.len, rch_ind, axis = 0)
+#         reaches.wse = np.delete(reaches.wse, rch_ind, axis = 0)
+#         reaches.wse_var = np.delete(reaches.wse_var, rch_ind, axis = 0)
+#         reaches.wth = np.delete(reaches.wth, rch_ind, axis = 0)
+#         reaches.wth_var = np.delete(reaches.wth_var, rch_ind, axis = 0)
+#         reaches.slope = np.delete(reaches.slope, rch_ind, axis = 0)
+#         reaches.rch_n_nodes = np.delete(reaches.rch_n_nodes, rch_ind, axis = 0)
+#         reaches.grod = np.delete(reaches.grod, rch_ind, axis = 0)
+#         reaches.grod_fid = np.delete(reaches.grod_fid, rch_ind, axis = 0)
+#         reaches.hfalls_fid = np.delete(reaches.hfalls_fid, rch_ind, axis = 0)
+#         reaches.lakeflag = np.delete(reaches.lakeflag, rch_ind, axis = 0)
+#         reaches.nchan_max = np.delete(reaches.nchan_max, rch_ind, axis = 0)
+#         reaches.nchan_mod = np.delete(reaches.nchan_mod, rch_ind, axis = 0)
+#         reaches.dist_out = np.delete(reaches.dist_out, rch_ind, axis = 0)
+#         reaches.n_rch_up = np.delete(reaches.n_rch_up, rch_ind, axis = 0)
+#         reaches.n_rch_down = np.delete(reaches.n_rch_down, rch_ind, axis = 0)
+#         reaches.rch_id_up = np.delete(reaches.rch_id_up, rch_ind, axis = 1)
+#         reaches.rch_id_down = np.delete(reaches.rch_id_down, rch_ind, axis = 1)
+#         reaches.max_obs = np.delete(reaches.max_obs, rch_ind, axis = 0)
+#         reaches.orbits = np.delete(reaches.orbits, rch_ind, axis = 1)
+#         reaches.facc = np.delete(reaches.facc, rch_ind, axis = 0)
+#         reaches.iceflag = np.delete(reaches.iceflag, rch_ind, axis = 1)
+#         reaches.max_wth = np.delete(reaches.max_wth, rch_ind, axis = 0)
+#         reaches.river_name = np.delete(reaches.river_name, rch_ind, axis = 0)
+#         reaches.low_slope = np.delete(reaches.low_slope, rch_ind, axis = 0)
+#         reaches.edit_flag = np.delete(reaches.edit_flag, rch_ind, axis = 0)
+#         reaches.trib_flag = np.delete(reaches.trib_flag, rch_ind, axis = 0)
+#         reaches.path_freq = np.delete(reaches.path_freq, rch_ind, axis = 0)
+#         reaches.path_order = np.delete(reaches.path_order, rch_ind, axis = 0)
+#         reaches.path_segs = np.delete(reaches.path_segs, rch_ind, axis = 0)
+#         reaches.main_side = np.delete(reaches.main_side, rch_ind, axis = 0)
+#         reaches.strm_order = np.delete(reaches.strm_order, rch_ind, axis = 0)
+#         reaches.end_rch = np.delete(reaches.end_rch, rch_ind, axis = 0)
+#         reaches.network = np.delete(reaches.network, rch_ind, axis = 0)
+#         reaches.add_flag = np.delete(reaches.add_flag, rch_ind, axis = 0)
 
-        #removing residual neighbors with deleted reach id in centerline and reach groups. 
-        cl_ind1 = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
-        cl_ind2 = np.where(centerlines.reach_id[1,:] == rm_rch[ind])[0]
-        cl_ind3 = np.where(centerlines.reach_id[2,:] == rm_rch[ind])[0]
-        cl_ind4 = np.where(centerlines.reach_id[3,:] == rm_rch[ind])[0]
-        if len(cl_ind1) > 0:
-            centerlines.reach_id[0,cl_ind1] = 0
-        if len(cl_ind2) > 0:
-            centerlines.reach_id[1,cl_ind2] = 0
-        if len(cl_ind3) > 0:
-            centerlines.reach_id[2,cl_ind3] = 0
-        if len(cl_ind4) > 0:
-            centerlines.reach_id[3,cl_ind4] = 0
+#         #removing residual neighbors with deleted reach id in centerline and reach groups. 
+#         cl_ind1 = np.where(centerlines.reach_id[0,:] == rm_rch[ind])[0]
+#         cl_ind2 = np.where(centerlines.reach_id[1,:] == rm_rch[ind])[0]
+#         cl_ind3 = np.where(centerlines.reach_id[2,:] == rm_rch[ind])[0]
+#         cl_ind4 = np.where(centerlines.reach_id[3,:] == rm_rch[ind])[0]
+#         if len(cl_ind1) > 0:
+#             centerlines.reach_id[0,cl_ind1] = 0
+#         if len(cl_ind2) > 0:
+#             centerlines.reach_id[1,cl_ind2] = 0
+#         if len(cl_ind3) > 0:
+#             centerlines.reach_id[2,cl_ind3] = 0
+#         if len(cl_ind4) > 0:
+#             centerlines.reach_id[3,cl_ind4] = 0
 
-        rch_up_ind1 = np.where(reaches.rch_id_up[0,:] == rm_rch[ind])[0]
-        rch_up_ind2 = np.where(reaches.rch_id_up[1,:] == rm_rch[ind])[0]
-        rch_up_ind3 = np.where(reaches.rch_id_up[2,:] == rm_rch[ind])[0]
-        rch_up_ind4 = np.where(reaches.rch_id_up[3,:] == rm_rch[ind])[0]
-        if len(rch_up_ind1) > 0:
-            reaches.rch_id_up[0,rch_up_ind1] = 0
-            reaches.rch_id_up[:,rch_up_ind1] = np.sort(reaches.rch_id_up[:,rch_up_ind1], axis = 0)[::-1]
-            up1 = np.unique(reaches.rch_id_up[:,rch_up_ind1]); up1 = up1[up1>0]
-            reaches.n_rch_up[rch_up_ind1] = len(up1)
-        if len(rch_up_ind2) > 0:
-            reaches.rch_id_up[1,rch_up_ind2] = 0
-            reaches.rch_id_up[:,rch_up_ind2] = np.sort(reaches.rch_id_up[:,rch_up_ind2], axis = 0)[::-1]
-            up2 = np.unique(reaches.rch_id_up[:,rch_up_ind2]); up2 = up2[up2>0]
-            reaches.n_rch_up[rch_up_ind2] = len(up2)
-        if len(rch_up_ind3) > 0:
-            reaches.rch_id_up[2,rch_up_ind3] = 0
-            reaches.rch_id_up[:,rch_up_ind3] = np.sort(reaches.rch_id_up[:,rch_up_ind3], axis = 0)[::-1]
-            up3 = np.unique(reaches.rch_id_up[:,rch_up_ind3]); up3 = up3[up3>0]
-            reaches.n_rch_up[rch_up_ind3] = len(up3)
-        if len(rch_up_ind4) > 0:
-            reaches.rch_id_up[3,rch_up_ind4] = 0
-            reaches.rch_id_up[:,rch_up_ind4] = np.sort(reaches.rch_id_up[:,rch_up_ind4], axis = 0)[::-1]
-            up4 = np.unique(reaches.rch_id_up[:,rch_up_ind4]); up4 = up4[up4>0]
-            reaches.n_rch_up[rch_up_ind4] = len(up4)
+#         rch_up_ind1 = np.where(reaches.rch_id_up[0,:] == rm_rch[ind])[0]
+#         rch_up_ind2 = np.where(reaches.rch_id_up[1,:] == rm_rch[ind])[0]
+#         rch_up_ind3 = np.where(reaches.rch_id_up[2,:] == rm_rch[ind])[0]
+#         rch_up_ind4 = np.where(reaches.rch_id_up[3,:] == rm_rch[ind])[0]
+#         if len(rch_up_ind1) > 0:
+#             reaches.rch_id_up[0,rch_up_ind1] = 0
+#             reaches.rch_id_up[:,rch_up_ind1] = np.sort(reaches.rch_id_up[:,rch_up_ind1], axis = 0)[::-1]
+#             up1 = np.unique(reaches.rch_id_up[:,rch_up_ind1]); up1 = up1[up1>0]
+#             reaches.n_rch_up[rch_up_ind1] = len(up1)
+#         if len(rch_up_ind2) > 0:
+#             reaches.rch_id_up[1,rch_up_ind2] = 0
+#             reaches.rch_id_up[:,rch_up_ind2] = np.sort(reaches.rch_id_up[:,rch_up_ind2], axis = 0)[::-1]
+#             up2 = np.unique(reaches.rch_id_up[:,rch_up_ind2]); up2 = up2[up2>0]
+#             reaches.n_rch_up[rch_up_ind2] = len(up2)
+#         if len(rch_up_ind3) > 0:
+#             reaches.rch_id_up[2,rch_up_ind3] = 0
+#             reaches.rch_id_up[:,rch_up_ind3] = np.sort(reaches.rch_id_up[:,rch_up_ind3], axis = 0)[::-1]
+#             up3 = np.unique(reaches.rch_id_up[:,rch_up_ind3]); up3 = up3[up3>0]
+#             reaches.n_rch_up[rch_up_ind3] = len(up3)
+#         if len(rch_up_ind4) > 0:
+#             reaches.rch_id_up[3,rch_up_ind4] = 0
+#             reaches.rch_id_up[:,rch_up_ind4] = np.sort(reaches.rch_id_up[:,rch_up_ind4], axis = 0)[::-1]
+#             up4 = np.unique(reaches.rch_id_up[:,rch_up_ind4]); up4 = up4[up4>0]
+#             reaches.n_rch_up[rch_up_ind4] = len(up4)
 
-        rch_dn_ind1 = np.where(reaches.rch_id_down[0,:] == rm_rch[ind])[0]
-        rch_dn_ind2 = np.where(reaches.rch_id_down[1,:] == rm_rch[ind])[0]
-        rch_dn_ind3 = np.where(reaches.rch_id_down[2,:] == rm_rch[ind])[0]
-        rch_dn_ind4 = np.where(reaches.rch_id_down[3,:] == rm_rch[ind])[0]
-        if len(rch_dn_ind1) > 0:
-            reaches.rch_id_down[0,rch_dn_ind1] = 0
-            reaches.rch_id_down[:,rch_dn_ind1] = np.sort(reaches.rch_id_down[:,rch_dn_ind1], axis = 0)[::-1]
-            dn1 = np.unique(reaches.rch_id_down[:,rch_dn_ind1]); dn1 = dn1[dn1>0]
-            reaches.n_rch_down[rch_dn_ind1] = len(dn1)
-        if len(rch_dn_ind2) > 0:
-            reaches.rch_id_down[1,rch_dn_ind2] = 0
-            reaches.rch_id_down[:,rch_dn_ind2] = np.sort(reaches.rch_id_down[:,rch_dn_ind2], axis = 0)[::-1]
-            dn2 = np.unique(reaches.rch_id_down[:,rch_dn_ind2]); dn2 = dn2[dn2>0]
-            reaches.n_rch_down[rch_dn_ind2] = len(dn2)
-        if len(rch_dn_ind3) > 0:
-            reaches.rch_id_down[2,rch_dn_ind3] = 0
-            reaches.rch_id_down[:,rch_dn_ind3] = np.sort(reaches.rch_id_down[:,rch_dn_ind3], axis = 0)[::-1]
-            dn3 = np.unique(reaches.rch_id_down[:,rch_dn_ind3]); dn3 = dn3[dn3>0]
-            reaches.n_rch_down[rch_dn_ind3] = len(dn3)
-        if len(rch_dn_ind4) > 0:
-            reaches.rch_id_down[3,rch_dn_ind4] = 0
-            reaches.rch_id_down[:,rch_dn_ind4] = np.sort(reaches.rch_id_down[:,rch_dn_ind4], axis = 0)[::-1]
-            dn4 = np.unique(reaches.rch_id_down[:,rch_dn_ind4]); dn4 = dn4[dn4>0]
-            reaches.n_rch_down[rch_dn_ind4] = len(dn4)
+#         rch_dn_ind1 = np.where(reaches.rch_id_down[0,:] == rm_rch[ind])[0]
+#         rch_dn_ind2 = np.where(reaches.rch_id_down[1,:] == rm_rch[ind])[0]
+#         rch_dn_ind3 = np.where(reaches.rch_id_down[2,:] == rm_rch[ind])[0]
+#         rch_dn_ind4 = np.where(reaches.rch_id_down[3,:] == rm_rch[ind])[0]
+#         if len(rch_dn_ind1) > 0:
+#             reaches.rch_id_down[0,rch_dn_ind1] = 0
+#             reaches.rch_id_down[:,rch_dn_ind1] = np.sort(reaches.rch_id_down[:,rch_dn_ind1], axis = 0)[::-1]
+#             dn1 = np.unique(reaches.rch_id_down[:,rch_dn_ind1]); dn1 = dn1[dn1>0]
+#             reaches.n_rch_down[rch_dn_ind1] = len(dn1)
+#         if len(rch_dn_ind2) > 0:
+#             reaches.rch_id_down[1,rch_dn_ind2] = 0
+#             reaches.rch_id_down[:,rch_dn_ind2] = np.sort(reaches.rch_id_down[:,rch_dn_ind2], axis = 0)[::-1]
+#             dn2 = np.unique(reaches.rch_id_down[:,rch_dn_ind2]); dn2 = dn2[dn2>0]
+#             reaches.n_rch_down[rch_dn_ind2] = len(dn2)
+#         if len(rch_dn_ind3) > 0:
+#             reaches.rch_id_down[2,rch_dn_ind3] = 0
+#             reaches.rch_id_down[:,rch_dn_ind3] = np.sort(reaches.rch_id_down[:,rch_dn_ind3], axis = 0)[::-1]
+#             dn3 = np.unique(reaches.rch_id_down[:,rch_dn_ind3]); dn3 = dn3[dn3>0]
+#             reaches.n_rch_down[rch_dn_ind3] = len(dn3)
+#         if len(rch_dn_ind4) > 0:
+#             reaches.rch_id_down[3,rch_dn_ind4] = 0
+#             reaches.rch_id_down[:,rch_dn_ind4] = np.sort(reaches.rch_id_down[:,rch_dn_ind4], axis = 0)[::-1]
+#             dn4 = np.unique(reaches.rch_id_down[:,rch_dn_ind4]); dn4 = dn4[dn4>0]
+#             reaches.n_rch_down[rch_dn_ind4] = len(dn4)
 
-###############################################################################
+# ###############################################################################
 
-def append_data(centerlines, nodes, reaches, 
-                subcls, subnodes, subreaches):
+# def append_data(centerlines, nodes, reaches, 
+#                 subcls, subnodes, subreaches):
 
-    centerlines.cl_id = np.append(centerlines.cl_id, subcls.new_cl_id)
-    centerlines.x = np.append(centerlines.x, subcls.lon)
-    centerlines.y = np.append(centerlines.y, subcls.lat)
-    centerlines.reach_id = np.append(centerlines.reach_id, subcls.new_reach_id, axis=1)
-    centerlines.node_id = np.append(centerlines.node_id, subcls.new_node_id, axis=1)
+#     centerlines.cl_id = np.append(centerlines.cl_id, subcls.new_cl_id)
+#     centerlines.x = np.append(centerlines.x, subcls.lon)
+#     centerlines.y = np.append(centerlines.y, subcls.lat)
+#     centerlines.reach_id = np.append(centerlines.reach_id, subcls.new_reach_id, axis=1)
+#     centerlines.node_id = np.append(centerlines.node_id, subcls.new_node_id, axis=1)
     
-    nodes.id = np.append(nodes.id, subnodes.id)
-    nodes.cl_id = np.append(nodes.cl_id, subnodes.cl_id, axis=1)
-    nodes.x = np.append(nodes.x, subnodes.x)
-    nodes.y = np.append(nodes.y, subnodes.y)
-    nodes.len = np.append(nodes.len, subnodes.len)
-    nodes.wse = np.append(nodes.wse, subnodes.wse)
-    nodes.wse_var = np.append(nodes.wse_var, subnodes.wse_var)
-    nodes.wth = np.append(nodes.wth, subnodes.wth)
-    nodes.wth_var = np.append(nodes.wth_var, subnodes.wth_var)
-    nodes.grod = np.append(nodes.grod, subnodes.grod)
-    nodes.grod_fid = np.append(nodes.grod_fid, subnodes.grod_fid)
-    nodes.hfalls_fid = np.append(nodes.hfalls_fid, subnodes.hfalls_fid)
-    nodes.nchan_max = np.append(nodes.nchan_max, subnodes.nchan_max)
-    nodes.nchan_mod = np.append(nodes.nchan_mod, subnodes.nchan_mod)
-    nodes.dist_out = np.append(nodes.dist_out, subnodes.dist_out)
-    nodes.reach_id = np.append(nodes.reach_id, subnodes.reach_id)
-    nodes.facc = np.append(nodes.facc, subnodes.facc)
-    nodes.lakeflag = np.append(nodes.lakeflag, subnodes.lakeflag)
-    nodes.wth_coef = np.append(nodes.wth_coef, subnodes.wth_coef)
-    nodes.ext_dist_coef = np.append(nodes.ext_dist_coef, subnodes.ext_dist_coef)
-    nodes.max_wth = np.append(nodes.max_wth, subnodes.max_wth)
-    nodes.meand_len = np.append(nodes.meand_len, subnodes.meand_len)
-    nodes.river_name = np.append(nodes.river_name, subnodes.river_name)
-    nodes.manual_add = np.append(nodes.manual_add, subnodes.manual_add)
-    nodes.sinuosity = np.append(nodes.sinuosity, subnodes.sinuosity)
-    nodes.edit_flag = np.append(nodes.edit_flag, subnodes.edit_flag)
-    nodes.trib_flag = np.append(nodes.trib_flag, subnodes.trib_flag)
-    nodes.path_freq = np.append(nodes.path_freq, subnodes.path_freq)
-    nodes.path_order = np.append(nodes.path_order, subnodes.path_order)
-    nodes.path_segs = np.append(nodes.path_segs, subnodes.path_segs)
-    nodes.main_side = np.append(nodes.main_side, subnodes.main_side)
-    nodes.strm_order = np.append(nodes.strm_order, subnodes.strm_order)
-    nodes.end_rch = np.append(nodes.end_rch, subnodes.end_rch)
-    nodes.network = np.append(nodes.network, subnodes.network)
-    nodes.add_flag = np.append(nodes.add_flag, subnodes.add_flag)
+#     nodes.id = np.append(nodes.id, subnodes.id)
+#     nodes.cl_id = np.append(nodes.cl_id, subnodes.cl_id, axis=1)
+#     nodes.x = np.append(nodes.x, subnodes.x)
+#     nodes.y = np.append(nodes.y, subnodes.y)
+#     nodes.len = np.append(nodes.len, subnodes.len)
+#     nodes.wse = np.append(nodes.wse, subnodes.wse)
+#     nodes.wse_var = np.append(nodes.wse_var, subnodes.wse_var)
+#     nodes.wth = np.append(nodes.wth, subnodes.wth)
+#     nodes.wth_var = np.append(nodes.wth_var, subnodes.wth_var)
+#     nodes.grod = np.append(nodes.grod, subnodes.grod)
+#     nodes.grod_fid = np.append(nodes.grod_fid, subnodes.grod_fid)
+#     nodes.hfalls_fid = np.append(nodes.hfalls_fid, subnodes.hfalls_fid)
+#     nodes.nchan_max = np.append(nodes.nchan_max, subnodes.nchan_max)
+#     nodes.nchan_mod = np.append(nodes.nchan_mod, subnodes.nchan_mod)
+#     nodes.dist_out = np.append(nodes.dist_out, subnodes.dist_out)
+#     nodes.reach_id = np.append(nodes.reach_id, subnodes.reach_id)
+#     nodes.facc = np.append(nodes.facc, subnodes.facc)
+#     nodes.lakeflag = np.append(nodes.lakeflag, subnodes.lakeflag)
+#     nodes.wth_coef = np.append(nodes.wth_coef, subnodes.wth_coef)
+#     nodes.ext_dist_coef = np.append(nodes.ext_dist_coef, subnodes.ext_dist_coef)
+#     nodes.max_wth = np.append(nodes.max_wth, subnodes.max_wth)
+#     nodes.meand_len = np.append(nodes.meand_len, subnodes.meand_len)
+#     nodes.river_name = np.append(nodes.river_name, subnodes.river_name)
+#     nodes.manual_add = np.append(nodes.manual_add, subnodes.manual_add)
+#     nodes.sinuosity = np.append(nodes.sinuosity, subnodes.sinuosity)
+#     nodes.edit_flag = np.append(nodes.edit_flag, subnodes.edit_flag)
+#     nodes.trib_flag = np.append(nodes.trib_flag, subnodes.trib_flag)
+#     nodes.path_freq = np.append(nodes.path_freq, subnodes.path_freq)
+#     nodes.path_order = np.append(nodes.path_order, subnodes.path_order)
+#     nodes.path_segs = np.append(nodes.path_segs, subnodes.path_segs)
+#     nodes.main_side = np.append(nodes.main_side, subnodes.main_side)
+#     nodes.strm_order = np.append(nodes.strm_order, subnodes.strm_order)
+#     nodes.end_rch = np.append(nodes.end_rch, subnodes.end_rch)
+#     nodes.network = np.append(nodes.network, subnodes.network)
+#     nodes.add_flag = np.append(nodes.add_flag, subnodes.add_flag)
 
-    reaches.id = np.append(reaches.id, subreaches.id)
-    reaches.cl_id = np.append(reaches.cl_id, subreaches.cl_id, axis=1)
-    reaches.x = np.append(reaches.x, subreaches.x)
-    reaches.x_min = np.append(reaches.x_min, subreaches.x_min)
-    reaches.x_max = np.append(reaches.x_max, subreaches.x_max)
-    reaches.y = np.append(reaches.y, subreaches.y)
-    reaches.y_min = np.append(reaches.y_min, subreaches.y_min)
-    reaches.y_max = np.append(reaches.y_max, subreaches.y_max)
-    reaches.len = np.append(reaches.len, subreaches.len)
-    reaches.wse = np.append(reaches.wse, subreaches.wse)
-    reaches.wse_var = np.append(reaches.wse_var, subreaches.wse_var)
-    reaches.wth = np.append(reaches.wth, subreaches.wth)
-    reaches.wth_var = np.append(reaches.wth_var, subreaches.wth_var)
-    reaches.slope = np.append(reaches.slope, subreaches.slope)
-    reaches.rch_n_nodes = np.append(reaches.rch_n_nodes, subreaches.rch_n_nodes)
-    reaches.grod = np.append(reaches.grod, subreaches.grod)
-    reaches.grod_fid = np.append(reaches.grod_fid, subreaches.grod_fid)
-    reaches.hfalls_fid = np.append(reaches.hfalls_fid, subreaches.hfalls_fid)
-    reaches.lakeflag = np.append(reaches.lakeflag, subreaches.lakeflag)
-    reaches.nchan_max = np.append(reaches.nchan_max, subreaches.nchan_max)
-    reaches.nchan_mod = np.append(reaches.nchan_mod, subreaches.nchan_mod)
-    reaches.dist_out = np.append(reaches.dist_out, subreaches.dist_out)
-    reaches.n_rch_up = np.append(reaches.n_rch_up, subreaches.n_rch_up)
-    reaches.n_rch_down = np.append(reaches.n_rch_down, subreaches.n_rch_down)
-    reaches.rch_id_up = np.append(reaches.rch_id_up, subreaches.rch_id_up, axis=1)
-    reaches.rch_id_down = np.append(reaches.rch_id_down, subreaches.rch_id_down, axis=1)
-    reaches.max_obs = np.append(reaches.max_obs, subreaches.max_obs)
-    reaches.orbits = np.append(reaches.orbits, subreaches.orbits, axis=1)
-    reaches.facc = np.append(reaches.facc, subreaches.facc)
-    reaches.iceflag = np.append(reaches.iceflag, subreaches.iceflag, axis=1)
-    reaches.max_wth = np.append(reaches.max_wth, subreaches.max_wth)
-    reaches.river_name = np.append(reaches.river_name, subreaches.river_name)
-    reaches.low_slope = np.append(reaches.low_slope, subreaches.low_slope)
-    reaches.edit_flag = np.append(reaches.edit_flag, subreaches.edit_flag)
-    reaches.trib_flag = np.append(reaches.trib_flag, subreaches.trib_flag)
-    reaches.path_freq = np.append(reaches.path_freq, subreaches.path_freq)
-    reaches.path_order = np.append(reaches.path_order, subreaches.path_order)
-    reaches.path_segs = np.append(reaches.path_segs, subreaches.path_segs)
-    reaches.main_side = np.append(reaches.main_side, subreaches.main_side)
-    reaches.strm_order = np.append(reaches.strm_order, subreaches.strm_order)
-    reaches.end_rch = np.append(reaches.end_rch, subreaches.end_rch)
-    reaches.network = np.append(reaches.network, subreaches.network)
-    reaches.add_flag = np.append(reaches.add_flag, subreaches.add_flag)
+#     reaches.id = np.append(reaches.id, subreaches.id)
+#     reaches.cl_id = np.append(reaches.cl_id, subreaches.cl_id, axis=1)
+#     reaches.x = np.append(reaches.x, subreaches.x)
+#     reaches.x_min = np.append(reaches.x_min, subreaches.x_min)
+#     reaches.x_max = np.append(reaches.x_max, subreaches.x_max)
+#     reaches.y = np.append(reaches.y, subreaches.y)
+#     reaches.y_min = np.append(reaches.y_min, subreaches.y_min)
+#     reaches.y_max = np.append(reaches.y_max, subreaches.y_max)
+#     reaches.len = np.append(reaches.len, subreaches.len)
+#     reaches.wse = np.append(reaches.wse, subreaches.wse)
+#     reaches.wse_var = np.append(reaches.wse_var, subreaches.wse_var)
+#     reaches.wth = np.append(reaches.wth, subreaches.wth)
+#     reaches.wth_var = np.append(reaches.wth_var, subreaches.wth_var)
+#     reaches.slope = np.append(reaches.slope, subreaches.slope)
+#     reaches.rch_n_nodes = np.append(reaches.rch_n_nodes, subreaches.rch_n_nodes)
+#     reaches.grod = np.append(reaches.grod, subreaches.grod)
+#     reaches.grod_fid = np.append(reaches.grod_fid, subreaches.grod_fid)
+#     reaches.hfalls_fid = np.append(reaches.hfalls_fid, subreaches.hfalls_fid)
+#     reaches.lakeflag = np.append(reaches.lakeflag, subreaches.lakeflag)
+#     reaches.nchan_max = np.append(reaches.nchan_max, subreaches.nchan_max)
+#     reaches.nchan_mod = np.append(reaches.nchan_mod, subreaches.nchan_mod)
+#     reaches.dist_out = np.append(reaches.dist_out, subreaches.dist_out)
+#     reaches.n_rch_up = np.append(reaches.n_rch_up, subreaches.n_rch_up)
+#     reaches.n_rch_down = np.append(reaches.n_rch_down, subreaches.n_rch_down)
+#     reaches.rch_id_up = np.append(reaches.rch_id_up, subreaches.rch_id_up, axis=1)
+#     reaches.rch_id_down = np.append(reaches.rch_id_down, subreaches.rch_id_down, axis=1)
+#     reaches.max_obs = np.append(reaches.max_obs, subreaches.max_obs)
+#     reaches.orbits = np.append(reaches.orbits, subreaches.orbits, axis=1)
+#     reaches.facc = np.append(reaches.facc, subreaches.facc)
+#     reaches.iceflag = np.append(reaches.iceflag, subreaches.iceflag, axis=1)
+#     reaches.max_wth = np.append(reaches.max_wth, subreaches.max_wth)
+#     reaches.river_name = np.append(reaches.river_name, subreaches.river_name)
+#     reaches.low_slope = np.append(reaches.low_slope, subreaches.low_slope)
+#     reaches.edit_flag = np.append(reaches.edit_flag, subreaches.edit_flag)
+#     reaches.trib_flag = np.append(reaches.trib_flag, subreaches.trib_flag)
+#     reaches.path_freq = np.append(reaches.path_freq, subreaches.path_freq)
+#     reaches.path_order = np.append(reaches.path_order, subreaches.path_order)
+#     reaches.path_segs = np.append(reaches.path_segs, subreaches.path_segs)
+#     reaches.main_side = np.append(reaches.main_side, subreaches.main_side)
+#     reaches.strm_order = np.append(reaches.strm_order, subreaches.strm_order)
+#     reaches.end_rch = np.append(reaches.end_rch, subreaches.end_rch)
+#     reaches.network = np.append(reaches.network, subreaches.network)
+#     reaches.add_flag = np.append(reaches.add_flag, subreaches.add_flag)
     
-###############################################################################
+# ###############################################################################
 
 def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, common, max_dist, region):
+    """
+    Creates polyline geometry for each reach in the SWORD database. 
+
+    Parmeters
+    ---------
+    unq_rch: list or numpy.array()
+        The unique reach IDs in SWORD.
+    reach_id: numpy.array()
+        Reach IDs corresponding to each SWORD centerline point. 
+    cl_x: numpy.array()
+        Centerline point longitude (WGS 84, EPSG:4326).
+    cl_y: numpy.array()
+        Centerline point latitude (WGS 84, EPSG:4326).
+    cl_id: numpy.array()
+        Centerline point IDs. 
+    common: numpy.array()
+        Numpy array containing binary values of 0 or 1 
+        where 1 indicates a common point between reach neighbors.
+    max_dist: int
+        Distance in meters that defines the threshold for connecting polylines. 
+    region: str
+        Two-letter acronymn for a SWORD region (i.e. NA).
+
+    Returns
+    -------
+    geom: list
+        List of ordered centerline coordinates for each SWORD reach.
+    rm_ind: list
+        List of reaches to remove from reach shapefile or geopackage files.
+        These are one-point reaches that may have been overlooked in pre-processing 
+        steps. 
+        
+    """
+    
     geom = []
     rm_ind = []
     connections = np.zeros([reach_id.shape[0], reach_id.shape[1]], dtype=int)
@@ -892,19 +1292,68 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, common, max_dist, regi
 ###############################################################################
 
 def format_rch_attr(reaches):
+    """
+    Reformats multi-dimensional numpy.array() attributes to str format for 
+    writing in shapefile and geopackage files. 
+
+    Parmeters
+    ---------
+    reaches: obj
+        Object containing attributes associated with the SWORD reaches. 
+    
+    Returns
+    -------
+    rch_type: numpy.array()
+        Type classifier for each SWORD reach.
+        1 - River
+        3 - Lake on river
+        4 - Dam or natural obstruction
+        5 - Unreliable topology 
+        6 - Ghost reach
+    rch_id_up: list
+        List of upstream reach neighbors.
+    rch_id_down: list
+        List of downstream reach neighbors.
+    swot_orbits: list
+        List of SWOT orbit passes per reach. 
+        
+    """
+
     #reformat multi-dimensional variables
     rch_type = np.array([int(str(rch)[-1]) for rch in reaches.id])
     rch_id_up = []; rch_id_dn = []; swot_orbits = []
     for ind in list(range(len(rch_type))):
-        rch_id_up.append(str(reaches.rch_id_up[ind,np.where(reaches.rch_id_up[ind,:] > 0)[0]])[1:-1])
-        rch_id_dn.append(str(reaches.rch_id_down[ind,np.where(reaches.rch_id_down[ind,:] > 0)[0]])[1:-1])
-        swot_orbits.append(str(reaches.orbits[ind,np.where(reaches.orbits[ind,:] > 0)[0]])[1:-1])
+        rch_id_up.append(str(reaches.rch_id_up[np.where(reaches.rch_id_up[:,ind] > 0)[0],ind])[1:-1])
+        rch_id_dn.append(str(reaches.rch_id_down[np.where(reaches.rch_id_down[:,ind] > 0)[0],ind])[1:-1])
+        swot_orbits.append(str(reaches.orbits[np.where(reaches.orbits[:,ind] > 0)[0],ind])[1:-1])
 
     return rch_type, rch_id_up, rch_id_dn, swot_orbits
 
 ###############################################################################
 
 def write_rchs(reaches, geom, rm_ind, paths):
+    """
+    Writes SWORD reaches in shapefile and geopackage formats.  
+
+    Parmeters
+    ---------
+    reaches: obj
+        Object containing attributes associated with the SWORD reaches. 
+    geom: list
+        List of ordered centerline coordinates for each SWORD reach.
+    rm_ind: list
+        List of reaches to remove from reach shapefile or geopackage files.
+        These are one-point reaches that may have been overlooked in pre-processing 
+        steps.
+    paths: dict
+        Contains the import and export paths for SWORD.
+
+    Returns
+    -------
+    None.  
+        
+    """
+
     start_all = time.time()
 
     #determine outpaths.
@@ -926,11 +1375,11 @@ def write_rchs(reaches, geom, rm_ind, paths):
         reaches.wth,
         reaches.wth_var,
         reaches.facc,
-        reaches.n_chan_max,
-        reaches.n_chan_mod,
+        reaches.nchan_max,
+        reaches.nchan_mod,
         reaches.grod,
-        reaches.grod_id,
-        reaches.hfalls_id,
+        reaches.grod_fid,
+        reaches.hfalls_fid,
         reaches.slope,
         reaches.dist_out,
         reaches.lakeflag,
@@ -1034,7 +1483,21 @@ def write_rchs(reaches, geom, rm_ind, paths):
 ###############################################################################
     
 def write_nodes(nodes, paths):
+    """
+    Writes SWORD nodes in shapefile and geopackage formats.  
 
+    Parmeters
+    ---------
+    reaches: obj
+        Object containing attributes associated with the SWORD nodes. 
+    paths: dict
+        Contains the import and export paths for SWORD.
+
+    Returns
+    -------
+    None.  
+        
+    """
     #determine outpaths.
     outpath_gpkg = paths['gpkg_dir']
     outpath_shp = paths['shp_dir']
@@ -1051,11 +1514,11 @@ def write_nodes(nodes, paths):
         nodes.wth,
         nodes.wth_var,
         nodes.facc,
-        nodes.n_chan_max,
-        nodes.n_chan_mod,
+        nodes.nchan_max,
+        nodes.nchan_mod,
         nodes.grod,
-        nodes.grod_id,
-        nodes.hfalls_id,
+        nodes.grod_fid,
+        nodes.hfalls_fid,
         nodes.dist_out,
         nodes.lakeflag,
         nodes.max_wth,
@@ -1145,26 +1608,27 @@ def write_nodes(nodes, paths):
 def write_nc(centerlines, reaches, nodes, region, outfile):
 
     """
-    FUNCTION
-    --------
-        Outputs the SWOT River Database (SWORD) information in netcdf
-        format. The file contains attributes for the high-resolution centerline,
-        nodes, and reaches.
+    Outputs the SWOT River Database (SWORD) information in netcdf
+    format. The file contains attributes for the high-resolution centerline,
+    nodes, and reaches.
 
-    INPUTS
+    Parameters
     ------
-        centerlines: Object containing lcation and attribute information
-            along the high-resolution centerline.
-        reaches: Object containing lcation and attribute information for
-            each reach.
-        nodes: Object containing lcation and attribute information for
-            each node.
-        outfile -- Path for netcdf to be written.
+    centerlines: obj
+        Object containing SWORD centerline attributes.
+    reaches: obj
+        Object containing SWORD reach attributes.
+    nodes: obj
+        Object containing SWORD node attributes.
+    region: str
+        Two-letter acronymn for a SWORD region (i.e. NA).
+    outfile: str
+        Path for netcdf to be written.
 
-    OUTPUTS
+    Returns
     -------
-        SWORD NetCDF: NetCDF file containing attributes for the high-resolution
-            centerline, node, and reach locations.
+    None. 
+
     """
 
     start = time.time()
@@ -1784,59 +2248,78 @@ def write_nc(centerlines, reaches, nodes, region, outfile):
 
 ###############################################################################
 
-def write_con_nc(centerlines, outfile):
+# def write_con_nc(centerlines, outfile, region):
+#     """
+#     Outputs the centerline connectivity information for SWORD in netcdf
+#     format. This information is used for writing the SWORD reach shapefile 
+#     and geopackage files. 
 
-    start = time.time()
+#     Parameters
+#     ------
+#     centerlines: obj
+#         Object containing SWORD centerline attributes.
+#     outfile: str
+#         Path for netcdf to be written.
+#     region: str
+#         Two-letter acronymn for a SWORD region (i.e. NA).
 
-    # global attributes
-    root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
-    root_grp.x_min = np.min(centerlines.x)
-    root_grp.x_max = np.max(centerlines.x)
-    root_grp.y_min = np.min(centerlines.y)
-    root_grp.y_max = np.max(centerlines.y)
-    root_grp.Name = region
-    root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
-    #root_grp.history = 'Created ' + time.ctime(time.time())
+#     Returns
+#     -------
+#     None. 
+    
+#     """
 
-    # groups
-    cl_grp = root_grp.createGroup('centerlines')
+#     start = time.time()
 
-    # dimensions
-    #root_grp.createDimension('d1', 2)
-    cl_grp.createDimension('num_points', len(centerlines.cl_id))
-    cl_grp.createDimension('num_domains', 4)
+#     # global attributes
+#     root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
+#     root_grp.x_min = np.min(centerlines.x)
+#     root_grp.x_max = np.max(centerlines.x)
+#     root_grp.y_min = np.min(centerlines.y)
+#     root_grp.y_max = np.max(centerlines.y)
+#     root_grp.Name = region
+#     root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
+#     #root_grp.history = 'Created ' + time.ctime(time.time())
 
-    # centerline variables
-    cl_id = cl_grp.createVariable(
-        'cl_id', 'i8', ('num_points',), fill_value=-9999.)
-    cl_x = cl_grp.createVariable(
-        'x', 'f8', ('num_points',), fill_value=-9999.)
-    cl_x.units = 'degrees east'
-    cl_y = cl_grp.createVariable(
-        'y', 'f8', ('num_points',), fill_value=-9999.)
-    cl_y.units = 'degrees north'
-    reach_id = cl_grp.createVariable(
-        'reach_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
-    reach_id.format = 'CBBBBBRRRRT'
-    common = cl_grp.createVariable(
-        'common', 'i4', ('num_points',), fill_value=-9999.)
+#     # groups
+#     cl_grp = root_grp.createGroup('centerlines')
 
-    # saving data
-    print("saving nc")
+#     # dimensions
+#     #root_grp.createDimension('d1', 2)
+#     cl_grp.createDimension('num_points', len(centerlines.cl_id))
+#     cl_grp.createDimension('num_domains', 4)
 
-    # centerline data
-    cl_id[:] = centerlines.cl_id
-    cl_x[:] = centerlines.x
-    cl_y[:] = centerlines.y
-    reach_id[:,:] = centerlines.neighbors
-    common[:] = centerlines.common
+#     # centerline variables
+#     cl_id = cl_grp.createVariable(
+#         'cl_id', 'i8', ('num_points',), fill_value=-9999.)
+#     cl_x = cl_grp.createVariable(
+#         'x', 'f8', ('num_points',), fill_value=-9999.)
+#     cl_x.units = 'degrees east'
+#     cl_y = cl_grp.createVariable(
+#         'y', 'f8', ('num_points',), fill_value=-9999.)
+#     cl_y.units = 'degrees north'
+#     reach_id = cl_grp.createVariable(
+#         'reach_id', 'i8', ('num_domains','num_points'), fill_value=-9999.)
+#     reach_id.format = 'CBBBBBRRRRT'
+#     common = cl_grp.createVariable(
+#         'common', 'i4', ('num_points',), fill_value=-9999.)
 
-    root_grp.close()
+#     # saving data
+#     print("saving nc")
 
-    end = time.time()
+#     # centerline data
+#     cl_id[:] = centerlines.cl_id
+#     cl_x[:] = centerlines.x
+#     cl_y[:] = centerlines.y
+#     reach_id[:,:] = centerlines.neighbors
+#     common[:] = centerlines.common
 
-    print("Ended Saving NetCDF in: ", str(np.round((end-start)/60, 2)), " min")
+#     root_grp.close()
 
-    return outfile
+#     end = time.time()
+
+#     print("Ended Saving NetCDF in: ", str(np.round((end-start)/60, 2)), " min")
+
+#     return outfile
 
 ###############################################################################

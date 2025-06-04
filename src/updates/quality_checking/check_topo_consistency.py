@@ -1,4 +1,19 @@
 # -*- coding: utf-8 -*-
+"""
+Checking SWORD Topology (check_topo_consistency.py)
+=====================
+Script for checking the topological consistency of
+the SWOT River Database (SWORD). 
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v18).
+
+Execution example (terminal):
+    python check_topo_consistency.py NA v18 
+
+"""
+
 from __future__ import division
 import sys
 import os

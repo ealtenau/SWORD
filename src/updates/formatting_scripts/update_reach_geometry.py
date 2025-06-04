@@ -10,7 +10,7 @@ import geopy.distance
 import pandas as pd
 import argparse
 from src.updates.sword import SWORD
-import src.updates.calc_utils as ct
+import src.updates.aux_utils as aux
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -79,7 +79,7 @@ for r in list(range(len(reach))):
     #recalculate centerline reach length.
     x_coords = sword.centerlines.x[rch[order_ids]]
     y_coords = sword.centerlines.y[rch[order_ids]]
-    diff = ct.get_distances(x_coords,y_coords)
+    diff = aux.get_distances(x_coords,y_coords)
     dist = np.cumsum(diff)
 
     #update sword.reaches. 

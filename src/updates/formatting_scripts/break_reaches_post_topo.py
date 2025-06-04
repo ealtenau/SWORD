@@ -11,7 +11,7 @@ import argparse
 import glob
 import argparse
 from src.updates.sword import SWORD
-import src.updates.calc_utils as ct 
+import src.updates.aux_utils as aux 
 # import matplotlib.pyplot as plt
 
 ###############################################################################   
@@ -141,7 +141,7 @@ for r in list(range(len(unq_rchs))):
 
             x_coords = sword.centerlines.x[update_ids]
             y_coords = sword.centerlines.y[update_ids]
-            diff = ct.get_distances(x_coords,y_coords)
+            diff = aux.get_distances(x_coords,y_coords)
             dist = np.cumsum(diff)
             
             # print('5')

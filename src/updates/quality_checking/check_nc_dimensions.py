@@ -1,4 +1,20 @@
 # -*- coding: utf-8 -*-
+"""
+Checking SWORD Dimensions (check_nc_dimensions.py)
+=====================
+Script for making sure all the identification numbers 
+for centerlines, reaches, and nodes are unqiue and consistent
+across all dimensions of the SWOT River Database (SWORD). 
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v18).
+
+Execution example (terminal):
+    python check_nc_dimensions.py NA v18 
+
+"""
+
 from __future__ import division
 import sys
 import os
