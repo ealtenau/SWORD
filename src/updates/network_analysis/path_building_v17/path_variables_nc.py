@@ -1,15 +1,32 @@
+"""
+Shortest Path Variable Fromatting (path_variables_nc.py)
+==============================================================
+
+Script for ingesting and formatting shortest path geopackage 
+files calculated along the SWORD v17 network in QGIS. Shortest
+paths are derived from every outlet to every connected 
+headwater point in SWORD.
+
+The script is run at a Pfafstetter Level 2 basin scale.
+Command line arguments required are the two-letter
+region identifier (i.e. NA), SWORD version (i.e. v17),
+and Pfafstetter Level 2 basin (i.e. 74).
+
+Execution example (terminal):
+    python path_variables_nc.py NA v17 74
+
+"""
+
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc
 import geopandas as gp
-from shapely.geometry import LineString, Point
-from geopandas import GeoSeries
-import pandas as pd
 import time
 import argparse
 from scipy import spatial as sp
-import matplotlib.pyplot as plt
 from scipy import stats
 from scipy import interpolate
 from geopy import distance
@@ -21,6 +38,25 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 ################################################################################################
 
 def get_distances(lon,lat):
+    """
+    Calculates geodesic distance along a set of points given input 
+    latitude and longitude values. 
+
+    Parameters
+    ----------
+    lon: numpy.array() 
+        Longitude
+    lat: numpy.array()
+        Latitude
+
+    Returns
+    -------
+    distances: numpy.array()
+        Numpy array of cumulative distances in meters along the 
+        input coordinates. 
+    
+    """
+
     traces = len(lon) -1
     distances = np.zeros(traces)
     for i in range(traces):
@@ -33,6 +69,32 @@ def get_distances(lon,lat):
 ################################################################################################
 
 def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
+    """
+    Calculates distance from outlet in the side channel SWORD reaches
+    that did not have an associated shortest path. 
+
+    Parameters
+    ----------
+    cl_rchs: numpy.array() 
+        SWORD Reach IDs at the centerline scale. 
+    main_side: numpy.array()
+        Flag indicating whether a SWORD reach is on the main or side
+        channel network.
+    cl_lon: numpy.array()
+        SWORD longitude values at the centerline scale. 
+    cl_lat: numpy.array()
+        SWORD latitude values at the centerline scale. 
+    rch_paths_dist: numpy.array()
+        Distance from outlet calculated along the main network. 
+
+    Returns
+    -------
+    side_dist: numpy.array()
+        Numpy array of distance from outlet in meters for both the 
+        SWORD main and side network reaches. 
+    
+    """
+     
     ngh_matrix = np.zeros(cl_rchs.shape)
     side_dist = np.copy(rch_paths_dist)
     count=1
@@ -88,8 +150,6 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     x_coords = cl_lon[sort_ind]
                     y_coords = cl_lat[sort_ind]
                     diff = get_distances(x_coords,y_coords)
-                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+side_dist[start_pt]+30
                     side_dist[sort_ind] = rch_dist_out
@@ -105,8 +165,6 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     x_coords = cl_lon[sort_ind[::-1]]
                     y_coords = cl_lat[sort_ind[::-1]]
                     diff = get_distances(x_coords,y_coords)
-                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+side_dist[start_pt]+30
                     side_dist[sort_ind[::-1]] = rch_dist_out
@@ -158,8 +216,6 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     x_coords = cl_lon[sort_ind[::-1]]
                     y_coords = cl_lat[sort_ind[::-1]]
                     diff = get_distances(x_coords,y_coords)
-                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+end2_dist+30
                     side_dist[sort_ind[::-1]] = rch_dist_out
@@ -174,8 +230,6 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                     x_coords = cl_lon[sort_ind]
                     y_coords = cl_lat[sort_ind]
                     diff = get_distances(x_coords,y_coords)
-                    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-                    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                     rch_dist = np.cumsum(diff)
                     rch_dist_out = rch_dist+end1_dist+30
                     side_dist[sort_ind] = rch_dist_out
@@ -192,8 +246,6 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                         x_coords = cl_lon[sort_ind]
                         y_coords = cl_lat[sort_ind]
                         diff = get_distances(x_coords,y_coords)
-                        # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-                        # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                         rch_dist = np.cumsum(diff)
                         rch_dist_out = rch_dist+end1_dist+30
                         side_dist[sort_ind] = rch_dist_out
@@ -207,8 +259,6 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                         x_coords = cl_lon[sort_ind[::-1]]
                         y_coords = cl_lat[sort_ind[::-1]]
                         diff = get_distances(x_coords,y_coords)
-                        # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-                        # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                         rch_dist = np.cumsum(diff)
                         rch_dist_out = rch_dist+end2_dist+30
                         side_dist[sort_ind[::-1]] = rch_dist_out
@@ -230,8 +280,6 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
                         x_coords = cl_lon[sort_ind]
                         y_coords = cl_lat[sort_ind]
                         diff = get_distances(x_coords,y_coords)
-                        # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-                        # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
                         rch_dist = np.cumsum(diff)
                         rch_dist_out = np.array(rch_dist)
                         side_dist[sort_ind] = rch_dist_out
@@ -261,6 +309,46 @@ def side_chan_filt(cl_rchs, main_side, cl_lon, cl_lat, rch_paths_dist):
 def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
                       cl_rchs,cl_nodes,rch_paths,rch_paths_order,
                       rch_paths_dist,rch_paths_dist2,main_side):
+    """
+    Outputs a netCDF file containing shortest path variables and 
+    distance from outlet calculated along a Pfafstetter Level 2 basin
+    in the SWORD database. 
+
+    Parameters
+    ----------
+    outfile: str 
+        The directory location to output the netCDF file.
+    region: str
+        Two-letter SWORD region/continent identifier (i.e. NA).
+    cl_ind: numpy.array()
+        SWORD centerline IDs.
+    cl_lon: numpy.array()
+        SWORD centerline longitude (WGS 84, EPSG:4326). 
+    cl_lat: numpy.array()
+        SWORD centerline latitude (WGS 84, EPSG:4326).
+    cl_rchs: numpy.array()
+        SWORD centerline reach IDs. 
+    cl_nodes: numpy.array()
+        SWORD centerline node IDs. 
+    rch_paths: numpy.array()
+        Path frequency: The number of times a reach is traveled along get to any 
+        given headwater point.
+    rch_paths_order: numpy.array()
+        Path order: Unique values representing continuous paths from the
+        river outlet to the headwaters ordered from the longest path (1) 
+        to the shortest path (N). 
+    rch_paths_dist: numpy.array()
+        Distance from outlet on main network only.
+    rch_paths_dist2: numpy.array()
+        Distance from outlet on main and side networks.
+    main_side: numpy.array()
+        Main-Side network flag. 
+        
+    Returns
+    -------
+    None. 
+    
+    """
     
     # global attributes
     root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
@@ -268,7 +356,7 @@ def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
     root_grp.x_max = np.max(cl_lon)
     root_grp.y_min = np.min(cl_lat)
     root_grp.y_max = np.max(cl_lat)
-    root_grp.Name = region
+    root_grp.Name = 'hb'+region
     root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
     #root_grp.history = 'Created ' + time.ctime(time.time())
 
@@ -326,7 +414,33 @@ def write_path_netcdf(outfile,region,cl_ind,cl_lon,cl_lat,
 
 ################################################################################################
 
-def calc_path_variables(path_files, kdt):    
+def calc_path_variables(path_files, kdt):
+    """
+    Calculates path frequency, path order, and distance from outlet variables
+    based on the shortest path files.  
+
+    Parameters
+    ----------
+    path_files: list 
+        List containing all the related shortest path files for a Pfafstetter
+        Level 2 basin.
+    kdt: scipy.spatial.cKDTree object 
+        KD-Tree for nearest neighbors in SWORD.
+
+    Returns
+    -------
+    rch_paths: numpy.array()
+        Path frequency: The number of times a reach is traveled along get to any 
+        given headwater point.
+    rch_paths_order: numpy.array()
+        Path order: Unique values representing continuous paths from the
+        river outlet to the headwaters ordered from the longest path (1) 
+        to the shortest path (N).
+    rch_paths_dist: numpy.array()
+        Distance from outlet (meters).
+
+    """
+
     count = 1
     for ind in list(range(len(path_files))):
         print(ind, len(path_files)-1)
@@ -344,9 +458,6 @@ def calc_path_variables(path_files, kdt):
             # dist = calc_path_dist(lon,lat) #takes longer...
             diff = get_distances(lon,lat)
             dist = np.cumsum(diff)
-            # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(lon, lat),crs="EPSG:4326").to_crs("EPSG:9822") #Albers Equal Area.
-            # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
-            # dist = np.cumsum(diff)
 
             #spatial query with sword
             path_pts = np.vstack((lon, lat)).T
@@ -368,17 +479,50 @@ def calc_path_variables(path_files, kdt):
 ################################################################################################
 
 def filter_zero_pts(rch_paths, rch_paths_dist, rch_paths_order, cl_rchs, cl_ind):
+    """
+    Fills in path frequency, path order, and distance from outlet variables
+    for skipped coordinates along the shortest paths.  
+
+    Parameters
+    ----------
+    rch_paths: numpy.array()
+        Path frequency: The number of times a reach is traveled along get to any 
+        given headwater point.
+    rch_paths_order: numpy.array()
+        Path order: Unique values representing continuous paths from the
+        river outlet to the headwaters ordered from the longest path (1) 
+        to the shortest path (N).
+    rch_paths_dist: numpy.array()
+        Distance from outlet (meters).
+    cl_rchs: numpy.array()
+        SWORD centerline reach IDs.
+    cl_ind: numpy.array()
+        SWORD centerline IDs.
+    Returns
+    -------
+    None.
+
+    """
+
+    #find SWORD reaches that contain a centerline with a path frequency value 
+    #equal to zero. Loop through and correct the zero point values.  
     zero = np.where(rch_paths == 0)[0]
     zero_rchs = np.unique(cl_rchs[0,zero])
     for z in list(range(len(zero_rchs))):
+        #find all centerline points associated with the reach ID. 
         pts = np.where(cl_rchs[0,:] == zero_rchs[z])[0]
+        #calculate percentage of reach with zero values for path frequency. 
         rch_zeros = np.where(rch_paths[pts] == 0)[0]
         perc = (len(rch_zeros)/len(pts))*100
         # print([z, perc])
+        #if the reach is longer than 3 points and the percentage of zero path 
+        #frequency values is less than 70%, replace zero values based on non-zero 
+        #reach values. 
         if perc < 70 and len(pts) > 3:
             nz = np.where(rch_paths[pts] > 0)[0]
             rch_paths[pts[rch_zeros]] = stats.mode(rch_paths[pts[nz]])[0]
             rch_paths_order[pts[rch_zeros]] = stats.mode(rch_paths_order[pts[nz]])[0]
+            #updating distance from outlet. 
             for zp in list(range(len(rch_zeros))):
                 nz2 = np.where(rch_paths_dist[pts] > 0)[0]
                 id_diff = np.abs(cl_ind[pts[rch_zeros[zp]]] - cl_ind[pts[nz2]])
@@ -392,11 +536,13 @@ def filter_zero_pts(rch_paths, rch_paths_dist, rch_paths_order, cl_rchs, cl_ind)
                     nghs2 = np.argsort(id_diff)[0:5]
                     good_vals = np.where(rch_paths_dist[pts[nghs2]] > 0)[0]
                     rch_paths_dist[pts[rch_zeros[zp]]] = np.mean(rch_paths_dist[pts[nghs2[good_vals]]]) 
+        #short reach condition. 
         elif perc < 100 and len(pts) <= 3:
             nz = np.where(rch_paths[pts] > 0)[0]
             rch_paths[pts[rch_zeros]] = stats.mode(rch_paths[pts[nz]])[0]
             rch_paths_order[pts[rch_zeros]] = stats.mode(rch_paths_order[pts[nz]])[0]
             rch_paths_dist[pts[rch_zeros]] = np.max(rch_paths_dist[pts[nz]])
+        #if other conditions fail, leave values zero. 
         else:
             rch_paths[pts] = 0
             rch_paths_order[pts] = 0
@@ -405,6 +551,33 @@ def filter_zero_pts(rch_paths, rch_paths_dist, rch_paths_order, cl_rchs, cl_ind)
 ################################################################################################
 
 def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
+    """
+    Identifies and corrects short reaches on the main channel network that 
+    have been flagged as a side channel reach.  
+
+    Parameters
+    ----------
+    cl_rchs: numpy.array()
+        SWORD centerline reach IDs.
+    main_side: numpy.array()
+        Main-Side network flag.
+    rch_paths: numpy.array()
+        Path frequency: The number of times a reach is traveled along get to any 
+        given headwater point.
+    rch_paths_order: numpy.array()
+        Path order: Unique values representing continuous paths from the
+        river outlet to the headwaters ordered from the longest path (1) 
+        to the shortest path (N).
+
+    Returns
+    -------
+    None.
+
+    """
+
+    #loop through side channel reaches and correct to a main network 
+    #reach if there is only one reach neighbor on each end of the 
+    #side channel reach. 
     side_chan = np.unique(cl_rchs[0,np.where(main_side == 1)[0]])
     for s in list(range(len(side_chan))):
         # print(s)
@@ -428,17 +601,24 @@ def filter_short_side_channels(cl_rchs, main_side, rch_paths, rch_paths_order):
 ################################################################################################
 
 start_all = time.time()
-region = 'OC'
-version = 'v17'
-basin = 'hb52'
+
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version (i.e. v17)", type = str)
+parser.add_argument("basin", help="Pfafstetter Level 2 Basin Number (i.e. 74)", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+basin = args.basin
 
 print('Starting Basin: ', basin)
 sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+\
     '/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 path_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+\
-    '/network_building/'+region+'/'+basin+'_paths/'
+    '/network_building/'+region+'/hb'+basin+'_paths/'
 path_nc = main_dir+'/data/outputs/Reaches_Nodes/'+version+\
-    '/network_building/pathway_netcdfs/'+region+'/'+basin+'_path_vars.nc'
+    '/network_building/pathway_netcdfs/'+region+'/hb'+basin+'_path_vars.nc'
 path_files = os.listdir(path_dir)
 path_files = np.array([f for f in path_files if '.gpkg' in f])
 path_files = np.array([f for f in path_files if 'path_' in f])
@@ -454,7 +634,7 @@ sword.close()
 
 #subset sword to basin. 
 l2_basins = np.array([int(str(ind)[0:2]) for ind in cl_rchs_all[0,:]])
-l2 = np.where(l2_basins == int(basin[2:4]))[0]
+l2 = np.where(l2_basins == int(basin))[0]
 cl_ind = cl_id_all[l2]
 cl_lon = cl_x_all[l2]
 cl_lat = cl_y_all[l2]
@@ -537,79 +717,81 @@ end_all = time.time()
 print('Finished Basin '+basin+' in: '+str(np.round((end_all-start_all)/60,2))+' mins')
 
 
-'''
+
 ### PLOTS
-plt.scatter(cl_lon, cl_lat, c=np.round(np.log(rch_paths)), s = 5, cmap='rainbow')
-plt.show()
+# import matplotlib.pyplot as plt
 
-plt.scatter(cl_lon, cl_lat, c=rch_paths, s = 5, cmap='rainbow')
-plt.show()
+# plt.scatter(cl_lon, cl_lat, c=np.round(np.log(rch_paths)), s = 5, cmap='rainbow')
+# plt.show()
 
-plt.scatter(cl_lon, cl_lat, c=rch_paths_dist, s = 2, cmap='rainbow')
-plt.show()
+# plt.scatter(cl_lon, cl_lat, c=rch_paths, s = 5, cmap='rainbow')
+# plt.show()
 
-plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 2, cmap='rainbow')
-plt.show()
+# plt.scatter(cl_lon, cl_lat, c=rch_paths_dist, s = 2, cmap='rainbow')
+# plt.show()
 
-plt.scatter(cl_lon, cl_lat, c=np.log(rch_paths_order), s = 5, cmap='rainbow')
-plt.show()
+# plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 2, cmap='rainbow')
+# plt.show()
 
-side = np.where(main_side == 1)[0]
-plt.scatter(cl_lon, cl_lat, c='blue', s = 5)
-plt.scatter(cl_lon[side], cl_lat[side], c='red', s = 5)
-plt.show()
+# plt.scatter(cl_lon, cl_lat, c=np.log(rch_paths_order), s = 5, cmap='rainbow')
+# plt.show()
 
-
-zero = np.where(np.isnan(rch_paths_dist2)==True)[0]
-plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 5)
-plt.scatter(cl_lon[zero], cl_lat[zero], c='red', s = 5)
-plt.show()
+# side = np.where(main_side == 1)[0]
+# plt.scatter(cl_lon, cl_lat, c='blue', s = 5)
+# plt.scatter(cl_lon[side], cl_lat[side], c='red', s = 5)
+# plt.show()
 
 
-inds = np.arange(rch_paths_dist2.shape[0])
-good = np.where(np.isfinite(rch_paths_dist2))[0]
-f = interpolate.interp1d(inds[good], rch_paths_dist2[good],bounds_error=False)
-B = np.where(np.isfinite(rch_paths_dist2),rch_paths_dist2,f(inds))
-rch_paths_dist2[zero]
-
-plt.scatter(cl_lon, cl_lat, c=B, s = 5)
-plt.show()
+# zero = np.where(np.isnan(rch_paths_dist2)==True)[0]
+# plt.scatter(cl_lon, cl_lat, c=rch_paths_dist2, s = 5)
+# plt.scatter(cl_lon[zero], cl_lat[zero], c='red', s = 5)
+# plt.show()
 
 
-rch = np.where(cl_rchs[0,:] == 83300200021)[0]
-rch_paths_dist[rch]
-rch_paths[rch]
-rch_paths_order[rch]
+# inds = np.arange(rch_paths_dist2.shape[0])
+# good = np.where(np.isfinite(rch_paths_dist2))[0]
+# f = interpolate.interp1d(inds[good], rch_paths_dist2[good],bounds_error=False)
+# B = np.where(np.isfinite(rch_paths_dist2),rch_paths_dist2,f(inds))
+# rch_paths_dist2[zero]
 
-plt.scatter(cl_lon[rch], cl_lat[rch], c=rch_paths_dist[rch], s = 5, cmap='rainbow')
-plt.show()
-
-plt.scatter(cl_lon, cl_lat, c=rch_paths_dist, s = 5, cmap='rainbow')
-plt.show()
+# plt.scatter(cl_lon, cl_lat, c=B, s = 5)
+# plt.show()
 
 
-### SAVE CSV
-path_csv = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'+basin+'_path_vars.csv'
-df=pd.DataFrame(np.array([cl_lon, cl_lat, rch_paths, rch_paths_dist, rch_paths_order, main_side, cl_rchs[0,:], cl_nodes, cl_ind, side_segs]).T)
-df=df.rename(columns={0: "x", 1: "y", 2: "cumulative_path", 3: "dist_out", 4: "path_order_by_length", 5: "main_side", 6: "reach_id", 7: "node_id", 8: "cl_id", 9: "side_seg"})
-df.to_csv(path_csv)
+# rch = np.where(cl_rchs[0,:] == 83300200021)[0]
+# rch_paths_dist[rch]
+# rch_paths[rch]
+# rch_paths_order[rch]
+
+# plt.scatter(cl_lon[rch], cl_lat[rch], c=rch_paths_dist[rch], s = 5, cmap='rainbow')
+# plt.show()
+
+# plt.scatter(cl_lon, cl_lat, c=rch_paths_dist, s = 5, cmap='rainbow')
+# plt.show()
 
 
-path_csv = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'+basin+'_side_channels.csv'
-df=pd.DataFrame(np.array([cl_lon[side], cl_lat[side]]).T)
-df=df.rename(columns={0: "x", 1: "y"})
-df.to_csv(path_csv)
+# ### SAVE CSV
+# path_csv = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'+basin+'_path_vars.csv'
+# df=pd.DataFrame(np.array([cl_lon, cl_lat, rch_paths, rch_paths_dist, rch_paths_order, main_side, cl_rchs[0,:], cl_nodes, cl_ind, side_segs]).T)
+# df=df.rename(columns={0: "x", 1: "y", 2: "cumulative_path", 3: "dist_out", 4: "path_order_by_length", 5: "main_side", 6: "reach_id", 7: "node_id", 8: "cl_id", 9: "side_seg"})
+# df.to_csv(path_csv)
 
 
-#read in vars from nc
-path_nc = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
+# path_csv = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/network_testing/'+basin+'_paths/'+basin+'_side_channels.csv'
+# df=pd.DataFrame(np.array([cl_lon[side], cl_lat[side]]).T)
+# df=df.rename(columns={0: "x", 1: "y"})
+# df.to_csv(path_csv)
 
-data = nc.Dataset(path_nc)
 
-rch_paths = data.groups['centerlines'].variables['path_travel_frequency'][:]
-rch_paths_order = data.groups['centerlines'].variables['path_order_by_length'][:]
-rch_paths_dist = data.groups['centerlines'].variables['distance_from_outlet'][:]
-main_side = data.groups['centerlines'].variables['main_side_chan'][:]
+# #read in vars from nc
+# path_nc = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/pathways/'+region+'/'+basin+'_path_vars.nc'
+
+# data = nc.Dataset(path_nc)
+
+# rch_paths = data.groups['centerlines'].variables['path_travel_frequency'][:]
+# rch_paths_order = data.groups['centerlines'].variables['path_order_by_length'][:]
+# rch_paths_dist = data.groups['centerlines'].variables['distance_from_outlet'][:]
+# main_side = data.groups['centerlines'].variables['main_side_chan'][:]
 
 
 ### Think about straheler stream order?
@@ -618,6 +800,6 @@ main_side = data.groups['centerlines'].variables['main_side_chan'][:]
 # strm_order[normalize] = (np.round(np.log(rch_paths[normalize]))-(np.min(np.round(np.log(rch_paths[normalize])))))+1
 # strm_order[np.where(strm_order == 0)] = 1
 
-'''
+
 
 

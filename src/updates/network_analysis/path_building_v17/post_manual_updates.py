@@ -1,5 +1,28 @@
+"""
+Updating NetCDF values based on Geopackage values.
+(post_manual_updates.py)
+===============================================================
+
+This scripts updates the SWORD netCDF file based on values in 
+the SWORD geopackage files if they were manually edited. A 
+refactored, universal version of this script is located at:
+'src/updates/formatting_scripts/update_attributes_from_gpkg.py'.  
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA), SWORD version (i.e. v17), 
+and a "dist_update" parameter indicating whether to 
+update the distance from outlet variable or not (True/False).
+
+Execution example (terminal):
+    python post_manual_updates.py NA v17 False
+
+""" 
+
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc
 import geopandas as gp
@@ -15,10 +38,17 @@ from scipy import stats
 from scipy import interpolate
 import matplotlib.pyplot as plt
 
-region = 'AF'
-version = 'v17'
-dist_update = True
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+parser.add_argument("dist_update", help="True or False: Whether or not to update distance from outlet attribute", type = str)
+args = parser.parse_args()
 
+region = args.region
+version = args.version
+dist_update = args.dist_update
+
+#filepaths. 
 gpkg_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg/'\
     +region.lower()+'_sword_reaches_'+version+'.gpkg'
 nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'\
@@ -26,10 +56,12 @@ nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'\
 con_fn = sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+\
     '/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 
+#read data. 
 sword = nc.Dataset(nc_fn, 'r+')
 con = nc.Dataset(con_fn)
 gpkg = gp.read_file(gpkg_fn)
 
+#assign relevant data to arrays. 
 cl_rchs = np.array(con.groups['centerlines'].variables['reach_id'][:])
 cl_id = np.array(con.groups['centerlines'].variables['cl_id'][:])
 cl_x = np.array(con.groups['centerlines'].variables['x'][:])
@@ -60,6 +92,7 @@ node_net = np.array(sword.groups['nodes'].variables['network'][:])
 path_segs = np.array(sword.groups['reaches'].variables['path_segs'][:])
 node_path_segs = np.array(sword.groups['nodes'].variables['path_segs'][:])
 
+#update netCDF attribute values with associated geopackage attribute values. 
 print('Updating Attributes from SHP File')
 unq_rchs = np.array(gpkg['reach_id'])
 for r in list(range(len(unq_rchs))):
@@ -83,6 +116,7 @@ for r in list(range(len(unq_rchs))):
     if dist_update == True: 
         reach_dist[rch] = gpkg['dist_out'][r]
 
+#update stream order based on new attribute information. 
 print('Updating Stream Order')
 strm_order_all = np.zeros(len(reaches))
 level2 = np.array([int(str(r)[0:2]) for r in reaches])
@@ -125,6 +159,7 @@ for ind in list(range(len(unq_l2))):
     strm_order[np.where(strm_order == 0)] = -9999
     strm_order_all[l2] = strm_order
 
+#updating distance from outlet at the node scale. 
 print('Updating Node Attributes')
 nodes_strm_order_all = np.zeros(len(nodes))
 for r2 in list(range(len(reaches))):
@@ -141,6 +176,7 @@ for r2 in list(range(len(reaches))):
 # plt.scatter(rch_x[good], rch_y[good], c=strm_order_all[good], s=5)
 # plt.show()
 
+#updating end reach value.
 print('Updating End Reach Values')
 node_l2 = np.array([int(str(n)[0:2]) for n in nodes])
 ends = nodes[np.where((node_ends > 0)&(node_ends<3))[0]]
@@ -171,6 +207,7 @@ for idx in list(range(len(unq_l2))):
             node_ends[nl2[pt]] = 1
             rch_ends[rch_pt] = 1
 
+#updating netCDF.
 print('Updating NetCDF')
 sword.groups['reaches'].variables['main_side'][:] = rch_ms
 sword.groups['nodes'].variables['main_side'][:] = node_ms

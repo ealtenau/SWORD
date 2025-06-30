@@ -1,4 +1,25 @@
 # -*- coding: utf-8 -*-
+"""
+SWORD Version Translation (version_diff.py).
+===============================================================
+
+This script creates translation files for the Reach and Node IDs
+between two SWORD versions.  
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA), SWORD version for the 
+translation (i.e. v17), and SWORD version to compare to
+(i.e. v16).
+
+Translation files are written as csv files and located 
+at sword.paths['version_dir'].
+
+Execution example (terminal):
+    python version_diff.py NA v17 v16
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -27,35 +48,40 @@ old_v = args.old_version
 # new_v = 'v17b'
 # old_v = 'v16'
 
+#read data and create outpaths.
 new_sword = SWORD(main_dir, region, new_v)
 old_sword = SWORD(main_dir, region, old_v)
 rch_outpath = new_sword.paths['version_dir']+region+'_ReachIDs_'+new_v+'_vs_'+old_v+'.csv'
 node_outpath = new_sword.paths['version_dir']+region+'_NodeIDs_'+new_v+'_vs_'+old_v+'.csv'
 
-# find closest points.     
+#find closest points between the two versions.     
 old_pts = np.vstack((old_sword.nodes.x, old_sword.nodes.y)).T
 new_pts = np.vstack((new_sword.nodes.x, new_sword.nodes.y)).T
 kdt = sp.cKDTree(old_pts)
 eps_dist, eps_ind = kdt.query(new_pts, k = 2) 
 
+#translation indexes. 
 indexes = eps_ind[:,0]
 dist = eps_dist[:,0]
 old_node_ids = old_sword.nodes.id[indexes]
 old_reach_ids = old_sword.nodes.reach_id[indexes]
 
-# Flag any nodes with a previous version node greater than 500 m away or with edit_flag = '7' (i.e. new centerline channel).
+#Flag any nodes with a previous version node greater than 500 m away 
+#or with edit_flag = '7' (i.e. new centerline channel).
 new_cls = np.where(dist > 0.005)[0]
 old_node_ids[new_cls] = 0
 old_reach_ids[new_cls] = 0
 shift_flag = np.zeros(len(old_reach_ids))
 shift_flag[np.where(old_node_ids == 0)[0]] = 1
-#len(np.where(shift_flag == 1)[0])/len(shift_flag)*100 #1.5% of nodes shifted or were added in NA from v17 to v16 
+#len(np.where(shift_flag == 1)[0])/len(shift_flag)*100 #percentage check. 
 
+#creating flags to identify if reach boundaries changed
+#at the node level. 
 print('calculating node dimension')
-boundary_flag = np.zeros(len(old_reach_ids),dtype=int)
-boundary_perc = np.zeros(len(old_reach_ids),dtype=int)
-dominant_rch = np.zeros(len(old_reach_ids),dtype=int)
-number_of_rchs = np.zeros(len(old_reach_ids),dtype=int)
+boundary_flag = np.zeros(len(old_reach_ids),dtype=int) #binary flag: 0 - no change, 1 - boundary change. 
+boundary_perc = np.zeros(len(old_reach_ids),dtype=int) #percentage of overlapping reach for boundary change. 
+dominant_rch = np.zeros(len(old_reach_ids),dtype=int) #dominant Reach ID for shifted reach. 
+number_of_rchs = np.zeros(len(old_reach_ids),dtype=int) #number of reaches from the older version in the new version reach boundary. 
 for r in list(range(len(new_sword.reaches.id))):
     pts = np.where(new_sword.nodes.reach_id == new_sword.reaches.id[r])[0]
     unique_elements, counts = np.unique(old_reach_ids[pts], return_counts=True)
@@ -71,12 +97,14 @@ for r in list(range(len(new_sword.reaches.id))):
         boundary_perc[pts] = counts[max_cnt]/len(pts)*100
         dominant_rch[pts] = unq_elements[max_cnt]
 
+#creating flags to identify if reach boundaries changed
+#at the reach level. 
 print('calculating reach dimension')
-rch_bnd_flag = np.zeros(len(new_sword.reaches.id),dtype=int)
-rch_bnd_perc = np.zeros(len(new_sword.reaches.id),dtype=int)
-rch_dom = np.zeros(len(new_sword.reaches.id),dtype=int)
-num_rch = np.zeros(len(new_sword.reaches.id),dtype=int)
-old_rch_id = np.zeros(len(new_sword.reaches.id),dtype=int)
+rch_bnd_flag = np.zeros(len(new_sword.reaches.id),dtype=int) #binary flag: 0 - no change, 1 - boundary change.
+rch_bnd_perc = np.zeros(len(new_sword.reaches.id),dtype=int) #percentage of overlapping reach for boundary change. 
+rch_dom = np.zeros(len(new_sword.reaches.id),dtype=int) #dominant Reach ID for shifted reach. 
+num_rch = np.zeros(len(new_sword.reaches.id),dtype=int) #number of reaches from the older version in the new version reach boundary. 
+old_rch_id = np.zeros(len(new_sword.reaches.id),dtype=int) #Reach ID of older version. 
 for ind in list(range(len(new_sword.reaches.id))):
     # print(ind)
     pts2 = np.where(new_sword.nodes.reach_id == new_sword.reaches.id[ind])[0]

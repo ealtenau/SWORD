@@ -1,32 +1,349 @@
-import os 
+"""
+Attaching Path Variables to SWORD (path_vars_to_main_nc.py)
+==============================================================
+
+Script for adding the path variables to the SWORD netCDF file.
+
+The script is run at a Pfafstetter Level 2 basin scale.
+Command line arguments required are the two-letter
+region identifier (i.e. NA), SWORD version (i.e. v17),
+and Pfafstetter Level 2 basin (i.e. 74).
+
+Execution example (terminal):
+    python path_vars_to_main_nc.py NA v17 74
+
+"""
+
+import sys
+import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc
-import geopandas as gp
-import geopy.distance
-from shapely.geometry import LineString, Point
-from geopandas import GeoSeries
-import pandas as pd
 import time
 import argparse
-from scipy import spatial as sp
-import matplotlib.pyplot as plt
-from scipy import stats
 
 ###############################################################################
-###############################################################################
+###########################  FUNCTIONS  #######################################
 ###############################################################################
 
 class Object(object):
     """
     FUNCTION:
-        Creates class object to assign attributes to.
+        Creates empty class object to assign attributes to.
     """
     pass 
 
 ###############################################################################
 
 def read_data(filename):
+    """
+    Reads SWORD data from the netCDF file and stores each spatial 
+    dimension in a separate class object with associated attributes. 
+
+    Parmeters
+    ---------
+    filename: str
+        The directory to the SWORD netCDF file. 
+    
+    Returns
+    -------
+    centerlines: obj 
+        Object containing attributes associated with the SWORD 
+        centerlines. 
+        
+        Attributes: type [dimension]
+        ----------------------------
+        cl_id: numpy.array() [number of points]
+            Unique ID associated with each centerline point. 
+        x: numpy.array() [number of points]
+            Longitude (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of points]
+            Latitude (WGS 84, EPSG:4326).
+        reach_id: numpy.array() [4, number of points]
+            Reach ID associated with a centerline point. The first row 
+            contains the reach IDs associated with each centerline 
+            point. Rows 2-4 are reach IDs of neighboring reaches.  
+        node_id: numpy.array() [4, number of points]
+            Node ID associated with a centerline point. The first row 
+            contains the node IDs associated with each centerline 
+            point. Rows 2-4 are node IDs of neighboring nodes.
+
+    nodes: obj
+        Object containing attributes associated with the SWORD 
+        nodes. 
+
+        Attributes: type [dimension]
+        ----------------------------
+        id: numpy.array() [number of nodes]
+            Unique Node ID. 
+        cl_ids: numpy.array() [2, number of nodes]
+            Minimum (row 1) and maximum (row 2) centerline 
+            point ids associated with each node.
+        x: numpy.array() [number of nodes]
+            Longitude (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of nodes]
+            Latitude (WGS 84, EPSG:4326). 
+        len: numpy.array() [number of nodes]
+            Node length (meters). 
+        wse: numpy.array() [number of nodes]
+            Water surface elevation (meters). 
+        wse_var: numpy.array() [number of nodes]
+            Water surface elevation variance (squared meters).
+        wth: numpy.array() [number of nodes]
+            Width (meters).
+        wth_var: numpy.array() [number of nodes]
+            Width variance (squared meters).
+        grod: numpy.array() [number of nodes]
+            Type of obstruction for each node based on GROD and
+            HydroFALLS databases. Obstr_type values: 
+            0 - No Dam, 
+            1 - Dam, 
+            2 - Lock, 
+            3 - Low Permeable Dam, 
+            4 - Waterfall.
+        grod_fid: numpy.array() [number of nodes]
+            GROD database ID. 
+        hfalls_fid: numpy.array() [number of nodes]
+            HydroFALLS database ID. 
+        nchan_max: numpy.array() [number of nodes]
+            Maximum number of channels for each node.
+        nchan_mod: numpy.array() [number of nodes]
+            Mode of the number of channels for each node.
+        dist_out: numpy.array() [number of nodes]
+            Distance from the river outlet (meters).
+        reach_id: numpy.array() [number of nodes]
+            Reach ID the node is associated with.
+        facc: numpy.array() [number of nodes]
+            Flow accumulation (squared kilometers).
+        lakeflag: numpy.array() [number of nodes]
+            GRWL water body identifier for each node: 
+            0 - river, 
+            1 - lake/reservoir, 
+            2 - canal , 
+            3 - tidally influenced river.
+        wth_coef: numpy.array() [number of nodes]
+            Coefficient that is multiplied by the width to
+            inform the search window for SWOT data.
+        ext_dist_coef: numpy.array() [number of nodes]
+            Coefficient that informs the maximum search
+            window for SWOT data.
+        max_wth: numpy.array() [number of nodes]
+            Maximum width value across the channel that
+            includes any island and bar areas (meters).
+        meand_len: numpy.array() [number of nodes]
+            Length of the meander that a node belongs to, 
+            measured from beginning of the meander to 
+            its end (meters).
+        river_name: numpy.array() [number of nodes]
+            All river names associated with a node. If there are 
+            multiple names they are listed in alphabetical order 
+            and separated by a semicolon.
+        manual_add: numpy.array() [number of nodes]
+            Binary flag indicating whether the node was manually added. 
+            0 - Not manually added. 
+            1 - Manually added. 
+        sinuosity: numpy.array() [number of nodes]
+            The total reach length the node belongs to divided by the 
+            Euclidean distance between the reach end points (meters).
+        edit_flag: numpy.array() [number of nodes]
+            Numerical flag indicating the type of update applied to
+            SWORD nodes from the previous version. Flag descriptions:
+            1 - reach type change,
+            2 - node order change,
+            3 - reach neighbor change,
+            41 - flow accumulation update,
+            42 - elevation update,
+            43 - width update,
+            44 - slope update,
+            45 - river name update,
+            5 - reach id change,
+            6 - reach boundary change,
+            7 - reach/node addition
+            Multiple updates will be separated by a comma (i.e. "41,2")
+        trib_flag: numpy.array() [number of nodes]
+            Binary flag indicating if a large tributary not represented in
+            SWORD is entering a node. 
+            0 - no tributary, 
+            1 - tributary.
+        path_freq: numpy.array() [number of nodes]
+            The number of times a node is traveled along get to any 
+            given headwater point.
+        path_order: numpy.array() [number of nodes]
+            Unique values representing continuous paths from the
+            river outlet to the headwaters ordered from the longest
+            path (1) to the shortest path (N).
+        path_segs: numpy.array() [number of nodes]
+            Unique values indicating continuous river segments
+            between river junctions.
+        strm_order: numpy.array() [number of nodes]
+            Stream order based on the log scale of the path frequency.
+            Stream order is calculated for the main network only (see
+            “main_side” description).
+        main_side: numpy.array() [number of nodes]
+            Value indicating whether a node is on the:
+            0 - main network
+            1 - side network 
+            2 - secondary outlet
+        end_rch: numpy.array() [number of nodes]
+            Value indicating whether a node is:
+            0 - main stem 
+            1 - headwater
+            2 - outlet
+            3 - junction
+        network: numpy.array() [number of nodes]
+            Unique value for each connected river network.
+        add_flag: numpy.array() [number of nodes]
+            Binary flag indicating if the node was added
+            to the current SWORD version based on the 
+            MERIT Hydro Vector database. 
+            0 - not added, 
+            1 - added. 
+
+    reaches: obj
+        Object containing attributes associated with the SWORD 
+        reaches. 
+
+        Attributes: type [dimension]
+        ----------------------------
+        id: numpy.array() [number of reaches]
+            Unique Reach ID. 
+        cl_ids: numpy.array() [2, number of reaches]
+            Minimum (row 1) and maximum (row 2) centerline 
+            point ids associated with each reach.
+        x: numpy.array() [number of reaches]
+            Longitude (WGS 84, EPSG:4326). 
+        x_min: numpy.array() [number of reaches]
+            Minimum longitude of a reach (WGS 84, EPSG:4326). 
+        x_max: numpy.array() [number of reaches]
+            Maximum longitude of a reach (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of reaches]
+            Latitude (WGS 84, EPSG:4326). 
+        y_min: numpy.array() [number of reaches]
+            Minimum latitude of a reach (WGS 84, EPSG:4326).
+        y_max: numpy.array() [number of reaches]
+            Maximum latitude of a reach (WGS 84, EPSG:4326).
+        len: numpy.array() [number of reaches]
+            Reach length (meters). 
+        wse: numpy.array() [number of reaches]
+            Water surface elevation (meters). 
+        wse_var: numpy.array() [number of reaches]
+            Water surface elevation variance (squared meters).
+        wth: numpy.array() [number of reaches]
+            Width (meters).
+        wth_var: numpy.array() [number of reaches]
+            Width variance (squared meters).
+        grod: numpy.array() [number of reaches]
+            Type of obstruction for each reach based on GROD and
+            HydroFALLS databases. Obstr_type values: 
+            0 - No Dam, 
+            1 - Dam, 
+            2 - Lock, 
+            3 - Low Permeable Dam, 
+            4 - Waterfall.
+        grod_fid: numpy.array() [number of reaches]
+            GROD database ID. 
+        hfalls_fid: numpy.array() [number of reaches]
+            HydroFALLS database ID. 
+        nchan_max: numpy.array() [number of reaches]
+            Maximum number of channels for each reach.
+        nchan_mod: numpy.array() [number of reaches]
+            Mode of the number of channels for each reach.
+        dist_out: numpy.array() [number of reaches]
+            Distance from the river outlet (meters).
+        rch_n_nodes: numpy.array() [number of reaches]
+            Number of nodes in a reach.
+        slope: [number of reaches]
+            Reach slope (meters per kilometer).
+        n_rch_up: [number of reaches]
+            Number of upstream neighbors.
+        n_rch_down: [number of reaches]
+            Number of downstream neighbors.
+        rch_id_up: [4, number of reaches]
+            Reach IDs of upstream neighbors (4 maximum).
+        rch_id_down: [4, number of reaches]
+            Reach IDs of downstream neighbors (4 maximum).
+        max_obs: [number of reaches]
+            Maximum number of SWOT passes to intersect each 
+            reach during the ~21 day orbit cycle.
+        orbits: [75, number of reaches]
+            SWOT orbit pass_tile IDs that intersect each reach 
+            during the 21 day orbit cycle. One ID per row (75 maximum).
+        iceflag: [number of reaches]
+        low_slope: [number of reaches]
+            Binary flag where a value of 1 indicates the reach 
+            slope is too low for effective discharge estimation
+            for SWOT discharge algorithms.
+        facc: numpy.array() [number of reaches]
+            Flow accumulation (squared kilometers).
+        lakeflag: numpy.array() [number of reaches]
+            GRWL water body identifier for each reach: 
+            0 - river, 
+            1 - lake/reservoir, 
+            2 - canal , 
+            3 - tidally influenced river.
+        max_wth: numpy.array() [number of reaches]
+            Maximum width value across the channel that
+            includes any island and bar areas (meters).
+        river_name: numpy.array() [number of reaches]
+            All river names associated with a reach. If there are 
+            multiple names they are listed in alphabetical order 
+            and separated by a semicolon.
+        edit_flag: numpy.array() [number of reaches]
+            Numerical flag indicating the type of update applied to
+            SWORD reaches from the previous version. Flag descriptions:
+            1 - reach type change,
+            2 - node order change,
+            3 - reach neighbor change,
+            41 - flow accumulation update,
+            42 - elevation update,
+            43 - width update,
+            44 - slope update,
+            45 - river name update,
+            5 - reach id change,
+            6 - reach boundary change,
+            7 - reach/node addition
+            Multiple updates will be separated by a comma (i.e. "41,2")
+        trib_flag: numpy.array() [number of reaches]
+            Binary flag indicating if a large tributary not represented in
+            SWORD is entering a reach. 
+            0 - no tributary, 
+            1 - tributary.
+        path_freq: numpy.array() [number of reaches]
+            The number of times a reach is traveled along get to any 
+            given headwater point.
+        path_order: numpy.array() [number of reaches]
+            Unique values representing continuous paths from the
+            river outlet to the headwaters ordered from the longest
+            path (1) to the shortest path (N).
+        path_segs: numpy.array() [number of reaches]
+            Unique values indicating continuous river segments
+            between river junctions.
+        strm_order: numpy.array() [number of reaches]
+            Stream order based on the log scale of the path frequency.
+            Stream order is calculated for the main network only (see
+            “main_side” description).
+        main_side: numpy.array() [number of reaches]
+            Value indicating whether a reach is on the:
+            0 - main network
+            1 - side network 
+            2 - secondary outlet
+        end_rch: numpy.array() [number of reaches]
+            Value indicating whether a reach is:
+            0 - main stem 
+            1 - headwater
+            2 - outlet
+            3 - junction
+        network: numpy.array() [number of reaches]
+            Unique value for each connected river network.
+        add_flag: numpy.array() [number of reaches]
+            Binary flag indicating if the reach was added
+            to the current SWORD version based on the 
+            MERIT Hydro Vector database. 
+            0 - not added, 
+            1 - added.
+    
+    """
 
     centerlines = Object()
     nodes = Object()
@@ -135,7 +452,29 @@ def read_data(filename):
 ###############################################################################
 
 def reorder_cl_ids(path_cl_rch_ids, path_cl_ids, path_cl_dist_out, centerlines):
-    
+    """
+    Orders SWORD centerline IDs based on the shortest paths 
+    direction information.
+
+    Parameters
+    ----------
+    path_cl_rch_ids: numpy.array()
+        Reach IDs associated with the shortest paths.
+    path_cl_ids: numpy.array()
+        Centerline IDs associated with the shortest paths. 
+    path_cl_dist_out: numpy.array()
+        Distance from outlet along the shortest paths. 
+    centerlines: obj
+        Object containing lcation and attribute information
+        along the high-resolution centerline.
+        
+    Returns
+    -------
+    cl_id_new: numpy.array()
+        Updated centerline IDs. 
+
+    """
+
     unq_rchs = np.unique(path_cl_rch_ids)
     cl_id_new = np.copy(centerlines.cl_id)
     cl_rch_ids = np.copy(centerlines.reach_id[0,:])
@@ -163,39 +502,33 @@ def reorder_cl_ids(path_cl_rch_ids, path_cl_ids, path_cl_dist_out, centerlines):
 
 ###############################################################################
 
-def update_ghost_type(centerlines, con_rch_ids, con_end_ids):
-    ghosts = centerlines.reach_id[0,np.where(centerlines.type == '6')[0]]
-    new_type = np.copy(centerlines.type)
-    for ind in list(range(len(ghosts))):
-        # print(ind)
-        rch = np.where(con_rch_ids[0,:] == ghosts[ind])[0]
-        if len(rch) == 0:
-            continue
-        
-        end = max(con_end_ids[rch])
-        if end == 1 or end == 2:
-            continue
-        else:
-            # print(ind)
-            nghs = con_rch_ids[1::,rch]
-            nghs = nghs[nghs > 0]
-            nghs_type = np.array([str(n)[-1] for n in nghs])
-            vals, cnt = np.unique(nghs_type, return_counts=True)
-            vals = vals[np.where(vals != '6')]
-            cnt = cnt[np.where(vals != '6')]
-            if len(vals) == 0:
-                new_type[rch] = '1'
-            elif len(vals) == 1:
-                new_type[rch] = vals
-            else:
-                # print(ind)
-                main_val = vals[np.where(cnt == max(cnt))[0][0]]
-                new_type[rch] = main_val
-    return new_type
-
-###############################################################################
 def update_headwaters_outlets(path_order, path_cl_dist_out, path_cl_ids, 
                               con_cl_ids, con_end_ids):
+    """
+    Adds path variable information to the SWORD reach and 
+    node objects.
+
+    Parameters
+    ----------
+    path_cl_ids: numpy.array()
+        Centerline IDs associated with the shortest paths. 
+    path_order: numpy.array()
+        Path order: Unique values representing continuous paths from the
+        river outlet to the headwaters ordered from the longest path (1) 
+        to the shortest path (N).
+    path_cl_dist_out: numpy.array()
+        Distance from outlet along the shortest paths. 
+    con_cl_ids: numpy.array()
+        SWORD centerline IDs. 
+    con_end_ids: numpy.array()
+        Binary flag indicating whether a SWORD point is a headwater
+        or outlet point.  
+        
+    Returns
+    -------
+    None.
+        
+    """
     
     unq_paths = np.unique(path_order)
     unq_paths = unq_paths[unq_paths>0]
@@ -234,7 +567,40 @@ def update_headwaters_outlets(path_order, path_cl_dist_out, path_cl_ids,
                     
 def add_rch_node_path_vars(reaches, nodes, path_cl_rch_ids, path_cl_dist_out, 
                       path_freq, path_order, path_main_side, path_cl_node_ids):
-    
+    """
+    Adds path variable information to the SWORD reach and 
+    node objects.
+
+    Parameters
+    ----------
+    reaches: obj
+        Object containing lcation and attribute information for
+        each reach.
+    nodes: obj
+        Object containing lcation and attribute information for
+        each node.
+    path_cl_rch_ids: numpy.array()
+        Reach IDs associated with the shortest paths. 
+    path_cl_dist_out: numpy.array()
+        Distance from outlet along the shortest paths. 
+    path_freq: numpy.array()
+        Path frequency: The number of times a point is traveled along get to any 
+        given headwater point.
+    path_order: numpy.array()
+        Path order: Unique values representing continuous paths from the
+        river outlet to the headwaters ordered from the longest path (1) 
+        to the shortest path (N).
+    path_main_side: numpy.array()
+        Main-Side network flag.
+    path_cl_node_ids: numpy.array()
+        Node IDs associated with the shortest paths.
+
+    Returns
+    -------
+    None.
+        
+    """
+
     unq_rch = np.unique([path_cl_rch_ids])
     for ind in list(range(len(unq_rch))):
         # print(ind, len(unq_rch)-1)
@@ -263,172 +629,28 @@ def add_rch_node_path_vars(reaches, nodes, path_cl_rch_ids, path_cl_dist_out,
             nodes.main_side[nds] = np.max(path_main_side[pts2])
             nodes.strm_order[nds] = np.max(path_strm_order[pts2])
 
-###############################################################################                  
-        
-def update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin):
-    
-    rch_nums = np.array([int(str(rch)[6:10]) for rch in centerlines.reach_id[0,:]])
-    node_nums = np.array([int(str(rch)[10:13]) for rch in centerlines.node_id[0,:]])
-    cl_level6 = np.array([int(str(rch)[0:6]) for rch in centerlines.node_id[0,:]])
-
-    hw = np.where(con_end_ids == 1)[0]
-    out = np.where(con_end_ids == 2)[0]
-    hw_nodes = np.unique(centerlines.node_id[0,hw[np.where(centerlines.new_type[hw] != '6')]])
-    out_nodes = np.unique(centerlines.node_id[0,out[np.where(centerlines.new_type[out] != '6')]])
-    all_new_ghost_nodes = np.append(hw_nodes, out_nodes)
-    all_new_ghost_nodes = np.unique(all_new_ghost_nodes)
-    new_ghost_l2 = np.array([int(str(rch)[0:2]) for rch in all_new_ghost_nodes])
-    keep = np.where(new_ghost_l2 == int(basin[2:4]))[0]
-    all_new_ghost_nodes = all_new_ghost_nodes[keep]
-
-    # new_rch_num = max(rch_nums)+1
-    # new_node_num = max(node_nums)+1
-    for ind in list(range(len(all_new_ghost_nodes))):
-        # print(ind, all_new_ghost_nodes[ind], len(all_new_ghost_nodes)-1)
-        update_ids = np.where(centerlines.node_id[0,:] == all_new_ghost_nodes[ind])
-        nds = np.where(nodes.id == all_new_ghost_nodes[ind])[0]
-        old_rch = np.unique(centerlines.reach_id[0,update_ids])
-
-        bsn6 = np.where(cl_level6 == np.unique(cl_level6[update_ids]))[0]
-        new_node_num = max(node_nums[bsn6])+1
-        node_nums[update_ids] = new_node_num
-        new_rch_num = max(rch_nums[bsn6])+1
-        rch_nums[update_ids] = new_rch_num
-
-        if len(str(new_rch_num)) == 1:
-            fill = '000'
-            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
-        if len(str(new_rch_num)) == 2:
-            fill = '00'
-            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
-        if len(str(new_rch_num)) == 3:
-            fill = '0'
-            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+str(new_rch_num)+'6')
-        if len(str(new_rch_num)) == 4:
-            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+str(new_rch_num)+'6')
-
-        if len(str(new_node_num)) == 1:
-            fill = '00'
-            new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_node_num)+str(new_rch_id)[-1])
-        if len(str(new_node_num)) == 2:
-            fill = '0'
-            new_node_id = int(str(new_rch_id)[0:-1]+fill+str(new_node_num)+str(new_rch_id)[-1])
-        if len(str(new_node_num)) == 3:
-            new_node_id = int(str(new_rch_id)[0:-1]+str(new_node_num)+str(new_rch_id)[-1])
-        
-        # update nums for next loop... 
-        # new_node_num = new_node_num+1
-        # new_rch_num = new_rch_num+1 
-
-        ### update centerline and node points
-        centerlines.reach_id[0,update_ids] = new_rch_id
-        centerlines.node_id[0,update_ids] = new_node_id 
-        centerlines.new_type[update_ids] = '6'
-        nodes.id[nds] = new_node_id
-        nodes.reach_id[nds] = new_rch_id
-
-        #update key variables for original reach. 
-        cl_rch = np.where(centerlines.reach_id[0,:] == old_rch)[0]
-        rch = np.where(reaches.id == old_rch)[0]
-        if len(cl_rch) == 0:
-            reaches.id[rch] = new_rch_id
-            new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
-            reaches.cl_id[:,rch] = new_cl_ids
-            reaches.x[rch] = np.median(centerlines.x[update_ids])
-            reaches.x_min[rch] = np.min(centerlines.x[update_ids])
-            reaches.x_max[rch] = np.max(centerlines.x[update_ids])
-            reaches.y[rch] = np.median(centerlines.y[update_ids])
-            reaches.y_min[rch] = np.min(centerlines.y[update_ids])
-            reaches.y_max[rch] = np.max(centerlines.y[update_ids])
-            reaches.len[rch] = nodes.len[nds]
-            reaches.rch_n_nodes[rch] = 1
-            #fill some attributes with node values. 
-            reaches.wse[rch] = nodes.wse[nds]
-            reaches.wse_var[rch] = nodes.wse_var[nds]
-            reaches.wth[rch] = nodes.wth[nds]
-            reaches.wth_var[rch] = nodes.wth_var[nds]
-            reaches.grod[rch] = nodes.grod[nds]
-            reaches.grod_fid[rch] = nodes.grod_fid[nds]
-            reaches.hfalls_fid[rch] = nodes.hfalls_fid[nds]
-            reaches.lakeflag[rch] = nodes.lakeflag[nds]
-            reaches.dist_out[rch] = nodes.dist_out[nds]
-            reaches.facc[rch] = nodes.facc[nds]
-            reaches.max_wth[rch] = nodes.max_wth[nds]
-            reaches.river_name[rch] = nodes.river_name[nds]
-            reaches.edit_flag[rch] = nodes.edit_flag[nds]
-            reaches.trib_flag[rch] = nodes.trib_flag[nds]
-            reaches.nchan_max[rch] = nodes.nchan_max[nds]
-            reaches.nchan_mod[rch] = nodes.nchan_mod[nds]
-            reaches.path_freq[rch] = nodes.path_freq[nds]
-            reaches.path_order[rch] = nodes.path_order[nds]
-            reaches.main_side[rch] = nodes.main_side[nds]
-            reaches.path_segs[rch] = nodes.path_segs[nds]
-            reaches.strm_order[rch] = nodes.strm_order[nds]
-        
-        else:
-            # update current reach attributes and append new ones.
-            reaches.x[rch] = np.median(centerlines.x[cl_rch])
-            reaches.x_min[rch] = np.min(centerlines.x[cl_rch])
-            reaches.x_max[rch] = np.max(centerlines.x[cl_rch])
-            reaches.y[rch] = np.median(centerlines.y[cl_rch])
-            reaches.y_min[rch] = np.min(centerlines.y[cl_rch])
-            reaches.y_max[rch] = np.max(centerlines.y[cl_rch])
-            reaches.cl_id[0,rch] = np.min(centerlines.cl_id[cl_rch])
-            reaches.cl_id[1,rch] = np.max(centerlines.cl_id[cl_rch])
-            reaches.len[rch] = reaches.len[rch] - nodes.len[nds]
-            reaches.rch_n_nodes[rch] = reaches.rch_n_nodes[rch] - 1
-            #add new reach to reaches object.
-            reaches.id = np.append(reaches.id, new_rch_id)
-            new_cl_ids = np.array([np.min(centerlines.cl_id[update_ids]), np.max(centerlines.cl_id[update_ids])]).reshape(2,1)
-            reaches.cl_id = np.append(reaches.cl_id, new_cl_ids, axis=1)
-            reaches.x = np.append(reaches.x, np.median(centerlines.x[update_ids]))
-            reaches.x_min = np.append(reaches.x_min, np.min(centerlines.x[update_ids]))
-            reaches.x_max = np.append(reaches.x_max, np.max(centerlines.x[update_ids]))
-            reaches.y = np.append(reaches.y, np.median(centerlines.y[update_ids]))
-            reaches.y_min = np.append(reaches.y_min, np.min(centerlines.y[update_ids]))
-            reaches.y_max = np.append(reaches.y_max, np.max(centerlines.y[update_ids]))
-            reaches.len = np.append(reaches.len, nodes.len[nds])
-            reaches.rch_n_nodes = np.append(reaches.rch_n_nodes, 1)
-            #fill some attributes with node values. 
-            reaches.wse = np.append(reaches.wse, nodes.wse[nds])
-            reaches.wse_var = np.append(reaches.wse_var, nodes.wse_var[nds])
-            reaches.wth = np.append(reaches.wth, nodes.wth[nds])
-            reaches.wth_var = np.append(reaches.wth_var, nodes.wth_var[nds])
-            reaches.grod = np.append(reaches.grod, nodes.grod[nds])
-            reaches.grod_fid = np.append(reaches.grod_fid, nodes.grod_fid[nds])
-            reaches.hfalls_fid = np.append(reaches.hfalls_fid, nodes.hfalls_fid[nds])
-            reaches.lakeflag = np.append(reaches.lakeflag, nodes.lakeflag[nds])
-            reaches.dist_out = np.append(reaches.dist_out, nodes.dist_out[nds])
-            reaches.facc = np.append(reaches.facc, nodes.facc[nds])
-            reaches.max_wth = np.append(reaches.max_wth, nodes.max_wth[nds])
-            reaches.river_name = np.append(reaches.river_name, nodes.river_name[nds])
-            reaches.edit_flag = np.append(reaches.edit_flag, nodes.edit_flag[nds])
-            reaches.trib_flag = np.append(reaches.trib_flag, nodes.trib_flag[nds])
-            reaches.nchan_max = np.append(reaches.nchan_max, nodes.nchan_max[nds])
-            reaches.nchan_mod = np.append(reaches.nchan_mod, nodes.nchan_mod[nds])
-            reaches.path_freq = np.append(reaches.path_freq, nodes.path_freq[nds])
-            reaches.path_order = np.append(reaches.path_order, nodes.path_order[nds])
-            reaches.main_side = np.append(reaches.main_side, nodes.main_side[nds])
-            reaches.path_segs = np.append(reaches.path_segs, nodes.path_segs[nds])
-            reaches.strm_order = np.append(reaches.strm_order, nodes.strm_order[nds])
-            #fill other attrubutes with current reach values. 
-            reaches.slope = np.append(reaches.slope, reaches.slope[rch])
-            reaches.low_slope = np.append(reaches.low_slope, reaches.low_slope[rch])
-            reaches.iceflag = np.append(reaches.iceflag, reaches.iceflag[:,rch], axis=1)
-            reaches.n_rch_up = np.append(reaches.n_rch_up, reaches.n_rch_up[rch])
-            reaches.n_rch_down = np.append(reaches.n_rch_down, reaches.n_rch_down[rch])
-            reaches.rch_id_up = np.append(reaches.rch_id_up, reaches.rch_id_up[:,rch], axis=1)
-            reaches.rch_id_down = np.append(reaches.rch_id_down, reaches.rch_id_down[:,rch], axis=1)
-            reaches.max_obs = np.append(reaches.max_obs, reaches.max_obs[rch])
-            reaches.orbits = np.append(reaches.orbits, reaches.orbits[:,rch], axis=1)
-        #checking dimensions
-        # print('Cl Dimensions:', len(np.unique(centerlines.cl_id)), len(centerlines.cl_id))
-        # print('Rch Dimensions:', len(np.unique(centerlines.reach_id[0,:])), len(np.unique(nodes.reach_id)), len(reaches.id))
-        # print('Node Dimensions:', len(np.unique(centerlines.node_id[0,:])), len(np.unique(nodes.id)), len(nodes.id))
- 
 ###############################################################################
             
 def number_rchs_nodes(reaches, nodes):
+    """
+    Numbers SWORD reaches and nodes based on the shortest paths 
+    direction information.
+
+    Parameters
+    ----------
+    reaches: obj
+        Object containing lcation and attribute information for
+        each reach.
+    nodes: obj
+        Object containing lcation and attribute information for
+        each node.
+
+    Returns
+    -------
+    None.
+        
+    """
+
     unq_paths = np.unique(reaches.path_order)
     unq_paths = unq_paths[unq_paths>0]
     unq_paths = np.append(unq_paths,0)
@@ -449,16 +671,50 @@ def number_rchs_nodes(reaches, nodes):
         nodes.node_num[nds_pth[nds_pth_order]] = node_nums
         node_cnt = max(node_nums)+1
 
-
 ###############################################################################
         
-def new_sword_ids(centerlines, nodes, reaches, path_cl_rch_ids):        
+def new_sword_ids(centerlines, nodes, reaches, path_cl_rch_ids):
+    """
+    Updates SWORD reach and node IDs based on the shortest paths 
+    direction information.
+
+    Parameters
+    ----------
+    centerlines: obj
+        Object containing lcation and attribute information
+        along the high-resolution centerline.
+    reaches: obj
+        Object containing lcation and attribute information for
+        each reach.
+    nodes: obj
+        Object containing lcation and attribute information for
+        each node.
+    path_cl_rch_ids: numpy.array()
+        Reach IDs associated with the path variable netCDF data. 
+
+    Returns
+    -------
+    reach_ids: numpy.array()
+        Updated reach IDs. 
+    node_ids: numpy.array()
+        Updated node IDs. 
+    cl_rch_ids: numpy.array()
+        Updated centerline reach IDs. 
+    cl_node_ids: numpy.array()
+        Updated centerline reach IDs. 
+    node_rch_ids: numpy.array()
+        Updated node reach IDs. 
+        
+    """
+
     reach_ids = np.copy(reaches.id)
     node_ids = np.copy(nodes.id)
     cl_rch_ids = np.copy(centerlines.reach_id)
     cl_node_ids = np.copy(centerlines.node_id)
     node_rch_ids = np.copy(nodes.reach_id)
 
+    #loop through level 6 basin reaches and number based on the 
+    #path indexing. 
     rch_l6 = np.array([str(rch)[0:6] for rch in reaches.id])
     paths_l6 = np.array([str(rch)[0:6] for rch in np.unique(path_cl_rch_ids)])
     unq_basins = np.unique(paths_l6)
@@ -510,6 +766,28 @@ def new_sword_ids(centerlines, nodes, reaches, path_cl_rch_ids):
 ###############################################################################
 
 def filter_river_names(reaches, nodes, path_segs, path_cl_rch_ids):
+    """
+    Corrects river name outliers based on path segment values.
+
+    Parameters
+    ----------
+    reaches: obj
+        Object containing lcation and attribute information for
+        each reach.
+    nodes: obj
+        Object containing lcation and attribute information for
+        each node.
+    path_segs: numpy.array()
+        Unique IDs given to river segments between junctions.
+    path_cl_rch_ids: numpy.array()
+        Reach IDs associated with the path variable netCDF data. 
+
+    Returns
+    -------
+    None.
+
+    """
+
     unq_segs = np.unique(path_segs)
     unq_segs = unq_segs[unq_segs>0]
     for ind in list(range(len(unq_segs))):
@@ -528,25 +806,28 @@ def filter_river_names(reaches, nodes, path_segs, path_cl_rch_ids):
 ###############################################################################    
 
 def write_database_nc(centerlines, reaches, nodes, region, outfile):
-
     """
-    FUNCTION:
-        Outputs the SWOT River Database (SWORD) information in netcdf
-        format. The file contains attributes for the high-resolution centerline,
-        nodes, and reaches.
+    Outputs the SWOT River Database (SWORD) information in netcdf
+    format. The file contains attributes for the high-resolution centerline,
+    nodes, and reaches.
 
-    INPUTS
-        centerlines -- Object containing lcation and attribute information
-            along the high-resolution centerline.
-        reaches -- Object containing lcation and attribute information for
-            each reach.
-        nodes -- Object containing lcation and attribute information for
-            each node.
-        outfile -- Path for netcdf to be written.
+    Parameters
+    ----------
+    centerlines: obj
+        Object containing lcation and attribute information
+        along the high-resolution centerline.
+    reaches: obj
+        Object containing lcation and attribute information for
+        each reach.
+    nodes: obj
+        Object containing lcation and attribute information for
+        each node.
+    outfile -- Path for netcdf to be written.
 
-    OUTPUTS
-        SWORD NetCDF -- NetCDF file containing attributes for the high-resolution
-            centerline, node, and reach locations.
+    Returns
+    -------
+    None.
+
     """
 
     start = time.time()
@@ -1155,13 +1436,20 @@ def write_database_nc(centerlines, reaches, nodes, region, outfile):
     return outfile
 
 ###############################################################################
-###############################################################################
+################################  MAIN  #######################################
 ###############################################################################
         
 start_all = time.time()
-region = 'OC'
-version = 'v17'
-basin = 'hb52'
+
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version (i.e. v17)", type = str)
+parser.add_argument("basin", help="Pfafstetter Level 2 Basin Number (i.e. 74)", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+basin = args.basin
 
 print('Starting Basin: ', basin)
 sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'\
@@ -1169,12 +1457,14 @@ sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'\
 con_dir = main_dir+'/data/outputs/Reaches_Nodes/'\
     +version+'/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 path_dir = main_dir+'/data/outputs/Reaches_Nodes/'\
-    +version+'/network_building/pathway_netcdfs/'+region+'/'+basin+'_path_vars.nc'
+    +version+'/network_building/pathway_netcdfs/'+region+'/hb'+basin+'_path_vars.nc'
 
+#read sword data, connectivity data, and path data. 
 centerlines, nodes, reaches = read_data(sword_dir)
 conn = nc.Dataset(con_dir)
 paths = nc.Dataset(path_dir,'r+')
 
+#assign data to arrays. 
 con_cl_ids = np.array(conn.groups['centerlines'].variables['cl_id'][:])
 con_rch_ids = np.array(conn.groups['centerlines'].variables['reach_id'][:])
 con_end_ids = np.array(conn.groups['centerlines'].variables['end_reach'][:])
@@ -1210,7 +1500,6 @@ print('Fixing Incorrect Ghost Reaches') #cont-scale
 start = time.time()
 centerlines.type = np.array([str(rch)[-1] for rch in centerlines.reach_id[0,:]])
 centerlines.new_type = np.copy(centerlines.type)
-# centerlines.new_type = update_ghost_type(centerlines, con_rch_ids, con_end_ids)
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
@@ -1230,12 +1519,6 @@ add_rch_node_path_vars(reaches, nodes, path_cl_rch_ids, path_cl_dist_out,
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
-# print('Creating New Ghost Reaches') #basin-scale
-# start = time.time()
-# update_ghost_reaches(centerlines, nodes, reaches, con_end_ids, basin)
-# end = time.time()
-# print(str(np.round((end-start)/60,2))+' mins')
-
 #re-number reaches and nodes. 
 print('Creating New Reach and Node IDs') #basin-scale
 start = time.time()
@@ -1250,6 +1533,7 @@ reaches.rch_id_up[:] = 0; reaches.rch_id_down[:] = 0
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
+#adding end reach attribute. 
 print('Adding End Reach Attribute to Reaches and Nodes') #basin-scale
 rch_hw = centerlines.new_reach_id[0,np.where(con_end_ids == 1)[0]]
 rch_out = centerlines.new_reach_id[0,np.where(con_end_ids == 2)[0]]
@@ -1266,6 +1550,7 @@ nodes.end_rch[np.where(np.in1d(nodes.new_id, node_hw))] = 1
 nodes.end_rch[np.where(np.in1d(nodes.new_id, node_out))] = 2
 nodes.end_rch[np.where(np.in1d(nodes.new_id, node_junc))] = 3
 
+#updating path variable netCDF. 
 print('Updating Path Variable NetCDF with New SWORD IDs')
 path_inds = np.where(np.in1d(centerlines.cl_id, path_cl_ids) == True)[0]
 paths_new_rch_ids = centerlines.new_reach_id[:,path_inds]
@@ -1282,7 +1567,7 @@ else:
     paths.close()
 
 ###############################################################################
-### Filler variables
+### Filler variables for SWORD netCDF. 
 # discharge subgroup 1
 reaches.h_break = np.full((4,len(reaches.id)), -9999.0)
 reaches.w_break = np.full((4,len(reaches.id)), -9999.0)
@@ -1342,8 +1627,6 @@ print('Finished ALL Updates in: '+str(np.round((end_all-start_all)/60,2))+' mins
 ####################################################################################
 ####################################################################################
 
-
-
 print('Updating NetCDF')
 sword = nc.Dataset(sword_dir, 'r+')
 sword.groups['reaches'].variables['reach_id'][:] = reaches.new_id
@@ -1373,7 +1656,9 @@ sword.close()
 ####################################################################################
 ####################################################################################
 ####################################################################################
+# import matplotlib.pyplot as plt
 
-basin_ind = np.where(np.in1d(reaches.id, path_cl_rch_ids) == True)[0]
-plt.scatter(reaches.x[basin_ind], reaches.y[basin_ind], c=reaches.dist_out[basin_ind], cmap='rainbow', s=3)
-plt.show()
+#PLOTS
+# basin_ind = np.where(np.in1d(reaches.id, path_cl_rch_ids) == True)[0]
+# plt.scatter(reaches.x[basin_ind], reaches.y[basin_ind], c=reaches.dist_out[basin_ind], cmap='rainbow', s=3)
+# plt.show()

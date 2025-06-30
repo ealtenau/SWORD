@@ -1,5 +1,7 @@
-import os 
-main_dir = os.getcwd() 
+import sys
+import os
+main_dir = os.getcwd()
+sys.path.append(main_dir) 
 import pandas as pd
 import numpy as np
 import netCDF4 as nc

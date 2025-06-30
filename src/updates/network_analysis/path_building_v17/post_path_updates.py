@@ -1,23 +1,56 @@
+"""
+Filtering SWORD path variables (post_path_updates.py).
+===============================================================
+
+This scripts applies filters to the new path variables added
+to the SWORD v17 database.  
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python post_path_updates.py NA v17
+
+""" 
+
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc
-import geopandas as gp
-import geopy.distance
-from shapely.geometry import LineString, Point
-from geopandas import GeoSeries
-import pandas as pd
-import time
 import argparse
-from scipy import spatial as sp
-import matplotlib.pyplot as plt
 from scipy import stats
-from scipy import interpolate
-import matplotlib.pyplot as plt
 
-################################################################################################
+###############################################################################
+###########################  FUNCTIONS  #######################################
+###############################################################################
 
-def side_chan_segs(cl_rchs, main_side, cl_lon, cl_lat, path_segs, reaches, dist_out):
+def side_chan_segs(cl_rchs, main_side, path_segs, reaches, dist_out):
+    """
+    Adds unique segment values to the side channel network.
+
+    Parameters
+    ----------
+    cl_rchs: numpy.array()
+        SWORD centerline reach IDs.
+    main_side: numpy.array()
+        Main-Side network flag.
+    path_segs: numpy.array()
+        Unique IDs given to river segments between junctions.
+    reaches: numpy.array()
+        SWORD reach IDs. 
+    dist_out: numpy.array()
+        SWORD distance from outlet at reach scale. 
+        
+    Returns
+    -------
+    new_segs: numpy.array()
+        Updated segment values with side channels included. 
+        
+    """
+    
     # ngh_matrix = np.zeros(cl_rchs.shape)
     # count=1
     new_segs = np.copy(path_segs)
@@ -32,6 +65,7 @@ def side_chan_segs(cl_rchs, main_side, cl_lon, cl_lat, path_segs, reaches, dist_
         flag = np.zeros(len(reaches))
         flag[np.where(main_side == 0)] = 1
         
+        #determining side channel segment values. 
         start_rch = side_chans[np.where(side_dist == np.min(side_dist))[0]][0]
         start_pt = np.where(cl_rchs[0,:] == start_rch)[0]
         loop = 1
@@ -68,9 +102,31 @@ def side_chan_segs(cl_rchs, main_side, cl_lon, cl_lat, path_segs, reaches, dist_
 
     return new_segs
 
-################################################################################################
+###############################################################################
 
 def define_network_regions(subpaths, subreaches, cl_rchs, basin):
+    """
+    Calculates and assigns a unique number to each connected 
+    river network in the SWORD database.
+
+    Parameters
+    ----------
+    subpaths: numpy.array()
+        Path frequency array subset to a level 2 basin. 
+    subreaches: numpy.array()
+        Reach ID array subset to a level 2 basin. 
+    cl_rchs: numpy.array()
+        SWORD centerline reach IDs. 
+    basin: int
+         Pfafstetter level 2 basin. 
+        
+    Returns
+    -------
+    network: numpy.array()
+        Unique values associated with connected river networks.  
+        
+    """
+
     unq_paths = np.unique(subpaths)
     unq_paths = unq_paths[unq_paths>0]
     start_path = np.min(unq_paths)
@@ -80,6 +136,8 @@ def define_network_regions(subpaths, subreaches, cl_rchs, basin):
     network = np.zeros(len(subreaches))
     check = len(unq_paths) + 500
     loop = 1
+    #find all neighbors associated with the start reach
+    #until no more neighbors are found. 
     while min(flag) == 0:
         # print(loop, start_path)
         path_rchs = subreaches[np.in1d(subpaths,start_path)]
@@ -113,27 +171,35 @@ def define_network_regions(subpaths, subreaches, cl_rchs, basin):
     
     return network
 
-################################################################################################
-################################################################################################
-################################################################################################
+###############################################################################
+################################  MAIN  #######################################
+###############################################################################
 
-region = 'EU'
-version = 'v17'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="continental region", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
 
 sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'\
     +version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
 con_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+\
     '/reach_geometry/'+region.lower()+'_sword_'+version+'_connectivity.nc'
 
+#read data. 
 conn = nc.Dataset(con_dir)
 sword = nc.Dataset(sword_dir,'r+')
 
+#assign relevant data to arrays. 
+###centerline attributes
 cl_rchs = conn.groups['centerlines'].variables['reach_id'][:]
 cl_nodes = conn.groups['centerlines'].variables['node_id'][:]
 cl_lon = conn.groups['centerlines'].variables['x'][:]
 cl_lat = conn.groups['centerlines'].variables['y'][:]
 cl_index = conn.groups['centerlines'].variables['cl_id'][:]
-
+###reach attributes
 main_side = sword.groups['reaches'].variables['main_side'][:]
 path_segs = sword.groups['reaches'].variables['path_segs'][:]
 reaches = sword.groups['reaches'].variables['reach_id'][:]
@@ -145,9 +211,8 @@ y = sword.groups['reaches'].variables['y'][:]
 Type = np.array([int(str(r)[-1]) for r in reaches])
 end_rch = sword.groups['reaches'].variables['end_reach'][:]
 # strm_order = sword.groups['reaches'].variables['stream_order'][:]
-
 # main_side[np.where(main_side == 2)] = 0
-
+###node attributes.
 nodes_main_side = sword.groups['nodes'].variables['main_side'][:]
 nodes_strm_order = sword.groups['nodes'].variables['stream_order'][:]
 nodes_path_segs = sword.groups['nodes'].variables['path_segs'][:]
@@ -156,8 +221,7 @@ nx = sword.groups['nodes'].variables['x'][:]
 ny = sword.groups['nodes'].variables['y'][:]
 
 print('Updating Side Channel Path Segments')
-side_segs = side_chan_segs(cl_rchs, main_side, cl_lon, cl_lat, path_segs, reaches, dist_out)
-### need to update nodes for segs too....
+side_segs = side_chan_segs(cl_rchs, main_side, path_segs, reaches, dist_out)
 
 print('Updating Main-Side and Stream Order')
 basin_networks = np.zeros(len(reaches))
@@ -169,6 +233,7 @@ for ind in list(range(len(unq_l2))):
     print(unq_l2[ind])
     l2 = np.where(level2 == unq_l2[ind])[0]
     
+    #subsetting data to a level 2 basin scale. 
     subpaths = path_order[l2]
     subreaches = reaches[l2]
     submain_side = main_side[l2]
@@ -180,11 +245,11 @@ for ind in list(range(len(unq_l2))):
     subsegs = side_segs[l2]
     subends = end_rch[l2]
 
+    #defining connected networks. 
     network = define_network_regions(subpaths, subreaches, cl_rchs, unq_l2[ind])
     basin_networks[l2] = network
-    # plt.scatter(x[l2], y[l2], c=network, cmap='rainbow', s = 3)
-    # plt.show()
 
+    #updating main-side channel attribute. 
     unq_net = np.unique(network)
     unq_net = unq_net[unq_net>0]
     deltas = np.copy(submain_side)
@@ -202,19 +267,10 @@ for ind in list(range(len(unq_l2))):
                 seg_type = stats.mode(subtype[seg])
                 if seg_type[0] >= 5:
                     deltas[seg] = 2
-            # keep = np.where(np.in1d(subpaths, unq_paths)==True)[0]
-            # deltas[keep] = 2
-            # rmv_segs = np.where(subtype[keep] < 5)[0] #<5
-            # deltas[keep[rmv_segs]] = 0
-    
-    new_main_side[l2] = deltas
-    # other = np.where(deltas == 2)[0]
-    # side = np.where(deltas == 1)[0]
-    # plt.scatter(subx, suby, c = 'blue', s = 5)
-    # plt.scatter(subx[other], suby[other], c = 'gold', s = 5)
-    # plt.scatter(subx[side], suby[side], c = 'magenta', s = 5)
-    # plt.show()
 
+    new_main_side[l2] = deltas
+    
+    #recalculating stream order. 
     strm_order = np.zeros(len(subpath_freq))
     normalize = np.where(deltas == 0)[0] 
     strm_order[normalize] = (np.round(np.log(subpath_freq[normalize])))+1
@@ -240,9 +296,6 @@ for ind in list(range(len(unq_l2))):
             strm_order[pth[sort_inds[0:max_break]]] = new_val
     
     strm_order[np.where(deltas > 0)] = -9999
-    # plt.scatter(subx[normalize], suby[normalize], c=strm_order[normalize], cmap='rainbow', s = 3)
-    # plt.show()
-    
     strm_order_all[l2] = strm_order
     
 #########################################
@@ -259,19 +312,6 @@ for r in list(range(len(reaches))):
     nodes_side_segs[nds] = side_segs[r]
     nodes_new_main_side[nds] = new_main_side[r]
     nodes_networks[nds] = basin_networks[r]
-
-    #calculating lengths
-    # cl_ind = np.where(cl_rchs[0,:] == reaches[r])[0]
-    # sort_inds = np.argsort(cl_index[cl_ind])
-    # x_coords = cl_lon[sort_inds]
-    # y_coords = cl_lat[sort_inds]
-    # gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(x_coords, y_coords),crs="EPSG:4326").to_crs("EPSG:3857")
-    # diff = gdf.distance(gdf.shift(1)); diff[0] = 0
-    # rch_dist = np.cumsum(diff)
-
-    #sword.groups['reaches'].variables['reach_length'][r]
-    # plt.plot(cl_lon[sort_inds],cl_lat[sort_inds])
-    # plt.show()
 
 rch_nan = np.where(new_main_side == 1)[0]
 node_nan = np.where(nodes_new_main_side == 1)[0]
@@ -303,11 +343,28 @@ else:
 sword.close()
 conn.close()
 
+###############################################################################
+### PLOTS
+# import matplotlib.pyplot as plt
+
+# plt.scatter(x[l2], y[l2], c=network, cmap='rainbow', s = 3)
+# plt.show()
+
+# plt.scatter(subx[normalize], suby[normalize], c=strm_order[normalize], cmap='rainbow', s = 3)
+# plt.show()
+
 # other = np.where(nodes_new_main_side == 2)[0]
 # side = np.where(nodes_new_main_side == 1)[0]
 # plt.scatter(nx, ny, c = 'blue', s = 5)
 # plt.scatter(nx[other], ny[other], c = 'gold', s = 5)
 # plt.scatter(nx[side], ny[side], c = 'magenta', s = 5)
+# plt.show()
+
+# other = np.where(deltas == 2)[0]
+# side = np.where(deltas == 1)[0]
+# plt.scatter(subx, suby, c = 'blue', s = 5)
+# plt.scatter(subx[other], suby[other], c = 'gold', s = 5)
+# plt.scatter(subx[side], suby[side], c = 'magenta', s = 5)
 # plt.show()
 
 # plt.scatter(x, y, c=basin_networks, cmap='rainbow', s = 3)

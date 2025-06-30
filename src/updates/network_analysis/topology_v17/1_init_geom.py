@@ -7,8 +7,10 @@
 
 print('Starting code')
 
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import sys
 import fiona
 import shapely

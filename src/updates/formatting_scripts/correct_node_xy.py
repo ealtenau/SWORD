@@ -1,4 +1,22 @@
 # -*- coding: utf-8 -*-
+"""
+Correct Node X-Y locations (correct_node_xy.py)
+===============================================
+
+This script re-calculates node x-y values 
+in the SWOT River Database (SWORD).
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17)
+and a csv file containing reaches to update and new basin
+codes.
+
+Execution example (terminal):
+    python correct_node_xy.py NA v17
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -23,9 +41,6 @@ args = parser.parse_args()
 
 region = args.region
 version = args.version
-
-# region = 'NA'
-# version = 'v16'
 
 #read data
 sword = SWORD(main_dir, region, version)

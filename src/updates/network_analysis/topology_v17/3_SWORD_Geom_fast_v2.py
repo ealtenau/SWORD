@@ -37,6 +37,7 @@
 import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import re
 import fiona
 import shapely

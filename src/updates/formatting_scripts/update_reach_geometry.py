@@ -1,4 +1,23 @@
 # -*- coding: utf-8 -*-
+"""
+Updating Reach Centerline Coordinates (update_reach_geometry.py).
+===============================================================
+
+This script updates the SWORD netCDF centerline coordinates
+based on manually updated geometry in the SWORD reaches geopackage 
+files.  
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA), SWORD version (i.e. v17), 
+and a csv file containing the Reach IDs that have been
+manually adjusted in the geopackage files.
+
+Execution example (terminal):
+    python update_reach_geometry.py NA v17 path/to/reaches.csv
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -10,7 +29,7 @@ import geopy.distance
 import pandas as pd
 import argparse
 from src.updates.sword import SWORD
-import src.updates.aux_utils as aux
+import src.updates.geo_utils as geo
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -27,17 +46,20 @@ version = args.version
 # version = 'v18'
 # reach = [53190500116, 56257300106]
 
+#read sword data. 
 sword = SWORD(main_dir, region, version)
-gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_fn']
 
+#read csv file of updated reaches. 
 rch_dir = args.csv
 rch_df = pd.read_csv(rch_dir)
 reach = np.unique(np.array(rch_df['reach_id']))
 
 #read geopackage data.
+gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_fn']
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]
 
+#loop through and update reach coordinates in netCDF. 
 for r in list(range(len(reach))):
     print(r, len(reach)-1)
     #geopackage geometry 
@@ -48,7 +70,7 @@ for r in list(range(len(reach))):
     lon = np.array(geom[gp_rch[0]].coords.xy[0])
     lat = np.array(geom[gp_rch[0]].coords.xy[1])
 
-    #netcdf updates.
+    #filtering out "connecting" coordinates in geopackage file.
     rch = np.where(sword.centerlines.reach_id[0,:] == reach[r])[0]
     if len(rch) != len(lon):
         if np.abs(len(rch)-len(lon)) == 1:
@@ -72,6 +94,7 @@ for r in list(range(len(reach))):
             lon = lon[1:-1]
             lat = lat[1:-1]
 
+    #sort coordinates by centerline IDs. 
     order_ids = np.argsort(sword.centerlines.cl_id[rch])
     sword.centerlines.x[rch[order_ids]] = lon
     sword.centerlines.y[rch[order_ids]] = lat
@@ -79,7 +102,7 @@ for r in list(range(len(reach))):
     #recalculate centerline reach length.
     x_coords = sword.centerlines.x[rch[order_ids]]
     y_coords = sword.centerlines.y[rch[order_ids]]
-    diff = aux.get_distances(x_coords,y_coords)
+    diff = geo.get_distances(x_coords,y_coords)
     dist = np.cumsum(diff)
 
     #update sword.reaches. 
@@ -95,7 +118,7 @@ for r in list(range(len(reach))):
     sword.reaches.y_min[rind] = np.min(sword.centerlines.y[rch])
     sword.reaches.y_max[rind] = np.max(sword.centerlines.y[rch])
     
-    #update sword.nodes. 
+    #update node coordinates. 
     unq_nodes = np.unique(sword.centerlines.node_id[0,rch])
     for n in list(range(len(unq_nodes))):
         nind = np.where(sword.nodes.id == unq_nodes[n])[0]

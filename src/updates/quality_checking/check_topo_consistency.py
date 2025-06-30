@@ -7,10 +7,10 @@ the SWOT River Database (SWORD).
 
 The script is run at a regional/continental scale. 
 Command line arguments required are the two-letter 
-region identifier (i.e. NA) and SWORD version (i.e. v18).
+region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python check_topo_consistency.py NA v18 
+    python check_topo_consistency.py NA v17 
 
 """
 
@@ -167,6 +167,7 @@ subset = args.subset
 #reading data
 sword = SWORD(main_dir, region, version)
 
+#subset data to seleted basin. Default is to check entire continent. 
 if subset != 'All':
     BasinLevel=len(subset)
     domain_reachids=[]

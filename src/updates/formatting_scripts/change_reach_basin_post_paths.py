@@ -1,4 +1,22 @@
 # -*- coding: utf-8 -*-
+"""
+Changing Basins (change_reach_basin_post_paths.py)
+==============================================
+
+This script updates the Pfafstetter Level 6 basin codes
+in the SWOT River Database (SWORD).
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA), SWORD version (i.e. v17), 
+and a csv file containing Reach IDs that need new basin
+codes.
+
+Execution example (terminal):
+    python change_reach_basin_post_paths.py NA v17 path/to/basin.csv
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -18,14 +36,12 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-### Line-by-line degugging.
-# region = 'EU'
-# version = 'v17'
-
+#read sword and csv data.
 sword = SWORD(main_dir, region, version)
 rch_list = args.csv
 df = pd.read_csv(rch_list)
 
+#loop to update basins for specified reaches. 
 for r in list(range(len(df))):
     print(r, len(df)-1)
     rch = int(df['reach_id'][r])

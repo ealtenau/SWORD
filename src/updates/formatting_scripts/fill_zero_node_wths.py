@@ -1,4 +1,24 @@
 # -*- coding: utf-8 -*-
+"""
+Filling Zero Node Width Values (fill_zero_wths.py)
+===================================================
+
+This script fills in zero value node widths in 
+the SWOT River Database (SWORD) based on other 
+node width values within a reach.
+
+A csv file containing the updated nodes is written
+to sword.paths['update_dir'].
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python fill_zero_wths.py NA v17
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -12,14 +32,10 @@ from src.updates.sword import SWORD
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="continental region", type = str)
 parser.add_argument("version", help="version", type = str)
-parser.add_argument("csv", help="csv file of reaches to delete", type = str)
 args = parser.parse_args()
 
 region = args.region
 version = args.version
-
-# region = 'OC'
-# version = 'v18'
 
 sword = SWORD(main_dir, region, version)
 out_dir = sword.paths['update_dir']

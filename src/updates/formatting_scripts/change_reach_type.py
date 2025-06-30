@@ -1,4 +1,22 @@
 # -*- coding: utf-8 -*-
+"""
+Changing Reach Type (change_reach_type.py)
+========================================
+
+This script updates the Reach and Node ID type 
+identifiers in the SWOT River Database (SWORD).
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA), SWORD version (i.e. v17), 
+and a csv file containing the Reach IDs that need a 
+type change.
+
+Execution example (terminal):
+    python change_reach_type.py NA v17 path/to/type_change.csv
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -12,19 +30,18 @@ from src.updates.sword import SWORD
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
 parser.add_argument("version", help="version", type = str)
+parser.add_argument("csv", help="csv file of reaches with type updates", type = str)
 args = parser.parse_args()
 
 region = args.region
 version = args.version
 
-### Line-by-line debugging
-# region = 'OC'
-# version = 'v18'
-
+#read data. 
 sword = SWORD(main_dir, region, version)
-csv_dir = sword.paths['nc_dir']+region.lower()+'_incorrect_ghost_sword.reaches.csv'
+csv_dir = args.csv #sword.paths['nc_dir']+region.lower()+'_incorrect_ghost_reaches.csv'
 updates = pd.read_csv(csv_dir)
 
+#loop to change ids with new type. 
 for row in list(range(len(updates))):
     print(row, len(updates)-1)
     rch = np.where(sword.reaches.id == updates['reach_id'][row])[0]
@@ -94,7 +111,7 @@ for row in list(range(len(updates))):
         cl_n2 = np.where(sword.centerlines.node_id[1,:] == int(node_ids[n]))[0]
         cl_n3 = np.where(sword.centerlines.node_id[2,:] == int(node_ids[n]))[0]
         cl_n4 = np.where(sword.centerlines.node_id[3,:] == int(node_ids[n]))[0]
-        #update netcdf
+        #update centerline node variables.
         if len(cl_n1) > 0:
             sword.centerlines.node_id[0,cl_n1] = new_node_ids[n]
         if len(cl_n2) > 0:

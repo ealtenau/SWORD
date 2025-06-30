@@ -1,5 +1,27 @@
+"""
+Generating Lumped Routing Files (update_routing_riles_from_gpkg.py)
+===================================================================
+
+Created by Elyssa Collins, modified by Elizabeth Altenau. 
+
+This script generates the input files needed for running the 
+topology routing script (routing_topology_gpkg.py).
+
+Files are output to the "topo_dir" specified in the script. 
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter region 
+identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python update_routing_riles_from_gpkg.py NA v17
+
+"""
+
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import geopandas as gpd
 import numpy as np
 import pandas as pd

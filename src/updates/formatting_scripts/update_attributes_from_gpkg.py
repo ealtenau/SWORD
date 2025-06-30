@@ -1,4 +1,23 @@
 # -*- coding: utf-8 -*-
+"""
+Updating NetCDF values based on Geopackage values.
+(update_attributes_from_gpkg.py)
+===============================================================
+
+This scripts updates the SWORD netCDF file based on values in 
+the SWORD geopackage files if they were manually edited.  
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA), SWORD version (i.e. v17), 
+and a "dist_update" parameter indicating whether to 
+update the distance from outlet variable or not (True/False).
+
+Execution example (terminal):
+    python update_attributes_from_gpkg.py NA v17 False
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -20,13 +39,9 @@ region = args.region
 version = args.version
 dist_update = args.dist_update
 
-# region = 'NA'
-# version = 'v17b'
-# dist_update = 'True'
-
+#read data. 
 sword = SWORD(main_dir, region, version)
 gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_fn']
-nc_fn = sword.paths['nc_dir']+sword.paths['nc_fn']
 
 #read geopackage data.
 gpkg = gp.read_file(gpkg_fn)

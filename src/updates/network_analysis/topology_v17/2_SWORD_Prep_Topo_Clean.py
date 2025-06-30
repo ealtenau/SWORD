@@ -17,8 +17,10 @@
 
 ###################################################
 
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import fiona
 import shapely
 import shapely.ops

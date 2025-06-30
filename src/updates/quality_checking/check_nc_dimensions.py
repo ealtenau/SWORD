@@ -8,10 +8,10 @@ across all dimensions of the SWOT River Database (SWORD).
 
 The script is run at a regional/continental scale. 
 Command line arguments required are the two-letter 
-region identifier (i.e. NA) and SWORD version (i.e. v18).
+region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python check_nc_dimensions.py NA v18 
+    python check_nc_dimensions.py NA v17 
 
 """
 

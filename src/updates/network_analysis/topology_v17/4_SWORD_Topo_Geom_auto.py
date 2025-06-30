@@ -5,8 +5,10 @@
 #         - This script is an automatic version of 'SWORD_Topo_Geom.py'
 ###################################################
 
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import geopandas as gpd
 import numpy as np
 import pandas as pd

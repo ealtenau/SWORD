@@ -1,4 +1,20 @@
 # -*- coding: utf-8 -*-
+"""
+Removing Duplicate Centerlines Points (remove_duplicate_pts.py)
+===============================================================
+
+This script finds and removes duplicated centerline points 
+based on the x-y coordinates.  
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python remove_duplicate_pts.py NA v17
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -14,6 +30,25 @@ from src.updates.sword import SWORD
 ###############################################################################
 
 def calc_rch_facc(nodes, centerlines, cl_rch):
+    """
+    Creates centerline dimension flow accumulation array based on 
+    the node dimension flow accumulation. 
+
+    Parmeters
+    ---------
+    centerlines: obj
+        Object containing SWORD centerline attributes.
+    nodes: obj
+        Object containing SWORD node attributes.
+
+    Returns
+    -------
+    facc: numpy.array()
+        Numpy array conatining flow accumulation values at the 
+        centerline scale.
+    
+    """
+
     unq_nodes = np.unique(centerlines.node_id[0,cl_rch])
     facc = np.zeros(len(cl_rch))
     for n in list(range(len(unq_nodes))):
@@ -26,7 +61,6 @@ def calc_rch_facc(nodes, centerlines, cl_rch):
 
 start_all = time.time()
 
-#read in netcdf data. 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="continental region", type = str)
 parser.add_argument("version", help="version", type = str)
@@ -35,12 +69,17 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
+#read data. 
 sword = SWORD(main_dir, region, version)
 
+#ceate dataframe of centerline x-y values. 
 df = pd.DataFrame(np.array([sword.centerlines.x, sword.centerlines.y]).T)
+#find duplicated x-y pairs. 
 dups = df.duplicated()
+#index the duplicates. 
 rmv = np.where(dups == True)[0]
 
+#identifying the Reach and Node IDs associated with the duplicate points. 
 rch_updates = np.unique(sword.centerlines.reach_id[0,rmv]) #len(rch_updates)
 node_updates = np.unique(sword.centerlines.node_id[0,rmv]) #len(node_updates)
 
@@ -65,8 +104,11 @@ for ind in list(range(len(rch_updates))):
     cl_rch = np.where(sword.centerlines.reach_id[0,:] == rch_updates[ind])[0]
     rch_ind = np.where(sword.reaches.id == rch_updates[ind])[0]
 
+    #removing associated reach and node attributes if the centerline
+    #point was the entire reach. 
     if len(cl_rch) == 0:
         print('reach removed completely', rch_updates[ind])
+        #deleting node attributes. 
         node_ind = np.where(sword.nodes.reach_id == rch_updates[ind])[0]
         sword.nodes.id = np.delete(sword.nodes.id, node_ind, axis = 0)
         sword.nodes.cl_id = np.delete(sword.nodes.cl_id, node_ind, axis = 1)
@@ -95,7 +137,7 @@ for ind in list(range(len(rch_updates))):
         sword.nodes.sinuosity = np.delete(sword.nodes.sinuosity, node_ind, axis = 0)
         sword.nodes.edit_flag = np.delete(sword.nodes.edit_flag, node_ind, axis = 0)
         sword.nodes.trib_flag = np.delete(sword.nodes.trib_flag, node_ind, axis = 0)
-
+        #deleting reach attributes. 
         sword.reaches.id = np.delete(sword.reaches.id, rch_ind, axis = 0)
         sword.reaches.cl_id = np.delete(sword.reaches.cl_id, rch_ind, axis = 1)
         sword.reaches.x = np.delete(sword.reaches.x, rch_ind, axis = 0)
@@ -175,7 +217,7 @@ for ind in list(range(len(rch_updates))):
         continue
 
     #calculate distance variables for centerline points. 
-    facc = calc_rch_facc(nodes, centerlines, cl_rch)
+    facc = calc_rch_facc(sword.nodes, sword.centerlines, cl_rch)
     sort_ids = np.argsort(sword.centerlines.cl_id[cl_rch])
     gdf = gp.GeoDataFrame(geometry=gp.points_from_xy(sword.centerlines.x[cl_rch[sort_ids]], 
                                                      sword.centerlines.y[cl_rch[sort_ids]]),crs="EPSG:4326").to_crs("EPSG:3857")
@@ -201,7 +243,7 @@ for ind in list(range(len(rch_updates))):
         cl_nds = np.where(sword.centerlines.node_id[0,cl_rch] == nds[idx])[0]
         ns = np.where(sword.nodes.id == nds[idx])[0]
 
-        #update reach variables:
+        #update node variables:
         node_len = np.max(dist[cl_nds])-np.min(dist[cl_nds])
         node_diff_len = sword.nodes.len[ns] - node_len
         sword.nodes.x[ns] = np.median(sword.centerlines.x[cl_rch[cl_nds]])
@@ -211,6 +253,7 @@ for ind in list(range(len(rch_updates))):
         sword.nodes.len[ns] = node_len
         sword.nodes.dist_out[ns] = sword.nodes.dist_out[ns]-node_diff_len 
 
+#removing outlier nodes that are no longer in the centerline dimension. 
 diff = np.in1d(sword.nodes.id, np.unique(sword.centerlines.node_id[0,:]))
 rmv2 = np.where(diff == False)[0]
 sword.nodes.id = np.delete(sword.nodes.id, rmv2, axis = 0)

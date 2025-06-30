@@ -1,4 +1,21 @@
 # -*- coding: utf-8 -*-
+"""
+Breaking Reaches (break_reaches_post_topo.py)
+==============================================
+
+This script breaks reaches in the SWOT River Database 
+(SWORD) at specified locations that are identified in 
+the 'find_tributary_breaks.py' script.
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python break_reaches_post_topo.py NA v17 
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -11,13 +28,29 @@ import argparse
 import glob
 import argparse
 from src.updates.sword import SWORD
-import src.updates.aux_utils as aux 
+import src.updates.geo_utils as geo 
 # import matplotlib.pyplot as plt
 
 ###############################################################################   
 
 def aggregate_files(trib_files):
+    """
+    Aggregates multiple csv files of tributary break locations 
+    into one dataframe. 
+
+    Parmeters
+    ---------
+    trib_files: geopandas.dataframe
+        The geodataframes containing spatial and attribute information
+        for breaking reaches at specified locations.
+
+    Returns
+    -------
+    gdf_all: geopandas.dataframe
+        Concatenated geodataframe.
     
+    """
+
     for f in list(range(len(trib_files))):
         gdf = gp.read_file(trib_files[f])
         if f == 0:
@@ -38,10 +71,12 @@ region = args.region
 version = args.version
 multi_file = 'True'
 
+#read sword data. 
 sword = SWORD(main_dir, region, version)
 trib_dir = sword.paths['updates_dir']+'/tribs'
 trib_files = np.sort(glob.glob(os.path.join(trib_dir, '*.gpkg')))
 
+#isolate type, basin, and node numbers from Node IDs. 
 cl_level6 = np.array([str(ind)[0:6] for ind in sword.centerlines.node_id[0,:]])
 cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in sword.centerlines.node_id[0,:]])
 cl_rch_type = np.array([str(ind)[-1] for ind in sword.centerlines.node_id[0,:]])
@@ -58,15 +93,19 @@ break_id = np.array(tribs['cl_id'])
 # reach = np.array([13265000111])
 # break_id = np.array([14147935])
 
+#loop through and break reaches. 
 unq_rchs = np.unique(reach)
 for r in list(range(len(unq_rchs))):
     print(r, unq_rchs[r], len(unq_rchs)-1)
+    
+    #find associated centerline point with reach and sort indexes. 
     cl_r = np.where(sword.centerlines.reach_id[0,:] == unq_rchs[r])[0]
     order_ids = np.argsort(sword.centerlines.cl_id[cl_r])
     old_dist = sword.reaches.dist_out[np.where(sword.reaches.id == unq_rchs[r])[0]]
     old_len = sword.reaches.len[np.where(sword.reaches.id == unq_rchs[r])[0]]
     base_val = old_dist - old_len
 
+    #find break points. 
     breaks = break_id[np.where(reach == unq_rchs[r])[0]]
     break_pts = np.array([np.where(sword.centerlines.cl_id[cl_r[order_ids]] == b)[0][0] for b in breaks])
 
@@ -76,6 +115,8 @@ for r in list(range(len(unq_rchs))):
     bounds = np.sort(bounds) #added 4/26/24
     bounds = np.unique(bounds) #added 6/7/24
 
+    #creating temperary array with new reach divisions 
+    #at the centerline spatial scale.     
     new_divs = np.zeros(len(cl_r))
     count = 1
     for b in list(range(len(bounds)-1)):
@@ -90,7 +131,7 @@ for r in list(range(len(unq_rchs))):
             new_divs[fill[z]] = count
             count = count+1
 
-    #loop through bounds-1... 
+    #updating attribute info for new reach divisions.  
     unq_divs = np.unique(new_divs)
     if len(unq_divs) == 1:
         continue
@@ -139,9 +180,10 @@ for r in list(range(len(unq_rchs))):
                     if len(str(new_cl_node_nums[n])) == 3:
                         new_cl_node_ids[n] = int(str(new_rch_id)[0:-1]+fill+str(new_cl_node_nums[n])+str(new_rch_id)[-1])
 
+            #updating x-y and length information for new reach definitions. 
             x_coords = sword.centerlines.x[update_ids]
             y_coords = sword.centerlines.y[update_ids]
-            diff = aux.get_distances(x_coords,y_coords)
+            diff = geo.get_distances(x_coords,y_coords)
             dist = np.cumsum(diff)
             
             # print('5')

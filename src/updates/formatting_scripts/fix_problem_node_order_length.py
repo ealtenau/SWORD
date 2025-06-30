@@ -1,11 +1,21 @@
 # -*- coding: utf-8 -*-
-'''
-This script goes through and re-creates the nodes for an indentified reach. 
-Used mostly for incorrect node ordering or large/small node lengths
-(i.e. node length = 0 or node length > 1000).
+"""
+Fixing Problematic Nodes (fix_problem_node_order_length.py)
+===============================================================
 
-(c) E. Altenau 4/22/2025.
-'''
+This script goes through and re-derives nodes for reaches that 
+were flagged in 'find_problem_node_order_lenth.py'. 
+The flagged reaches contain incorrect node ordering or large/small 
+node lengths (i.e. node length = 0 or node length > 1000).
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python fix_problem_node_order_length.py NA v17
+
+"""
 
 from __future__ import division
 import sys
@@ -18,14 +28,13 @@ import time
 import argparse
 from scipy import stats as st
 from src.updates.sword import SWORD
-import src.updates.aux_utils as aux 
+import src.updates.geo_utils as geo 
 
 start_all = time.time()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="continental region", type = str)
 parser.add_argument("version", help="version", type = str)
-parser.add_argument("csv", help="csv file of reaches to delete", type = str)
 args = parser.parse_args()
 
 region = args.region
@@ -42,6 +51,7 @@ cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in sword.centerlines.no
 redo_order_df = pd.read_csv(csv_dir1) 
 redo_len_df = pd.read_csv(csv_dir2) 
 
+#combining reach ids from both files into one array
 redo_order = np.array(redo_order_df['reach_id']) 
 redo_len = np.array(redo_len_df['reach_id']) 
 redo_rch = np.append(redo_order, redo_len)
@@ -53,7 +63,7 @@ for r in list(range(len(unq_rchs))):
     order_ids = np.argsort(sword.centerlines.cl_id[cl_r])
     nodes_rch =  cl_node_num_int[cl_r[order_ids]]
     ## redo nodes for reach. 
-    subnodes = aux.Object()
+    subnodes = geo.Object()
     old_nums = sword.centerlines.node_id[0,cl_r[order_ids]]
     num_nodes = len(np.unique(old_nums))
     cl_ids = sword.centerlines.cl_id[cl_r[order_ids]]
@@ -68,7 +78,7 @@ for r in list(range(len(unq_rchs))):
             count = cnt-1
         else:
             count = cnt
-        #create actual id
+        #create sword id
         if len(str(count)) == 1:
             fill = '00'
             new_nums[breaks[b]:breaks[b+1]] = int(str(int(unq_rchs[r]))[:-1]+fill+str(count)+str(int(unq_rchs[r]))[-1])
@@ -79,15 +89,15 @@ for r in list(range(len(unq_rchs))):
             new_nums[breaks[b]:breaks[b+1]] = int(str(int(unq_rchs[r]))[:-1]+str(count)+str(int(unq_rchs[r]))[-1])
         cnt = cnt+1
 
-    #update centerline level
+    #update centerline dimension
     sword.centerlines.node_id[0,cl_r[order_ids]] = new_nums
 
-    #update n_nodes for reach level...
+    #update n_nodes for reach dimension
     current = np.where(sword.reaches.id == unq_rchs[r])[0]
     sword.reaches.rch_n_nodes[current] = len(np.unique(new_nums))
     x_coords = sword.centerlines.x[cl_r[order_ids]]
     y_coords = sword.centerlines.y[cl_r[order_ids]]
-    rdiff = aux.get_distances(x_coords,y_coords)
+    rdiff = geo.get_distances(x_coords,y_coords)
 
     #create fill variables
     unq_nodes = np.unique(new_nums)
@@ -126,7 +136,7 @@ for r in list(range(len(unq_rchs))):
     subnodes.end_rch = np.zeros(len(unq_nodes))
     subnodes.network = np.zeros(len(unq_nodes))
 
-    #loop through them and add attributes 
+    #loop through new nodes and add attributes 
     for n in list(range(len(unq_nodes))):
         pts = np.where(new_nums == unq_nodes[n])[0]
         old_node = np.where(sword.nodes.id == st.mode(old_nums[pts])[0])[0]
@@ -192,7 +202,6 @@ print('min reach char len:', len(str(np.min(sword.reaches.id))))
 print('max reach char len:', len(str(np.max(sword.reaches.id))))
 print('Edit flag values:', np.unique(sword.reaches.edit_flag))
 
-# '''
 
 # plt.scatter(sword.centerlines.x[cl_r[order_ids]], sword.centerlines.y[cl_r[order_ids]], c=sword.centerlines.node_id[0,cl_r[order_ids]], s=5)
 # plt.title('new ids')
@@ -201,5 +210,3 @@ print('Edit flag values:', np.unique(sword.reaches.edit_flag))
 # plt.scatter(sword.centerlines.x[cl_r[order_ids]], sword.centerlines.y[cl_r[order_ids]], c=old_nums, s=5)
 # plt.title('old ids')
 # plt.show()
-
-# '''

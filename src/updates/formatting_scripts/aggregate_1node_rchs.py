@@ -1,4 +1,22 @@
 # -*- coding: utf-8 -*-
+"""
+Aggregating One-Node Reaches (aggregate_1node_rchs.py)
+======================================================
+
+This script identifies and aggregates 1-node length 
+reaches in the SWOT River Database (SWORD) with neighboring 
+reaches.
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python aggregate_1node_rchs.py NA v17 
+
+"""
+
+
 from __future__ import division
 import sys
 import os
@@ -20,10 +38,6 @@ args = parser.parse_args()
 
 region = args.region
 version = args.version
-
-# Line-by-line degugging. 
-# region = 'OC'
-# version = 'v18'
 
 # File paths. 
 sword = SWORD(main_dir, region, version)

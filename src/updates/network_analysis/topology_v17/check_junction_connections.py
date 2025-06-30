@@ -1,5 +1,7 @@
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc 
 import geopandas as gp

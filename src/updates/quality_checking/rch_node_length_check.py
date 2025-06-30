@@ -7,10 +7,10 @@ match in the SWOT River Database (SWORD).
 
 The script is run at a regional/continental scale. 
 Command line arguments required are the two-letter 
-region identifier (i.e. NA) and SWORD version (i.e. v18).
+region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python rch_node_length_check.py NA v18 
+    python rch_node_length_check.py NA v17 
 
 """
 
@@ -34,6 +34,7 @@ version = args.version
 #read data.
 sword = SWORD(main_dir, region, version)
 
+#checking node lengths against reach lengths. 
 nlen_diff = np.zeros(len(sword.reaches.id))
 do_diff = np.zeros(len(sword.reaches.id))
 for ind in list(range(len(sword.reaches.id))):

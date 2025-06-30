@@ -1,4 +1,23 @@
 # -*- coding: utf-8 -*-
+"""
+Create new ghost reaches and nodes 
+(create_missing_ghost_reach.py)
+===============================================
+
+This script identifies and creates missing ghost
+nodes and reaches in the SWOT River Database (SWORD).
+The preprocessing script 'find_incorrect_ghost_reaches.py'
+must be run to produce input csv files for this script. 
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python create_missing_ghost_reach.py NA v17
+
+"""
+
 from __future__ import division
 import sys
 import os
@@ -17,17 +36,16 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-# region = 'OC'
-# version = 'v18'
-
+#read data
 sword = SWORD(main_dir, region, version)
-csv_dir = sword.paths['update_dir']+region.lower()+'_missing_ghost_sword.reaches.csv'
+csv_dir = sword.paths['update_dir']+region.lower()+'_missing_ghost_reaches.csv'
 check_dir = sword.paths['topo_dir']+'order_problems.csv'
 out_dir = sword.paths['update_dir']
 
 sword.reaches.type = np.array([int(str(rch)[-1]) for rch in sword.reaches.id])
 old_num_rchs = len(sword.reaches.id)
 
+#isolate basin, reach, and node numbers at centerline spatial scale. 
 rch_nums = np.array([int(str(rch)[6:10]) for rch in sword.centerlines.reach_id[0,:]])
 node_nums = np.array([int(str(rch)[10:13]) for rch in sword.centerlines.node_id[0,:]])
 cl_level6 = np.array([int(str(rch)[0:6]) for rch in sword.centerlines.node_id[0,:]])
@@ -61,16 +79,16 @@ for r in list(range(len(subreaches))):
         len_check = np.where(sword.centerlines.node_id[0,:] == change_node)[0]
         if len(len_check) == 1 or len(nind) == 2:
             # print(r, subreaches[r])
-            all_new_ghost_sword.nodes.append(nodes_ordered[-1])
+            all_new_ghost_nodes.append(nodes_ordered[-1])
             all_new_ghost_nums.append(2)
             all_new_ghost_rchs.append(subreaches[r])
             hw_out.append(hw_out_orig[r])
-            all_new_ghost_sword.nodes.append(nodes_ordered[-2])
+            all_new_ghost_nodes.append(nodes_ordered[-2])
             all_new_ghost_nums.append(1)
             all_new_ghost_rchs.append(subreaches[r])
             hw_out.append(hw_out_orig[r])
         else:
-            all_new_ghost_sword.nodes.append(nodes_ordered[-1])
+            all_new_ghost_nodes.append(nodes_ordered[-1])
             all_new_ghost_nums.append(1)
             all_new_ghost_rchs.append(subreaches[r])
             hw_out.append(hw_out_orig[r])
@@ -78,16 +96,16 @@ for r in list(range(len(subreaches))):
         change_node = max(nodes_ordered)
         len_check = np.where(sword.centerlines.node_id[0,:] == change_node)[0]
         if len(len_check) == 1 or len(nind) == 2:
-            all_new_ghost_sword.nodes.append(nodes_ordered[0])
+            all_new_ghost_nodes.append(nodes_ordered[0])
             all_new_ghost_nums.append(1)
             all_new_ghost_rchs.append(subreaches[r])
             hw_out.append(hw_out_orig[r])
-            all_new_ghost_sword.nodes.append(nodes_ordered[1])
+            all_new_ghost_nodes.append(nodes_ordered[1])
             all_new_ghost_nums.append(2)
             all_new_ghost_rchs.append(subreaches[r])
             hw_out.append(hw_out_orig[r])
         else:
-            all_new_ghost_sword.nodes.append(nodes_ordered[0])
+            all_new_ghost_nodes.append(nodes_ordered[0])
             all_new_ghost_nums.append(1)
             all_new_ghost_rchs.append(subreaches[r])
             hw_out.append(hw_out_orig[r])
@@ -633,7 +651,7 @@ for ind in list(range(len(all_new_ghost_nodes))):
 #writing flagged sword.reaches.
 issue_csv = {'reach_id': np.array(issues).astype('int64')}
 issue_csv = pd.DataFrame(issue_csv)
-issue_csv.to_csv(out_dir+region.lower()+'_check_ghost_sword.reaches.csv', index=False)
+issue_csv.to_csv(out_dir+region.lower()+'_check_ghost_reaches.csv', index=False)
 
 #writing data. 
 print('Writing New NetCDF')

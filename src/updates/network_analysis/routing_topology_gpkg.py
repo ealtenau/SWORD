@@ -1,20 +1,30 @@
-#!/usr/bin/env python3
-#*******************************************************************************
-#CheckTopology_Route_MultiDown.py
-#*******************************************************************************
+"""
+Reach Number Lumped Routing (routing_topology_gpkg.py)
+===========================================================
 
-#Purpose:
-#This script is the same as CheckTopology_Route.py, except can be applied to areas 
-#with multiple downstream segments
-#Assign value of 1 to every reach and use lumped routing to accumulate downstream
-#This will allow me to visualize if the connectivity information is correct
+Created by Elyssa Collins, modified by Elizabeth Altenau. 
 
+This script accumulates the number of SWORD reaches from
+headwaters to outlets based on the assigned topology. It 
+assigns a value of 1 to every reach and uses lumped routing 
+to accumulate downstream. This allows easier visualization of
+the connectivity and topology, especially in complex environments
+such as deltas.
 
-#*******************************************************************************
-#Import Python modules
-#*******************************************************************************
+Files are output to the "topo_dir" specified in the script. 
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter region 
+identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python routing_topology_gpkg.py NA v17
+
+"""
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import sys
 import shutil
 import csv
@@ -26,14 +36,6 @@ import scipy
 import pandas as pd
 import geopandas as gp
 import argparse
-
-#*******************************************************************************
-#Command Line Variables / Instructions:
-#*******************************************************************************
-# 1 - SWORD Continent (i.e. AS)
-# 2 - Level 2 Pfafstetter Basin (i.e. 36)
-# Example Syntax: "python CheckTopology_Route_MultiDown.py AS 36"
-#*******************************************************************************
 
 #*******************************************************************************
 #Get command line arguments

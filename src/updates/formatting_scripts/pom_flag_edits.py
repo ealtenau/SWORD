@@ -1,8 +1,25 @@
 # -*- coding: utf-8 -*-
+"""
+Flagged Edits (pom_flag_edits.py)
+===============================================================
 
-#checking and fixing where number of nodes is not correct per reach
-#checking and fixing if node ids do not trend with distance from outlet (within the reach)
-#fixing ghost reaches distance from outlet that were created, have same as neighboring reach. 
+This script checks and corrects promenient issues flagged by 
+Pierre-Olivier Malaterre. Key problems addressed:
+ - Checking and fixing where number of nodes is not correct per reach
+ - Checking and fixing if node ids do not trend with distance 
+    from outlet (within the reach)
+ - Fixing ghost reaches distance from outlet that were created, 
+    have same as neighboring reach. 
+
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python pom_flag_edits.py NA v17
+
+"""
 
 from __future__ import division
 import sys
@@ -13,7 +30,6 @@ import numpy as np
 import argparse
 import time
 from src.updates.sword import SWORD
-# import matplotlib.pyplot as plt
 
 start_all = time.time()
 parser = argparse.ArgumentParser()
@@ -24,14 +40,14 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-# region = 'OC'
-# version = 'v18'
-
+#read data. 
 sword = SWORD(main_dir, region, version)
+#create type array from Reach and Node IDs. 
 Type = np.array([int(str(r)[-1]) for r in sword.reaches.id])
+#create outpath.
 outpath = sword.paths['topo_dir']
 
-#correcting dist_out for created ghost sword.reaches. 
+#correcting dist_out for added ghost reaches. 
 ghost_rchs = sword.reaches.id[np.where(Type == 6)[0]]
 ghost_flag = []
 for ind in list(range(len(ghost_rchs))):
@@ -55,7 +71,7 @@ for ind in list(range(len(ghost_rchs))):
             sword.reaches.dist_out[rch] = sword.reaches.len[rch]
 
 
-# correcting number of nodes in reach and node dist_out trend. 
+#correcting number of nodes in reach and node dist_out trend. 
 nnode_flag = []
 ndist_flag = []
 for idx in list(range(len(sword.reaches.id))):
@@ -81,10 +97,3 @@ sword.save_nc()
 print('number of ghost reach distances updated:', len(ghost_flag))
 print('number of nodes in reach updated:', len(nnode_flag))
 print('number of node distances updated:', len(ndist_flag))
-
-
-# plt.scatter(nx[nind],ny[nind], c=node_dist[nind], s=5)
-# plt.show()
-
-# plt.scatter(nx[nind],ny[nind], c=node_dist[nind][::-1], s=5)
-# plt.show()
