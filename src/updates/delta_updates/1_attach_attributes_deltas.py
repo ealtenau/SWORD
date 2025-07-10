@@ -49,8 +49,6 @@ args = parser.parse_args()
 
 region = args.region
 delta_dir = args.dir
-# region = 'NA'
-# delta_dir =  main_dir + '/data/inputs/Deltas/delta_updates/NA/to-SWORD_06-11-2025_Yukon/Hydrologic_network/'
 
 #pull shapefiles. 
 delta_files = np.sort(np.array([file for file in geo.getListOfFiles(delta_dir) if '.shp' in file]))
@@ -166,10 +164,10 @@ print('Calulating Remaining Attributes')
 delta_pts.east, delta_pts.north, __, __ = geo.reproject_utm(delta_pts.y, 
                                                             delta_pts.x)
 #distance along reaches. 
-delta_pts.dist = aux.calc_geodesic_dist(delta_pts.x, 
-                                        delta_pts.y, 
-                                        delta_pts.reach_id_R, 
-                                        delta_pts.index)
+delta_pts.dist, delta_pts.len = aux.calc_geodesic_dist(delta_pts.x, 
+                                                       delta_pts.y, 
+                                                       delta_pts.reach_id_R, 
+                                                       delta_pts.index)
 
 #attaching width from node file. 
 node_arr = np.vstack((np.array(delta_nodes.x), np.array(delta_nodes.y))).T
@@ -179,9 +177,13 @@ pt_dist, pt_ind = kdt.query(pt_arr, k = 1)
 node_wth = np.array(delta_nodes.width)
 node_wth_var = np.array(delta_nodes.width_var)
 node_wth_max = np.array(delta_nodes.max_width)
+node_id = np.array(delta_nodes.node_id_rg)
+node_sinu = np.array(delta_nodes.sinuosity)
 delta_pts.width = node_wth[pt_ind]
 delta_pts.wth_var = node_wth_var[pt_ind]
 delta_pts.max_width = node_wth_max[pt_ind]
+delta_pts.node_id = node_id[pt_ind]
+delta_pts.sinuosity = node_sinu[pt_ind]
 
 #unique centerline ids. 
 delta_pts.cl_id = aux.unique_cl_id(delta_pts.reach_id_R, delta_pts.index)

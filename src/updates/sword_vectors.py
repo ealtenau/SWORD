@@ -23,6 +23,8 @@ import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import argparse
+import time
+import numpy as np
 from src.updates.sword import SWORD
 
 parser = argparse.ArgumentParser()
@@ -36,5 +38,8 @@ version = args.version
 export = args.export
 
 #reading netCDF and writing vector data.
+start = time.time()
 sword = SWORD(main_dir, region, version)
 sword.save_vectors(export)
+end = time.time()
+print('Time to Write Vectors:', str(np.round((end-start)/60, 2)), 'mins')

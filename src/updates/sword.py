@@ -17,8 +17,10 @@ import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import numpy as np
+from datetime import datetime
+import shutil
 import src.updates.sword_utils as swd
-
+import src.updates.geo_utils as geo 
 
 class SWORD:
     """
@@ -70,6 +72,30 @@ class SWORD:
         self.paths = swd.prepare_paths(main_dir, region, version)
         #populating centerline, node, and reach attribute data. 
         self.centerlines, self.nodes, self.reaches = swd.read_nc(self.paths['nc_dir']+self.paths['nc_fn'])
+
+    ###############################################################################
+
+    def copy(self):
+        """
+        Saves a copy of SWORD data in same file directory.
+
+        Parameters
+        ----------
+        None.
+        
+        Returns
+        -------
+        None.
+        
+        """
+        current_datetime = datetime.now()
+        copy_fn = self.paths['nc_dir']+\
+            self.paths['nc_fn'][:-3]+\
+                '_copy_'+\
+                    current_datetime.strftime("%Y-%m-%d_%H-%M-%S")+\
+                        '.nc'
+        
+        shutil.copy2(self.paths['nc_dir']+self.paths['nc_fn'], copy_fn)
 
     ###############################################################################
 
@@ -331,7 +357,7 @@ class SWORD:
         """
 
         for ind in list(range(len(rm_rch))):
-            print(ind, len(rm_rch)-1)
+            # print(ind, len(rm_rch)-1)
             rch_ind = np.where(self.reaches.id == rm_rch[ind])[0]
             node_ind = np.where(self.nodes.reach_id == rm_rch[ind])[0]
             cl_ind = np.where(self.centerlines.reach_id[0,:] == rm_rch[ind])[0]
@@ -513,11 +539,11 @@ class SWORD:
         
         """
 
-        self.centerlines.cl_id = np.append(self.centerlines.cl_id, subcls.new_cl_id)
+        self.centerlines.cl_id = np.append(self.centerlines.cl_id, subcls.cl_id)
         self.centerlines.x = np.append(self.centerlines.x, subcls.lon)
         self.centerlines.y = np.append(self.centerlines.y, subcls.lat)
-        self.centerlines.reach_id = np.append(self.centerlines.reach_id, subcls.new_reach_id, axis=1)
-        self.centerlines.node_id = np.append(self.centerlines.node_id, subcls.new_node_id, axis=1)
+        self.centerlines.reach_id = np.append(self.centerlines.reach_id, subcls.reach_id, axis=1)
+        self.centerlines.node_id = np.append(self.centerlines.node_id, subcls.node_id, axis=1)
         
         self.nodes.id = np.append(self.nodes.id, subnodes.id)
         self.nodes.cl_id = np.append(self.nodes.cl_id, subnodes.cl_id, axis=1)
@@ -598,4 +624,359 @@ class SWORD:
         self.reaches.end_rch = np.append(self.reaches.end_rch, subreaches.end_rch)
         self.reaches.network = np.append(self.reaches.network, subreaches.network)
         self.reaches.add_flag = np.append(self.reaches.add_flag, subreaches.add_flag)
-    
+
+    ###############################################################################
+
+    def break_reaches(self, reach_id, break_cl_id, verbose=False):
+        """
+        Breaks and creates new SWORD reaches at specified locations.
+
+        Parameters
+        ----------
+        reach_id: numpy.array() or list
+            Reach IDs of SWORD reaches to break.
+        breack_cl_id: numpy.array() or list
+            Centerline IDs along the reach indicating where to break 
+            the reach.
+            
+        Returns
+        -------
+        None.
+            
+        """
+
+        #isolate type, basin, and node numbers from Node IDs. 
+        cl_level6 = np.array([str(ind)[0:6] for ind in self.centerlines.node_id[0,:]])
+        cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in self.centerlines.node_id[0,:]])
+        cl_rch_type = np.array([str(ind)[-1] for ind in self.centerlines.node_id[0,:]])
+
+        #format input break variables.
+        reach = np.array(reach_id)
+        break_id = np.array(break_cl_id)
+
+        #loop through and break reaches. 
+        unq_rchs = np.unique(reach)
+        for r in list(range(len(unq_rchs))):
+            if verbose == True:
+                print(r, unq_rchs[r], len(unq_rchs)-1)
+            
+            #find associated centerline point with reach and sort indexes. 
+            cl_r = np.where(self.centerlines.reach_id[0,:] == unq_rchs[r])[0]
+            order_ids = np.argsort(self.centerlines.cl_id[cl_r])
+            old_dist = self.reaches.dist_out[np.where(self.reaches.id == unq_rchs[r])[0]]
+            old_len = self.reaches.len[np.where(self.reaches.id == unq_rchs[r])[0]]
+            base_val = old_dist - old_len
+
+            #find break points. 
+            breaks = break_id[np.where(reach == unq_rchs[r])[0]]
+            break_pts = np.array([np.where(self.centerlines.cl_id[cl_r[order_ids]] == b)[0][0] 
+                                  for b in breaks])
+
+            #append start and end points. 
+            bounds = np.append(0,break_pts)
+            bounds = np.append(bounds, len(cl_r))
+            bounds = np.sort(bounds) #added 4/26/24
+            bounds = np.unique(bounds) #added 6/7/24
+
+            #creating temperary array with new reach divisions 
+            #at the centerline spatial scale.     
+            new_divs = np.zeros(len(cl_r))
+            count = 1
+            for b in list(range(len(bounds)-1)):
+                update_nds = cl_r[order_ids[bounds[b]:bounds[b+1]]]
+                nds = np.unique(self.centerlines.node_id[0,update_nds])
+                fill = np.where(np.in1d(self.centerlines.node_id[0,cl_r[order_ids]], nds) == True)[0]
+                if np.max(new_divs[fill])==0:
+                    new_divs[fill] = count 
+                    count = count+1
+                else:
+                    z = np.where(new_divs[fill] == 0)[0]
+                    new_divs[fill[z]] = count
+                    count = count+1
+
+            #updating attribute info for new reach divisions.  
+            unq_divs = np.unique(new_divs)
+            if len(unq_divs) == 1:
+                continue
+            else:
+                for d in list(range(len(unq_divs))):
+                    # print('b', b)
+                    if d == 0:
+                        # print('1')
+                        update_ids = cl_r[order_ids[np.where(new_divs == unq_divs[d])]]
+                        new_cl_rch_id = self.centerlines.reach_id[0,update_ids]
+                        new_cl_node_ids = self.centerlines.node_id[0,update_ids]
+                        new_rch_id = np.unique(self.centerlines.reach_id[0,update_ids])[0]
+                    else:
+                        # print('2')
+                        #Create New Reach ID
+                        update_ids = cl_r[order_ids[np.where(new_divs == unq_divs[d])]]
+                        old_nodes = np.unique(self.centerlines.node_id[0,update_ids])
+                        old_rch = np.unique(self.centerlines.reach_id[0,update_ids])[0]
+                        l6_basin = np.where(cl_level6 == np.unique(cl_level6[update_ids]))[0]
+                        cl_rch_num_int = np.array([int(str(ind)[6:10]) 
+                                                   for ind in self.centerlines.node_id[0,l6_basin]])
+                        new_rch_num = np.max(cl_rch_num_int)+1
+                        if len(str(new_rch_num)) == 1:
+                            fill = '000'
+                            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+
+                                             str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+                        if len(str(new_rch_num)) == 2:
+                            fill = '00'
+                            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+
+                                             str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+                        if len(str(new_rch_num)) == 3:
+                            fill = '0'
+                            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+fill+
+                                             str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+                        if len(str(new_rch_num)) == 4:
+                            new_rch_id = int(str(np.unique(cl_level6[update_ids])[0])+
+                                             str(new_rch_num)+str(np.unique(cl_rch_type[update_ids])[0]))
+                        new_cl_rch_id = np.repeat(new_rch_id, len(update_ids))
+
+                        # print('3')
+                        #Create New Node IDs 
+                        new_cl_node_ids = np.zeros(len(update_ids),dtype=int)
+                        new_cl_node_nums = cl_node_num_int[update_ids] - np.min(cl_node_num_int[update_ids]) + 1
+                        for n in list(range(len(new_cl_node_nums))):
+                            if len(str(new_cl_node_nums[n])) == 1:
+                                fill = '00'
+                                new_cl_node_ids[n] = int(str(new_rch_id)[0:-1]+fill+
+                                                         str(new_cl_node_nums[n])+str(new_rch_id)[-1])
+                            if len(str(new_cl_node_nums[n])) == 2:
+                                fill = '0'
+                                new_cl_node_ids[n] = int(str(new_rch_id)[0:-1]+fill+
+                                                         str(new_cl_node_nums[n])+str(new_rch_id)[-1])
+                            if len(str(new_cl_node_nums[n])) == 3:
+                                new_cl_node_ids[n] = int(str(new_rch_id)[0:-1]+fill+
+                                                         str(new_cl_node_nums[n])+str(new_rch_id)[-1])
+
+                    #updating x-y and length information for new reach definitions. 
+                    x_coords = self.centerlines.x[update_ids]
+                    y_coords = self.centerlines.y[update_ids]
+                    diff = geo.get_distances(x_coords,y_coords)
+                    dist = np.cumsum(diff)
+                    
+                    # print('5')
+                    new_rch_len = np.max(dist)
+                    new_rch_x = np.median(self.centerlines.x[update_ids])
+                    new_rch_y = np.median(self.centerlines.y[update_ids])
+                    new_rch_x_max = np.max(self.centerlines.x[update_ids])
+                    new_rch_x_min = np.min(self.centerlines.x[update_ids])
+                    new_rch_y_max = np.max(self.centerlines.y[update_ids])
+                    new_rch_y_min = np.min(self.centerlines.y[update_ids])
+
+                    # print('6')
+                    unq_nodes = np.unique(new_cl_node_ids)
+                    new_node_len = np.zeros(len(unq_nodes))
+                    new_node_x = np.zeros(len(unq_nodes))
+                    new_node_y = np.zeros(len(unq_nodes))
+                    new_node_id = np.zeros(len(unq_nodes))
+                    new_node_cl_ids = np.zeros((2,len(unq_nodes)))
+                    for n2 in list(range(len(unq_nodes))):
+                        pts = np.where(new_cl_node_ids == unq_nodes[n2])[0]
+                        new_node_x[n2] = np.median(self.centerlines.x[update_ids[pts]])
+                        new_node_y[n2] = np.median(self.centerlines.y[update_ids[pts]])
+                        new_node_len[n2] = max(np.cumsum(diff[pts]))
+                        new_node_id[n2] = unq_nodes[n2]
+                        new_node_cl_ids[0,n2] = np.min(self.centerlines.cl_id[update_ids[pts]])
+                        new_node_cl_ids[1,n2] = np.max(self.centerlines.cl_id[update_ids[pts]])
+                        if len(pts) == 1:
+                            new_node_len[n2] = 30
+                    
+                    if new_rch_id in self.reaches.id:
+                        # print('7')
+                        node_ind = np.where(np.in1d(self.nodes.id, new_node_id)==True)[0]
+                        self.nodes.len[node_ind] = new_node_len
+                        self.nodes.cl_id[:,node_ind] = new_node_cl_ids
+                        self.nodes.x[node_ind] = new_node_x
+                        self.nodes.y[node_ind] = new_node_y
+                        
+                        rch = np.where(self.reaches.id == new_rch_id)[0]
+                        self.reaches.cl_id[0,rch] = np.min(self.centerlines.cl_id[update_ids])
+                        self.reaches.cl_id[1,rch] = np.max(self.centerlines.cl_id[update_ids])
+                        self.reaches.x[rch] = new_rch_x
+                        self.reaches.x_min[rch] = new_rch_x_min
+                        self.reaches.x_max[rch] = new_rch_x_max
+                        self.reaches.y[rch] = new_rch_y
+                        self.reaches.y_min[rch] = new_rch_y_min
+                        self.reaches.y_max[rch] = new_rch_y_max
+                        self.reaches.len[rch] = new_rch_len
+                        self.reaches.rch_n_nodes[rch] = len(new_node_id)
+                        if self.reaches.edit_flag[rch] == 'NaN':
+                            edit_val = '6'
+                        elif '6' not in self.reaches.edit_flag[rch][0].split(','):
+                            edit_val = self.reaches.edit_flag[rch] + ',6'
+                        else:
+                            edit_val = self.reaches.edit_flag[rch]
+                        self.reaches.edit_flag[rch] = edit_val
+                        self.nodes.edit_flag[node_ind] = edit_val
+
+                    else:
+                        # print('8')
+                        self.centerlines.reach_id[0,update_ids] = new_cl_rch_id
+                        self.centerlines.node_id[0,update_ids] = new_cl_node_ids
+                        
+                        old_ind = np.where(np.in1d(self.nodes.id, old_nodes) == True)[0]
+                        self.nodes.id[old_ind] = new_node_id
+                        self.nodes.len[old_ind] = new_node_len
+                        self.nodes.cl_id[:,old_ind] = new_node_cl_ids
+                        self.nodes.x[old_ind] = new_node_x
+                        self.nodes.y[old_ind] = new_node_y
+                        self.nodes.reach_id[old_ind] = np.repeat(new_rch_id, len(new_node_id))
+                        
+                        rch = np.where(self.reaches.id == old_rch)[0]
+                        self.reaches.id = np.append(self.reaches.id, new_rch_id)
+                        new_cl_ids = np.array([np.min(self.centerlines.cl_id[update_ids]), 
+                                            np.max(self.centerlines.cl_id[update_ids])]).reshape(2,1)
+                        self.reaches.cl_id = np.append(self.reaches.cl_id, new_cl_ids, axis=1)
+                        self.reaches.x = np.append(self.reaches.x, new_rch_x)
+                        self.reaches.x_min = np.append(self.reaches.x_min, new_rch_x_min)
+                        self.reaches.x_max = np.append(self.reaches.x_max, new_rch_x_max)
+                        self.reaches.y = np.append(self.reaches.y, new_rch_y)
+                        self.reaches.y_min = np.append(self.reaches.y_min, new_rch_y_min)
+                        self.reaches.y_max = np.append(self.reaches.y_max, new_rch_y_max)
+                        self.reaches.len = np.append(self.reaches.len, new_rch_len)
+                        self.reaches.rch_n_nodes = np.append(self.reaches.rch_n_nodes, len(new_node_id))
+                        #fill attribute with current values. 
+                        self.reaches.wse = np.append(self.reaches.wse, self.reaches.wse[rch])
+                        self.reaches.wse_var = np.append(self.reaches.wse_var, self.reaches.wse_var[rch])
+                        self.reaches.wth = np.append(self.reaches.wth, self.reaches.wth[rch])
+                        self.reaches.wth_var = np.append(self.reaches.wth_var, self.reaches.wth_var[rch])
+                        self.reaches.slope = np.append(self.reaches.slope, self.reaches.slope[rch])
+                        self.reaches.grod = np.append(self.reaches.grod, self.reaches.grod[rch])
+                        self.reaches.grod_fid = np.append(self.reaches.grod_fid, self.reaches.grod_fid[rch])
+                        self.reaches.hfalls_fid = np.append(self.reaches.hfalls_fid, self.reaches.hfalls_fid[rch])
+                        self.reaches.lakeflag = np.append(self.reaches.lakeflag, self.reaches.lakeflag[rch])
+                        self.reaches.nchan_max = np.append(self.reaches.nchan_max, self.reaches.nchan_max[rch])
+                        self.reaches.nchan_mod = np.append(self.reaches.nchan_mod, self.reaches.nchan_mod[rch])
+                        self.reaches.dist_out = np.append(self.reaches.dist_out, self.reaches.dist_out[rch])
+                        self.reaches.n_rch_up = np.append(self.reaches.n_rch_up, self.reaches.n_rch_up[rch])
+                        self.reaches.n_rch_down = np.append(self.reaches.n_rch_down, self.reaches.n_rch_down[rch])
+                        self.reaches.rch_id_up = np.append(self.reaches.rch_id_up, self.reaches.rch_id_up[:,rch], axis=1)
+                        self.reaches.rch_id_down = np.append(self.reaches.rch_id_down, self.reaches.rch_id_down[:,rch], axis=1)
+                        self.reaches.max_obs = np.append(self.reaches.max_obs, self.reaches.max_obs[rch])
+                        self.reaches.orbits = np.append(self.reaches.orbits, self.reaches.orbits[:,rch], axis=1)
+                        self.reaches.facc = np.append(self.reaches.facc, self.reaches.facc[rch])
+                        self.reaches.iceflag = np.append(self.reaches.iceflag, self.reaches.iceflag[:,rch], axis=1)
+                        self.reaches.max_wth = np.append(self.reaches.max_wth, self.reaches.max_wth[rch])
+                        self.reaches.river_name = np.append(self.reaches.river_name, self.reaches.river_name[rch])
+                        self.reaches.low_slope = np.append(self.reaches.low_slope, self.reaches.low_slope[rch])
+                        self.reaches.trib_flag = np.append(self.reaches.trib_flag, self.reaches.trib_flag[rch])
+                        self.reaches.path_freq = np.append(self.reaches.path_freq, self.reaches.path_freq[rch])
+                        self.reaches.path_order = np.append(self.reaches.path_order, self.reaches.path_order[rch])
+                        self.reaches.main_side = np.append(self.reaches.main_side, self.reaches.main_side[rch])
+                        self.reaches.path_segs = np.append(self.reaches.path_segs, self.reaches.path_segs[rch])
+                        self.reaches.strm_order = np.append(self.reaches.strm_order, self.reaches.strm_order[rch])
+                        self.reaches.end_rch = np.append(self.reaches.end_rch, self.reaches.end_rch[rch])
+                        self.reaches.network = np.append(self.reaches.network, self.reaches.network[rch])
+                        self.reaches.add_flag = np.append(self.reaches.add_flag, self.reaches.add_flag[rch])
+                        if self.reaches.edit_flag[rch] == 'NaN':
+                            edit_val = '6'
+                        elif '6' not in self.reaches.edit_flag[rch][0].split(','):
+                            edit_val = self.reaches.edit_flag[rch] + ',6'
+                        else:
+                            edit_val = self.reaches.edit_flag[rch]
+                        self.reaches.edit_flag = np.append(self.reaches.edit_flag, edit_val)
+                        self.nodes.edit_flag[old_ind] = edit_val
+                
+                ### TOPOLOGY Updates 
+                nrchs = np.unique(self.centerlines.reach_id[0,cl_r[order_ids]])
+                max_id = [max(self.centerlines.cl_id[cl_r[order_ids[np.where(self.centerlines.reach_id[0,cl_r[order_ids]] 
+                                                                             == n)[0]]]]) for n in nrchs]
+                id_sort = np.argsort(max_id)
+                nrchs = nrchs[id_sort]
+                #need to order nrchs in terms of indexes can update dist out easier? 
+                for idx in list(range(len(nrchs))):
+                    pts = np.where(self.centerlines.reach_id[0,cl_r[order_ids]] == nrchs[idx])[0]
+                    binary = np.copy(self.centerlines.reach_id[1:,cl_r[order_ids[pts]]])
+                    binary[np.where(binary > 0)] = 1
+                    binary_sum = np.sum(binary, axis = 0)
+                    existing_nghs = np.where(binary_sum > 0)[0]
+                    if len(existing_nghs) > 0:
+                        mn = np.where(self.centerlines.cl_id[cl_r[order_ids[pts]]] == 
+                                      min(self.centerlines.cl_id[cl_r[order_ids[pts]]]))[0]
+                        mx = np.where(self.centerlines.cl_id[cl_r[order_ids[pts]]] == 
+                                      max(self.centerlines.cl_id[cl_r[order_ids[pts]]]))[0]
+                        if mn in existing_nghs and mx not in existing_nghs:
+                            #updating new neighbors at the centerline level. 
+                            self.centerlines.reach_id[1:,cl_r[order_ids[pts[mx]]]] = 0
+                            self.centerlines.reach_id[1:,cl_r[order_ids[pts[mx]+1]]] = 0 
+                            self.centerlines.reach_id[1,cl_r[order_ids[pts[mx]]]] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]+1]]][0] #self.centerlines.reach_id[:,cl_r[order_ids[pts[mx]]]]
+                            self.centerlines.reach_id[1,cl_r[order_ids[pts[mx]+1]]] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]]]][0] #self.centerlines.reach_id[:,cl_r[order_ids[pts[mx]+1]]]
+                            #updating new neighbors at the reach level.
+                            ridx = np.where(self.reaches.id == self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]]]][0])[0]
+                            self.reaches.n_rch_up[ridx] = 1
+                            self.reaches.rch_id_up[:,ridx] = 0
+                            self.reaches.rch_id_up[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]+1]]][0]
+                            if idx > 0:
+                                #upstream neighor
+                                ridx2 = np.where(self.reaches.id == self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]+1]]][0])[0]
+                                self.reaches.n_rch_down[ridx2] = 1
+                                self.reaches.rch_id_down[:,ridx2] = 0
+                                self.reaches.rch_id_down[0,ridx2] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]]]][0]
+                                #current reach 
+                                self.reaches.n_rch_down[ridx] = 1
+                                self.reaches.rch_id_down[:,ridx] = 0
+                                self.reaches.rch_id_down[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]-1]]][0]
+
+                        elif mx in existing_nghs and mn not in existing_nghs:
+                            self.centerlines.reach_id[1:,cl_r[order_ids[pts[mn]]]] = 0
+                            self.centerlines.reach_id[1:,cl_r[order_ids[pts[mn]-1]]] = 0
+                            self.centerlines.reach_id[1,cl_r[order_ids[pts[mn]]]] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]-1]]][0] #self.centerlines.reach_id[:,cl_r[order_ids[pts[mx]]]]
+                            self.centerlines.reach_id[1,cl_r[order_ids[pts[mn]-1]]] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]]]][0] #self.centerlines.reach_id[:,cl_r[order_ids[pts[mx]+1]]]
+                            #updating new neighbors at the reach level.
+                            ridx = np.where(self.reaches.id == self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]]]][0])[0]
+                            self.reaches.n_rch_down[ridx] = 1
+                            self.reaches.rch_id_down[:,ridx] = 0
+                            self.reaches.rch_id_down[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]-1]]][0]
+                            if idx > 0:
+                                #upstream neighbor
+                                ridx2 = np.where(self.reaches.id == self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]-1]]][0])[0]
+                                self.reaches.n_rch_up[ridx2] = 1
+                                self.reaches.rch_id_up[:,ridx2] = 0
+                                self.reaches.rch_id_up[0,ridx2] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]]]][0]
+                                #current reach 
+                                self.reaches.n_rch_up[ridx] = 1
+                                self.reaches.rch_id_up[:,ridx] = 0
+                                self.reaches.rch_id_up[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]+1]]][0]
+                        
+                        else:
+                            #update downstream end for reach level. 
+                            ridx = np.where(self.reaches.id == self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]]]][0])[0] 
+                            self.reaches.n_rch_down[ridx] = 1
+                            self.reaches.rch_id_down[:,ridx] = 0
+                            self.reaches.rch_id_down[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mn]-1]]][0]
+                            #find the max id and change that reaches values to current reach...
+                            up_nghs = np.unique(self.centerlines.reach_id[1:,cl_r[order_ids[pts[mx]]]])
+                            up_nghs = up_nghs[up_nghs>0]
+                            for up in list(range(len(up_nghs))):
+                                #updating upstream most neighbor of original reach's neighbors at the centerline level.
+                                ngh_rch = np.where(self.centerlines.reach_id[0,:] == up_nghs[up])[0]
+                                vals = np.where(self.centerlines.reach_id[1:,ngh_rch] == nrchs[0])
+                                self.centerlines.reach_id[vals[0]+1,ngh_rch[vals[1]]] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]]]][0]
+                                #updating upstream most neighbor of original reach's neighbors at the reach level. 
+                                ridx = np.where(self.reaches.id == up_nghs[up])[0]
+                                nridx = np.where(self.reaches.rch_id_down[:,ridx] == nrchs[0])[0]
+                                self.reaches.rch_id_down[nridx,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]]]][0]
+                #Distance from Outlet 
+                rch_indx = np.where(np.in1d(self.reaches.id,nrchs)==True)[0]
+                rch_cs = np.cumsum(self.reaches.len[rch_indx])
+                self.reaches.dist_out[rch_indx] = rch_cs+base_val
+
+        ### Print Dimensions.
+        if verbose == True: 
+            print('Cl Dimensions:', 
+                len(np.unique(self.centerlines.cl_id)), 
+                len(self.centerlines.cl_id))
+            print('Rch Dimensions:', 
+                len(np.unique(self.centerlines.reach_id[0,:])), 
+                len(np.unique(self.nodes.reach_id)), 
+                len(np.unique(self.reaches.id)),
+                len(self.reaches.id))
+            print('Node Dimensions:', 
+                len(np.unique(self.centerlines.node_id[0,:])), 
+                len(np.unique(self.nodes.id)), 
+                len(self.nodes.id))
+
+    ###############################################################################

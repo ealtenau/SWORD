@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Auxillary Data Utilities (auxillary_utils.py)
 ================================================
@@ -458,11 +459,15 @@ def calc_geodesic_dist(lon, lat, reaches, index):
     -------
         dist: numpy.array()
             Cumulative geodesic distance (m).
+        length: numpy.array()
+            Length (m). The maximum cumulative distance 
+            value along a reach/segment. 
 
     """
 
     unq_rchs = np.unique(reaches)
     dist = np.zeros(len(reaches))
+    length = np.zeros(len(reaches))
     for r in list(range(len(unq_rchs))):
         rch = np.where(reaches == unq_rchs[r])[0] #if multiple choose first.
         sort_ind = rch[np.argsort(index[rch])]   
@@ -470,7 +475,8 @@ def calc_geodesic_dist(lon, lat, reaches, index):
         y_coords = lat[sort_ind]
         diff = geo.get_distances(x_coords,y_coords)
         dist[sort_ind] = np.cumsum(diff)
-    return dist
+        length[sort_ind] = np.max(np.cumsum(diff))
+    return dist, length
 
 ###############################################################################
 

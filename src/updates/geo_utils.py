@@ -93,8 +93,8 @@ def lines_to_pts(db):
         x = np.array([line[0] for line in db['points'][ind]])
         y = np.array([line[1] for line in db['points'][ind]])
         #disregard connecting points. 
-        x=x[1:-1]
-        y=y[1:-1]
+        # x=x[1:-1] #commented out becuase short connecting reaches were lost in some cases. 
+        # y=y[1:-1]
         #create point index
         index = np.array(list(range(len(x))))+1
         #assign coordinates and index to points object. 
