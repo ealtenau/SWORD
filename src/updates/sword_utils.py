@@ -691,7 +691,7 @@ def discharge_attr_nc(reaches):
 
 ###############################################################################
 
-def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, common, max_dist, region):
+def define_geometry(reach_id, cl_x, cl_y, cl_id, common, max_dist, region):
     """
     Creates polyline geometry for each reach in the SWORD database. 
 
@@ -725,10 +725,11 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, common, max_dist, regi
         steps. 
         
     """
-    
+    start = time.time()
     geom = []
     rm_ind = []
     connections = np.zeros([reach_id.shape[0], reach_id.shape[1]], dtype=int)
+    unq_rch = np.unique(reach_id[0,:])
     for ind in list(range(len(unq_rch))):
         # print(ind, len(unq_rch)-1)
         in_rch = np.where(reach_id[0,:] == unq_rch[ind])[0]
@@ -903,7 +904,10 @@ def define_geometry(unq_rch, reach_id, cl_x, cl_y, cl_id, common, max_dist, regi
         else:
             line = LineString(pts.tolist())
             geom.append(line) 
-
+    
+    end = time.time()
+    print('Finished Geometry in: '+str(np.round((end-start)/60,2))+' min')
+    
     return geom, rm_ind
 
 ###############################################################################
@@ -1085,8 +1089,8 @@ def write_rchs(reaches, geom, rm_ind, paths):
     level2 = np.array([int(str(r)[0:2]) for r in rch_df['reach_id']])
     unq_l2 = np.unique(level2)
     rch_cp = rch_df.copy(); rch_cp['level2'] = level2
-    outshp = outpath_shp + paths['shp_rch_fn']
     for lvl in list(range(len(unq_l2))):
+        outshp = outpath_shp + paths['shp_rch_fn']
         outshp = outshp.replace("XX",str(unq_l2[lvl]))
         subset = rch_cp[rch_cp['level2'] == unq_l2[lvl]]
         subset = subset.drop(columns=['level2'])
@@ -1115,6 +1119,9 @@ def write_nodes(nodes, paths):
     None.  
         
     """
+    
+    start_all = time.time()
+    
     #determine outpaths.
     outpath_gpkg = paths['gpkg_dir']
     outpath_shp = paths['shp_dir']
@@ -1205,21 +1212,24 @@ def write_nodes(nodes, paths):
     print('Finished GPKG in: '+str(np.round((end-start)/60,2))+' min')
 
     #write as shapefile per level2 basin.
+    print('Writing Shapefiles')
     start = time.time()
     level2 = np.array([int(str(n)[0:2]) for n in node_df['node_id']])
     unq_l2 = np.unique(level2)
     nodes_cp = node_df.copy(); nodes_cp['level2'] = level2
-    outshp = outpath_shp + paths['shp_node_fn']
     for lvl in list(range(len(unq_l2))):
-        print(unq_l2[lvl])
+        # print(unq_l2[lvl])
+        outshp = outpath_shp + paths['shp_node_fn']
         outshp = outshp.replace("XX",str(unq_l2[lvl]))
         subset = nodes_cp[nodes_cp['level2'] == unq_l2[lvl]]
         subset = subset.drop(columns=['level2'])
         subset.to_file(outshp)
         del(subset)
     end = time.time()
+    end_all = time.time()
     print('Finished SHPs in: '+str(np.round((end-start)/60,2))+' min')
-  
+    print('Finished All in: '+str(np.round((end_all-start_all)/60,2))+' min')
+
 ###############################################################################
 
 def write_nc(centerlines, reaches, nodes, region, outfile):

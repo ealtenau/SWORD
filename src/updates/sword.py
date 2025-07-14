@@ -151,14 +151,13 @@ class SWORD:
             #creating reach geometry.  
             print('Creating Geometry') 
             threshold = 500 #meters
-            geom, rm_ind = swd.define_geometry(np.unique(self.reaches.id),
-                                                self.centerlines.reach_id, 
-                                                self.centerlines.x, 
-                                                self.centerlines.y, 
-                                                self.centerlines.cl_id, 
-                                                common, 
-                                                threshold, 
-                                                self.region)
+            geom, rm_ind = swd.define_geometry(self.centerlines.reach_id, 
+                                               self.centerlines.x, 
+                                               self.centerlines.y, 
+                                               self.centerlines.cl_id, 
+                                               common, 
+                                               threshold, 
+                                               self.region)
             #writing reach geopackage and shapefiles.
             print('Writing Reaches')      
             swd.write_rchs(self.reaches, geom, rm_ind, self.paths)

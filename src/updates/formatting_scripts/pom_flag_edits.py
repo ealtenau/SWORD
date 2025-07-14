@@ -42,6 +42,8 @@ version = args.version
 
 #read data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
+
 #create type array from Reach and Node IDs. 
 Type = np.array([int(str(r)[-1]) for r in sword.reaches.id])
 #create outpath.

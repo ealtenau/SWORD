@@ -41,6 +41,7 @@ version = args.version
 
 # File paths. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 out_dir = sword.paths['update_dir']
 
 # Find single node reaches that are not ghost reaches. 

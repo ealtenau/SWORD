@@ -35,6 +35,7 @@ version = args.version
 
 #read sword data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 
 #look for incorrect node cl_ids in a reach. 
 issues = []

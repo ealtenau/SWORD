@@ -559,7 +559,7 @@ def find_tributary_junctions(sword, delta_tribs):
                            sword.centerlines.y)).T
     kdt = sp.cKDTree(sword_pts)
     pt_dist, pt_ind = kdt.query(sword_pts, 
-                                k = 10, 
+                                k = 30, 
                                 distance_upper_bound=0.005)
 
     tribs = np.zeros(len(sword.centerlines.reach_id[0,:]))
@@ -1443,7 +1443,7 @@ def tributary_topo(sword, delta_tribs, basin):
     sword_pts = np.vstack((sword.centerlines.x[l2], 
                         sword.centerlines.y[l2])).T
     kdt = sp.cKDTree(sword_pts)
-    pt_dist, pt_ind = kdt.query(sword_pts, k = 20)
+    pt_dist, pt_ind = kdt.query(sword_pts, k = 30)
 
     #loop through tributaries to identify downstream reach
     #and update topology informatino. 

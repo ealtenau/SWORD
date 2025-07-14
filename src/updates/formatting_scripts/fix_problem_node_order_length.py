@@ -41,6 +41,8 @@ region = args.region
 version = args.version
  
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
+
 csv_dir1 = sword.paths['update_dir']+region.lower()+'_node_order_problems.csv'
 csv_dir2 = sword.paths['update_dir']+region.lower()+'_node_length_probems.csv'
 

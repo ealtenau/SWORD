@@ -48,13 +48,14 @@ update_nc = args.update
 
 #read data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 outpath = sword.paths['update_dir']
 
 #copies of pre-edit centerline and node ids. 
 old_cl_ids = np.copy(sword.centerlines.cl_id)
 old_cl_nodes = np.copy(sword.centerlines.node_id)
 old_nodes = np.copy(sword.nodes.id)
-old_node_cl_ids = np.copy(sword.nodes.cl_ids)
+old_node_cl_ids = np.copy(sword.nodes.cl_id)
 old_cl_rchs = np.copy(sword.centerlines.reach_id)
 
 start = time.time()
@@ -194,8 +195,8 @@ for r in list(range(len(node_rev))):
             nind = np.where(sword.centerlines.node_id[0,:] == subnodes[n])[0]
             mn = min(sword.centerlines.cl_id[nind]) 
             mx = max(sword.centerlines.cl_id[nind]) 
-            sword.nodes.cl_ids[0,node_ind[n]] = mn
-            sword.nodes.cl_ids[1,node_ind[n]] = mx
+            sword.nodes.cl_id[0,node_ind[n]] = mn
+            sword.nodes.cl_id[1,node_ind[n]] = mx
 end = time.time()
 print(str(np.round((end-start)/60,2))+' mins')
 
@@ -221,6 +222,5 @@ if update_nc == 'True':
     print('Updating the NetCDF')
     sword.save_nc()
 
-sword.close()
 end_all = time.time()
 print('*** '+region + ' Done in: '+str(np.round((end_all-start_all)/60,2))+' mins ***')

@@ -38,6 +38,8 @@ version = args.version
 
 #read data
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
+
 csv_dir = sword.paths['update_dir']+region.lower()+'_missing_ghost_reaches.csv'
 check_dir = sword.paths['topo_dir']+'order_problems.csv'
 out_dir = sword.paths['update_dir']
@@ -252,6 +254,7 @@ for ind in list(range(len(all_new_ghost_nodes))):
             sword.reaches.path_segs[rch] = sword.nodes.path_segs[nds]
             sword.reaches.strm_order[rch] = sword.nodes.strm_order[nds]
             sword.reaches.network[rch] = sword.nodes.network[nds]
+            sword.reaches.add_flag[rch] = sword.nodes.add_flag[nds]
             
             ### update edit flag for boundary change. 
             if sword.reaches.edit_flag[rch] == 'NaN':
@@ -329,6 +332,7 @@ for ind in list(range(len(all_new_ghost_nodes))):
                     sword.reaches.path_segs = np.append(sword.reaches.path_segs, sword.nodes.path_segs[nds])
                     sword.reaches.strm_order = np.append(sword.reaches.strm_order, sword.nodes.strm_order[nds])
                     sword.reaches.network = np.append(sword.reaches.network, sword.nodes.network[nds])
+                    sword.reaches.add_flag = np.append(sword.reaches.add_flag, sword.nodes.add_flag[nds])
                     #fill other attrubutes with current reach values. 
                     sword.reaches.slope = np.append(sword.reaches.slope, sword.reaches.slope[rch])
                     sword.reaches.low_slope = np.append(sword.reaches.low_slope, sword.reaches.low_slope[rch])
@@ -409,6 +413,7 @@ for ind in list(range(len(all_new_ghost_nodes))):
                 sword.reaches.path_segs[rch_new] = np.max(sword.nodes.path_segs[nds_all])
                 sword.reaches.strm_order[rch_new] = np.max(sword.nodes.strm_order[nds_all])
                 sword.reaches.network[rch_new] = np.max(sword.nodes.network[nds_all])
+                sword.reaches.add_flag[rch_new] = np.max(sword.nodes.add_flag[nds_all])
                 #node based updates
                 nnodes = np.unique(sword.centerlines.node_id[0,update_ids2])
                 sword.reaches.len[rch_new] = np.sum(sword.nodes.len[np.where(np.in1d(sword.nodes.id, nnodes)==True)[0]])
@@ -507,6 +512,7 @@ for ind in list(range(len(all_new_ghost_nodes))):
                 sword.reaches.path_segs[rch] = sword.nodes.path_segs[nds]
                 sword.reaches.strm_order[rch] = sword.nodes.strm_order[nds]
                 sword.reaches.network[rch] = sword.nodes.network[nds]
+                sword.reaches.add_flag[rch] = sword.nodes.add_flag[nds]
                 
                 ### update edit flag for boundary change. 
                 if sword.reaches.edit_flag[rch] == 'NaN':
@@ -578,6 +584,7 @@ for ind in list(range(len(all_new_ghost_nodes))):
                 sword.reaches.path_segs = np.append(sword.reaches.path_segs, sword.nodes.path_segs[nds])
                 sword.reaches.strm_order = np.append(sword.reaches.strm_order, sword.nodes.strm_order[nds])
                 sword.reaches.network = np.append(sword.reaches.network, sword.nodes.network[nds])
+                sword.reaches.add_flag = np.append(sword.reaches.add_flag, sword.nodes.add_flag[nds])
                 #fill other attrubutes with current reach values. 
                 sword.reaches.slope = np.append(sword.reaches.slope, sword.reaches.slope[rch])
                 sword.reaches.low_slope = np.append(sword.reaches.low_slope, sword.reaches.low_slope[rch])

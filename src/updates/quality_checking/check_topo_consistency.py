@@ -10,7 +10,7 @@ Command line arguments required are the two-letter
 region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python check_topo_consistency.py NA v17 
+    python check_topo_consistency.py NA v17
 
 """
 
@@ -157,31 +157,16 @@ start = time.time()
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
 parser.add_argument("version", help="version", type = str)
-parser.add_argument("subset", nargs="?", default="All", help="basin to subset", type = str)
 args = parser.parse_args()
 
 region = args.region
 version = args.version
-subset = args.subset
 
 #reading data
 sword = SWORD(main_dir, region, version)
 
-#subset data to seleted basin. Default is to check entire continent. 
-if subset != 'All':
-    BasinLevel=len(subset)
-    domain_reachids=[]
-    for reachid in sword.reaches.id:
-        reachidstr=str(reachid)
-        if reachidstr[0:BasinLevel] == subset:
-            domain_reachids.append(reachid)
-    print('there are a total of ',len(domain_reachids),'reaches in SWORD for basin', subset)
-
-else:
-    domain_reachids = sword.reaches.id.tolist()
-
+domain_reachids = sword.reaches.id.tolist()
 domain_reach_data={}
-
 # create a dictionary keyed off reach data with centerline and reach properties for domain: 
 # this takes a second
 for reach in domain_reachids:

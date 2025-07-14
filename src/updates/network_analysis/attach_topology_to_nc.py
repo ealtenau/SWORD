@@ -44,9 +44,10 @@ basin = args.basin
 
 #read sword netcdf. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control. 
 
 if basin == 'All':
-    rch_shp_fn = sword.paths['gpkg_dir'] + sword.paths['shp_gpkg_fn']
+    rch_shp_fn = sword.paths['gpkg_dir'] + sword.paths['gpkg_rch_fn']
 else:
     rch_shp_fn = sword.paths['shp_dir'] + sword.paths['shp_rch_fn']
     rch_shp_fn = rch_shp_fn.replace("XX", basin)

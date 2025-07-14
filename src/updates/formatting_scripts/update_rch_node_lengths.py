@@ -35,8 +35,9 @@ version = args.version
 
 #read data.
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 
-#calculate reach lengths and associated node lengths. 
+#calculate reach lengths and associated node lengths.
 for r in list(range(len(sword.reaches.id))):
     print(r, len(sword.reaches.id)-1)
     rch = np.where(sword.centerlines.reach_id[0,:] == sword.reaches.id[r])[0] #if multiple choose first.

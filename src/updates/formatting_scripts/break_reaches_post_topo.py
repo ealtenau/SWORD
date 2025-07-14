@@ -71,8 +71,17 @@ region = args.region
 version = args.version
 multi_file = 'True'
 
+#manual
+# region = 'AS'
+# version = 'v18'
+# reach = np.array([34100020735, 34100023485])
+# break_id = np.array([102233933, 102278599])
+
 #read sword data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control. 
+
+############################ Comment out for manual 
 trib_dir = sword.paths['updates_dir']+'/tribs'
 trib_files = np.sort(glob.glob(os.path.join(trib_dir, '*.gpkg')))
 
@@ -83,10 +92,7 @@ else:
     tribs = gp.read_file(trib_files[0]) 
 reach = np.array(tribs['reach_id']) 
 break_id = np.array(tribs['cl_id']) 
-
-#manual
-# reach = np.array([13265000111])
-# break_id = np.array([14147935])
+############################ Comment out for manual 
 
 #break reaches.
 sword.break_reaches(reach, break_id, verbose=True)

@@ -42,6 +42,7 @@ version = args.version
 
 #read data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 
 print('Updating Centerline Node ID Neighbors')
 cl_pts = np.vstack((sword.centerlines.x, sword.centerlines.y)).T

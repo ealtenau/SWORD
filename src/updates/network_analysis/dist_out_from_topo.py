@@ -42,6 +42,7 @@ version = args.version
 
 #read data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 
 #calculate dist out from topology. 
 print('Calculating DistOut from Topology')
@@ -58,23 +59,35 @@ while len(start_rchs) > 0:
     up_ngh_list = []
     for r in list(range(len(start_rchs))):
         rch = np.where(sword.reaches.id == start_rchs[r])[0]
+        rch_flag = np.max(flag[rch])
         if sword.reaches.n_rch_down[rch] == 0:
             dist_out[rch] = sword.reaches.len[rch]
             up_nghs = sword.reaches.rch_id_up[:,rch]; up_nghs = up_nghs[up_nghs>0]
+            up_flag = np.array([np.max(flag[np.where(sword.reaches.id == n)[0]]) for n in up_nghs])
+            up_nghs = up_nghs[up_flag == 0]
             up_ngh_list.append(up_nghs)
             # loop=loop+1
         else:
             dn_nghs = sword.reaches.rch_id_down[:,rch]; dn_nghs = dn_nghs[dn_nghs>0]
             dn_dist = np.array([dist_out[np.where(sword.reaches.id == n)[0]][0] for n in dn_nghs])
             if min(dn_dist) == -9999:
-                #set condition to start at next outlet. multichannel cases. 
-                flag[rch] = 1
-                # outlets = sword.reaches.id[np.where((sword.reaches.n_rch_down == 0) & (dist_out == -9999))[0]]
-                # start_rchs = np.array([outlets[0]])
+                if rch_flag == 1:
+                    # print(loop)
+                    add_val = max(dn_dist)
+                    dist_out[rch] = sword.reaches.len[rch]+add_val
+                    up_nghs = sword.reaches.rch_id_up[:,rch]; up_nghs = up_nghs[up_nghs>0]
+                    up_flag = np.array([np.max(flag[np.where(sword.reaches.id == n)[0]]) for n in up_nghs])
+                    up_nghs = up_nghs[up_flag == 0]
+                    flag[np.where(np.in1d(sword.reaches.id, up_nghs)==True)[0]] = 1
+                else:
+                    #set condition to start at next outlet. multichannel cases. 
+                    flag[rch] = 1
             else:
                 add_val = max(dn_dist)
                 dist_out[rch] = sword.reaches.len[rch]+add_val
                 up_nghs = sword.reaches.rch_id_up[:,rch]; up_nghs = up_nghs[up_nghs>0]
+                up_flag = np.array([np.max(flag[np.where(sword.reaches.id == n)[0]]) for n in up_nghs])
+                up_nghs = up_nghs[up_flag == 0]
                 up_ngh_list.append(up_nghs) 
     #formatting next start reach.         
     up_ngh_arr = np.array(list(chain.from_iterable(up_ngh_list)))
@@ -87,8 +100,12 @@ while len(start_rchs) > 0:
             start_rchs = np.array([])
         elif len(outlets) == 0 and min(dist_out) == -9999:
             #find reach with downstream distances filled but a value of -9999
-            print('!!! PROBLEM !!! --> No more upstream sword.reaches.id, but still -9999 values in outlet distance')
-            break
+            check_flag = np.where((flag == 1) & (dist_out == -9999))[0]#added 7/12/25
+            if len(check_flag) > 0:#added 7/12/25
+                start_rchs = np.array([sword.reaches.id[check_flag[0]]]) #added 7/12/25
+            else:
+                print('!!! PROBLEM !!! --> No more upstream sword.reaches.id, but still -9999 values in outlet distance')
+                break
         else:
             start_rchs = np.array([outlets[0]])
     loop = loop+1

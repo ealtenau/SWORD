@@ -38,6 +38,8 @@ region = args.region
 version = args.version
 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control. 
+
 out_dir = sword.paths['update_dir']
 
 zero_nodes = np.where(sword.nodes.wth <= 0)[0]

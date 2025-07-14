@@ -71,6 +71,7 @@ version = args.version
 
 #read data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 
 #ceate dataframe of centerline x-y values. 
 df = pd.DataFrame(np.array([sword.centerlines.x, sword.centerlines.y]).T)

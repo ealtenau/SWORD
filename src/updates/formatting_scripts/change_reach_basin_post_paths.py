@@ -38,6 +38,8 @@ version = args.version
 
 #read sword and csv data.
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
+
 rch_list = args.csv
 df = pd.read_csv(rch_list)
 

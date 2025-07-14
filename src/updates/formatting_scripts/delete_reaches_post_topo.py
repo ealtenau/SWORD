@@ -37,17 +37,17 @@ version = args.version
 
 #read sword data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control.
 rch_check = sword.reaches.id
 
 #read csv data. 
 rch_dir = args.csv
-# rch_dir = paths['update_dir']+'solo_rch_deletions.csv' #manual 
 rm_rch_df = pd.read_csv(rch_dir)
 rm_rch = np.array(rm_rch_df['reach_id']) #csv file
 rm_rch = np.unique(rm_rch)
 
-#manually specify reaches is desired. 
-# rm_rch = np.array([11600200243, 11600201666, 11600200293, 11600200303, 11600201656, 11710500031, 11710500011, 11710500286, 11710600011, 11710600416]) #manual
+#manually specify reaches if desired. 
+# rm_rch = np.array([34100026796]) #manual
 # rm_rch = np.unique(rm_rch)
 
 #delete reaches. 

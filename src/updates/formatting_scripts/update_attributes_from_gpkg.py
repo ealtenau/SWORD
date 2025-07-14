@@ -41,9 +41,10 @@ dist_update = args.dist_update
 
 #read data. 
 sword = SWORD(main_dir, region, version)
-gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_fn']
+sword.copy() #copies original file for version control. 
 
 #read geopackage data.
+gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_rch_fn']
 gpkg = gp.read_file(gpkg_fn)
 
 if len(sword.reaches.id) != len(gpkg):

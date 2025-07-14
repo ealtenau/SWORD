@@ -195,6 +195,7 @@ Desktop.ini
 # Folders
 data/
 temp/
+swot_data_tools/
 
 #files
 src/updates/formatting_scripts/testing.py

@@ -48,6 +48,7 @@ version = args.version
 
 #read sword data. 
 sword = SWORD(main_dir, region, version)
+sword.copy() #copies original file for version control. 
 
 #read csv file of updated reaches. 
 rch_dir = args.csv
@@ -55,7 +56,7 @@ rch_df = pd.read_csv(rch_dir)
 reach = np.unique(np.array(rch_df['reach_id']))
 
 #read geopackage data.
-gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_fn']
+gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_rch_fn']
 gpkg = gp.read_file(gpkg_fn)
 geom = [i for i in gpkg.geometry]
 
