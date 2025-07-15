@@ -11,7 +11,7 @@ Command line arguments required are the two-letter
 region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python update_end_rch_attr.py NA v17
+    python path/to/update_end_rch_attr.py NA v17
 
 """
 

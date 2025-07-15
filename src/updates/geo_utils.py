@@ -20,6 +20,7 @@ import pandas as pd
 import utm
 from pyproj import Proj
 from geopy import Point, distance
+import math
 
 ###############################################################################
 
@@ -62,6 +63,31 @@ def getListOfFiles(dirName):
             allFiles.append(fullPath)
 
     return allFiles
+
+###############################################################################
+
+def meters_to_degrees(meters, latitude):
+    """
+    Converts a specified distance value in meters to degrees
+    based on latitude. 
+
+    Parmeters
+    ---------
+    meters: int
+        Meters. 
+    latitude: float
+        Average latitude value of data. 
+
+    Returns
+    -------
+    deg: float
+        Decimal degree value equivalent to the input meter
+        value. 
+    
+    """
+    
+    deg = np.round(meters/(111.32 * 1000 * math.cos(latitude * (math.pi / 180))),5)
+    return deg
 
 ###############################################################################
 

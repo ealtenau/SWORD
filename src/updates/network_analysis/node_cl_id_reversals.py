@@ -16,7 +16,7 @@ CSV file outputs are created and located in
 sword.paths['update_dir'].
 
 Execution example (terminal):
-    python node_cl_id_reversals.py NA v17 True
+    python path/to/node_cl_id_reversals.py NA v17 True
 
 """
 

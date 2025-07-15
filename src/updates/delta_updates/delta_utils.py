@@ -358,19 +358,19 @@ def cut_delta_segments(delta_cls, thresh):
         Length in meters that indicates if a segment should be 
         cut. 
 
-    New Attributes
-    --------------
-    delta_cls.new_len: numpy.array()
+    New Attributes: type [dimension]
+    --------------------------------
+    delta_cls.new_len: numpy.array() [number of points]
         Updated segment lengths (meters).
-    delta_cls.new_seg: numpy.array() 
+    delta_cls.new_seg: numpy.array() [number of points]
         Updated segment IDs. 
-    delta_cls.new_rch_id_up: numpy.array()
+    delta_cls.new_rch_id_up: numpy.array() [4, number of points]
         Updated upstream segment neighbor IDs. 
-    delta_cls.new_rch_id_down: numpy.array() 
+    delta_cls.new_rch_id_down: numpy.array() [4, number of points]
         Updated downstream segment neighbor IDs.
-    delta_cls.new_n_rch_up: numpy.array()
+    delta_cls.new_n_rch_up: numpy.array() [number of points]
         Updated number of upstream neighbors.
-    delta_cls.new_n_rch_down: numpy.array()
+    delta_cls.new_n_rch_down: numpy.array() [number of points]
         Updated number of downstream neighbors.
     
     Returns
@@ -554,6 +554,28 @@ def find_sword_breaks(delta_cls, sword):
 ###############################################################################        
 
 def find_tributary_junctions(sword, delta_tribs):
+    """
+    Finds SWORD reach and centerline IDs that are close to the
+    identified delta tributaries and saves them for breaking SWORD
+    reaches. 
+
+    Parameters
+    ----------
+    sword: obj
+        Class object containing SWORD dimensions and 
+        attributes. 
+    delta_tribs: list
+        SWORD reach IDs identified as tributaries 
+        along the delta. 
+     
+    Returns
+    -------
+    break_rchs: list
+        SWORD reach IDs to break.
+    break_ids: list
+        SWORD centerline IDs indicating where to break the reach. 
+
+    """
 
     sword_pts = np.vstack((sword.centerlines.x, 
                            sword.centerlines.y)).T
@@ -810,9 +832,9 @@ def number_segments(delta_cls):
         Class object containing delta dimensions and 
         attributes. 
 
-    New Attributes
-    --------------
-    delta_cls.rch_num: numpy.array()
+    New Attributes: type [dimension]
+    --------------------------------
+    delta_cls.rch_num: numpy.array() [number of points]
         Delta reach numbers ordered based on topology.
 
     Returns
@@ -907,9 +929,9 @@ def number_nodes(delta_cls):
         Class object containing delta dimensions and 
         attributes. 
 
-    New Attributes
-    --------------
-    delta_cls.node_num: numpy.array()
+    New Attributes: type [dimension]
+    --------------------------------
+    delta_cls.node_num: numpy.array() [number of points]
         Delta node numbers ordered based on flow
         direction.
 
@@ -949,7 +971,7 @@ def create_sword_ids(delta_cls, sword):
         Class object containing SWORD dimensions and 
         attributes.
 
-    New Attributes type [dimension]
+    New Attributes: type [dimension]
     --------------------------------
     delta_cls.reach_id: numpy.array() [4,number of points]
         SWORD formatted reach IDs.
@@ -1151,8 +1173,148 @@ def find_delta_tribs(delta_cls, sword):
 
 def create_nodes(delta_cls):
     """
-    xxxx
+    Creates a class object that contains attributes associated
+    with the ~200 m node dimension in SWORD.
     
+    Parameters
+    ----------
+    delta_cls: obj
+        Class object containing delta dimensions and 
+        attributes.
+
+     Returns
+    -------
+    subnodes: obj 
+        Object containing delta attributes formatted as SWORD 
+        nodes. 
+
+        Attributes: type [dimension]
+        ----------------------------
+        id: numpy.array() [number of nodes]
+            Unique Node ID. 
+        cl_ids: numpy.array() [2, number of nodes]
+            Minimum (row 1) and maximum (row 2) centerline 
+            point ids associated with each node.
+        x: numpy.array() [number of nodes]
+            Longitude (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of nodes]
+            Latitude (WGS 84, EPSG:4326). 
+        len: numpy.array() [number of nodes]
+            Node length (meters). 
+        wse: numpy.array() [number of nodes]
+            Water surface elevation (meters). 
+        wse_var: numpy.array() [number of nodes]
+            Water surface elevation variance (squared meters).
+        wth: numpy.array() [number of nodes]
+            Width (meters).
+        wth_var: numpy.array() [number of nodes]
+            Width variance (squared meters).
+        grod: numpy.array() [number of nodes]
+            Type of obstruction for each node based on GROD and
+            HydroFALLS databases. Obstr_type values: 
+            0 - No Dam, 
+            1 - Dam, 
+            2 - Lock, 
+            3 - Low Permeable Dam, 
+            4 - Waterfall.
+        grod_fid: numpy.array() [number of nodes]
+            GROD database ID. 
+        hfalls_fid: numpy.array() [number of nodes]
+            HydroFALLS database ID. 
+        nchan_max: numpy.array() [number of nodes]
+            Maximum number of channels for each node.
+        nchan_mod: numpy.array() [number of nodes]
+            Mode of the number of channels for each node.
+        dist_out: numpy.array() [number of nodes]
+            Distance from the river outlet (meters).
+        reach_id: numpy.array() [number of nodes]
+            Reach ID the node is associated with.
+        facc: numpy.array() [number of nodes]
+            Flow accumulation (squared kilometers).
+        lakeflag: numpy.array() [number of nodes]
+            GRWL water body identifier for each node: 
+            0 - river, 
+            1 - lake/reservoir, 
+            2 - canal , 
+            3 - tidally influenced river.
+        wth_coef: numpy.array() [number of nodes]
+            Coefficient that is multiplied by the width to
+            inform the search window for SWOT data.
+        ext_dist_coef: numpy.array() [number of nodes]
+            Coefficient that informs the maximum search
+            window for SWOT data.
+        max_wth: numpy.array() [number of nodes]
+            Maximum width value across the channel that
+            includes any island and bar areas (meters).
+        meand_len: numpy.array() [number of nodes]
+            Length of the meander that a node belongs to, 
+            measured from beginning of the meander to 
+            its end (meters).
+        river_name: numpy.array() [number of nodes]
+            All river names associated with a node. If there are 
+            multiple names they are listed in alphabetical order 
+            and separated by a semicolon.
+        manual_add: numpy.array() [number of nodes]
+            Binary flag indicating whether the node was manually added. 
+            0 - Not manually added. 
+            1 - Manually added. 
+        sinuosity: numpy.array() [number of nodes]
+            The total reach length the node belongs to divided by the 
+            Euclidean distance between the reach end points (meters).
+        edit_flag: numpy.array() [number of nodes]
+            Numerical flag indicating the type of update applied to
+            SWORD nodes from the previous version. Flag descriptions:
+            1 - reach type change,
+            2 - node order change,
+            3 - reach neighbor change,
+            41 - flow accumulation update,
+            42 - elevation update,
+            43 - width update,
+            44 - slope update,
+            45 - river name update,
+            5 - reach id change,
+            6 - reach boundary change,
+            7 - reach/node addition
+            Multiple updates will be separated by a comma (i.e. "41,2")
+        trib_flag: numpy.array() [number of nodes]
+            Binary flag indicating if a large tributary not represented in
+            SWORD is entering a node. 
+            0 - no tributary, 
+            1 - tributary.
+        path_freq: numpy.array() [number of nodes]
+            The number of times a node is traveled along get to any 
+            given headwater point.
+        path_order: numpy.array() [number of nodes]
+            Unique values representing continuous paths from the
+            river outlet to the headwaters ordered from the longest
+            path (1) to the shortest path (N).
+        path_segs: numpy.array() [number of nodes]
+            Unique values indicating continuous river segments
+            between river junctions.
+        strm_order: numpy.array() [number of nodes]
+            Stream order based on the log scale of the path frequency.
+            Stream order is calculated for the main network only (see
+            “main_side” description).
+        main_side: numpy.array() [number of nodes]
+            Value indicating whether a node is on the:
+            0 - main network
+            1 - side network 
+            2 - secondary outlet
+        end_rch: numpy.array() [number of nodes]
+            Value indicating whether a node is:
+            0 - main stem 
+            1 - headwater
+            2 - outlet
+            3 - junction
+        network: numpy.array() [number of nodes]
+            Unique value for each connected river network.
+        add_flag: numpy.array() [number of nodes]
+            Binary flag indicating if the node was added
+            to the current SWORD version based on the 
+            MERIT Hydro Vector database. 
+            0 - not added, 
+            1 - added. 
+
     """
 
     subnodes = geo.Object()
@@ -1242,7 +1404,152 @@ def create_nodes(delta_cls):
 def create_reaches(delta_cls):
 
     """
-    xxxx
+    Creates a class object that contains attributes associated
+    with the ~10 km reach dimension in SWORD.
+    
+    Parameters
+    ----------
+    delta_cls: obj
+        Class object containing delta dimensions and 
+        attributes.
+
+    Returns
+    -------
+    subreaches: obj 
+        Object containing delta attributes formatted as SWORD 
+        reaches.
+
+        Attributes: type [dimension]
+        ----------------------------
+        id: numpy.array() [number of reaches]
+            Unique Reach ID. 
+        cl_ids: numpy.array() [2, number of reaches]
+            Minimum (row 1) and maximum (row 2) centerline 
+            point ids associated with each reach.
+        x: numpy.array() [number of reaches]
+            Longitude (WGS 84, EPSG:4326). 
+        x_min: numpy.array() [number of reaches]
+            Minimum longitude of a reach (WGS 84, EPSG:4326). 
+        x_max: numpy.array() [number of reaches]
+            Maximum longitude of a reach (WGS 84, EPSG:4326). 
+        y: numpy.array() [number of reaches]
+            Latitude (WGS 84, EPSG:4326). 
+        y_min: numpy.array() [number of reaches]
+            Minimum latitude of a reach (WGS 84, EPSG:4326).
+        y_max: numpy.array() [number of reaches]
+            Maximum latitude of a reach (WGS 84, EPSG:4326).
+        len: numpy.array() [number of reaches]
+            Reach length (meters). 
+        wse: numpy.array() [number of reaches]
+            Water surface elevation (meters). 
+        wse_var: numpy.array() [number of reaches]
+            Water surface elevation variance (squared meters).
+        wth: numpy.array() [number of reaches]
+            Width (meters).
+        wth_var: numpy.array() [number of reaches]
+            Width variance (squared meters).
+        grod: numpy.array() [number of reaches]
+            Type of obstruction for each reach based on GROD and
+            HydroFALLS databases. Obstr_type values: 
+            0 - No Dam, 
+            1 - Dam, 
+            2 - Lock, 
+            3 - Low Permeable Dam, 
+            4 - Waterfall.
+        grod_fid: numpy.array() [number of reaches]
+            GROD database ID. 
+        hfalls_fid: numpy.array() [number of reaches]
+            HydroFALLS database ID. 
+        nchan_max: numpy.array() [number of reaches]
+            Maximum number of channels for each reach.
+        nchan_mod: numpy.array() [number of reaches]
+            Mode of the number of channels for each reach.
+        dist_out: numpy.array() [number of reaches]
+            Distance from the river outlet (meters).
+        rch_n_nodes: numpy.array() [number of reaches]
+            Number of nodes in a reach.
+        slope: [number of reaches]
+            Reach slope (meters per kilometer).
+        max_obs: [number of reaches]
+            Maximum number of SWOT passes to intersect each 
+            reach during the ~21 day orbit cycle.
+        orbits: [75, number of reaches]
+            SWOT orbit pass_tile IDs that intersect each reach 
+            during the 21 day orbit cycle. One ID per row (75 maximum).
+        iceflag: [number of reaches]
+        low_slope: [number of reaches]
+            Binary flag where a value of 1 indicates the reach 
+            slope is too low for effective discharge estimation
+            for SWOT discharge algorithms.
+        facc: numpy.array() [number of reaches]
+            Flow accumulation (squared kilometers).
+        lakeflag: numpy.array() [number of reaches]
+            GRWL water body identifier for each reach: 
+            0 - river, 
+            1 - lake/reservoir, 
+            2 - canal , 
+            3 - tidally influenced river.
+        max_wth: numpy.array() [number of reaches]
+            Maximum width value across the channel that
+            includes any island and bar areas (meters).
+        river_name: numpy.array() [number of reaches]
+            All river names associated with a reach. If there are 
+            multiple names they are listed in alphabetical order 
+            and separated by a semicolon.
+        edit_flag: numpy.array() [number of reaches]
+            Numerical flag indicating the type of update applied to
+            SWORD reaches from the previous version. Flag descriptions:
+            1 - reach type change,
+            2 - node order change,
+            3 - reach neighbor change,
+            41 - flow accumulation update,
+            42 - elevation update,
+            43 - width update,
+            44 - slope update,
+            45 - river name update,
+            5 - reach id change,
+            6 - reach boundary change,
+            7 - reach/node addition
+            Multiple updates will be separated by a comma (i.e. "41,2")
+        trib_flag: numpy.array() [number of reaches]
+            Binary flag indicating if a large tributary not represented in
+            SWORD is entering a reach. 
+            0 - no tributary, 
+            1 - tributary.
+        path_freq: numpy.array() [number of reaches]
+            The number of times a reach is traveled along get to any 
+            given headwater point.
+        path_order: numpy.array() [number of reaches]
+            Unique values representing continuous paths from the
+            river outlet to the headwaters ordered from the longest
+            path (1) to the shortest path (N).
+        path_segs: numpy.array() [number of reaches]
+            Unique values indicating continuous river segments
+            between river junctions.
+        strm_order: numpy.array() [number of reaches]
+            Stream order based on the log scale of the path frequency.
+            Stream order is calculated for the main network only (see
+            “main_side” description).
+        main_side: numpy.array() [number of reaches]
+            Value indicating whether a reach is on the:
+            0 - main network
+            1 - side network 
+            2 - secondary outlet
+        end_rch: numpy.array() [number of reaches]
+            Value indicating whether a reach is:
+            0 - main stem 
+            1 - headwater
+            2 - outlet
+            3 - junction
+        network: numpy.array() [number of reaches]
+            Unique value for each connected river network.
+        add_flag: numpy.array() [number of reaches]
+            Binary flag indicating if the reach was added
+            to the current SWORD version based on the 
+            MERIT Hydro Vector database. 
+            0 - not added, 
+            1 - added.
+
     """
 
     # Set variables.
@@ -1352,7 +1659,30 @@ def create_reaches(delta_cls):
 
 def format_sword_topo_attributes(delta_cls, subreaches):
     """
-    xxxx
+    Formats topological attributes for the delta addition reaches to 
+    match SWORD's structure.
+
+    Parameters
+    ----------
+    delta_cls: obj
+        Object containing delta centerline attributes and location.
+    subreaches: obj
+        Object containing delta reach attributes and location.  
+
+    New Attributes: type [dimension]
+    --------------------------------
+    subreaches.n_rch_up: [number of reaches]
+        Number of upstream neighbors.
+    subreaches.n_rch_down: [number of reaches]
+        Number of downstream neighbors.
+    subreaches.rch_id_up: [4, number of reaches]
+        Reach IDs of upstream neighbors (4 maximum).
+    subreaches.rch_id_down: [4, number of reaches]
+        Reach IDs of downstream neighbors (4 maximum).
+
+    Returns
+    -------
+    None.
     
     """
 
@@ -1390,9 +1720,27 @@ def format_sword_topo_attributes(delta_cls, subreaches):
 
 def format_fill_attributes(delta_cls, subnodes, subreaches, sword):
     """
-    xxxx
+    Calculates values for the end_rch, network, and path_segs 
+    attributes for the delta reaches and nodes.
 
+    Parameters
+    ----------
+    delta_cls: obj
+        Object containing delta centerline attributes and location.
+    subnodes: obj
+        Object containing delta node attributes and location.
+    subreaches: obj
+        Object containing delta reach attributes and location.
+    sword: obj
+        Class object containing SWORD dimensions and 
+        attributes.   
+
+    Returns
+    -------
+    None.
+    
     """
+
     #updating end reach variable 
     hw = np.where(subreaches.n_rch_up == 0)[0]
     ot = np.where(subreaches.n_rch_down == 0)[0]
@@ -1434,9 +1782,26 @@ def format_fill_attributes(delta_cls, subnodes, subreaches, sword):
 
 def tributary_topo(sword, delta_tribs, basin):
     """
-    xxxx
+    Updates SWORD topology around identified delta
+    tributaries.
 
+    Parameters
+    ----------
+    sword: obj
+        Class object containing SWORD dimensions and 
+        attributes.  
+    delta_tribs: list
+        SWORD reach IDs identified as tributaries 
+        along the delta.
+    basin: int
+        Pfafstetter level 2 basin for the delta. 
+     
+    Returns
+    -------
+    None.
+    
     """
+
     #spatial join with self.
     lvl2 = np.array([int(str(b)[0:2]) for b in sword.centerlines.reach_id[0,:]]) 
     l2 = np.where(lvl2 == basin)[0]
@@ -1491,7 +1856,32 @@ def tributary_topo(sword, delta_tribs, basin):
 ###############################################################################
 
 def plot_sword_deletions(sword, delta_cls, rmv_rchs, delta_tribs, delta_dir):
-    
+    """
+    Plots delta centerlines with SWORD centerlines and the identified 
+    SWORD reaches to delete or flag as tributaries. 
+
+    Parameters
+    ----------
+    sword: obj
+        Class object containing SWORD dimensions and 
+        attributes.
+    delta_cls: obj
+        Object containing delta centerline attributes and location.
+    rmv_rchs: numpy.array()
+        SWORD reach IDs to remove. 
+    delta_tribs: list
+        SWORD reach IDs identified as tributaries 
+        along the delta.
+    delta_dir:
+        The input directory to the delta netCDF file. 
+
+    Returns
+    -------
+    PNG figure output to 'delta_dir/plots/'.
+    Figure modifier is '_deletions.png'.
+
+    """
+
     plt_dir = os.path.dirname(delta_dir)+'/plots/'
     if os.path.isdir(plt_dir) is False:
         os.makedirs(plt_dir)
@@ -1517,7 +1907,27 @@ def plot_sword_deletions(sword, delta_cls, rmv_rchs, delta_tribs, delta_dir):
 ###############################################################################
 
 def plot_sword_additions(sword, delta_cls, delta_dir):
+    """
+    Plots delta centerlines with SWORD centerlines that 
+    will be combined in 2_add_deltas_to_sword.py script. 
 
+    Parameters
+    ----------
+    sword: obj
+        Class object containing SWORD dimensions and 
+        attributes.
+    delta_cls: obj
+        Object containing delta centerline attributes and location.
+    delta_dir:
+        The input directory to the delta netCDF file. 
+
+    Returns
+    -------
+    PNG figure output to 'delta_dir/plots/'.
+    Figure modifier is '_additions.png'.
+    
+    
+    """
     plt_dir = os.path.dirname(delta_dir)+'/plots/'
     if os.path.isdir(plt_dir) is False:
         os.makedirs(plt_dir)

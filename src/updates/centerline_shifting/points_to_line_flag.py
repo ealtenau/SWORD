@@ -1,14 +1,54 @@
+"""
+Attach Shift Flag to Reach Vector Files
+(points_to_line_flag.py)
+=========================================================
+
+This script attaches the shift flag outputs from the 
+point files generated in 'channel_shifting_flag_jrc.py'
+or 'channel_shifting_flag_mhv.py' to the SWORD reach 
+vector files. It also assigns different shift flag 
+priority values based on width:
+    0: No shift flag
+    1: Flagged rivers > 100 m wide.
+    2: Flagged rivers 50-100 m wide. 
+    3: Flagged rivers < 50 m wide. 
+
+Outputs are located at:
+main_dir+'/data/inputs/JRC_Water_Occurance/'+region+'/'
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/points_to_line_flag.py NA v17
+
+"""
+
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
+import argparse
 import geopandas as gp
 
-region = 'EU'
-sword_dir = main_dir+'/data/outputs/Reaches_Nodes/v17b/gpkg/'+region.lower()+'_sword_reaches_v17b.gpkg'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Region", type = str)
+parser.add_argument("version", help="<Required> Version", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+
+#data filenames. 
+sword_dir = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg/'\
+    +region.lower()+'_sword_reaches_'+version+'.gpkg'
 jrc_dir = main_dir+'/data/inputs/JRC_Water_Occurance/'+region+'/'
 jrc_files = os.listdir(jrc_dir)
 jrc_files = np.array([f for f in jrc_files if 'sword' in f])
 
+#read data and attach to SWORD reach vector file. 
 sword = gp.read_file(sword_dir)
 flag = np.zeros(len(sword))
 for f in list(range(len(jrc_files))):
@@ -30,8 +70,9 @@ for f in list(range(len(jrc_files))):
         else:
             flag[rch] = 1
 
+#write data. 
 sword['shift_flag'] = flag
-sword.to_file(jrc_dir+region+'_shift_flag_v17b.gpkg', driver='GPKG', layer='reaches')
+sword.to_file(jrc_dir+region+'_shift_flag_'+version+'.gpkg', driver='GPKG', layer='reaches')
 
 All = np.where(flag > 0)[0]
 small = np.where(flag == 1)[0]

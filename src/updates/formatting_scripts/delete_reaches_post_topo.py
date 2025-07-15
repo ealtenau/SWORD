@@ -12,7 +12,7 @@ region identifier (i.e. NA), SWORD version (i.e. v17),
 and a csv file containing Reach IDs to delete.
 
 Execution example (terminal):
-    python delete_reaches_post_topo.py NA v17 path/to/reach_deletions.csv
+    python path/to/delete_reaches_post_topo.py NA v17 path/to/reach_deletions.csv
 
 """
 

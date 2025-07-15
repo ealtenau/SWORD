@@ -13,7 +13,7 @@ SWORD version (i.e. v17), and the basin scale at which topology
 is to be updated (i.e. 74 or All).
 
 Execution example (terminal):
-    python attach_topology_nc.py NA v17 All
+    python path/to/attach_topology_nc.py NA v17 All
 
 """
 

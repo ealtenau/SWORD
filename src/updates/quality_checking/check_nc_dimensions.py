@@ -11,7 +11,7 @@ Command line arguments required are the two-letter
 region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python check_nc_dimensions.py NA v17 
+    python path/to/check_nc_dimensions.py NA v17 
 
 """
 

@@ -14,7 +14,7 @@ and a "dist_update" parameter indicating whether to
 update the distance from outlet variable or not (True/False).
 
 Execution example (terminal):
-    python update_attributes_from_gpkg.py NA v17 False
+    python path/to/update_attributes_from_gpkg.py NA v17 False
 
 """
 

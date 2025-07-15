@@ -1,3 +1,20 @@
+"""
+Adding GLOW-S widths to SWORD (glow-s_to_sword_widths.py).
+===============================================================
+
+This script calculates and adds GLOW-S widths to SWORD. 
+
+The script is run at a specified Pfafstetter level basin scale. 
+Command line arguments required are the two-letter region 
+identifier (i.e. NA), SWORD version (i.e. v17_glows), GLOW-S 
+region identifier(i.e. '1'), and desired Pfafstetter basin level 
+(i.e. 4).
+
+Execution example (terminal):
+    python path/to/glow-s_to_sword_widths.py AF v17_glows 1 4
+
+"""
+
 import os
 main_dir = os.getcwd()
 import pandas as pd

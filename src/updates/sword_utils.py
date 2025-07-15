@@ -474,7 +474,8 @@ def read_nc(filename):
     nodes.main_side = np.array(data.groups['nodes'].variables['main_side'][:])
     nodes.end_rch = np.array(data.groups['nodes'].variables['end_reach'][:])
     nodes.network = np.array(data.groups['nodes'].variables['network'][:])
-    nodes.add_flag = np.array(data.groups['nodes'].variables['add_flag'][:])
+    if 'add_flag' in data.groups['nodes'].variables.keys():
+        nodes.add_flag = np.array(data.groups['nodes'].variables['add_flag'][:])
 
     reaches.id = np.array(data.groups['reaches'].variables['reach_id'][:])
     reaches.cl_id = np.array(data.groups['reaches'].variables['cl_ids'][:])
@@ -518,7 +519,8 @@ def read_nc(filename):
     reaches.main_side = np.array(data.groups['reaches'].variables['main_side'][:])
     reaches.end_rch = np.array(data.groups['reaches'].variables['end_reach'][:])
     reaches.network = np.array(data.groups['reaches'].variables['network'][:])
-    reaches.add_flag = np.array(data.groups['reaches'].variables['add_flag'][:])
+    if 'add_flag' in data.groups['reaches'].variables.keys():
+        reaches.add_flag = np.array(data.groups['reaches'].variables['add_flag'][:])
 
     data.close()    
 

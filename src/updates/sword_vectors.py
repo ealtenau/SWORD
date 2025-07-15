@@ -13,7 +13,7 @@ and the data you would like to export ('All', 'reaches',
 or 'nodes').
 
 Execution example (terminal):
-    python sword_vectors.py NA v18 reaches
+    python path/to/sword_vectors.py NA v18 reaches
 
 """
 

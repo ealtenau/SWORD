@@ -1,8 +1,19 @@
-'''
-This script uses an anxillary data set with pre identified common reaches 
-for junctions to try and allow for better connectivity and junctions 
-meeting at one point. 
-'''
+"""
+Writing SWORD reach vectors with GLOW-S data 
+(Write_Reach_Shp_Paths_GLOWS.py).
+===============================================================
+
+This script writes SWORD reach vector files with attached 
+GLOW-S widths. 
+
+The is run at a regional/continental scale. Command line 
+arguments required are the two-letter region identifier (i.e. NA), 
+and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/Write_Reach_Shp_Paths_GLOWS.py NA v17_glows
+
+"""
 import os
 main_dir = os.getcwd()
 import numpy as np

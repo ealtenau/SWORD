@@ -15,7 +15,7 @@ and a "dist_update" parameter indicating whether to
 update the distance from outlet variable or not (True/False).
 
 Execution example (terminal):
-    python post_manual_updates.py NA v17 False
+    python path/to/post_manual_updates.py NA v17 False
 
 """ 
 

@@ -13,7 +13,7 @@ and a csv file containing the Reach IDs that need a
 type change.
 
 Execution example (terminal):
-    python change_reach_type.py NA v17 path/to/type_change.csv
+    python path/to/change_reach_type.py NA v17 path/to/type_change.csv
 
 """
 

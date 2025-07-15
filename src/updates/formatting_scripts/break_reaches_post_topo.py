@@ -12,7 +12,7 @@ Command line arguments required are the two-letter
 region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python break_reaches_post_topo.py NA v17 
+    python path/to/break_reaches_post_topo.py NA v17 
 
 """
 

@@ -5,11 +5,6 @@ SWORD (sword.py)
 Class for reading, writing, and running processing commands
 on the SWOT River Database (SWORD).
 
-also add useful plots... ?
-        - plotting reach as polyline and nodes in order 
-        - plot centerline points for specific reach in order
-        - plot node wse?
-
 """
 from __future__ import division
 import sys

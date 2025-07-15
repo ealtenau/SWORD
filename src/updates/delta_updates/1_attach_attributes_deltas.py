@@ -19,7 +19,7 @@ region identifier (i.e. NA) and the directory path
 containing the delta shapefile.
 
 Execution example (terminal):
-    python 1_attach_attributes_deltas.py NA path/to/delta_files
+    python path/to/1_attach_attributes_deltas.py NA path/to/delta_files
 
 """
 

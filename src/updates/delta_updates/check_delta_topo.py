@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Checking SWORD Topology (check_topo_consistency.py)
-=====================
+Checking Delta Topology (check_delta_topo.py)
+====================================================
 Script for checking the topological consistency of
-the SWOT River Database (SWORD). 
+a given delta netCDF file. Delta netCDF files are 
+produced in the 1_attach_attributes_deltas.py script. 
 
-The script is run at a regional/continental scale. 
-Command line arguments required are the two-letter 
-region identifier (i.e. NA) and SWORD version (i.e. v17).
+The script is run for an individual delta file.
+Command line argument is the path to the delta
+netCDF file. 
 
 Execution example (terminal):
-    python check_topo_consistency.py NA v17 
+    python path/to/check_delta_topo.py path/to/delta.nc 
 
 """
 

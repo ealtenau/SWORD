@@ -15,7 +15,7 @@ region identifier (i.e. NA), SWORD version (i.e. v17),
 and the directory path containing the delta netCDF file.
 
 Execution example (terminal):
-    python 2_add_deltas_to_sword.py NA v17 path/to/delta_file.nc
+    python path/to/2_add_deltas_to_sword.py NA v17 path/to/delta_file.nc
 
 """
 from __future__ import division

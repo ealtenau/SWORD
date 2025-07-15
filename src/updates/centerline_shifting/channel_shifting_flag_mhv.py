@@ -1,85 +1,75 @@
+"""
+Flagging Offset SWORD reaches using MERIT Hydro Vector
+(channel_shifting_flag_mhv.py)
+=========================================================
+
+This script uses SWORD's proximity to a MERIT Hydro Vector-
+SWORD translation database (built using scripts in 
+'src/updates/mhv_sword/') to flag SWORD reaches that have 
+a consistent offset from the river center location. It is 
+limited to single channel rivers. 
+
+Outputs are geopackage files of SWORD centerline points
+with a shifting flag attribute for each Pfafstetter level 2
+basin. 
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/channel_shifting_flag_mhv.py NA v17
+
+"""
+
 from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
-import math
-from shapely.geometry import Point
+sys.path.append(main_dir)
 import numpy as np
-from osgeo import gdal
-import rasterio
 from scipy import spatial as sp
 import geopandas as gp
-import pandas as pd
 import time
 import netCDF4 as nc
 import argparse
 import glob
-import matplotlib.pyplot as plt
-
-###############################################################################
-######################## Reading and Writing Functions ########################
-###############################################################################
-
-class Object(object):
-    """
-    FUNCTION:
-        Creates class object to assign attributes to.
-    """
-    pass
-
-###############################################################################
-
-def meters_to_degrees(meters, latitude):
-    deg = np.round(meters/(111.32 * 1000 * math.cos(latitude * (math.pi / 180))),5)
-    return deg
-
-###############################################################################
-###############################################################################
-###############################################################################
+import src.updates.geo_utils as geo 
+from src.updates.sword import SWORD
 
 start_all = time.time()
 
-# parser = argparse.ArgumentParser()
-# parser.add_argument("region", help="<Required> Region", type = str)
-# parser.add_argument("version", help="<Required> Version", type = str)
-# args = parser.parse_args()
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Region", type = str)
+parser.add_argument("version", help="<Required> Version", type = str)
+args = parser.parse_args()
 
-# region = args.region
-# version = args.version
+region = args.region
+version = args.version
 
-region = 'NA'
-version = 'v17b'
-
-# Input file(s).
+#getting mhv files.
 mhv_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_files = glob.glob(os.path.join(mhv_dir, '*.nc'))
-sword_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-gpkg_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/gpkg/'+region.lower()+'_sword_reaches_'+version+'.gpkg'
-outdir = main_dir+'/data/shift_testing/'
 
+#reading sword data
+sword = SWORD(main_dir, region, version)
+gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_rch_fn']
+gpkg = gp.read_file(gpkg_fn)
+#creating outdir. 
+outdir = main_dir+'/data/shift_testing/'
 if os.path.exists(outdir) == False:
     os.makedirs(outdir)
 
-gpkg = gp.read_file(gpkg_fn)
-sword = nc.Dataset(sword_fn)
-clx_all = np.array(sword['/centerlines/x'][:])
-cly_all = np.array(sword['/centerlines/y'][:])
-cl_id_all = np.array(sword['/centerlines/cl_id'][:])
-cl_rchs_all = np.array(sword['/centerlines/reach_id'][0,:])
-rchs_all = np.array(sword['/reaches/reach_id'][:])
-rchs_type_all = np.array([int(str(ind)[-1]) for ind in rchs_all])
-rchs_wth_all = np.array(sword['/reaches/width'][:])
-rchs_nchan_all = np.array(sword['/reaches/n_chan_mod'][:])
-rchs_x_all = np.array(sword['/reaches/x'][:])
-rchs_y_all = np.array(sword['/reaches/y'][:])
-rchs_max_wth_all = np.array(sword['/reaches/max_width'][:])
-shift_flag_all = np.zeros(len(rchs_all))
+#creating reach type and shift attribute arrays. 
+rchs_type_all = np.array([int(str(ind)[-1]) for ind in sword.reaches.id])
+shift_flag_all = np.zeros(len(sword.reaches.id))
 
-### need to filter by level 2... 
-sword_l2 = np.array([int(str(ind)[0:2]) for ind in cl_rchs_all])
-rch_l2 = np.array([int(str(ind)[0:2]) for ind in rchs_all])
+#filtering data by Pfafstetter level 2 basin. 
+sword_l2 = np.array([int(str(ind)[0:2]) for ind in sword.centerlines.reach_id[0,:]])
+rch_l2 = np.array([int(str(ind)[0:2]) for ind in sword.reaches.id])
 mhv_l2 = np.array([int(ind[-13:-11]) for ind in mhv_files])
 uniq_level2 = np.unique(sword_l2)
-
+#loop through level 2 basins and flag offset reaches. 
 for ind in list(range(len(uniq_level2))):
     start = time.time()
     print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
@@ -89,17 +79,17 @@ for ind in list(range(len(uniq_level2))):
     rl2 = np.where(rch_l2 == uniq_level2[ind])[0]
     ml2 = np.where(mhv_l2 == uniq_level2[ind])[0]
     #sword variables
-    clx = clx_all[sl2]
-    cly = cly_all[sl2]
-    cl_rchs = cl_rchs_all[sl2]
-    cl_id = cl_id_all[sl2]
-    rchs = rchs_all[rl2]
+    clx = sword.centerlines.x[sl2]
+    cly = sword.centerlines.y[sl2]
+    cl_rchs = sword.centerlines.reach_id[0,sl2]
+    cl_id = sword.centerlines.cl_id[sl2]
+    rchs = sword.reaches.id[rl2]
     rch_type = rchs_type_all[rl2]
-    rch_wth = rchs_wth_all[rl2]
-    rch_nchan = rchs_nchan_all[rl2]
-    rch_x = rchs_x_all[rl2]
-    rch_y = rchs_y_all[rl2]
-    rch_max_wth = rchs_max_wth_all[rl2]
+    rch_wth = sword.reaches.wth[rl2]
+    rch_nchan = sword.reaches.nchan_mod[rl2]
+    rch_x = sword.reaches.x[rl2]
+    rch_y = sword.reaches.y[rl2]
+    rch_max_wth = sword.reaches.max_width[rl2]
     #mhv variables
     mhv = nc.Dataset(mhv_files[ml2[0]])
     mhv_x = np.array(mhv['/centerlines/x'][:])
@@ -136,7 +126,7 @@ for ind in list(range(len(uniq_level2))):
         else:
             radius = width*2
 
-        threshold = meters_to_degrees(radius, rch_y[r])
+        threshold = geo.meters_to_degrees(radius, rch_y[r])
         flag = np.where(dist>threshold)[0] 
         if len(flag) == 0:
             continue 
@@ -161,20 +151,23 @@ for ind in list(range(len(uniq_level2))):
     ## filling in the continental scale
     shift_flag_all[rl2] = shift_flag
 
-
+#save data. 
 gpkg['shift_flag'] = shift_flag_all
-gpkg.to_file(outdir+region.lower()+'_shift_flag_'+version+'.gpkg', driver='GPKG', layer='reaches')
+gpkg.to_file(outdir+region.lower()+'_shift_flag_'+version+
+             '.gpkg', driver='GPKG', layer='reaches')
 
 end_all = time.time()
 print('FINISHED ALL BASINS IN: '+str(np.round((end-start)/60,2))+' mins')
 
+### PLOTS
+# import matplotlib.pyplot as plt
 # f = np.where(shift_flag>0)[0]
 # plt.scatter(mhv_x_filt, mhv_y_filt, c='lightgrey',s=2)
 # plt.scatter(clx, cly, c='black',s=2)
 # plt.scatter(rch_x[f], rch_y[f], c='red')
 # plt.show()
 
-# meters_to_degrees(1000, np.median(sword.lat[rch]))
+# geo.meters_to_degrees(1000, np.median(sword.lat[rch]))
 # plt.scatter(sword.lon, sword.lat, c='blue', s = 3)
 # plt.scatter(new_lon, new_lat, c='magenta', s = 3)
 # plt.scatter(new_lon_smooth, new_lat_smooth, c='cyan', s = 3)

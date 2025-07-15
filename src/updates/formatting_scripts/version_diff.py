@@ -16,7 +16,7 @@ Translation files are written as csv files and located
 at sword.paths['version_dir'].
 
 Execution example (terminal):
-    python version_diff.py NA v17 v16
+    python path/to/version_diff.py NA v17 v16
 
 """
 

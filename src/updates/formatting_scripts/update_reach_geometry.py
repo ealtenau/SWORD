@@ -14,7 +14,7 @@ and a csv file containing the Reach IDs that have been
 manually adjusted in the geopackage files.
 
 Execution example (terminal):
-    python update_reach_geometry.py NA v17 path/to/reaches.csv
+    python path/to/update_reach_geometry.py NA v17 path/to/reaches.csv
 
 """
 

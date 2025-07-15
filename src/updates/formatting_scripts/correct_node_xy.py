@@ -13,7 +13,7 @@ and a csv file containing reaches to update and new basin
 codes.
 
 Execution example (terminal):
-    python correct_node_xy.py NA v17
+    python path/to/correct_node_xy.py NA v17
 
 """
 

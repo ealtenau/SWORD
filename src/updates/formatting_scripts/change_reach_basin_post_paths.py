@@ -13,7 +13,7 @@ and a csv file containing Reach IDs that need new basin
 codes.
 
 Execution example (terminal):
-    python change_reach_basin_post_paths.py NA v17 path/to/basin.csv
+    python path/to/change_reach_basin_post_paths.py NA v17 path/to/basin.csv
 
 """
 

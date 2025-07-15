@@ -1,7 +1,21 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 09 12:56:58 2019
+Writing SWORD node vectors with GLOW-S data 
+(Write_Node_Shp_Paths_GLOWS.py).
+===============================================================
+
+This script writes SWORD node vector files with attached 
+GLOW-S widths. 
+
+The is run at a regional/continental scale. Command line 
+arguments required are the two-letter region identifier (i.e. NA), 
+and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/Write_Node_Shp_Paths_GLOWS.py NA v17_glows
+
 """
+
 from __future__ import division
 import os
 main_dir = os.getcwd()

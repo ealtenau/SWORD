@@ -14,7 +14,7 @@ Command line arguments required are the two-letter
 region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python create_missing_ghost_reach.py NA v17
+    python path/to/create_missing_ghost_reach.py NA v17
 
 """
 

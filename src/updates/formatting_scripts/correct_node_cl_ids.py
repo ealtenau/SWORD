@@ -12,7 +12,7 @@ Command line arguments required are the two-letter
 region identifier (i.e. NA) and SWORD version (i.e. v17).
 
 Execution example (terminal):
-    python correct_node_cl_ids.py NA v17
+    python path/to/correct_node_cl_ids.py NA v17
 
 """
 

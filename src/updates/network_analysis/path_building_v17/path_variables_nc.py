@@ -13,7 +13,7 @@ region identifier (i.e. NA), SWORD version (i.e. v17),
 and Pfafstetter Level 2 basin (i.e. 74).
 
 Execution example (terminal):
-    python path_variables_nc.py NA v17 74
+    python path/to/path_variables_nc.py NA v17 74
 
 """
 
