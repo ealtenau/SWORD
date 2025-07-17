@@ -1,19 +1,58 @@
+"""
+Adding Coastal MHV Additions to SWORD 
+(4_filter_zero_widths_coast.py)
+===================================================
+
+This script flags MHV coastal addition reaches in sword
+that have zero width values for deletion.
+
+Output is a csv file of reach IDs to be deleted 
+located at:
+'/data/update_requests/'+version+'/'+region+'/'
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/4_filter_zero_widths_coast.py NA v17
+
+"""
+
 from __future__ import division
+import sys
 import os
-main_dir = os.getwd()
+main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
-import time
 import netCDF4 as nc
 import pandas as pd
-from scipy import spatial as sp
-from shapely.geometry import Point
-import geopandas as gp
-import glob
-import matplotlib.pyplot as plt
+import argparse
 
 ##############################################################################
 
 def find_no_width_reaches(reaches, n_rch_down, rch_id_up):    
+    """
+    Identifies added MHV reaches with zero width values 
+    and all associated upstream reaches. 
+
+    Parameters
+    ----------
+    reaches: numpy.array()
+        SWORD reach ID. 
+    n_rch_down: numpy.array()
+        Number of downstream reaches. 
+    rch_id_up: numpy.array()
+        Upstream reach IDs. 
+
+    Returns
+    -------
+    flag: numpy.array()
+        Flag indicating if a reach should be deleted
+        based on widths. 
+
+    """
+    
     flag = np.zeros(len(reaches))
     start_rch = np.array([reaches[np.where(n_rch_down == 0)[0]][0]])
     loop = 1
@@ -23,28 +62,6 @@ def find_no_width_reaches(reaches, n_rch_down, rch_id_up):
         #flagged reach is tagged for deletion and need to tag upstream reaches. 
         if flag[rch] == 2:
             flag[np.where(flag == 0)] = 2
-            #need to do stuff to fill in above flagged reaches... 
-            # up_rchs = np.unique(rch_id_up[:,rch]); up_rchs = up_rchs[up_rchs>0]
-            # while len(up_rchs) > 0:
-            #     fill = np.where(np.in1d(reaches, up_rchs) == True)[0]
-            #     flag[fill] = 2
-            #     up_rchs = np.unique(rch_id_up[:,fill]); up_rchs = up_rchs[up_rchs>0]
-            #find next start reach. 
-            # if min(flag) <= 0:
-            #     new_idx = np.where((flag == 0) & (n_rch_down == 0))[0]
-            #     if len(new_idx) > 0:
-            #         start_rch = np.array([reaches[new_idx[0]]])
-            #     else:# len(start_rch) == 0:
-            #         new_idx2 = np.where(flag == -1)[0]
-            #         if len(new_idx2) > 0:
-            #             start_rch = np.array([reaches[new_idx2[0]]])
-            #         else:# len(start_rch) == 0:
-            #             new_idx3 = np.where(flag == 2)[0]
-            #             if len(new_idx3) > 0:
-            #                 start_rch = np.array([reaches[new_idx3[0]]])
-            #             else:
-            #                 print(loop, start_rch, 'zeros left with zero downstream')
-            #                 start_rch = []
             if min(flag) <= 0:
                 print(loop, start_rch, 'zeros left with zero downstream')
                 start_rch = []
@@ -154,14 +171,18 @@ def find_no_width_reaches(reaches, n_rch_down, rch_id_up):
     return flag
 
 ##############################################################################
-##############################################################################
-##############################################################################
 
-region = 'OC'
-version = 'v18'
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
 
 #reading in sword data.
-sword_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+sword_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'\
+    +region.lower()+'_sword_'+version+'.nc'
 outdir = main_dir+'/data/update_requests/'+version+'/'+region+'/'
 
 sword = nc.Dataset(sword_fn)
@@ -174,12 +195,6 @@ width = np.array(sword['/reaches/width'][:])
 edit_flag = np.array(sword['/reaches/edit_flag'][:])
 x = np.array(sword['/reaches/x'][:])
 y = np.array(sword['/reaches/y'][:])
-### few easy edits 
-# edit_flag[np.where(edit_flag == '6,6')[0]] = '6' #np.unique(edit_flag)
-# width[np.where(width < 0)[0]] = 0
-# sword['/reaches/edit_flag'][:] = edit_flag
-# sword['/reaches/width'][:] = width
-# sword.close()
 
 flag = find_no_width_reaches(reaches, n_rch_down, rch_id_up)
 if min(flag) < 1:
@@ -189,15 +204,3 @@ else:
     rch_csv = pd.DataFrame({"reach_id": rch_del})
     rch_csv.to_csv(outdir+'width_based_deletions_coast.csv', index = False)
     print('Done. Number of deletions:', len(rch_del))
-
-
-# p_1 = np.where(flag == -1)[0]
-# p0 = np.where(flag == 0)[0]
-# p1 = np.where(flag == 1)[0]
-# p2 = np.where(flag == 2)[0]
-
-# plt.scatter(x[p_1],y[p_1],c='black', s = 10)
-# plt.scatter(x[p0],y[p0],c='grey', s = 5)
-# plt.scatter(x[p1],y[p1],c='cyan', s = 5)
-# plt.scatter(x[p2],y[p2],c='red', s = 5)
-# plt.show()

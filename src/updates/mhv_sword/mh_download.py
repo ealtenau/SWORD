@@ -1,3 +1,20 @@
+"""
+Downloading MERIT Hydro raster tiles.
+(mh_download.py).
+===================================================
+
+This script downloads MERIT Hydro raster tiles that are
+specified in an input csv file. 
+ 
+Command line arguments required are the file path
+to the csv containing the tiles to download, and 
+the directory location for the downoladed tiles. 
+
+Execution example (terminal):
+    python path/to/mh_download.py path/to/csv_file.csv path/to/outputs
+
+"""
+
 import sys
 import os
 main_dir = os.getcwd()
@@ -8,16 +25,30 @@ from urllib.parse import urljoin, urlparse
 import numpy as np
 import pandas as pd
 import time
+import argparse
 
-# Editable: HTTP Basic Auth credentials
+# HTTP Basic Auth credentials for MERIT Hydro.
 USERNAME = "hydrography"
 PASSWORD = "rivernetwork"
-
 DOWNLOADABLE_EXTENSIONS = {".tar"}
 
 ###########################################################################
 
 def is_download_link(href):
+    """
+    Determines if parsed text in a url is a 
+    downloadable file link. 
+
+    Parameters
+    ----------
+    href: str
+        Hypertext reference.
+
+    Returns
+    -------
+    List of downloadable hrefs. 
+    
+    """
     if not href:
         return False
     return any(href.lower().endswith(ext) for ext in DOWNLOADABLE_EXTENSIONS)
@@ -25,6 +56,21 @@ def is_download_link(href):
 ###########################################################################
 
 def get_download_links(url):
+    """
+    Parses and save download links at a given 
+    url. 
+    
+    Parameters
+    ----------
+    url: str
+        website url.
+    
+    Returns
+    -------
+    links: list
+        List of download links. 
+
+    """
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -47,6 +93,22 @@ def get_download_links(url):
 
 #no authorization required.
 def download_file(url, folder="downloads"):
+    """
+    Downloads files at given url with no 
+    authentication required. 
+
+    Paramters
+    ---------
+    url: str
+        website url
+    folder: str
+        Output directory path. 
+
+    Returns
+    -------
+    None. 
+
+    """
     os.makedirs(folder, exist_ok=True)
     local_filename = os.path.basename(urlparse(url).path)
 
@@ -71,6 +133,22 @@ def download_file(url, folder="downloads"):
 
 #username and password required on download. 
 def download_file_auth(url, folder="downloads"):
+    """
+    Downloads files at given url with
+    authentication credentials required. 
+
+    Paramters
+    ---------
+    url: str
+        website url
+    folder: str
+        Output directory path. 
+
+    Returns
+    -------
+    None. 
+    
+    """
     os.makedirs(folder, exist_ok=True)
     local_filename = os.path.basename(urlparse(url).path) or "downloaded_file"
     local_path = os.path.join(folder, local_filename)
@@ -92,9 +170,14 @@ def download_file_auth(url, folder="downloads"):
 
 if __name__ == "__main__":
     
+    parser = argparse.ArgumentParser()
+    parser.add_argument("csv", help="csv file of mhv tiles to download", type = str)
+    parser.add_argument("outdir", help="output directory", type = str)
+    args = parser.parse_args()
+
     #file paths. 
-    csv_fn = main_dir+'/data/inputs/MERIT_Hydro/AS_mh_files.csv'
-    outdir = main_dir+'/data/inputs/MERIT_Hydro/'+os.path.basename(csv_fn)[-15:-13]+'/'
+    csv_fn = args.csv
+    outdir = args.outdir
     if os.path.isdir(outdir) is False:
         os.makedirs(outdir)
         os.makedirs(outdir+'elv/')

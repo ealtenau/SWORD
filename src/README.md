@@ -1,0 +1,2 @@
+# SWORD Code
+Source code for SWORD falls into two primary categories/directories: The original development of the database and ongoing updates. Development scripts are located in the **/development** directory and are primarily available for archived reference. These scripts are no longer used in active SWORD updates. Scripts used for version updates are located in the **/updates** directory which houses different directories for various types of updates to the databse. 

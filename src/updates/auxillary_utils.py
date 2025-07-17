@@ -439,6 +439,39 @@ def filter_basin_codes(reaches, basins):
 
 ###############################################################################
 
+def filter_deltas(segment, delta_arr):
+    """
+    Filters delta flag within a river segment/reach.
+
+    Parameters
+    ----------
+        segment: numpy.array().
+            Reach or segment IDs. 
+        delta_arr: numpy.array()
+            Binary array indicating whether the point 
+            is in a delta. 
+       
+    Returns
+    -------
+        coastal_flag: numpy.array()
+            Filtered delta flag.
+
+    """
+
+    # Filtering delta flag information to create final
+    # coastal flag.
+    uniq_segs = np.unique(segment)
+    coastal_flag = np.zeros(len(segment))
+    for ind in list(range(len(uniq_segs))):
+        seg = np.where(segment == uniq_segs[ind])[0]
+        flag = (len(np.where(delta_arr[seg] > 0)[0])/len(seg))*100
+        if flag > 25:
+            coastal_flag[seg] = 1
+
+    return coastal_flag
+
+###############################################################################
+
 def calc_geodesic_dist(lon, lat, reaches, index):
     """
     Calculates geodesic distance along a river reach

@@ -1,8 +1,8 @@
 # SWORD Topology Updates (Version 17 ONLY)
 ## _NOTE:** These scripts were retired for versions after SWORD v17_. 
+This directory houses the orginial scripts written by Elyssa Collins (modified by Elizabeth Altenau), to help correct and update topology in the SWORD v17 database. 
 
-This directory houses the orginial scripts written by Elyssa Collins (modified by Elizabeth Altenau), to help correct and update topology in the SWORD v17 database. Script summaries are as follows:
-
+Script summaries:
 - **1_init_geom.py**: Identifies geometric intersections in the SWORD geopackage files. 
 - **2_SWORD_Prep_Topo_Clean.py**: Allows for automatic-manual iteration for fixing SWORD geometric intersections. 
 - **3_SWORD_Geom_fast_v2.py**: Determining river connectivity using SWORD polyline geometry.

@@ -39,8 +39,8 @@ sword = SWORD(main_dir, region, version)
 print('Cl Dimensions:', len(np.unique(sword.centerlines.cl_id)), len(sword.centerlines.cl_id))
 print('Node Dimensions:', len(np.unique(sword.centerlines.node_id[0,:])), len(np.unique(sword.nodes.id)), len(sword.nodes.id))
 print('Rch Dimensions:', len(np.unique(sword.centerlines.reach_id[0,:])), len(np.unique(sword.nodes.reach_id)), len(np.unique(sword.reaches.id)), len(sword.reaches.id))
-print('min node char len:', len(str(np.min(sword.nodes.id))))
-print('max node char len:', len(str(np.max(sword.nodes.id))))
-print('min reach char len:', len(str(np.min(sword.reaches.id))))
-print('max reach char len:', len(str(np.max(sword.reaches.id))))
+print('min node char len:', len(str(np.min(sword.nodes.id)))) #should be 14
+print('max node char len:', len(str(np.max(sword.nodes.id)))) #should be 14
+print('min reach char len:', len(str(np.min(sword.reaches.id)))) #should be 11
+print('max reach char len:', len(str(np.max(sword.reaches.id)))) #should be 11
 print('Edit flag values:', np.unique(sword.reaches.edit_flag))

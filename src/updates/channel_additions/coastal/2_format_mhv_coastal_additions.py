@@ -1,22 +1,44 @@
+"""
+Format MHV Additions (2_format_mhv_coastal_additions.py)
+========================================================
+
+This script updates identified coastal MHV additions 
+for SWORD based on manual edits to the MHV addition
+geopackage files.
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/2_format_mhv_coastal_additions.py NA v17
+
+"""
+
 from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import time
 import netCDF4 as nc
-import pandas as pd
-from scipy import spatial as sp
-from shapely.geometry import Point
 import geopandas as gp
 import glob
-from statistics import mode
+import argparse
 
 ### remove reaches/networks that and marked zero in gpkg from nc file. 
 ### correct single point reaches. 
 
 start_all = time.time()
-region = 'OC'
-version = 'v18'
+
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
 
 mhv_nc_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_gpkg_dir = main_dir+'/data/inputs/MHV_SWORD/gpkg/' + region +'/coast_additions/'

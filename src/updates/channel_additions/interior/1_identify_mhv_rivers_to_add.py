@@ -1,24 +1,66 @@
+# -*- coding: utf-8 -*-
+"""
+Identify MERIT Hydro Vector (MHV) rivers to add to 
+SWORD (1_identify_mhv_rivers_to_add.py)
+===================================================
+
+This script identifies which interior MHV rivers 
+are suitable to add to SWORD.
+
+Outputs are added to the existing MHV-SWORD netCDF 
+and saved as geopackage files at:
+'/data/inputs/MHV_SWORD/gpkg/'+region+'/additions/'
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/1_identify_mhv_rivers_to_add.py NA v17
+
+"""
+
 from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import time
 import numpy as np
 import geopandas as gp
 from shapely.geometry import Point
 import pandas as pd
 import argparse
-import matplotlib.pyplot as plt
-from statistics import mode
 import netCDF4 as nc
 from scipy import spatial as sp
-from geopy import distance
 import glob
+from src.updates.sword import SWORD
 
-###############################################################################
-###############################################################################
 ###############################################################################
 
 def define_network_regions(add_all, mhv_segs, mhv_facc, pt_ind3):
+    """
+    Finds updstream neighbors and defines connected network regions. 
+
+    Parameters
+    ----------
+    add_all: numpy.array()
+        Identified MHV rivers to add to SWORD. 
+    mhv_segs: numpy.array()
+        MHV segment IDs. 
+    mhv_facc: numpy.array()
+        Flow accumulation. 
+    pt_ind3: numpy.array()
+        MHV spatial query indexes to SWORD. 
+
+    Returns:
+    --------
+    up_nghs: list
+        Upstream neighbors
+    network: numpy.array()
+        Array of unique IDs for each connected river network. 
+    
+    """
     unq_paths = np.unique(add_all)
     start_path = np.array([unq_paths[0]])
     flag = np.zeros(len(add_all))
@@ -77,25 +119,17 @@ def define_network_regions(add_all, mhv_segs, mhv_facc, pt_ind3):
 
 ###############################################################################
 
-def get_distances(lon,lat):
-    traces = len(lon) -1
-    distances = np.zeros(traces)
-    for i in range(traces):
-        start = (lat[i], lon[i])
-        finish = (lat[i+1], lon[i+1])
-        distances[i] = distance.geodesic(start, finish).m
-    distances = np.append(0,distances)
-    return distances
-
-###############################################################################
-###############################################################################
-###############################################################################
-
 start_all = time.time()
-region = 'OC'
-version = 'v18'
 
-# Input file(s).
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+
+#input file(s).
 mhv_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_files = glob.glob(os.path.join(mhv_dir, '*.nc'))
 sword_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
@@ -104,18 +138,13 @@ outpath = main_dir+'/data/inputs/MHV_SWORD/gpkg/'+region+'/additions/'
 if os.path.exists(outpath) == False:
     os.makedirs(outpath)
 
-sword = nc.Dataset(sword_fn)
-clx_all = np.array(sword['/centerlines/x'][:])
-cly_all = np.array(sword['/centerlines/y'][:])
-cl_id_all = np.array(sword['/centerlines/cl_id'][:])
-cl_rchs_all = np.array(sword['/centerlines/reach_id'][0,:])
-cl_type_all = np.array([int(str(ind)[-1]) for ind in cl_rchs_all])
-rch_hw_all = np.array(sword['/reaches/end_reach'][:])
-rchs_all = np.array(sword['/reaches/reach_id'][:])
+#read sword. 
+sword = SWORD(main_dir, region, version)
+cl_type_all = np.array([int(str(ind)[-1]) for ind in sword.centerlines.reach_id[0,:]])
 
-### need to filter by level 2... 
-sword_l2 = np.array([int(str(ind)[0:2]) for ind in cl_rchs_all])
-rch_l2 = np.array([int(str(ind)[0:2]) for ind in rchs_all])
+#loop through basins and find rivers to add. 
+sword_l2 = np.array([int(str(ind)[0:2]) for ind in sword.centerlines.reach_id[0,:]])
+rch_l2 = np.array([int(str(ind)[0:2]) for ind in sword.reaches.id])
 mhv_l2 = np.array([int(ind[-13:-11]) for ind in mhv_files])
 uniq_level2 = np.unique(sword_l2)
 for ind in list(range(len(uniq_level2))):
@@ -127,13 +156,13 @@ for ind in list(range(len(uniq_level2))):
     rl2 = np.where(rch_l2 == uniq_level2[ind])[0]
     ml2 = np.where(mhv_l2 == uniq_level2[ind])[0]
     #sword variables
-    clx = clx_all[sl2]
-    cly = cly_all[sl2]
-    cl_rchs = cl_rchs_all[sl2]
+    clx = sword.centerlines.x[sl2]
+    cly = sword.centerlines.y[sl2]
+    cl_rchs = sword.centerlines.reach_id[0,sl2]
     cl_type = cl_type_all[sl2]
-    cl_id = cl_id_all[sl2]
-    rchs = rchs_all[rl2]
-    rch_hw = rch_hw_all[rl2]
+    cl_id = sword.centerlines.cl_id[sl2]
+    rchs = sword.reaches.id[rl2]
+    rch_hw = sword.reaches.end_rch[rl2]
     #mhv variables
     mhv = nc.Dataset(mhv_files[ml2[0]], 'r+')
     mhv_x = np.array(mhv['/centerlines/x'][:])
@@ -497,105 +526,8 @@ for ind in list(range(len(uniq_level2))):
     end = time.time()
     print('Finished Basin', str(uniq_level2[ind]), 'in', str(np.round((end-start)/60,2)), 'min. Segment additions to check:', str(len(overlap_problem)))
 
-sword.close()
 mhv.close()
 end_all = time.time()
 print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 print('FINISHED ',region, 'IN:', str(np.round((end_all-start_all)/60,2)), 'min')
 print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-
-
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-### can be used to check gpkg formats
-# feat1 = next(points.iterfeatures())
-# for prop in feat1['properties']:
-#     print(prop, type(feat1['properties'][prop]))
-
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'black')
-# plt.scatter(clx, cly, s = 3, c = 'blue')
-# plt.scatter(mhv_x[pts], mhv_y[pts], s = 10, c = 'red')
-# plt.scatter(mhv_x[pts[ends]], mhv_y[pts[ends]], s = 10, c = 'gold')
-# plt.show()
-
-# p = np.where(np.in1d(mhv_segs, nghs)==True)[0]
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'black')
-# plt.scatter(clx, cly, s = 3, c = 'blue')
-# plt.scatter(mhv_x[p], mhv_y[p], s = 10, c = 'red')
-# plt.show()
-
-
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'black')
-# plt.scatter(clx, cly, s = 3, c = 'blue')
-# plt.scatter(mhv_x[seg[sort_inds[1::]]], mhv_y[seg[sort_inds[1::]]], s = 10, c = test, cmap = 'rainbow')
-# plt.show()
-
-# ######
-
-# p = np.where(np.in1d(mhv_segs, add_all)==True)[0]
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'black')
-# plt.scatter(clx, cly, s = 3, c = 'blue')
-# plt.scatter(mhv_x[p], mhv_y[p], s = 10, c = 'red')
-# plt.show()
-
-
-# p = np.where(np.in1d(mhv_segs, add_all)==True)[0]
-# p2 = np.where(np.in1d(mhv_segs, ngh_add)==True)[0]
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'black')
-# plt.scatter(clx, cly, s = 3, c = 'blue')
-# plt.scatter(mhv_x[p], mhv_y[p], s = 10, c = 'red')
-# plt.scatter(mhv_x[p2], mhv_y[p2], s = 5, c = 'gold')
-# plt.show()
-
-# p = np.where(add_flag > 0)[0]
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'black')
-# plt.scatter(mhv_x[p], mhv_y[p], s = 10, c = 'cyan')
-# plt.show()
-
-# plt.scatter(mhv_x, mhv_y, s = 3, c = network, cmap = 'rainbow')
-
-
-# t0 = np.where(mhv_old_segs_all == 164203)[0]
-# m = np.where(mhv_old_segs_all == 164143)[0]
-# t1 = np.where(mhv_old_segs_all == 157423)[0]
-# t2 = np.where(mhv_old_segs_all == 164083)[0]
-
-# np.median(mhv_facc_all[t0])
-# np.median(mhv_facc_all[m])
-# np.median(mhv_facc_all[t1])
-# np.median(mhv_facc_all[t2])
-
-# max(mhv_facc_all[t0])
-# max(mhv_facc_all[m])
-# max(mhv_facc_all[t1])
-# max(mhv_facc_all[t2])
-
-# mhv_segs_all[m]
-# mhv_segs_all[t1]
-# mhv_segs_all[t2]
-
-
-# mhv_segs[pt_ind2[hw_pts[hw_max],hw_min]]
-# mhv_ind[pt_ind2[hw_pts[hw_max],hw_min]]
-
-
-# plt.scatter(clx, cly, s = 3, c = 'blue')
-# plt.scatter(mhv_x[pts], mhv_y[pts], s = 10, c = 'red')
-# plt.scatter(mhv_x[pts[keep_idx]], mhv_y[pts[keep_idx]], s = 10, c = 'gold')
-# plt.show()
-
-
-# plt.scatter(mhv_x[pts], mhv_y[pts], s = 10, c = mhv_ind[pts], cmap = 'rainbow')
-# plt.show()
-
-# test = np.where(mhv_old_segs == 44833)[0]
-# mhv_segs[test]
-
-# s = 426
-
-# np.median(mhv_wth[np.where(mhv_segs == s)])
-
-# np.median(mhv_wth[np.where(mhv_segs == s)[0][np.where(mhv_wth[np.where(mhv_segs == s)] > 0)]])

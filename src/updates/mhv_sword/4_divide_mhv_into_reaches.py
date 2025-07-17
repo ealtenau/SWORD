@@ -1,15 +1,31 @@
+"""
+Creating SWORD-like reaches for the MHV-SWORD 
+dataset (4_divide_mhv_into_reaches.py).
+===================================================
+
+This script divides the MHV-SWORD database into 
+SWORD-like reaches and nodes. 
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA).
+
+Execution example (terminal):
+    python path/to/4_divide_mhv_into_reaches.py NA
+
+"""
+
 from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
-import mhv_reach_def_tools as rdt
+sys.path.append(main_dir)
 import time
 import numpy as np
-import geopandas as gp
-from shapely.geometry import Point
-import pandas as pd
 import argparse
 import glob
-
+import src.updates.auxillary_utils as aux 
+import src.updates.mhv_sword.mhv_reach_def_tools as rdt
 import warnings
 warnings.filterwarnings("ignore") #if code stops working may need to comment out to check warnings. 
 
@@ -23,13 +39,12 @@ args = parser.parse_args()
 
 start_all = time.time()
 region = args.region
-# region = 'NA'
 
-# Input file(s).
+#input file(s).
 main_dir = main_dir+'/data/inputs/'
 nc_file_list = np.sort(glob.glob(os.path.join(main_dir+'MHV_SWORD/netcdf/'+region+'/', '*.nc')))
 
-###loop, f = 4 is mississippi
+#loop through mhv-sword netcdfs and create sword-like reaches. 
 for f in list(range(len(nc_file_list))):
     print('STARTING BASIN: ' + nc_file_list[f][-13:-11])
     start = time.time()
@@ -109,8 +124,8 @@ for f in list(range(len(nc_file_list))):
     subcls.rch_ind4, __ = rdt.update_rch_indexes(subcls, subcls.rch_id4)    
     
     # Updating reach flow distance.
-    subcls.rch_dist4 = rdt.calc_segDist(subcls.lon, subcls.lat, subcls.rch_id4,
-                                        subcls.facc, subcls.rch_ind4)
+    subcls.rch_dist4 = aux.calc_geodesic_dist(subcls.lon, subcls.lat, 
+                                              subcls.rch_id4, subcls.rch_ind4)
 
     print('Second Cutting of Long Reaches')
     subcls.rch_id5, subcls.rch_len5 = rdt.cut_reaches(subcls.rch_id4,
@@ -130,9 +145,6 @@ for f in list(range(len(nc_file_list))):
     if len(issues) > 0:
         print('~correcting reach length issues')
         rdt.correct_rchs(subcls, issues)
-
-    ### maybe try to remove short reaches here. Those less than or equal to 3 points (unless a dam)?
-
 
     #########################################################################
     #TOPOLOGY
@@ -191,43 +203,3 @@ for f in list(range(len(nc_file_list))):
 end_all=time.time()
 print('Time to Finish All Reaches and Nodes: ' +
       str(np.round((end_all-start_all)/60, 2)) + ' min')
-
-'''
-nodes = gp.GeoDataFrame([
-    subcls.x,
-    subcls.y,
-    subcls.reach_id,
-    subcls.rch_len6,
-    subcls.node_num,
-    subcls.node_len,
-    subcls.rch_eps6,
-    subcls.type6
-]).T
-
-#rename columns.
-nodes.rename(
-    columns={
-        0:"x",
-        1:"y",
-        2:"reach_id",
-        3:"reach_len",
-        4:"node_num",
-        5:"node_len",
-        6:"rch_endpts",
-        7:"type",
-        },inplace=True)
-
-nodes = nodes.apply(pd.to_numeric, errors='ignore') # nodes.dtypes
-geom = gp.GeoSeries(map(Point, zip(subcls.x, subcls.y)))
-nodes['geometry'] = geom
-nodes = gp.GeoDataFrame(nodes)
-nodes.set_geometry(col='geometry')
-nodes = nodes.set_crs(4326, allow_override=True)
-
-nodes.to_file(outgpkg, driver='GPKG', layer='nodes')
-
-end_all=time.time()
-print('Time to Write Test Basin: ' +
-      str(np.round((end_all-start_all)/60, 2)) + ' min')
-
-'''

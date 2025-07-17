@@ -1,44 +1,703 @@
+"""
+MERIT Hydro Vector Reach Definition Utilities 
+(mhv_reach_def_tools.py)
+==============================================
+
+Utilities for determining reach and node 
+boundaries in the MHV-SWORD dataset. 
+
+"""
+
 from __future__ import division
-import utm
 import numpy as np
 from scipy import spatial as sp
 import netCDF4 as nc
-from pyproj import Proj
-import math
-from geopy import distance
+import src.updates.geo_utils as geo 
+
+##############################################################################
+###############################################################################
+###############################################################################
+
+def sword_flag(mhv,swd_x,swd_y):
+    """
+    Turns MERIT Hydro Vector (MHV) polyline vector files 
+    into point arrays and creates a binary flag indicating MHV
+    has an associated SWORD reach. 
+
+    Parameters
+    ----------
+    mhv: geopandas.dataframe()
+        MERIT Hydro Vector geodataframe. 
+    swd_x: numpy.array()
+        SWORD longitude.
+    swd_y: numpy.array()
+        SWORD latitude. 
+
+    Returns
+    -------
+    x_all: numpy.array()
+        Longitude. 
+    y_all: numpy.array()
+        Latitude.
+    seg_all: numpy.array()
+        Segment IDs. 
+    seg_ind_all: numpy.array()
+        Segment Indexes. 
+    so_all: numpy.array()
+        Stream order. 
+    flag_all: numpy.array()
+        SWORD flag. 
+    up_all: numpy.array()
+        Upstream MHV nodes. 
+    down_all: numpy.array()
+        Downstream MHV nodes. 
+    flag: numpy.array()
+        SWORD flag subset.
+
+    """
+
+    mhv['points'] = mhv.apply(lambda x: [y for y in x['geometry'].coords], axis=1)
+    flag = np.zeros(len(mhv))
+    sublinks = np.array(mhv['LINKNO'][np.where(mhv['strmOrder']>=3)[0]])
+    for ind in list(range(len(sublinks))):
+        # print(ind, len(sublinks))
+        link = np.where(mhv['LINKNO'] == sublinks[ind])[0]
+        subpts = mhv['points'][int(link)]
+        x = np.array([line[0] for line in subpts])
+        y = np.array([line[1] for line in subpts])
+        seg_ind = np.array(range(1,len(x)+1))
+        seg = np.repeat(mhv['LINKNO'][int(link)], len(x))
+        so = np.repeat(mhv['strmOrder'][int(link)], len(x))
+        up = np.repeat(mhv['fromnode'][int(link)], len(x))
+        down = np.repeat(mhv['tonode'][int(link)], len(x))
+
+        sword_pts = np.vstack((swd_x, swd_y)).T
+        mhv_pts = np.vstack((x, y)).T
+        kdt = sp.cKDTree(sword_pts)
+        pt_dist, pt_ind = kdt.query(mhv_pts, k = 20)
+        
+        good_vals = np.where(pt_dist[:,0] < 0.01)[0]
+        perc = (len(good_vals)/len(x))*100
+
+        if perc <= 25:
+            flag[int(link)] = 0
+            fg = np.repeat(0, len(x))
+        else:
+            flag[int(link)] = 1
+            fg = np.repeat(1, len(x))
+
+        if ind == 0:
+            x_all = x
+            y_all = y
+            seg_all = seg
+            so_all = so
+            flag_all = fg
+            up_all = up
+            down_all = down
+            seg_ind_all = seg_ind
+        else:
+            x_all = np.append(x_all,x, axis=0)
+            y_all = np.append(y_all,y, axis=0)
+            seg_all = np.append(seg_all,seg, axis=0)
+            so_all = np.append(so_all,so, axis=0)
+            flag_all = np.append(flag_all,fg, axis=0)
+            up_all = np.append(up_all,up, axis=0)
+            down_all = np.append(down_all,down, axis=0)
+            seg_ind_all = np.append(seg_ind_all,seg_ind, axis=0)
+
+    return x_all, y_all, seg_all, seg_ind_all, so_all, up_all, down_all, flag_all, flag
 
 ###############################################################################
 
-class Object(object):
+def identify_hw_junc(seg_pts, up_pts, down_pts):
     """
-    FUNCTION:
-        Creates class object to assign attributes to.
+    Determines headwater, outlet, and junction points.
+
+    Parameters
+    ----------
+    seg_pts: numpy.array()
+        Segment IDs.
+    up_pts: numpy.array()
+        Upstream MHV nodes. 
+    down_pts: numpy.array()
+        Downstream MHV nodes. 
+
+    Returns
+    -------
+    seg_hwout_pts: numpy.array()
+        Headwater or outlet flag. 
+    seg_junc_pts: numpy.array()
+        Junction flag.
+
     """
-    pass
+    
+    seg_hwout_pts = np.zeros(len(seg_pts))
+    seg_junc_pts = np.zeros(len(seg_pts))
+    unq_nodes = np.unique([up_pts, down_pts])
+    for n in list(range(len(unq_nodes))):
+        up_idx = np.where(up_pts == unq_nodes[n])[0]
+        down_idx = np.where(down_pts == unq_nodes[n])[0]
+        in_up = np.unique(seg_pts[up_idx])
+        in_down = np.unique(seg_pts[down_idx])
+        if len(in_up) > 1 or len(in_down) > 1:
+            #label junctions (1 = down junction, 2 = up junction)
+            seg_junc_pts[np.where(np.in1d(seg_pts, in_up)==True)[0]] = 2 #downstream junc links have the upstream nodes.
+            seg_junc_pts[np.where(np.in1d(seg_pts, in_down)==True)[0]] = 1 #upstream junc links have the downstream nodes.  
+        
+        if len(in_up) == 0:
+            #label as outlet
+            seg_hwout_pts[np.where(np.in1d(seg_pts, in_down)==True)[0]] = 2
+        if len(in_down) == 0:
+            #label as headwater
+            seg_hwout_pts[np.where(np.in1d(seg_pts, in_up)==True)[0]] = 1
+
+    return seg_hwout_pts, seg_junc_pts
 
 ###############################################################################
 
-def meters_to_degrees(meters, latitude):
-    deg = np.round(meters/(111.32 * 1000 * math.cos(latitude * (math.pi / 180))),5)
-    return deg
+def aggregate_segs(seg_pts, seg_hwout_pts, seg_junc_pts, up_pts, down_pts):
+    """
+    Aggregates short segments. 
+    
+    Parameters
+    ----------
+    seg_pts: numpy.array()
+        Segment IDs.
+    seg_hwout_pts: numpy.array()
+        Headwater or outlet flag. 
+    seg_junc_pts: numpy.array()
+        Junction flag.    
+    up_pts: numpy.array()
+        Upstream MHV nodes. 
+    down_pts: numpy.array()
+        Downstream MHV nodes.
+
+    Returns
+    -------
+    new_segs: numpy.array()
+        Aggregated segment IDs. 
+
+    """
+    
+    outlets = np.unique(seg_pts[np.where(seg_hwout_pts == 2)[0]])
+    new_segs = np.zeros(len(seg_pts))
+    flag = np.zeros(len(seg_pts))
+    start_seg = np.array([outlets[0]])
+    cnt = 1
+    loop = 1
+    while min(flag) == 0:
+        # print(loop, start_seg)
+        pts = np.where(seg_pts == start_seg)[0]
+        #upstream segment 
+        up_nodes = np.unique(up_pts[pts]) 
+        up_segs = np.unique(seg_pts[np.where(down_pts == up_nodes)[0]])
+
+        if len(up_segs) == 0: #headwater
+            new_segs[pts] = cnt
+            flag[pts] = 1
+            start_pts = np.unique(seg_pts[np.where((seg_hwout_pts == 2)&(flag == 0))[0]]) #outlets 
+            if len(start_pts) > 0:
+                start_seg = np.array([start_pts[0]])
+                cnt = cnt+1
+                loop = loop+1
+            elif len(start_pts) == 0:
+                start_pts = np.unique(seg_pts[np.where((seg_junc_pts == 1)&(flag == 0))[0]]) #junctions
+                if len(start_pts) > 0:
+                    start_seg = np.array([start_pts[0]])
+                    cnt = cnt+1
+                    loop = loop+1
+                else:
+                    start_pts = np.unique(seg_pts[np.where(flag == 0)[0]]) #junctions
+                    if len(start_pts) > 0:
+                        start_seg = np.array([start_pts[0]])
+                        cnt = cnt+1
+                        loop = loop+1
+                    else:
+                        loop = loop+1
+                        continue
+        elif len(up_segs) == 1: #normal
+            new_segs[pts] = cnt
+            flag[pts] = 1
+            start_seg = up_segs
+            loop = loop+1
+        else: #junction
+            new_segs[pts] = cnt
+            flag[pts] = 1
+            start_pts = np.unique(seg_pts[np.where((seg_junc_pts == 1)&(flag == 0))[0]]) #junctions 
+            if len(start_pts) > 0:
+                start_seg = np.array([start_pts[0]])
+                cnt = cnt+1
+                loop = loop+1
+            elif len(start_pts) == 0:
+                start_pts = np.unique(seg_pts[np.where((seg_hwout_pts == 2)&(flag == 0))[0]]) #junctions
+                if len(start_pts) > 0:
+                    start_seg = np.array([start_pts[0]])
+                    cnt = cnt+1
+                    loop = loop+1
+                else:
+                    start_pts = np.unique(seg_pts[np.where(flag == 0)[0]]) #junctions
+                    if len(start_pts) > 0:
+                        start_seg = np.array([start_pts[0]])
+                        cnt = cnt+1
+                        loop = loop+1
+                    else:
+                        loop = loop+1
+                        continue
+
+        if loop > len(np.unique(seg_pts))+500:
+            print('LOOP STUCK')
+            break
+    
+    return new_segs
+
+###############################################################################
+
+def update_indexes(seg_pts, seg_ind_pts, up_pts, down_pts,
+                   seg_hwout_pts, seg_junc_pts, new_segs):
+    """
+    Updates indexes in aggregated segments. 
+    
+    Parameters
+    ----------
+    seg_pts: numpy.array()
+        Segment IDs.
+    seg_ind_pts: numpy.array()
+        Segment indexes.    
+    seg_hwout_pts: numpy.array()
+        Headwater or outlet flag. 
+    seg_junc_pts: numpy.array()
+        Junction flag.    
+    up_pts: numpy.array()
+        Upstream MHV nodes. 
+    down_pts: numpy.array()
+        Downstream MHV nodes.
+    new_segs: numpy.array()
+        Aggregated segment IDs.
+
+    Returns
+    -------
+    new_indexes: numpy.array()
+        Updated segment indexes. 
+
+    """
+    
+    unq_segs = np.unique(new_segs)
+    new_indexes = np.copy(seg_ind_pts)
+    for s in list(range(len(unq_segs))):
+        # print(s, len(unq_segs)-1)
+        pts = np.where(new_segs == unq_segs[s])[0]
+        subsegs = np.unique(seg_pts[pts])
+        if len(subsegs) == 1:
+            continue
+        else:
+            #order subsegs
+            ds_out = np.unique(seg_pts[pts[np.where(seg_hwout_pts[pts] == 2)[0]]])
+            ds_juncs = np.unique(seg_pts[pts[np.where(seg_junc_pts[pts] == 1)[0]]])
+            ds = np.unique(np.append(ds_out,ds_juncs))
+            us_out = np.unique(seg_pts[pts[np.where(seg_hwout_pts[pts] == 1)[0]]])
+            us_juncs = np.unique(seg_pts[pts[np.where(seg_junc_pts[pts] == 2)[0]]])
+            us = np.unique(np.append(us_out,us_juncs))
+            if len(ds) > 0:
+                next_seg = ds
+                order = np.zeros(len(subsegs))
+                cnt = 1
+                while min(order) == 0:
+                    order[np.where(subsegs == next_seg)[0]] = cnt
+                    subpts = np.where(seg_pts == next_seg)[0]
+                    up_nodes = np.unique(up_pts[subpts])
+                    up_segs = np.unique(seg_pts[np.where(down_pts == up_nodes)[0]])
+                    if len(up_segs) > 0:
+                        if True in np.unique(np.in1d(up_segs,subsegs)):
+                            next_seg = up_segs
+                            cnt = cnt+1
+                        else:
+                            continue
+                    else:
+                        continue
+                    if cnt > len(subsegs)+5:
+                        print('LOOP STUCK')
+                        break
+            else:
+                next_seg = us
+                order = np.zeros(len(subsegs))
+                cnt = 1
+                while min(order) == 0:
+                    order[np.where(subsegs == next_seg)[0]] = cnt
+                    subpts = np.where(seg_pts == next_seg)[0]
+                    dn_nodes = np.unique(down_pts[subpts])
+                    dn_segs = np.unique(seg_pts[np.where(up_pts == dn_nodes)[0]])
+                    if len(dn_segs) > 0:
+                        if True in np.unique(np.in1d(dn_segs,subsegs)):
+                            next_seg = dn_segs
+                            cnt = cnt+1
+                        else:
+                            continue
+                    else:
+                        continue
+                    if cnt > len(subsegs)+5:
+                        print('LOOP STUCK')
+                        break
+                
+                order = order[::-1]
+            
+            #update the indexes 
+            segs_ordered = subsegs[np.argsort(order)]
+            for idx in list(range(len(subsegs))):
+                if idx == 0:
+                    new_indexes[np.where(seg_pts == segs_ordered[idx])[0]] = seg_ind_pts[np.where(seg_pts == segs_ordered[idx])[0]]
+                else:
+                    add_val = max(new_indexes[np.where(seg_pts == segs_ordered[idx-1])[0]])
+                    current_pts = np.where(seg_pts[pts] == segs_ordered[idx])[0]
+                    add_ind = seg_ind_pts[pts[current_pts]]+add_val
+                    new_indexes[pts[current_pts]] = add_ind
+
+    return new_indexes
+
+###############################################################################
+
+def find_neighbors_filt(basin_rch, basin_flag, basin_x, basin_y, 
+                   rch_x, rch_y, rch_ind, rch_id, rch):
+
+    """
+    Finds neighboring segments. This is a subfunction of 
+    the 'filter_sword_flag' function. 
+    
+    Parameters
+    ----------
+    basin_rch: numpy.array()
+        Basin codes. 
+    basin_flag: numpy.array()
+        Basin SWORD flag. 
+    basin_x: numpy.array()
+        Basin level longitude. 
+    basin_y: numpy.array()
+        Basin level latitude. 
+    rch_x: numpy.array()
+        Segment/reach longitude. 
+    rch_y: numpy.array()
+        Segment/reach latitude. 
+    rch_ind: numpy.array()
+        Segment/reach indexes. 
+    rch_id: numpy.array()
+        Segment/reach IDs. 
+    rch: numpy.array()
+        Indexes of points for a specific segment/reach. 
+        
+    Returns
+    -------
+    ep1: numpy.array()
+        Segment neighbors at endpoint 1. 
+    ep2: numpy.array()
+        Segment neighbors at endpoint 2.
+
+    """   
+    
+    # Formatting all basin coordinate values.
+    basin_pts = np.vstack((basin_x, basin_y)).T
+    # Formatting the current reach's endpoint coordinates.
+    if len(rch) == 1:
+        eps = np.array([0,0])
+    else:
+        pt1 = np.where(rch_ind == np.min(rch_ind))[0][0]
+        pt2 = np.where(rch_ind == np.max(rch_ind))[0][0]
+        eps = np.array([pt1,pt2]).T
+
+    # Performing a spatial query to get the closest points within the basin
+    # to the current reach's endpoints.
+    ep_pts = np.vstack((rch_x[eps], rch_y[eps])).T
+    kdt = sp.cKDTree(basin_pts)
+
+    #for grwl the values were 100 and 200 
+    if len(rch) <= 4:
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 4, distance_upper_bound = 0.003) #distance upper bound = 300.0 for meters 
+    else:#elif rch_len > 600:
+        pt_dist, pt_ind = kdt.query(ep_pts, k = 10, distance_upper_bound = 0.003) #distance upper bound = 300.0 for meters 
+
+    # Identifying endpoint neighbors.
+    ep1_ind = pt_ind[0,:]
+    ep1_dist = pt_dist[0,:]
+    na1 = np.where(ep1_ind == len(basin_rch))
+    ep1_dist = np.delete(ep1_dist, na1)
+    ep1_ind = np.delete(ep1_ind, na1)
+    s1 = np.where(basin_rch[ep1_ind] == rch_id)
+    ep1_dist = np.delete(ep1_dist, s1)
+    ep1_ind = np.delete(ep1_ind, s1)
+    ep1_ngb = np.unique(basin_rch[ep1_ind])
+
+    ep2_ind = pt_ind[1,:]
+    ep2_dist = pt_dist[1,:]
+    na2 = np.where(ep2_ind == len(basin_rch))
+    ep2_dist = np.delete(ep2_dist, na2)
+    ep2_ind = np.delete(ep2_ind, na2)
+    s2 = np.where(basin_rch[ep2_ind] == rch_id)
+    ep2_dist = np.delete(ep2_dist, s2)
+    ep2_ind = np.delete(ep2_ind, s2)
+    ep2_ngb = np.unique(basin_rch[ep2_ind])
+
+    # Pulling attribute information for the endpoint neighbors.
+    ep1_flg = np.zeros(len(ep1_ngb))
+    for idy in list(range(len(ep1_ngb))):
+        ep1_flg[idy] = np.max(basin_flag[np.where(basin_rch == ep1_ngb[idy])])
+
+    ep2_flg = np.zeros(len(ep2_ngb))
+    for idy in list(range(len(ep2_ngb))):
+        ep2_flg[idy] = np.max(basin_flag[np.where(basin_rch == ep2_ngb[idy])])
+
+    # Creating final arrays.
+    ep1 = np.array([ep1_ngb, ep1_flg]).T
+    ep2 = np.array([ep2_ngb, ep2_flg]).T
+
+    return ep1, ep2
+
+###############################################################################
+
+def filter_sword_flag(seg_pts, seg_ind_pts,flag_pts, x_pts, y_pts):
+    """
+    Filters SWORD flag based on surrounding segment values. 
+
+    Parameters
+    ----------
+    seg_pts: numpy.array()
+        Segment IDs.
+    seg_ind_pts: numpy.array()
+        Segment Indexes. 
+    flag_pts: numpy.array()
+        SWORD flag. 
+    x_pts: numpy.array()
+        Longitude. 
+    y_pts: numpy.array()
+        Latitude.
+     
+    Returns
+    -------
+    flag: numpy.array()
+        Filtered SWORD flag. 
+    cnt: list
+        List of segments to check. 
+
+    """
+    
+    cnt=[]
+    flag = np.copy(flag_pts)
+    check = np.unique(seg_pts[np.where(flag == 0)[0]])
+    for s in list(range(len(check))):
+        # print(s, len(check)-1)
+        line = np.where(seg_pts == check[s])[0]
+        # seg_x = x[line]
+        # seg_y = y[line]
+        seg_lon = x_pts[line]
+        seg_lat = y_pts[line]
+        seg_ind = seg_ind_pts[line]
+        end1, end2 = find_neighbors_filt(seg_pts, flag, x_pts, y_pts, seg_lon, 
+                                    seg_lat, seg_ind, check[s], line)
+        if len(end1) == 0:
+            continue
+        elif len(end2) == 0:
+            continue
+        else:
+            # Cond. 1: end 1 has SWORD flag, but end 2 does not. 
+            if np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 0:
+                for n in list(range(len(end2))):
+                    line2 = np.where(seg_pts == end2[0,0])[0]
+                    seg_lon2 = x_pts[line2]
+                    seg_lat2 = y_pts[line2]
+                    seg_ind2 = seg_ind_pts[line2]
+                    ngh_end1, ngh_end2 = find_neighbors_filt(seg_pts, flag, x_pts, y_pts, seg_lon2, 
+                                        seg_lat2, seg_ind2, check[s], line2)
+                    if n == 0:
+                        ngh_end1_all = np.copy(ngh_end1)
+                        ngh_end2_all = np.copy(ngh_end2)
+                    else:
+                        ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
+                        ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
+                if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
+                    # print(s, check[s], 'cond.1')
+                    flag[line] = 1
+                    # flag[line] = 1
+                    cnt.append(check[s])
+                else:
+                    continue
+            # Cond. 2: end 2 has SWORD flag, but end 1 does not.
+            elif np.max(end1[:,1]) == 0 and np.max(end2[:,1]) == 1:
+                for n in list(range(len(end1))):
+                    line2 = np.where(seg_pts == end1[0,0])[0]
+                    seg_lon2 = x_pts[line2]
+                    seg_lat2 = y_pts[line2]
+                    seg_ind2 = seg_ind_pts[line2]
+                    ngh_end1, ngh_end2 = find_neighbors_filt(seg_pts, flag, x_pts, y_pts, seg_lon2, 
+                                        seg_lat2, seg_ind2, check[s], line2)
+                    if n == 0:
+                        ngh_end1_all = np.copy(ngh_end1)
+                        ngh_end2_all = np.copy(ngh_end2)
+                    else:
+                        ngh_end1_all = np.concatenate((ngh_end1_all, ngh_end1), axis = 0)
+                        ngh_end2_all = np.concatenate((ngh_end2_all, ngh_end2), axis = 0)
+                if np.max(ngh_end1_all[:,1]) == 1 or np.max(ngh_end2_all[:,1]) == 1:
+                    # print(s, check[s], 'cond.2')
+                    # flag_all[subset[line]] = 1
+                    flag[line] = 1
+                    cnt.append(check[s])
+                else:
+                    continue
+            # Cond. 3: Both ends have SWORD flag. 
+            elif np.max(end1[:,1]) == 1 and np.max(end2[:,1]) == 1:
+                # print(s, check[s], 'cond.3')
+                # flag_all[subset[line]] = 1
+                flag[line] = 1
+                cnt.append(check[s])
+
+            else:
+                continue
+
+    return flag, cnt
+
+###############################################################################
+
+def save_mhv_nc(x_pts, y_pts, seg_pts, seg_ind_pts, so_pts, flag_pts, up_pts, down_pts, 
+                seg_hwout_pts, seg_junc_pts, new_segs, new_indexes, flag_filt, region, outfile):
+
+    """
+    Writes filtered merged NetCDF. Datasets combined include: GRWL,
+    MERIT Hydro, GROD, GRanD, HydroBASINS, Global Deltas, SWOT Track
+    information, and Prior Lake Database locations.
+
+    Parameters
+    ----------
+        x_pts: numpy.array()
+            Longitude. 
+        y_pts: numpy.array()
+            Latitude.
+        seg_pts: numpy.array()
+            Segment IDs. 
+        seg_ind_pts: numpy.array()
+            Segment Indexes. 
+        so_pts: numpy.array()
+            Stream order. 
+        flag_pts: numpy.array()
+            SWORD flag. 
+        up_pts: numpy.array()
+            Upstream MHV nodes. 
+        down_pts: numpy.array()
+            Downstream MHV nodes. 
+        seg_hwout_pts: numpy.array()
+            Headwater or outlet flag. 
+        seg_junc_pts: numpy.array()
+            Junction flag. 
+        new_segs: numpy.array()
+            Updated segment IDs. 
+        new_indexes: numpy.array()
+            Updated segment indexes. 
+        flag_filt: numpy.array()
+            Filtered SWORD flag. 
+        region: str
+            Two-letter region/continent identifier (i.e. 'NA')
+        outfile: str
+            Outpath directory to write the NetCDF file.
+
+    Returns
+    -------
+        None.
+
+    """
+
+    # global attributes
+    root_grp = nc.Dataset(outfile, 'w', format='NETCDF4')
+    root_grp.x_min = np.min(x_pts)
+    root_grp.x_max = np.max(x_pts)
+    root_grp.y_min = np.min(y_pts)
+    root_grp.y_max = np.max(y_pts)
+    root_grp.production_date = time.strftime("%d-%b-%Y %H:%M:%S", time.gmtime()) #utc time
+
+    # subgroups
+    cl_grp = root_grp.createGroup('centerlines')
+
+    # dimensions
+    root_grp.createDimension('ID', 2)
+    cl_grp.createDimension('num_points', len(x_pts))
+
+    ### variables and units
+
+    # root group variables
+    Name = root_grp.createVariable('Name', 'S1', ('ID'))
+    Name._Encoding = 'ascii'
+
+    # centerline variables
+    x = cl_grp.createVariable(
+        'x', 'f8', ('num_points',), fill_value=-9999.)
+    x.units = 'degrees east'
+    y = cl_grp.createVariable(
+        'y', 'f8', ('num_points',), fill_value=-9999.)
+    y.units = 'degrees north'
+    segID = cl_grp.createVariable(
+        'segID', 'i8', ('num_points',), fill_value=-9999.)
+    segInd = cl_grp.createVariable(
+        'segInd', 'i8', ('num_points',), fill_value=-9999.)
+    strmorder= cl_grp.createVariable(
+        'strmorder', 'i4', ('num_points',), fill_value=-9999.)
+    swordflag= cl_grp.createVariable(
+        'swordflag', 'i4', ('num_points',), fill_value=-9999.)
+    basin= cl_grp.createVariable(
+        'basin', 'i8', ('num_points',), fill_value=-9999.)
+    upLink = cl_grp.createVariable(
+        'up_link', 'i8', ('num_points',), fill_value=-9999.)
+    downLink = cl_grp.createVariable(
+        'down_link', 'i8', ('num_points',), fill_value=-9999.)
+    new_segID = cl_grp.createVariable(
+        'new_segs', 'i8', ('num_points',), fill_value=-9999.)
+    new_segInd = cl_grp.createVariable(
+        'new_segs_ind', 'i8', ('num_points',), fill_value=-9999.)
+    swordflag_filt = cl_grp.createVariable(
+        'swordflag_filt', 'i4', ('num_points',), fill_value=-9999.)
+    head_out = cl_grp.createVariable(
+        'headwaters_outlets', 'i4', ('num_points',), fill_value=-9999.)
+    junctions = cl_grp.createVariable(
+        'junctions', 'i4', ('num_points',), fill_value=-9999.)
+        
+    # data
+    print("saving nc")
+
+    # root group data
+    cont_str = nc.stringtochar(np.array([region], 'S2'))
+    Name[:] = cont_str
+
+    # centerline data
+    x[:] = np.array(x_pts)
+    y[:] = np.array(y_pts)
+    segID[:] = np.array(seg_pts)
+    segInd[:] = np.array(seg_ind_pts)
+    strmorder[:] = np.array(so_pts)
+    swordflag[:] = np.array(flag_pts)
+    basin[:] = np.array(basin)
+    upLink[:] = np.array(up_pts)
+    downLink[:] = np.array(down_pts)
+    new_segID[:] = np.array(new_segs)
+    new_segInd[:] = np.array(new_indexes)
+    swordflag_filt[:] = np.array(flag_filt)
+    head_out[:] = np.array(seg_hwout_pts)
+    junctions[:] = np.array(seg_junc_pts)
+
+    root_grp.close()
 
 ###############################################################################
 
 def read_merge_netcdf(filename):
+    """
+    Reads in attributes from the merged MHV-SWORD database 
+    and assigns them to anobject.
+
+    Parameters
+    -----------
+    filename: str
+        MHV-SWORD database netcdf file path.
+
+    Returns
+    -------
+    data: obj
+        Object containing attributes from the merged database.
 
     """
-    FUNCTION:
-        Reads in attributes from the merged database and assigns them to an
-        object.
 
-    INPUTS
-        filename -- Merged database netcdf file.
-
-    OUTPUTS
-        data -- Object containing attributes from the merged database.
-    """
-
-    data = Object()
+    data = geo.Object()
     new = nc.Dataset(filename)
     data.lon = np.array(new.groups['centerlines'].variables['x'][:])
     data.lat = np.array(new.groups['centerlines'].variables['y'][:])
@@ -72,137 +731,26 @@ def read_merge_netcdf(filename):
 
 ###############################################################################
 
-def reproject_utm(latitude, longitude):
-
-    """
-    Modified from C. Lion's function by E. Altenau
-    Copyright (c) 2018 UNC Chapel Hill. All rights reserved.
-
-    FUNCTION:
-        Projects all points in UTM.
-
-    INPUTS
-        latitude -- latitude in degrees (1-D array)
-        longitude -- longitude in degrees (1-D array)
-
-    OUTPUTS
-        east -- easting in UTM (1-D array)
-        north -- northing in UTM (1-D array)
-        utm_num -- UTM zone number (1-D array of utm zone numbers for each point)
-        utm_let -- UTM zone letter (1-D array of utm zone letters for each point)
-    """
-
-    east = np.zeros(len(latitude))
-    north = np.zeros(len(latitude))
-    east_int = np.zeros(len(latitude))
-    north_int = np.zeros(len(latitude))
-    zone_num = np.zeros(len(latitude))
-    zone_let = []
-
-	# Finds UTM letter and zone for each lat/lon pair.
-
-    for ind in list(range(len(latitude))):
-        (east_int[ind], north_int[ind],
-         zone_num[ind], zone_let_int) = utm.from_latlon(latitude[ind],longitude[ind])
-        zone_let.append(zone_let_int)
-
-    # Finds the unique UTM zones and converts the lat/lon pairs to UTM.
-    unq_zones = np.unique(zone_num)
-    utm_let = np.unique(zone_let)[0]
-
-    for idx in list(range(len(unq_zones))):
-        pt_len = len(np.where(zone_num == unq_zones[idx])[0])
-
-    idx = np.where(pt_len == np.max(pt_len))
-
-    # Set the projection
-
-    if np.sum(latitude) > 0:
-        myproj = Proj(
-            "+proj=utm +zone=" + str(int(unq_zones[idx])) +
-            " +ellips=WGS84 +datum=WGS84 +units=m")
-    else:
-        myproj = Proj(
-            "+proj=utm +south +zone=" + str(int(unq_zones[idx])) +
-           " +ellips=WGS84 +datum=WGS84 +units=m")
-
-    # Convert all the lon/lat to the main UTM zone
-    (east, north) = myproj(longitude, latitude)
-
-    return east, north, zone_num, zone_let
-
-###############################################################################
-
-def get_distances(lon,lat):
-    traces = len(lon) -1
-    distances = np.zeros(traces)
-    for i in range(traces):
-        start = (lat[i], lon[i])
-        finish = (lat[i+1], lon[i+1])
-        distances[i] = distance.geodesic(start, finish).m
-    distances = np.append(0,distances)
-    return distances
-
-###############################################################################
-
-def calc_segDist(subcls_lon, subcls_lat, subcls_rch_id, subcls_facc,
-                 subcls_rch_ind):
-
-    """
-    FUNCTION:
-        Creates a 1-D array of flow distances for each specified reach. Flow
-        distance is build to start at 0 and increases in the upstream direction.
-
-    INPUTS
-        subcls -- Object containing reach and node attributes for the
-            high-resolution centerline.
-            [attributes used]:
-                lon -- Longitude values along the high-resolution centerline.
-                lat -- Latitude values along the high-resolution centerline.
-                facc -- Flow accumulation along the high-resolution centerline.
-                rch_id5 -- Reach numbers after aggregating short river, lake,
-                    and dam reaches.
-
-    OUTPUTS
-        segDist -- Flow distance per reach (meters).
-    """
-
-    #loop through each reach and calculate flow distance.
-    segDist = np.zeros(len(subcls_lon))
-    uniq_segs = np.unique(subcls_rch_id)
-    for ind in list(range(len(uniq_segs))):
-        #for a single reach, reproject lat-lon coordinates to utm.
-        # print(ind, uniq_segs[ind])
-        seg = np.where(subcls_rch_id == uniq_segs[ind])[0]
-        sort_ind = np.argsort(subcls_rch_ind[seg])
-        seg_lon = subcls_lon[seg[sort_ind]]
-        seg_lat = subcls_lat[seg[sort_ind]]
-        # upa = subcls_facc[seg[sort_ind]]
-
-        #segment distance
-        x_coords = seg_lon
-        y_coords = seg_lat
-        diff = get_distances(x_coords,y_coords)
-        dist = np.cumsum(diff)
-
-        segDist[seg[sort_ind]] = dist
-        
-        #format flow distance as array and determine flow direction by flowacc.
-        # start = upa[np.where(dist == np.min(dist))[0][0]]
-        # end = upa[np.where(dist == np.max(dist))[0][0]]
-
-        # if end > start:
-        #     segDist[seg] = abs(dist-np.max(dist))
-
-        # else:
-        #     segDist[seg] = dist
-
-    return segDist
-
-###############################################################################
-
 def find_boundaries(subcls):
+    """
+    Finds initial reach boundaries. 
 
+    Parameters
+    ----------
+    subcls: obj
+        Object containing MHV-SWORD attributes. 
+
+    Returns
+    -------
+    reach_nums: numpy.array()
+        Reach numbers.
+    Type: numpy.array()
+        Reach type identifier. 
+    Len: numpy.array()
+        Reach length. 
+    
+    """
+    
     # Combine lake and delta flags into one vector.
     lake_coast_flag = np.copy(subcls.lake)
     lake_coast_flag[np.where(subcls.delta > 0)] = 3
@@ -282,6 +830,30 @@ def find_boundaries(subcls):
 
 def cut_reaches(subcls_rch_id0, subcls_rch_len0, subcls_dist,
                 subcls_ind, max_dist):
+    """
+    Cuts long reaches. 
+
+    Parameters
+    ----------
+    subcls_rch_id0: numpy.array()
+        Reach number. 
+    subcls_rch_len0: numpy.array()
+        Reach length. 
+    subcls_dist: numpy.array()
+        Reach distance. 
+    subcls_ind: numpy.array()
+        Reach indexes. 
+    max_dist: int/float
+        Maximum reach length. 
+
+    Returns
+    -------
+    new_rch_id:
+        Updated reach numbers. 
+    new_rch_dist:
+        Updated reach distances. 
+    
+    """
 
     # Setting variables.
     cnt = np.max(subcls_rch_id0)+1
@@ -393,7 +965,7 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
             neighbor the array size would be [1,5]).
     """
     #getting radius for finding neighbors.
-    radius = meters_to_degrees(128, np.median(basin_y))
+    radius = geo.meters_to_degrees(128, np.median(basin_y))
     # Formatting all basin coordinate values.
     basin_pts = np.vstack((basin_x, basin_y)).T
     # Formatting the current reach's endpoint coordinates.
@@ -467,6 +1039,21 @@ def find_neighbors(basin_rch, basin_dist, basin_flag, basin_acc, basin_wse,
 ##### TAKE 3
 
 def update_rch_indexes(subcls, new_rch_id):
+    """
+    Updates indexes in aggregated segments/reaches. 
+    
+    Parameters
+    ----------
+    subcls: obj
+        Object containing MHV-SWORD attributes. 
+
+    Returns
+    -------
+    new_rch_id: numpy.array()
+        Updated segment/reach numbers. 
+
+    """
+    
     # Set variables and find unique reaches.
     uniq_rch = np.unique(new_rch_id)
     new_rch_ind = np.zeros(len(subcls.ind))
@@ -576,7 +1163,7 @@ def aggregate_rivers(subcls, min_dist):
         basin_lon = subcls.lon[basin[sort_ids]]
         basin_lat = subcls.lat[basin[sort_ids]]
         basin_ind = subcls.ind[basin[sort_ids]]
-        # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+        # basin_x, basin_y, __, __ = geo.reproject_utm(basin_lat, basin_lon)
 
         # creating dummy vectors to help keep track of changes.
         dummy_basin_rch = np.copy(basin_rch)
@@ -1525,7 +2112,7 @@ def aggregate_lakes(subcls, min_dist):
         basin_lon = subcls.lon[basin[sort_ids]]
         basin_lat = subcls.lat[basin[sort_ids]]
         basin_ind = subcls.ind[basin[sort_ids]]
-        # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+        # basin_x, basin_y, __, __ = geo.reproject_utm(basin_lat, basin_lon)
 
         #creating dummy vectors to help keep track of changes.
         dummy_basin_rch = np.copy(basin_rch)
@@ -2337,7 +2924,7 @@ def aggregate_dams(subcls, min_dist):
         basin_lon = subcls.lon[basin[sort_ids]]
         basin_lat = subcls.lat[basin[sort_ids]]
         basin_ind = subcls.ind[basin[sort_ids]]
-        # basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+        # basin_x, basin_y, __, __ = geo.reproject_utm(basin_lat, basin_lon)
 
         #creating dummy vectors to help keep track of changes.
         dummy_basin_rch = np.copy(basin_rch)
@@ -3500,7 +4087,7 @@ def reach_topology(subcls):
         basin_flag = subcls.type5[basin]
         basin_lon = subcls.lon[basin]
         basin_lat = subcls.lat[basin]
-        basin_x, basin_y, __, __ = reproject_utm(basin_lat, basin_lon)
+        basin_x, basin_y, __, __ = geo.reproject_utm(basin_lat, basin_lon)
 
         basin_rivers = np.where(basin_flag < 5)[0]
         basin_notopo = np.where(basin_flag == 5)[0]
@@ -3813,7 +4400,7 @@ def ghost_reaches(subcls):
     """
 
     # Pre-defining all reach endpoint neighbors.
-    # x, y, __, __ = reproject_utm(subcls.lat, subcls.lon)
+    # x, y, __, __ = geo.reproject_utm(subcls.lat, subcls.lon)
     x = np.copy(subcls.lon)
     y = np.copy(subcls.lat)
     rch_eps = np.where(subcls.rch_eps5 == 1)[0]
@@ -3895,6 +4482,22 @@ def ghost_reaches(subcls):
 ###############################################################################
 
 def update_netcdf(nc_file, centerlines):
+    """
+    Updates MHV-SWORD netcdf with SWORD realated 
+    reach and node attributes. 
+
+    Parameters
+    ----------
+    nc_file: str
+        NetCDF file path. 
+    centerlines: obj
+        Object containing MHV-SWORD attributes. 
+
+    Returns
+    --------
+    None. 
+    
+    """
     data = nc.Dataset(nc_file, 'r+')
     # check to see if variables have been created already. If not create them.
     if 'reach_id' in data.groups['centerlines'].variables:
@@ -3940,6 +4543,26 @@ def update_netcdf(nc_file, centerlines):
 ###############################################################################
 
 def check_rchs(rch_id, dist, indexes):
+    """
+    Checks for incorrect index ordering within a
+    segment or reach. 
+
+    Parameters
+    ----------
+    rch_id: numpy.array()
+        Segment/reach ID. 
+    dist: numpy.array()
+        Segment/reach distance. 
+    indexes: numpy.array()
+        Segment/reach index. 
+
+    Returns
+    --------
+    issues: list
+        List of segment/reach IDs with index issues. 
+  
+    """
+
     issues = []
     unq_rch = np.unique(rch_id)
     for ind in list(range(len(unq_rch))):
@@ -3955,6 +4578,22 @@ def check_rchs(rch_id, dist, indexes):
 ###############################################################################
 
 def correct_rchs(subcls, issues):
+    """
+    Corrects indexes in flagged segment/reaches. 
+
+    Parameters
+    ----------
+    subcls: obj
+        Object containing MHV-SWORD attributes. 
+    issues: list 
+        List of segment/reach IDs with index issues.
+
+    Returns
+    --------
+    None. 
+  
+    """
+     
     start_id = np.max(subcls.rch_id5) + 1
     for ind in list(range(len(issues))):
         rch = np.where(subcls.rch_id5 == issues[ind])[0]

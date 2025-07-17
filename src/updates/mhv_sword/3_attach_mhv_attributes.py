@@ -1,218 +1,38 @@
+"""
+Attaching Regional Auxillary Attributes to MERIT Hydro
+Vector-SWORD (MHV-SWORD) translation dataset.
+(3_attach_mhv_attributes.py)
+===================================================
+
+This script attaches auxially dataset attributes
+from MERIT Hydro rasters to the MHV-SWORD database. 
+These attributes are needed to add MHV centerlines 
+to SWORD.
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA).
+
+Execution example (terminal):
+    python path/to/3_attach_mhv_attributes NA
+
+"""
+
+from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc 
 from scipy import spatial as sp
-from osgeo import gdal, ogr
 import time
-from pyproj import Proj
-import utm
 import glob
-from geopy import distance
-import matplotlib.pyplot as plt
 import argparse
+import src.updates.geo_utils as geo 
+import src.updates.auxillary_utils as aux 
 import warnings
 warnings.filterwarnings("ignore") #if code stops working may need to comment out to check warnings. 
-
-###############################################################################
-
-def getListOfFiles(dirName):
-
-    """
-    FUNCTION:
-        For the given path, gets a recursive list of all files in the directory tree.
-
-    INPUTS
-        dirName -- Input directory
-
-    OUTPUTS
-        allFiles -- list of files under directory
-    """
-
-    listOfFile = os.listdir(dirName)
-    allFiles = list()
-    # Iterate over all the entries
-    for entry in listOfFile:
-        # Create full path
-        fullPath = os.path.join(dirName, entry)
-        # If entry is a directory then get the list of files in this directory
-        if os.path.isdir(fullPath):
-            allFiles = allFiles + getListOfFiles(fullPath)
-        else:
-            allFiles.append(fullPath)
-
-    return allFiles
-
-###############################################################################
-
-def get_distances(lon,lat):
-    traces = len(lon) -1
-    distances = np.zeros(traces)
-    for i in range(traces):
-        start = (lat[i], lon[i])
-        finish = (lat[i+1], lon[i+1])
-        distances[i] = distance.geodesic(start, finish).m
-    distances = np.append(0,distances)
-    return distances
-
-###############################################################################
-
-def MH_vals(elv_fn, wth_fn, facc_fn):
-
-    """
-    FUNCTION:
-        Reads in and formats MERIT Hydro raster values as arrays.
-
-    INPUTS
-        filepaths -- List of MERIT Hydro raster paths that overlap a GRWL shapefile.
-        grwl_ext -- Latitude/Longitude extent of GRWL shapefile.
-
-    OUTPUTS
-        vals -- raster values in 1-D array. These values will coincide with
-        coordinate values returned from "MH_coords" function.
-    """
-
-    # Mosaicking all MERIT Hydro rasters that overlap the GRWL shapefile.
-    
-    elv_raster = gdal.Open(elv_fn)
-    wth_raster = gdal.Open(wth_fn)
-    facc_raster = gdal.Open(facc_fn)
-
-    # Pulls and flattens raster vlues.
-    xul = elv_raster.GetGeoTransform()[0]
-    xres = elv_raster.GetGeoTransform()[1]
-    yul = elv_raster.GetGeoTransform()[3]
-    yres = elv_raster.GetGeoTransform()[5]
-    
-    lon=np.array([xul+xres*c+xres/2. for r in range(elv_raster.RasterXSize) for c in range(elv_raster.RasterYSize)])
-    lat=np.array([yul+yres*r+yres/2. for r in range(elv_raster.RasterXSize) for c in range(elv_raster.RasterYSize)])
-    elv = np.array(elv_raster.GetRasterBand(1).ReadAsArray()).flatten()
-    wth = np.array(wth_raster.GetRasterBand(1).ReadAsArray()).flatten()
-    facc = np.array(facc_raster.GetRasterBand(1).ReadAsArray()).flatten()
-
-    keep = np.where(facc >= 10)[0]
-    elv = elv[keep]
-    wth = wth[keep]
-    facc = facc[keep]
-    lon = lon[keep]
-    lat = lat[keep]
-
-    return lon, lat, elv, wth, facc
-
-###############################################################################
-
-def reproject_utm(latitude, longitude):
-
-    """
-    Modified from C. Lion's function by E. Altenau
-    Copyright (c) 2018 UNC Chapel Hill. All rights reserved.
-
-    FUNCTION:
-        Projects all points in UTM.
-
-    INPUTS
-        latitude -- latitude in degrees (1-D array)
-        longitude -- longitude in degrees (1-D array)
-
-    OUTPUTS
-        east -- easting in UTM (1-D array)
-        north -- northing in UTM (1-D array)
-        utm_num -- UTM zone number (1-D array of utm zone numbers for each point)
-        utm_let -- UTM zone letter (1-D array of utm zone letters for each point)
-    """
-
-    east = np.zeros(len(latitude))
-    north = np.zeros(len(latitude))
-    east_int = np.zeros(len(latitude))
-    north_int = np.zeros(len(latitude))
-    zone_num = np.zeros(len(latitude))
-    zone_let = []
-
-	# Finds UTM letter and zone for each lat/lon pair.
-
-    for ind in list(range(len(latitude))):
-        (east_int[ind], north_int[ind],
-	 zone_num[ind], zone_let_int) = utm.from_latlon(latitude[ind],
-	                                                longitude[ind])
-        zone_let.append(zone_let_int)
-
-    # Finds the unique UTM zones and converts the lat/lon pairs to UTM.
-    unq_zones = np.unique(zone_num)
-    utm_let = np.unique(zone_let)[0]
-
-    for idx in list(range(len(unq_zones))):
-        pt_len = len(np.where(zone_num == unq_zones[idx])[0])
-
-    idx = np.where(pt_len == np.max(pt_len))
-
-    # Set the projection
-
-    if np.sum(latitude) > 0:
-        myproj = Proj(
-            "+proj=utm +zone=" + str(int(unq_zones[idx])) +
-            " +ellips=WGS84 +datum=WGS84 +units=m")
-    else:
-        myproj = Proj(
-            "+proj=utm +south +zone=" + str(int(unq_zones[idx])) +
-           " +ellips=WGS84 +datum=WGS84 +units=m")
-
-    # Convert all the lon/lat to the main UTM zone
-    (east, north) = myproj(longitude, latitude)
-
-    return east, north, zone_num, zone_let
-
-###############################################################################
-
-def overlapping_files(mhv_lon, mhv_lat, elv_paths):
-
-    #define grwl extent as ogr geometry format.
-    poly1 = ogr.Geometry(ogr.wkbLinearRing)
-    poly1.AddPoint(min(mhv_lon), max(mhv_lat))
-    poly1.AddPoint(min(mhv_lon), min(mhv_lat))
-    poly1.AddPoint(max(mhv_lon), min(mhv_lat))
-    poly1.AddPoint(max(mhv_lon), max(mhv_lat))
-    poly1.AddPoint(min(mhv_lon), max(mhv_lat))
-    mhvGeometry = ogr.Geometry(ogr.wkbPolygon)
-    mhvGeometry.AddGeometry(poly1)
-    poly_box = mhvGeometry.GetEnvelope()        
-
-    #find overlapping SWOT tracks.
-    track_files = []
-    for fn in elv_paths:
-        # Read raster extent
-        # Open the raster file
-        try:
-            raster_ds = gdal.Open(fn)
-            raster_geotransform = raster_ds.GetGeoTransform()
-            raster_extent = (
-                raster_geotransform[0],
-                raster_geotransform[0] + raster_geotransform[1] * raster_ds.RasterXSize,
-                raster_geotransform[3] + raster_geotransform[5] * raster_ds.RasterYSize,
-                raster_geotransform[3]
-            )
-
-            # Check for overlap
-            overlap = (
-                poly_box[0] < raster_extent[1] and
-                poly_box[1] > raster_extent[0] and
-                poly_box[2] < raster_extent[3] and
-                poly_box[3] > raster_extent[2]
-            )
-
-            if overlap == True:
-                track_files.append(fn)
-
-        except:
-            print('!!Read Error!!', fn)
-            continue
-        
-    track_files = np.unique(track_files)
-
-    return(track_files)
-
-###############################################################################
-###############################################################################
-###############################################################################
 
 start_all = time.time()
 
@@ -221,13 +41,13 @@ parser.add_argument("region", help="<Required> Region", type = str)
 args = parser.parse_args()
 
 region = args.region
-# region = 'AS'
+
 mh_elv_dir = main_dir+'/data/inputs/MERIT_Hydro/'+region+'/elv/'
 mh_facc_dir = main_dir+'/data/inputs/MERIT_Hydro/'+region+'/upa/'
 mh_wth_dir = main_dir+'/data/inputs/MERIT_Hydro/'+region+'/wth/'
-facc_paths = np.sort(np.array([file for file in getListOfFiles(mh_facc_dir) if '.tif' in file]))
-elv_paths = np.sort(np.array([file for file in getListOfFiles(mh_elv_dir) if '.tif' in file]))
-wth_paths = np.sort(np.array([file for file in getListOfFiles(mh_wth_dir) if '.tif' in file]))
+facc_paths = np.sort(np.array([file for file in geo.getListOfFiles(mh_facc_dir) if '.tif' in file]))
+elv_paths = np.sort(np.array([file for file in geo.getListOfFiles(mh_elv_dir) if '.tif' in file]))
+wth_paths = np.sort(np.array([file for file in geo.getListOfFiles(mh_wth_dir) if '.tif' in file]))
 mhv_fn = main_dir+'/data/inputs/MHV_SWORD/netcdf/'+region+'/'
 mhv_files = glob.glob(os.path.join(mhv_fn, '*.nc'))
 
@@ -260,7 +80,7 @@ for f in list(range(len(mhv_files))): #having trouble with ind = 5 for AS (basin
     mhv_cl_id = np.repeat(0, len(mhv_lon))
 
     #get overlapping mhv tiles with basin. 
-    elv_basin_paths = overlapping_files(mhv_lon, mhv_lat, elv_paths)
+    elv_basin_paths = geo.pt_raster_overlap(mhv_lon, mhv_lat, elv_paths)
 
     start = time.time()
     print('======== Starting MH-MHV Merge ========')
@@ -268,7 +88,9 @@ for f in list(range(len(mhv_files))): #having trouble with ind = 5 for AS (basin
         # print(ind, len(elv_basin_paths))
         ind2 = np.where(elv_paths == elv_basin_paths[ind])[0][0]
         tile = elv_paths[ind][-15:-8]
-        mh_lon, mh_lat, mh_elv, mh_wth, mh_facc = MH_vals(elv_paths[ind2], wth_paths[ind2], facc_paths[ind2])
+        mh_lon, mh_lat, mh_elv, mh_wth, mh_facc = aux.mh_vals(elv_paths[ind2], 
+                                                              wth_paths[ind2], 
+                                                              facc_paths[ind2])
         
         if len(mh_lon) == 0:
             continue
@@ -331,13 +153,13 @@ for f in list(range(len(mhv_files))): #having trouble with ind = 5 for AS (basin
         cnt = cnt+1
 
         # getting utm coordinates
-        seg_x, seg_y, __, __ = reproject_utm(seg_lat, seg_lon)
+        seg_x, seg_y, __, __ = geo.reproject_utm(seg_lat, seg_lon)
 
         #segment distance
         sort_ind = np.argsort(seg_ind)
         x_coords = seg_lon[sort_ind]
         y_coords = seg_lat[sort_ind]
-        diff = get_distances(x_coords,y_coords)
+        diff = geo.get_distances(x_coords,y_coords)
         seg_dist = np.cumsum(diff)
 
         #filling in arrays.
@@ -399,34 +221,34 @@ print('Finished '+region+' in: ' + str(np.round((end_all-start_all)/60, 2)) + ' 
 
 
 
-'''
-z = np.where(mhv_wth == 0)[0]
-plt.scatter(mhv_lon, mhv_lat, s = 3, c=np.log(mhv_wth), cmap='rainbow')
+### PLOTS
+# import matplotlib.pyplot as plt
+
+# z = np.where(mhv_wth == 0)[0]
+# plt.scatter(mhv_lon, mhv_lat, s = 3, c=np.log(mhv_wth), cmap='rainbow')
+# # plt.scatter(mhv_lon[z], mhv_lat[z], s = 3, c='lightgrey')
+# plt.show()
+
+# z = np.where(mhv_facc == 0)[0]
+# plt.scatter(mhv_lon, mhv_lat, s = 3, c=np.log(mhv_facc), cmap='rainbow')
+# # plt.scatter(mhv_lon[z], mhv_lat[z], s = 3, c='lightgrey')
+# plt.show()
+
+# z = np.where(mhv_elv == 0)[0]
+# plt.scatter(mhv_lon, mhv_lat, s = 3, c=mhv_elv, cmap='rainbow')
 # plt.scatter(mhv_lon[z], mhv_lat[z], s = 3, c='lightgrey')
-plt.show()
+# plt.show()
 
-z = np.where(mhv_facc == 0)[0]
-plt.scatter(mhv_lon, mhv_lat, s = 3, c=np.log(mhv_facc), cmap='rainbow')
-# plt.scatter(mhv_lon[z], mhv_lat[z], s = 3, c='lightgrey')
-plt.show()
+# plt.scatter(mhv_lon, mhv_lat, s = 3, c='blue')
+# plt.scatter(mh_lon, mh_lat, s = 1, c='red')
+# plt.show()
 
-z = np.where(mhv_elv == 0)[0]
-plt.scatter(mhv_lon, mhv_lat, s = 3, c=mhv_elv, cmap='rainbow')
-plt.scatter(mhv_lon[z], mhv_lat[z], s = 3, c='lightgrey')
-plt.show()
+# plt.scatter(mh_lon, mh_lat, s = 1, c=np.log(mh_wth), cmap='rainbow')
+# plt.show()
 
-plt.scatter(mhv_lon, mhv_lat, s = 3, c='blue')
-plt.scatter(mh_lon, mh_lat, s = 1, c='red')
-plt.show()
-
-plt.scatter(mh_lon, mh_lat, s = 1, c=np.log(mh_wth), cmap='rainbow')
-plt.show()
-
-plt.scatter(mh_lon, mh_lat, s = 1, c=np.log(mh_elv), cmap='rainbow')
-plt.show()
+# plt.scatter(mh_lon, mh_lat, s = 1, c=np.log(mh_elv), cmap='rainbow')
+# plt.show()
 
 
-plt.scatter(mhv_lon[pts], mhv_lat[pts], s = 5, c=mhv_dist[pts], cmap='rainbow')
-plt.show()
-
-'''
+# plt.scatter(mhv_lon[pts], mhv_lat[pts], s = 5, c=mhv_dist[pts], cmap='rainbow')
+# plt.show()

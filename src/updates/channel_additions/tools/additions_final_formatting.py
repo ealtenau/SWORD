@@ -1,8 +1,31 @@
+# -*- coding: utf-8 -*-
+"""
+Postformatting MHV Additions to SWORD
+(additions_final_formatting.py)
+===================================================
+
+This script updates specific attributes in the added 
+MHV reaches in SWORD.
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/additions_final_formatting.py NA v17
+
+"""
+
+from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import numpy as np
 import netCDF4 as nc
-import matplotlib.pyplot as plt
+from datetime import datetime
+import shutil
+import argparse 
 
 ##################################################################
 
@@ -29,29 +52,35 @@ def find_character_in_array(arr, char):
 
 ##################################################################
 
-region = 'OC'
-version='v18'
-nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
-sword = nc.Dataset(nc_fn,'r+')
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
 
+region = args.region
+version = args.version
+
+nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'\
+    +region.lower()+'_sword_'+version+'.nc'
+#copy sword for version control.
+current_datetime = datetime.now()
+copy_fn = nc_fn[:-3]+'_copy_'+current_datetime.strftime("%Y-%m-%d_%H-%M-%S")+'.nc'
+shutil.copy2(nc_fn, copy_fn)
+
+#read sword data. 
+sword = nc.Dataset(nc_fn,'r+')
 edit_flag = np.array(sword['/reaches/edit_flag'][:])
 reaches = np.array(sword['/reaches/reach_id'][:])
-rx = np.array(sword['/reaches/x'][:])
-ry = np.array(sword['/reaches/y'][:])
 rch_id_up = np.array(sword['/reaches/rch_id_up'][:])
 rch_id_dn = np.array(sword['/reaches/rch_id_dn'][:])
 n_rch_up = np.array(sword['/reaches/n_rch_up'][:])
 n_rch_dn = np.array(sword['/reaches/n_rch_down'][:])
 rch_net = np.array(sword['/reaches/network'][:])
-rch_segs = np.array(sword['/reaches/path_segs'][:])
-rch_ms = np.array(sword['/reaches/main_side'][:])
 rch_ends = np.array(sword['/reaches/end_reach'][:])
 rch_len = np.array(sword['/reaches/reach_length'][:])
 rch_dist = np.array(sword['/reaches/dist_out'][:])
 node_rchs = np.array(sword['/nodes/reach_id'][:])
 node_net = np.array(sword['/nodes/network'][:])
-node_segs = np.array(sword['/nodes/path_segs'][:])
-node_ms = np.array(sword['/nodes/main_side'][:])
 node_ends = np.array(sword['/nodes/end_reach'][:])
 node_len = np.array(sword['/nodes/node_length'][:])
 node_dist = np.array(sword['/nodes/dist_out'][:])
@@ -59,7 +88,7 @@ node_dist = np.array(sword['/nodes/dist_out'][:])
 l2_basins = np.array([int(str(ind)[0:2]) for ind in reaches])
 
 subset = find_character_in_array(edit_flag, '7')
-subset = np.array(subset) 
+subset = np.array(subset)
 add_rchs = reaches[subset]
 
 print('Creating New Flag')
@@ -98,7 +127,7 @@ for b in list(range(len(unq_l2))):
     # print(unq_l2[b], min(unq_nets), len(unq_nets))
     rch_net[basin] = rch_net[basin] + cnt
     cnt = max(rch_net[basin])
-# print(sum(net_tot))
+#print(sum(net_tot))
 #update nodes
 unets = np.unique(rch_net)
 for n in list(range(len(unets))):
@@ -181,12 +210,3 @@ sword.groups['nodes'].createVariable('add_flag', 'i4', ('num_nodes',), fill_valu
 sword['/reaches/add_flag'][:] = mhv_rch_flag
 sword['/nodes/add_flag'][:] = mhv_node_flag
 sword.close()
-
-# plt.scatter(rx, ry, s = 3)
-# plt.scatter(rx[start_pts], ry[start_pts], s= 5, c='red')
-# plt.show()
-
-# z = np.where(path_segs == 0)[0]
-# plt.scatter(rx, ry, s = 3)
-# plt.scatter(rx[z], ry[z], s= 5, c='red')
-# plt.show()

@@ -1,9 +1,34 @@
+# -*- coding: utf-8 -*-
+"""
+Checking Topology of Short Reaches
+(check_short_rch_topo.py)
+===================================================
+
+This script checks for incorrect topology in 
+short SWORD reaches.
+
+Flagged reaches are saved as a csv file located at:
+'/data/update_requests/'+version+'/'+region+'/'
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/check_short_rch_topo.py NA v17
+
+"""
+
+from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import pandas as pd
 import numpy as np
 import netCDF4 as nc
-from geopy import distance
+import argparse
+import src.updates.geo_utils as geo
 
 ##################################################################
 
@@ -30,24 +55,20 @@ def find_character_in_array(arr, char):
 
 ##################################################################
 
-def get_distances(lon,lat):
-    traces = len(lon) -1
-    distances = np.zeros(traces)
-    for i in range(traces):
-        start = (lat[i], lon[i])
-        finish = (lat[i+1], lon[i+1])
-        distances[i] = distance.geodesic(start, finish).m
-    distances = np.append(0,distances)
-    return distances
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
 
-##################################################################
+region = args.region
+version = args.version
 
-region = 'OC'
-version='v18'
-nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'+region.lower()+'_sword_'+version+'.nc'
+nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'+version+'/netcdf/'\
+    +region.lower()+'_sword_'+version+'.nc'
 outdir = main_dir+'/data/update_requests/'+version+'/'+region+'/'
-sword = nc.Dataset(nc_fn)
 
+#read data. 
+sword = nc.Dataset(nc_fn)
 edit_flag = np.array(sword['/reaches/edit_flag'][:])
 reaches = np.array(sword['/reaches/reach_id'][:])
 rch_id_up = np.array(sword['/reaches/rch_id_up'][:])
@@ -57,9 +78,13 @@ cl_ids = np.array(sword['/centerlines/cl_id'][:])
 x = np.array(sword['/centerlines/x'][:])
 y = np.array(sword['/centerlines/y'][:])
 
+#narrow down reaches to recent additions. 
 subset = find_character_in_array(edit_flag, '7')
 subset = np.array(subset) #np.unique(edit_flag[subset])
 
+#loop through reaches and see if there are inconsistencies
+#between topology and actual distance between neighboring
+#reaches.
 new_reaches = reaches[subset]
 check = []
 for r in list(range(len(new_reaches))):
@@ -97,13 +122,14 @@ for r in list(range(len(new_reaches))):
         #downstream neighbor distance difference.
         x_coords1 = np.append(mn_x,dn_x)
         y_coords1 = np.append(mn_y,dn_y) 
-        diff1 = get_distances(x_coords1,y_coords1)
+        diff1 = geo.get_distances(x_coords1,y_coords1)
         #upstream neighbor distance difference. 
         x_coords2 = np.append(mx_x,up_x)
         y_coords2 = np.append(mx_y,up_y)
-        diff2 = get_distances(x_coords2,y_coords2)
+        diff2 = geo.get_distances(x_coords2,y_coords2)
         if max(diff1) > 500 or max(diff2) > 500:
             check.append(new_reaches[r])
 
+#save flagged reaches.
 rch_csv = pd.DataFrame({"reach_id": check})
 rch_csv.to_csv(outdir+'short_reach_topo_check.csv', index = False)

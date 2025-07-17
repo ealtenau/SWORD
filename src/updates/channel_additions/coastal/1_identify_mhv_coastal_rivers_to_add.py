@@ -1,24 +1,66 @@
+# -*- coding: utf-8 -*-
+"""
+Identify MERIT Hydro Vector (MHV) rivers to add to 
+SWORD (1_identify_mhv_coastal_rivers_to_add.py)
+===================================================
+
+This script identifies which coastal MHV rivers 
+are suitable to add to SWORD.
+
+Outputs are added to the existing MHV-SWORD netCDF 
+and saved as geopackage files at:
+'/data/inputs/MHV_SWORD/gpkg/'+region+'/coast_additions/'
+
+The script is run at a regional/continental scale. 
+Command line arguments required are the two-letter 
+region identifier (i.e. NA) and SWORD version (i.e. v17).
+
+Execution example (terminal):
+    python path/to/1_identify_mhv_coastal_rivers_to_add.py NA v17
+
+"""
+
 from __future__ import division
+import sys
 import os
 main_dir = os.getcwd()
+sys.path.append(main_dir)
 import time
 import numpy as np
 import geopandas as gp
 from shapely.geometry import Point
 import pandas as pd
 import argparse
-import matplotlib.pyplot as plt
-from statistics import mode
 import netCDF4 as nc
 from scipy import spatial as sp
-from geopy import distance
 import glob
 
 ###############################################################################
-###############################################################################
-###############################################################################
 
 def define_network_regions(mhv_segs, pt_ind):
+    """
+    Finds updstream neighbors and defines connected network regions. 
+
+    Parameters
+    ----------
+    add_all: numpy.array()
+        Identified MHV rivers to add to SWORD. 
+    mhv_segs: numpy.array()
+        MHV segment IDs. 
+    mhv_facc: numpy.array()
+        Flow accumulation. 
+    pt_ind3: numpy.array()
+        MHV spatial query indexes to SWORD. 
+
+    Returns:
+    --------
+    up_nghs: list
+        Upstream neighbors
+    network: numpy.array()
+        Array of unique IDs for each connected river network. 
+    
+    """
+
     unq_paths = np.unique(mhv_segs)
     start_path = np.array([unq_paths[0]])
     flag = np.zeros(len(mhv_segs))
@@ -81,25 +123,17 @@ def define_network_regions(mhv_segs, pt_ind):
 
 ###############################################################################
 
-def get_distances(lon,lat):
-    traces = len(lon) -1
-    distances = np.zeros(traces)
-    for i in range(traces):
-        start = (lat[i], lon[i])
-        finish = (lat[i+1], lon[i+1])
-        distances[i] = distance.geodesic(start, finish).m
-    distances = np.append(0,distances)
-    return distances
-
-###############################################################################
-###############################################################################
-###############################################################################
-
 start_all = time.time()
-region = 'OC'
-version='v18'
 
-# Input file(s).
+parser = argparse.ArgumentParser()
+parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
+parser.add_argument("version", help="version", type = str)
+args = parser.parse_args()
+
+region = args.region
+version = args.version
+
+#input file(s).
 mhv_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_files = np.sort(glob.glob(os.path.join(mhv_dir, '*.nc')))
 outpath = main_dir+'/data/inputs/MHV_SWORD/gpkg/'+region+'/coast_additions/'
@@ -107,6 +141,7 @@ outpath = main_dir+'/data/inputs/MHV_SWORD/gpkg/'+region+'/coast_additions/'
 if os.path.exists(outpath) == False:
     os.makedirs(outpath)
 
+#loop through basins and find rivers to add. 
 for ind in list(range(len(mhv_files))):
     start = time.time()
     print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
@@ -291,31 +326,3 @@ end_all = time.time()
 print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 print('FINISHED ',region, 'IN:', str(np.round((end_all-start_all)/60,2)), 'min')
 print('~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-
-
-############################################################################################
-############################################################################################
-############################################################################################
-
-### can be used to check gpkg formats
-# feat1 = next(points.iterfeatures())
-# for prop in feat1['properties']:
-#     print(prop, type(feat1['properties'][prop]))
-
-# p = np.where(network == 0)[0]
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'black')
-# plt.scatter(mhv_x[p], mhv_y[p], s = 10, c = 'red')
-# plt.show()
-
-# plt.scatter(mhv_x, mhv_y, c = 'blue', s = 5)
-# plt.scatter(mhv_x[pts], mhv_y[pts], c = 'red', s = 5)
-# plt.show()
-
-
-# plt.scatter(mhv_x, mhv_y, c = network, cmap = 'rainbow', s = 5)
-# plt.show()
-
-# p = np.where(add_flag == 1)[0]
-# plt.scatter(mhv_x, mhv_y, s = 3, c = 'blue')
-# plt.scatter(mhv_x[p], mhv_y[p], s = 10, c = 'red')
-# plt.show()
