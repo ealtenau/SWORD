@@ -10,4 +10,4 @@ Script summaries:
 - **delta_utils.py**: Utilities for adding deltas to SWORD.  
 
 Example of updated delta centerlines in the Mackenzie Delta:
-![Fig1](https://github.com/ealtenau/SWORD/blob/main/docs/figures%20/Mackenzie_Delta_v17b_v18.png)
+![Fig1](https://github.com/ealtenau/SWORD/blob/main/docs/figures%20/Mackenzie_Delta_v17b_v18.jpg)
