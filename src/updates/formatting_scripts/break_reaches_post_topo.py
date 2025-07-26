@@ -72,10 +72,10 @@ version = args.version
 multi_file = 'True'
 
 #manual
-# region = 'AS'
+# region = 'SA'
 # version = 'v18'
-# reach = np.array([34100020735, 34100023485])
-# break_id = np.array([102233933, 102278599])
+# reach = np.array([61680300053])
+# break_id = np.array([10823001])
 
 #read sword data. 
 sword = SWORD(main_dir, region, version)

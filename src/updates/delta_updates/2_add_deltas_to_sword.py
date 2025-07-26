@@ -12,10 +12,14 @@ location and hydrologic attributes added.
 The script is run at a regional/continental scale. 
 Command line arguments required are the two-letter 
 region identifier (i.e. NA), SWORD version (i.e. v17), 
-and the directory path containing the delta netCDF file.
+the directory path containing the delta netCDF file, 
+and a True/False statment indicating if you want to write 
+the new netCDF files. If False, only the plots will be output
+which allows for users to inspect for any potential issues 
+before altering the SWORD database. 
 
 Execution example (terminal):
-    python path/to/2_add_deltas_to_sword.py NA v17 path/to/delta_file.nc
+    python path/to/2_add_deltas_to_sword.py NA v17 path/to/delta_file.nc True
 
 """
 from __future__ import division
@@ -36,11 +40,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
 parser.add_argument("version", help="version", type = str)
 parser.add_argument("filename", help="directory to delta file", type = str)
+parser.add_argument("write_data", help="True / False statement for whether or not to write the new netCDF file.", type = str)
 args = parser.parse_args()
 
 region = args.region
 version = args.version
 delta_dir = args.filename
+write_data = args.write_data
+
+# delta_dir = 'data/inputs/Deltas/delta_updates/netcdf/Amazon_delta_sword.nc'
+
 mv_dir = os.path.dirname(delta_dir)+'/added_sword_v18/'
 if os.path.isdir(mv_dir) is False:
     os.makedirs(mv_dir)
@@ -53,7 +62,8 @@ print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 delta_cls = dlt.read_delta(delta_dir)
 sword = SWORD(main_dir, region, version)
 #copy data file in case errors occur in overwrite. 
-sword.copy() 
+if write_data == 'True':
+    sword.copy() 
 #add max sword cl_id to delta cl_ids. 
 max_id = np.max(sword.centerlines.cl_id)
 delta_cls.cl_id = delta_cls.cl_id+max_id
@@ -130,10 +140,11 @@ if len(delta_tribs) > 0:
     basin = int(str(subreaches.id[0])[0:2])
     dlt.tributary_topo(sword, delta_tribs, basin)
 
-# print('--> Writing NetCDF')
-sword.save_nc() 
-# Move delta file to added directory. 
-shutil.move(delta_dir, mv_dir)
+if write_data == 'True':
+    print('--> Writing NetCDF')
+    sword.save_nc() 
+    #Move delta file to added directory. 
+    shutil.move(delta_dir, mv_dir)
 
 #checking dimensions
 print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')

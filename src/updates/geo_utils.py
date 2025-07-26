@@ -189,7 +189,7 @@ def vector_to_vector_intersect(df1, df2, attribute):
 
 ###############################################################################
 
-def vector_to_vector_join_nearest(df1, df2, attribute):
+def vector_to_vector_join_nearest(df1, df2, one2one, attribute):
     """
     Performs a nearest neighbor spatial join between two vector layers.
 
@@ -201,6 +201,9 @@ def vector_to_vector_join_nearest(df1, df2, attribute):
     df2: geopandas.dataframe
         Geodataframe of the vector data to query and extract
         information from.
+    one2one: True / False
+        Argument to indicate if a one-to-one match is desired. 
+        Default is one-to-many. 
     attribute: str
         Attribute name of the field to intersect.
 
@@ -210,9 +213,15 @@ def vector_to_vector_join_nearest(df1, df2, attribute):
         Numpy array of the attribute for the spatial join.
         
     """
-
+    #ensure a index column exists. 
+    df1 = df1.reset_index(drop=False)
+    
     #performing spatial join based on nearest feature. 
-    intersect = gp.sjoin_nearest(df1, df2, how="left", max_distance=None)
+    intersect = gp.sjoin_nearest(df1, df2, how="left", distance_col='distance', max_distance=None)
+
+    if one2one == True:
+        # Drop duplicates to ensure 1:1 (if needed, e.g. due to equidistant points)
+        intersect = intersect.sort_values(by='index').drop_duplicates(subset='index')
 
     #creating an array output for intersected attribute values.
     if hasattr(intersect, attribute):

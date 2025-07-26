@@ -133,7 +133,8 @@ delta_pts.swot_obs, \
                                          track_files)
 #intersecting hydrobasin pfafstetter codes. 
 delta_pts.basins = geo.vector_to_vector_join_nearest(delta_pts_df, 
-                                                     basin_df, 
+                                                     basin_df,
+                                                     True, 
                                                      'PFAF_ID')
 #filtering basin codes. 
 delta_pts.basins_filt = aux.filter_basin_codes(delta_pts.reach_id_R, 
