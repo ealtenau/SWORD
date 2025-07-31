@@ -200,4 +200,3 @@ swot_data_tools/
 #files
 src/updates/formatting_scripts/testing.py
 src/updates/delta_updates/testing.py
-.DS_Store
