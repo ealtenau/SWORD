@@ -201,3 +201,11 @@ swot_data_tools/
 src/updates/formatting_scripts/testing.py
 src/updates/delta_updates/testing.py
 .DS_Store
+
+.history/
+.whisper/
+.venv/
+
+cache_wse_drop/
+cache_wse_drop_diag/
+.DS_Store

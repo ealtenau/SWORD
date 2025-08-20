@@ -4,6 +4,10 @@ import numpy as np
 import pandas as pd
 import os
 import argparse
+import dataclasses
+from typing import get_origin, get_args
+
+from src.updates.sword_models import ReachData, NodeData, CenterlineData
 
 def verify_db_integrity(db_path, nc_path, continent_code):
     """
@@ -137,8 +141,8 @@ def verify_db_integrity(db_path, nc_path, continent_code):
                     ORDER BY cl_id
                     """
                     db_coords_df = con.execute(db_coords_query).fetchdf()
-                    db_x = db_coords_df['x'].values
-                    db_y = db_coords_df['y'].values
+                    db_x = db_coords_df['x'].to_numpy()
+                    db_y = db_coords_df['y'].to_numpy()
                     
                     # Sort nc data by cl_id to match db order
                     sorted_indices = np.argsort(nc_cl_ids)
@@ -169,6 +173,142 @@ def verify_db_integrity(db_path, nc_path, continent_code):
         
     return all_checks_passed
 
+def get_expected_nc_columns(group, prefix=''):
+    """
+    Recursively scans a NetCDF group and returns a set of expected column names
+    in the DuckDB table, mimicking the name-mangling from the creation script.
+    """
+    expected_cols = set()
+    for var_name, var in group.variables.items():
+        col_name = f"{prefix}{var_name}"
+        
+        # Mimic the logic from create_duckdb_from_sword.py
+        if var_name == 'cl_ids':
+            expected_cols.add(f'{col_name}_min')
+            expected_cols.add(f'{col_name}_max')
+        elif var_name in ['reach_id', 'node_id', 'rch_id_up', 'rch_id_dn', 'h_break', 'w_break']:
+             # These are multi-dimensional arrays that are split into numbered columns
+             if len(var.shape) > 1:
+                for i in range(var.shape[0]):
+                    expected_cols.add(f'{col_name}_{i+1}')
+             else:
+                expected_cols.add(col_name)
+        else:
+            expected_cols.add(col_name)
+    
+    for grp_name, sub_group in group.groups.items():
+        new_prefix = f"{prefix}{grp_name}_"
+        expected_cols.update(get_expected_nc_columns(sub_group, prefix=new_prefix))
+        
+    return expected_cols
+
+def verify_schema_completeness(con, ds):
+    """
+    Compares the NetCDF schema against the DuckDB schema to ensure all expected
+    columns have been created.
+    """
+    print("\\n" + "="*50)
+    print("--- Starting Schema Completeness Verification ---")
+    all_ok = True
+    
+    table_map = {
+        'reaches': ds.groups['reaches'],
+        'nodes': ds.groups['nodes'],
+        'centerlines': ds.groups['centerlines']
+    }
+    
+    for table_name, nc_group in table_map.items():
+        print(f"\\n--- Verifying schema for table: {table_name} ---")
+        
+        # Get expected columns from NetCDF structure
+        expected_cols = get_expected_nc_columns(nc_group)
+        # Add the 'continent' column which is added during ingestion
+        expected_cols.add('continent')
+        
+        # Get actual columns from DuckDB
+        db_cols_df = con.execute(f"PRAGMA table_info('{table_name}')").fetchdf()
+        actual_cols = set(db_cols_df['name'].tolist())
+        
+        missing_cols = expected_cols - actual_cols
+        extra_cols = actual_cols - expected_cols
+        
+        if not missing_cols and not extra_cols:
+            print(f"  -> PASSED: Schema is an exact match. ({len(actual_cols)} columns verified) ✅")
+        else:
+            all_ok = False
+            if missing_cols:
+                print(f"  -> FAILED: {len(missing_cols)} columns are missing from the DuckDB table:")
+                for col in sorted(list(missing_cols)):
+                    print(f"     - {col}")
+            if extra_cols:
+                print(f"  -> WARNING: {len(extra_cols)} columns exist in DuckDB but were not expected:")
+                for col in sorted(list(extra_cols)):
+                    print(f"     - {col}")
+    
+    print("\\n--- Schema Verification Complete ---")
+    if all_ok:
+        print("Result: All tables have a complete and matching schema. ✅")
+    else:
+        print("Result: Schema mismatches found. See details above. ❌")
+        
+    return all_ok
+
+def verify_class_typing_against_netcdf(ds):
+    """
+    Verifies that the Python data models are type-compatible with the source NetCDF file.
+    """
+    print("\\n--- Verifying Class Types against NetCDF Schema ---")
+    all_ok = True
+    model_map = {'reaches': ReachData, 'nodes': NodeData, 'centerlines': CenterlineData}
+    name_map = {'len': 'node_length', 'rch_id': 'reach_id'} # Model name -> NC name
+
+    for group_name, model_class in model_map.items():
+        print(f"\\nVerifying model '{model_class.__name__}' against NC group '{group_name}'...")
+        nc_group = ds.groups[group_name]
+        
+        for model_field in dataclasses.fields(model_class):
+            field_name = model_field.name
+            field_type = model_field.type
+            
+            nc_var_name = name_map.get(field_name, field_name)
+            
+            if nc_var_name not in nc_group.variables:
+                # This field is for compatibility and not in the source, which is acceptable.
+                print(f"  - Field '{field_name}' not in NetCDF group. Assumed for compatibility. OK.")
+                continue
+
+            nc_var = nc_group.variables[nc_var_name]
+            nc_dtype = nc_var.dtype
+            nc_dims = len(nc_var.dimensions)
+            
+            type_ok = False
+            origin_type = get_origin(field_type)
+            if origin_type is list: # e.g., List[int]
+                args = get_args(field_type)
+                if args and args[0] is int and np.issubdtype(nc_dtype, np.integer) and nc_dims > 1:
+                    type_ok = True
+            elif field_type is int:
+                if np.issubdtype(nc_dtype, np.integer): type_ok = True
+            elif field_type is float:
+                if np.issubdtype(nc_dtype, np.floating): type_ok = True
+            elif field_type is str:
+                if np.issubdtype(nc_dtype, np.character): type_ok = True
+            elif field_type is np.ndarray:
+                 if nc_dims >= 1: type_ok = True
+
+            if type_ok:
+                print(f"  - Field '{field_name}': Types compatible. OK.")
+            else:
+                all_ok = False
+                print(f"  - Field '{field_name}': [MISMATCH] Model type '{field_type}' vs NC dtype '{nc_dtype}' with {nc_dims} dims.")
+
+    if all_ok:
+        print("\\nResult: All class models are type-compatible with the NetCDF source. ✅")
+    else:
+        print("\\nResult: Type mismatches found between class models and NetCDF source. ❌")
+        
+    return all_ok
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Verify SWORD data integrity between NetCDF and DuckDB.")
     parser.add_argument("continent", help="Two-letter continent code to verify (e.g., 'eu').")
@@ -181,4 +321,21 @@ if __name__ == '__main__':
     if not all([os.path.exists(NC_FILE), os.path.exists(DUCKDB_FILE)]):
         print("Error: Ensure both the NetCDF source file and the global DuckDB database file exist.")
     else:
-        verify_db_integrity(db_path=DUCKDB_FILE, nc_path=NC_FILE, continent_code=continent) 
+        db_ok = verify_db_integrity(db_path=DUCKDB_FILE, nc_path=NC_FILE, continent_code=continent)
+        
+        # Also verify the class types
+        print("\\n" + "="*50)
+        ds = nc.Dataset(NC_FILE, 'r')
+        con = duckdb.connect(database=DUCKDB_FILE, read_only=True)
+
+        schema_ok = verify_schema_completeness(con, ds)
+        class_ok = verify_class_typing_against_netcdf(ds)
+        
+        ds.close()
+        con.close()
+        
+        print("\\n" + "="*50)
+        if db_ok and class_ok and schema_ok:
+            print("OVERALL RESULT: SUCCESS ✅")
+        else:
+            print("OVERALL RESULT: FAILED ❌") 

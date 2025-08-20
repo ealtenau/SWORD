@@ -59,8 +59,8 @@ def create_global_duckdb_from_sword(nc_dir, db_path):
             nodes_data = {'continent': continent_code}
             for var_name, var in nodes_group.variables.items():
                 if var_name == 'cl_ids' and len(var.dimensions) == 2:
-                    nodes_data['cl_id_min'] = var[0, :]
-                    nodes_data['cl_id_max'] = var[1, :]
+                    nodes_data['cl_ids_min'] = var[0, :]
+                    nodes_data['cl_ids_max'] = var[1, :]
                 else:
                     if hasattr(var[:], 'filled'):
                         if np.issubdtype(var.dtype, np.integer):
