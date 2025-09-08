@@ -21,7 +21,9 @@ from scipy import spatial as sp
 import glob
 import geopandas as gp
 import netCDF4 as nc
-from shapely.geometry import Point
+from shapely.geometry import Point, LineString
+from shapely.ops import unary_union
+from shapely.prepared import prep
 import pandas as pd
 from osgeo import ogr, gdal
 from statistics import mode
@@ -819,6 +821,11 @@ def find_ds_sword_rchs(delta_cls, sword, pt_radius):
                         v3 = np.where(sword.centerlines.reach_id[:,swd_cls[rw3]] == 0)[0]
                         sword.centerlines.reach_id[v3[0],swd_cls[rw3]] = np.unique(delta_cls.reach_id[0,seg]) #sword.centerlines.reach_id[1:3,swd_cls]            
         
+    # Ensure we never delete any of the newly assigned delta reach IDs
+    if 'delete_rchs' in locals() and delete_rchs is not None and len(delete_rchs) > 0:
+        delta_new_ids = np.unique(delta_cls.reach_id[0,:]) if hasattr(delta_cls, 'reach_id') else np.array([], dtype=int)
+        if len(delta_new_ids) > 0:
+            delete_rchs = delete_rchs[np.in1d(delete_rchs, delta_new_ids, invert=True)]
     return delete_rchs
 
 ###############################################################################
@@ -1231,6 +1238,163 @@ def filter_us_reaches(sword, up_rchs, cl_keep, pt_dist):
 
 ###############################################################################
 
+# Overlay-based classifier (defined before use to satisfy linters)
+
+def overlay_classify_deletions(delta_cls, sword):
+    """
+    Overlay-based deletion/tributary classifier using shapely buffers and
+    midpoint sampling along SWORD reaches.
+
+    Strategy:
+    - Build a buffered polygon around the delta-reach LineStrings (adaptive
+      degrees based on mean latitude and a metric buffer radius).
+    - For candidate SWORD reaches in the same L4 basin as the delta, compute
+      the fraction of each reach's segment length whose midpoints fall within
+      the buffered polygon (coverage percentage in meters).
+    - Classify:
+        - Delete if coverage >= DELETE_PERC (default 0.5)
+        - Tributary if coverage >= TRIB_PERC (default 0.05) OR either endpoint
+          lies within the buffer distance
+
+    Tunables via env vars:
+        SMART_DELTA_BUFFER_M (default 250)
+        SMART_DELTA_DELETE_PERC (default 0.5)
+        SMART_DELTA_TRIB_PERC (default 0.05)
+
+    Returns
+    -------
+    rmv_rchs: numpy.array()
+        SWORD reach IDs to remove.
+    delta_tribs: numpy.array()
+        SWORD reach IDs identified as tributaries.
+    """
+
+    # Read tunables
+    try:
+        buffer_m = float(os.getenv('SMART_DELTA_BUFFER_M', '250'))
+    except Exception:
+        buffer_m = 250.0
+    try:
+        delete_perc = float(os.getenv('SMART_DELTA_DELETE_PERC', '0.5'))
+    except Exception:
+        delete_perc = 0.5
+    try:
+        trib_perc = float(os.getenv('SMART_DELTA_TRIB_PERC', '0.05'))
+    except Exception:
+        trib_perc = 0.05
+
+    # Compute degree buffer at mean latitude
+    mean_lat = float(np.mean(delta_cls.lat)) if len(delta_cls.lat) > 0 else 0.0
+    deg_buffer = float(geo.meters_to_degrees(buffer_m, mean_lat))
+
+    # Helper to build LineStrings for delta by reach id
+    def build_delta_lines():
+        lines = []
+        unq_rchs = np.unique(delta_cls.reach_id[0,:])
+        for rid in unq_rchs:
+            idx = np.where(delta_cls.reach_id[0,:] == rid)[0]
+            if len(idx) < 2:
+                continue
+            # order by centerline id
+            order = np.argsort(delta_cls.cl_id[idx])
+            lon = delta_cls.lon[idx][order]
+            lat = delta_cls.lat[idx][order]
+            try:
+                line = LineString(list(zip(lon, lat)))
+            except Exception:
+                continue
+            lines.append(line)
+        return lines
+
+    delta_lines = build_delta_lines()
+    if len(delta_lines) == 0:
+        return np.array([]), np.array([])
+
+    # Build buffered union polygon and prepare it for fast queries
+    try:
+        buffered = [ln.buffer(deg_buffer, cap_style=2, join_style=2) for ln in delta_lines]
+        delta_union = unary_union(buffered)
+    except Exception:
+        # Fallback to unbuffered union if buffering fails
+        delta_union = unary_union(delta_lines)
+    prepared = prep(delta_union)
+
+    # Candidate SWORD reaches: same L4 basin, and spatially near the delta bbox
+    sword_l4 = np.array([int(str(b)[0:4]) for b in sword.centerlines.reach_id[0,:]])
+    basins_l4 = np.array([int(str(b)[0:4]) for b in delta_cls.basins])
+    cl_keep = np.where(np.in1d(sword_l4, basins_l4)==True)[0]
+    candidate_ids = np.unique(sword.centerlines.reach_id[0,cl_keep])
+
+    # Never delete SWORD reaches explicitly referenced as junctions for the new delta
+    keep_up = np.unique(delta_cls.sword_rch_id_up)
+    keep_dn = np.unique(delta_cls.sword_rch_id_down) if hasattr(delta_cls, 'sword_rch_id_down') else np.array([], dtype=int)
+    keep_ids = np.unique(np.concatenate([keep_up[keep_up>0], keep_dn[keep_dn>0]]).astype(int)) if len(keep_up) + len(keep_dn) > 0 else np.array([], dtype=int)
+    if len(keep_ids) > 0:
+        candidate_ids = candidate_ids[np.in1d(candidate_ids, keep_ids, invert=True)]
+
+    # Bounding box filter for speed
+    minx = np.min(delta_cls.lon) - 4*deg_buffer
+    maxx = np.max(delta_cls.lon) + 4*deg_buffer
+    miny = np.min(delta_cls.lat) - 4*deg_buffer
+    maxy = np.max(delta_cls.lat) + 4*deg_buffer
+
+    rmv = []
+    tribs = []
+
+    for rid in candidate_ids:
+        pts = np.where(sword.centerlines.reach_id[0,:] == rid)[0]
+        if len(pts) < 2:
+            continue
+        # Quick bbox discard
+        xs = sword.centerlines.x[pts]
+        ys = sword.centerlines.y[pts]
+        if (np.max(xs) < minx) or (np.min(xs) > maxx) or (np.max(ys) < miny) or (np.min(ys) > maxy):
+            continue
+
+        order = np.argsort(sword.centerlines.cl_id[pts])
+        xs = xs[order]
+        ys = ys[order]
+        try:
+            _ = LineString(list(zip(xs, ys)))
+        except Exception:
+            continue
+
+        # Total reach length (meters)
+        total_m = float(np.sum(geo.get_distances(xs, ys)))
+        if total_m <= 0.0:
+            continue
+
+        # Coverage: sample midpoints of segments
+        covered_m = 0.0
+        for i in range(len(xs)-1):
+            midx = 0.5*(xs[i] + xs[i+1])
+            midy = 0.5*(ys[i] + ys[i+1])
+            seg_m = float(np.sum(geo.get_distances(xs[i:i+2], ys[i:i+2])))
+            if seg_m <= 0.0:
+                continue
+            p = Point(midx, midy)
+            if prepared.contains(p):
+                covered_m += seg_m
+
+        coverage = covered_m / total_m
+
+        # Endpoint proximity (meters)
+        ep1 = Point(xs[0], ys[0])
+        ep2 = Point(xs[-1], ys[-1])
+        def point_within_buffer(pt):
+            return prepared.contains(pt)
+
+        ep_touch = point_within_buffer(ep1) or point_within_buffer(ep2)
+
+        if coverage >= delete_perc:
+            rmv.append(int(rid))
+        elif coverage >= trib_perc or ep_touch:
+            tribs.append(int(rid))
+
+    return np.unique(np.array(rmv)), np.unique(np.array(tribs))
+
+###############################################################################
+
 def find_delta_tribs(delta_cls, sword):
     """
     Finds SWORD reaches that need to be removed within
@@ -1254,6 +1418,11 @@ def find_delta_tribs(delta_cls, sword):
         along the delta. 
 
     """
+
+    # Optional overlay-based classifier gate.
+    use_overlay = os.getenv('SMART_DELTA_OVERLAY', '0')
+    if use_overlay in ['1','true','True','YES','yes']:
+        return overlay_classify_deletions(delta_cls, sword)
 
     #subsetting for faster spatial joins. 
     sword_l4 = np.array([int(str(b)[0:4]) for b in sword.centerlines.reach_id[0,:]])
@@ -1329,6 +1498,11 @@ def find_delta_tribs(delta_cls, sword):
     #unnest list. 
     rmv_rchs = np.unique(np.array([item for sublist in rmv_rchs for item in sublist]))
     delta_tribs = np.unique(np.array(delta_tribs))
+
+    # Never mark newly created delta reach IDs for deletion
+    delta_new_ids = np.unique(delta_cls.reach_id[0,:]) if hasattr(delta_cls, 'reach_id') else np.array([], dtype=int)
+    if len(delta_new_ids) > 0 and len(rmv_rchs) > 0:
+        rmv_rchs = rmv_rchs[np.in1d(rmv_rchs, delta_new_ids, invert=True)]
 
     return rmv_rchs, delta_tribs
 
@@ -1968,6 +2142,8 @@ def tributary_topo(sword, delta_tribs, basin):
     #spatial join with self.
     lvl2 = np.array([int(str(b)[0:2]) for b in sword.centerlines.reach_id[0,:]]) 
     l2 = np.where(lvl2 == basin)[0]
+    if len(l2) == 0:
+        return
     sword_pts = np.vstack((sword.centerlines.x[l2], 
                         sword.centerlines.y[l2])).T
     kdt = sp.cKDTree(sword_pts)
@@ -1978,9 +2154,13 @@ def tributary_topo(sword, delta_tribs, basin):
     for trib in list(range(len(delta_tribs))):
         cl_rch = np.where(sword.centerlines.reach_id[0,l2] 
                         == delta_tribs[trib])[0]
-        mn_id = np.where(sword.centerlines.cl_id[l2[cl_rch]] == 
-                        np.min(sword.centerlines.cl_id[l2[cl_rch]]))[0]
-        nghs = np.unique(sword.centerlines.reach_id[0,l2[pt_ind[cl_rch[mn_id]]]])
+        if len(cl_rch) == 0:
+            continue
+        cl_ids_subset = sword.centerlines.cl_id[l2[cl_rch]]
+        if len(cl_ids_subset) == 0:
+            continue
+        mn_loc = int(np.argmin(cl_ids_subset))
+        nghs = np.unique(sword.centerlines.reach_id[0,l2[pt_ind[cl_rch[mn_loc]]]])
         nghs = nghs[nghs != delta_tribs[trib]]
         #find downstream neighbor and update topology. 
         for n in list(range(len(nghs))):
@@ -1989,15 +2169,27 @@ def tributary_topo(sword, delta_tribs, basin):
             if True in np.in1d(sword.reaches.id[check], nghs):
                 #update upstream topology of downstream neighbor in sword.
                 rch_update = np.where(sword.reaches.id == nghs[n])[0]
-                add = np.where(sword.reaches.rch_id_up[:,rch_update] == 0)[0][0]
+                if len(rch_update) == 0:
+                    continue
+                add_idx = np.where(sword.reaches.rch_id_up[:,rch_update] == 0)[0]
+                if len(add_idx) == 0:
+                    continue
+                add = add_idx[0]
                 cl_update = np.where(sword.centerlines.reach_id[0,:] == nghs[n])[0]
+                if len(cl_update) == 0:
+                    continue
                 mx_id = np.where(sword.centerlines.cl_id[cl_update] == 
                                 np.max(sword.centerlines.cl_id[cl_update]))[0]
+                if len(mx_id) == 0:
+                    continue
                 #reach dimension updates. 
                 sword.reaches.rch_id_up[add,rch_update] = delta_tribs[trib] #sword.reaches.rch_id_up[:,rch_update]
                 sword.reaches.n_rch_up[rch_update] = sword.reaches.n_rch_up[rch_update]+1        
                 #centerline dimension updates.  
-                add_cl = np.where(sword.centerlines.reach_id[:,cl_update[mx_id]] == 0)[0][0]
+                add_cl_idx = np.where(sword.centerlines.reach_id[:,cl_update[mx_id]] == 0)[0]
+                if len(add_cl_idx) == 0:
+                    continue
+                add_cl = add_cl_idx[0]
                 sword.centerlines.reach_id[add_cl,cl_update[mx_id]] = delta_tribs[trib]
                 #update end reach value for downstream reach. 
                 if sword.reaches.end_rch[rch_update] == 0:
@@ -2006,15 +2198,27 @@ def tributary_topo(sword, delta_tribs, basin):
             
                 #update downstream topology of tributary in sword.
                 rch_trib = np.where(sword.reaches.id == delta_tribs[trib])[0]
-                add2 = np.where(sword.reaches.rch_id_down[:,rch_trib] == 0)[0][0]
+                if len(rch_trib) == 0:
+                    continue
+                add2_idx = np.where(sword.reaches.rch_id_down[:,rch_trib] == 0)[0]
+                if len(add2_idx) == 0:
+                    continue
+                add2 = add2_idx[0]
                 cl_trib = np.where(sword.centerlines.reach_id[0,:] == delta_tribs[trib])[0]
+                if len(cl_trib) == 0:
+                    continue
                 mn_idx = np.where(sword.centerlines.cl_id[cl_trib] == 
                                 np.min(sword.centerlines.cl_id[cl_trib]))[0]
+                if len(mn_idx) == 0:
+                    continue
                 #reach dimension updates.
                 sword.reaches.rch_id_down[add2,rch_trib] = nghs[n] #sword.reaches.rch_id_down[:,rch_trib]
                 sword.reaches.n_rch_down[rch_trib] = sword.reaches.n_rch_down[rch_trib]+1
                 #centerline dimension updates.  
-                add_cl2 = np.where(sword.centerlines.reach_id[:,cl_trib[mn_idx]] == 0)[0][0]
+                add_cl2_idx = np.where(sword.centerlines.reach_id[:,cl_trib[mn_idx]] == 0)[0]
+                if len(add_cl2_idx) == 0:
+                    continue
+                add_cl2 = add_cl2_idx[0]
                 sword.centerlines.reach_id[add_cl2,cl_trib[mn_idx]] = nghs[n]
 
 ###############################################################################
@@ -2057,10 +2261,24 @@ def plot_sword_deletions(sword, delta_cls, rmv_rchs, delta_tribs, delta_dir):
     trib = np.where(np.in1d(sword.centerlines.reach_id[0,cl_keep], delta_tribs)==True)[0]
 
     plt.figure(1, figsize=(8,8))
-    plt.scatter(delta_cls.lon, delta_cls.lat, c='gold', s=3, label='Delta Additions')
-    plt.scatter(sword.centerlines.x[cl_keep], sword.centerlines.y[cl_keep], c='blue', s=3, label='SWORD')
-    plt.scatter(sword.centerlines.x[cl_keep[rmv]], sword.centerlines.y[cl_keep[rmv]], c='red', s=3, label='Flagged Deletions')
-    plt.scatter(sword.centerlines.x[cl_keep[trib]], sword.centerlines.y[cl_keep[trib]], c='limegreen', s=3, label='Flagged Tributaries')
+    # Base SWORD in back
+    plt.scatter(
+        sword.centerlines.x[cl_keep], sword.centerlines.y[cl_keep],
+        c='blue', s=3, alpha=0.6, zorder=1, label='SWORD')
+    # Flagged SWORD deletions and tributaries with distinct markers
+    if len(rmv) > 0:
+        plt.scatter(
+            sword.centerlines.x[cl_keep[rmv]], sword.centerlines.y[cl_keep[rmv]],
+            c='red', s=10, marker='x', linewidths=0.6, alpha=0.9, zorder=3, label='Flagged Deletions')
+    if len(trib) > 0:
+        plt.scatter(
+            sword.centerlines.x[cl_keep[trib]], sword.centerlines.y[cl_keep[trib]],
+            c='limegreen', s=12, marker='^', edgecolors='k', linewidths=0.2,
+            alpha=0.9, zorder=3, label='Flagged Tributaries')
+    # Delta additions on top
+    plt.scatter(
+        delta_cls.lon, delta_cls.lat,
+        c='gold', s=4, alpha=0.95, zorder=4, label='Delta Additions')
     plt.xlim(np.min(delta_cls.lon)-0.1, np.max(delta_cls.lon)+0.1)
     plt.ylim(np.min(delta_cls.lat)-0.1, np.max(delta_cls.lat)+0.1)
     plt.title(os.path.basename(delta_dir)[:-3])
@@ -2103,10 +2321,20 @@ def plot_sword_additions(sword, delta_cls, delta_dir):
     dup = np.where(np.in1d(sword.reaches.id, unq_rchs)==True)[0]
 
     plt.figure(1, figsize=(8,8))
-    plt.scatter(delta_cls.lon, delta_cls.lat, c='gold', s=3, label='Delta Additions')
-    plt.scatter(sword.centerlines.x[cl_keep], sword.centerlines.y[cl_keep], c='blue', s=3, label='SWORD')
+    # Base SWORD in back
+    plt.scatter(
+        sword.centerlines.x[cl_keep], sword.centerlines.y[cl_keep],
+        c='blue', s=3, alpha=0.6, zorder=1, label='SWORD')
+    # Any duplicate reach IDs highlighted
     if len(dup) > 0:
-        plt.scatter(sword.reaches.x[dup], sword.reaches.y[dup], c='limegreen', s=10, label='Dupcliate Reach IDs')
+        plt.scatter(
+            sword.reaches.x[dup], sword.reaches.y[dup],
+            c='limegreen', s=14, marker='s', edgecolors='k', linewidths=0.2, zorder=3,
+            label='Duplicate Reach IDs')
+    # Delta additions on top
+    plt.scatter(
+        delta_cls.lon, delta_cls.lat,
+        c='gold', s=4, alpha=0.95, zorder=4, label='Delta Additions')
     plt.xlim(np.min(delta_cls.lon)-0.1, np.max(delta_cls.lon)+0.1)
     plt.ylim(np.min(delta_cls.lat)-0.1, np.max(delta_cls.lat)+0.1)
     plt.title(os.path.basename(delta_dir)[:-3])

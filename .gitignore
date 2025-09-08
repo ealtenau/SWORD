@@ -209,3 +209,7 @@ src/updates/delta_updates/testing.py
 cache_wse_drop/
 cache_wse_drop_diag/
 .DS_Store
+maps/SWORD_deltas.qgz
+notebooks/qc_wse_longitudinal_profiles.py
+reach_columns.txt
+.DS_Store

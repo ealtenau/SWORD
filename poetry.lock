@@ -2458,6 +2458,17 @@ socks = ["pysocks (>=1.5.6,!=1.5.7,<2.0)"]
 zstd = ["zstandard (>=0.18.0)"]
 
 [[package]]
+name = "utm"
+version = "0.8.1"
+description = "Bidirectional UTM-WGS84 converter for python"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "utm-0.8.1-py3-none-any.whl", hash = "sha256:e3d5e224082af138e40851dcaad08d7f99da1cc4b5c413a7de34eabee35f434a"},
+    {file = "utm-0.8.1.tar.gz", hash = "sha256:634d5b6221570ddc6a1e94afa5c51bae92bcead811ddc5c9bc0a20b847c2dafa"},
+]
+
+[[package]]
 name = "wcwidth"
 version = "0.2.13"
 description = "Measures the displayed width of unicode strings in a terminal"
@@ -2490,4 +2501,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "1f3050e0da3d6c1d4e523373dc839d9c52879d098885123e3a1480f75a33388b"
+content-hash = "ae902ec8239994e52fd3e49c1b80122859713ba48ca6b38370521b7d2b0f1e68"

@@ -316,40 +316,34 @@ def reproject_utm(latitude, longitude):
 
     """
 
-    east = np.zeros(len(latitude))
-    north = np.zeros(len(latitude))
-    east_int = np.zeros(len(latitude))
-    north_int = np.zeros(len(latitude))
-    zone_num = np.zeros(len(latitude))
+    # Ensure numpy arrays
+    lat = np.asarray(latitude)
+    lon = np.asarray(longitude)
+
+    if lat.size == 0:
+        return np.array([]), np.array([]), np.array([]), []
+
+    # Determine UTM zone per point
+    zone_num = np.zeros(lat.shape, dtype=int)
     zone_let = []
+    for ind in range(lat.size):
+        _, _, zn, zlet = utm.from_latlon(float(lat[ind]), float(lon[ind]))
+        zone_num[ind] = int(zn)
+        zone_let.append(zlet)
 
-	# Finds UTM letter and zone for each lat/lon pair.
+    # Use the most frequent zone
+    unq_zones, counts = np.unique(zone_num, return_counts=True)
+    main_zone = int(unq_zones[np.argmax(counts)])
 
-    for ind in list(range(len(latitude))):
-        (east_int[ind], north_int[ind],
-         zone_num[ind], zone_let_int) = utm.from_latlon(latitude[ind],longitude[ind])
-        zone_let.append(zone_let_int)
-
-    # Finds the unique UTM zones and converts the lat/lon pairs to UTM.
-    unq_zones = np.unique(zone_num)
-    for idx in list(range(len(unq_zones))):
-        pt_len = len(np.where(zone_num == unq_zones[idx])[0])
-
-    idx = np.where(pt_len == np.max(pt_len))
-
-    # Set the projection
-
-    if np.sum(latitude) > 0:
-        myproj = Proj(
-            "+proj=utm +zone=" + str(int(unq_zones[idx])) +
-            " +ellips=WGS84 +datum=WGS84 +units=m")
+    # Hemisphere by mean latitude
+    is_northern = float(np.mean(lat)) >= 0.0
+    if is_northern:
+        proj_str = f"+proj=utm +zone={main_zone} +ellips=WGS84 +datum=WGS84 +units=m"
     else:
-        myproj = Proj(
-            "+proj=utm +south +zone=" + str(int(unq_zones[idx])) +
-           " +ellips=WGS84 +datum=WGS84 +units=m")
+        proj_str = f"+proj=utm +south +zone={main_zone} +ellips=WGS84 +datum=WGS84 +units=m"
 
-    # Convert all the lon/lat to the main UTM zone
-    (east, north) = myproj(longitude, latitude)
+    myproj = Proj(proj_str)
+    east, north = myproj(lon, lat)
 
     return east, north, zone_num, zone_let
 
