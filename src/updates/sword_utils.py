@@ -1071,6 +1071,15 @@ def write_rchs(reaches, geom, rm_ind, paths):
     rch_df.drop(rm_ind, inplace=True)
     #update data types
     rch_df = rch_df.apply(pd.to_numeric, errors='ignore') # rch_df.dtypes
+    
+    # Fix field width issues for shapefile compatibility
+    # Clamp width_var to reasonable range to prevent field width overflow
+    if 'width_var' in rch_df.columns:
+        # Clamp to max 999999.99 to fit shapefile field width
+        rch_df['width_var'] = rch_df['width_var'].clip(upper=999999.99).round(2)
+    # Clamp width to prevent field width overflow in shapefiles
+    if 'width' in rch_df.columns:
+        rch_df['width'] = rch_df['width'].clip(upper=999999.99).round(2)
     #add geometry column and define crs. 
     rch_df['geometry'] = geom
     rch_df = gp.GeoDataFrame(rch_df)
@@ -1200,6 +1209,16 @@ def write_nodes(nodes, paths):
             },inplace=True)
 
     node_df = node_df.apply(pd.to_numeric, errors='ignore') # node_df.dtypes
+    
+    # Fix field width issues for shapefile compatibility
+    # Clamp width_var to reasonable range to prevent field width overflow
+    if 'width_var' in node_df.columns:
+        # Clamp to max 999999.99 to fit shapefile field width
+        node_df['width_var'] = node_df['width_var'].clip(upper=999999.99).round(2)
+    # Clamp width to prevent field width overflow in shapefiles
+    if 'width' in node_df.columns:
+        node_df['width'] = node_df['width'].clip(upper=999999.99).round(2)
+    
     geom = gp.GeoSeries(map(Point, zip(nodes.x, nodes.y)))
     node_df['geometry'] = geom
     node_df = gp.GeoDataFrame(node_df)

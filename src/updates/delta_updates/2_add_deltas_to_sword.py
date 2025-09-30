@@ -102,7 +102,36 @@ if len(del_rchs) > 0:
     sword.delete_data(del_rchs)
 #find remaining sword reaches to remove or flag as tributaries
 #into the delta. 
-rmv_rchs, delta_tribs = dlt.find_delta_tribs(delta_cls, sword)
+# manual delete list for specific deltas
+manual_delete = []
+manual_tributaries = []
+if 'Parana' in delta_dir or 'parana' in delta_dir.lower():
+    manual_delete = [64212000165, 64212000155, 64212000145, 64212000135]
+elif 'Orinoco' in delta_dir or 'orinoco' in delta_dir.lower():
+    manual_tributaries = []  # 61309000375 was deleted in earlier step
+elif 'Niger' in delta_dir or 'niger' in delta_dir.lower():
+    manual_tributaries = [14301000995, 14301001006, 14301001065, 14301001076, 14301000675]
+elif 'Amazon' in delta_dir or 'amazon' in delta_dir.lower():
+    manual_tributaries = [62100100125, 62100100135, 62100100145, 62100100155, 62100100165, 
+                         62100100175, 62100100185, 62100100195, 62100100205, 62100100275]
+    manual_delete = [62210000495, 62210000506, 62210000255, 62210000275, 62210000285, 
+                    62210000455, 62210000465, 62210000475, 62210000486, 62210000446, 
+                    62210000435, 62302000375, 62302000385, 62210000225, 62210000235, 
+                    62210000245, 62210000265, 62210000686, 62305000656, 61690000016,
+                    62305000796, 62305000826, 62305000846, 62305000446, 62304000486,
+                    62304000596,62210000616,62100900416]
+
+rmv_rchs, delta_tribs = dlt.find_delta_tribs(delta_cls, sword, delete_ids=manual_delete, tributary_ids=manual_tributaries)
+# DEBUG: print what's in each list
+print(f"DEBUG: rmv_rchs contains {len(rmv_rchs)} reaches")
+print(f"DEBUG: delta_tribs contains {len(delta_tribs)} reaches")
+if len(manual_tributaries) > 0:
+    print(f"DEBUG: manual_tributaries: {manual_tributaries}")
+    for trib_id in manual_tributaries:
+        if trib_id in rmv_rchs:
+            print(f"DEBUG: WARNING - {trib_id} is in rmv_rchs (will be deleted)")
+        if trib_id in delta_tribs:
+            print(f"DEBUG: {trib_id} is in delta_tribs (will be tributary)")
 #save plot of what was deleted for future checks. 
 dlt.plot_sword_deletions(sword, 
                          delta_cls, 
@@ -111,6 +140,10 @@ dlt.plot_sword_deletions(sword,
                          delta_dir)
 #delete sword reaches.
 if len(rmv_rchs) > 0:
+    # remove manual tributaries from delete list
+    if len(manual_tributaries) > 0:
+        rmv_rchs = np.array([r for r in rmv_rchs if r not in manual_tributaries])
+        print(f'----> removed {len(manual_tributaries)} manual tributaries from delete list')
     print('----> deleting', len(rmv_rchs), 'additional reaches')
     sword.delete_data(rmv_rchs)
 #save plot of what was added for future checks. 

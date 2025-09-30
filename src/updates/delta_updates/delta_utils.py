@@ -592,6 +592,8 @@ def find_tributary_junctions(sword, delta_tribs):
 
         # Isolate endpoints for the edited segment.
         seg = np.where(sword.centerlines.reach_id[0,:] == uniq_segs[ind])[0]
+        if len(seg) == 0:
+            continue  # skip if no centerlines found for this reach ID
         pt1 = seg[np.where(sword.centerlines.cl_id[seg] == np.min(sword.centerlines.cl_id[seg]))[0]]
         pt2 = seg[np.where(sword.centerlines.cl_id[seg] == np.max(sword.centerlines.cl_id[seg]))[0]]
                                 
@@ -1231,7 +1233,7 @@ def filter_us_reaches(sword, up_rchs, cl_keep, pt_dist):
 
 ###############################################################################
 
-def find_delta_tribs(delta_cls, sword):
+def find_delta_tribs(delta_cls, sword, delete_ids=None, tributary_ids=None):
     """
     Finds SWORD reaches that need to be removed within
     the delta or are tributaries entering the delta. 
@@ -1241,9 +1243,10 @@ def find_delta_tribs(delta_cls, sword):
     sword: obj
         Class object containing SWORD dimensions and 
         attributes. 
-    delete_start: int
-        SWORD reach ID for which to find all associated
-        downstream reach IDs. 
+    delete_ids: list, optional
+        Manual list of reach IDs to force delete
+    tributary_ids: list, optional
+        Manual list of reach IDs to force mark as tributaries
 
     Returns
     -------
@@ -1276,13 +1279,33 @@ def find_delta_tribs(delta_cls, sword):
     #as tributary. 
     rmv_rchs = []
     delta_tribs = []
+    
+    # manual deletes (optional)
+    if delete_ids is not None:
+        manual = np.array(delete_ids).astype(sword.reaches.id.dtype)
+        # keep only valid reach IDs that exist in SWORD
+        manual = manual[np.in1d(manual, sword.reaches.id)]
+        if manual.size > 0:
+            rmv_rchs.append(manual)
+    
+    # manual tributaries (optional)
+    if tributary_ids is not None:
+        manual_tribs = np.array(tributary_ids).astype(sword.reaches.id.dtype)
+        # keep only valid reach IDs that exist in SWORD
+        manual_tribs = manual_tribs[np.in1d(manual_tribs, sword.reaches.id)]
+        if manual_tribs.size > 0:
+            delta_tribs.extend(manual_tribs)
     for t in list(range(len(trib_check))):
         rch = np.where(sword.reaches.id == trib_check[t])[0]
         seg = np.where(sword.reaches.path_segs == sword.reaches.path_segs[rch])[0]
         seg_rchs = sword.reaches.id[seg]
         pts = np.where(np.in1d(sword.centerlines.reach_id[0,cl_keep], seg_rchs)==True)[0]
-        radius = np.where(pt_dist[pts] < 0.005)[0]
+        radius = np.where(pt_dist[pts] < 0.0045)[0]
         perc = len(radius)/len(pts)*100
+        # DEBUG: print reach details
+        mx = np.mean(sword.centerlines.x[pts]) if len(pts) else np.nan
+        my = np.mean(sword.centerlines.y[pts]) if len(pts) else np.nan
+        print(f"DEBUG: rch {int(trib_check[t])} pts {len(pts)} perc {perc:.1f}% mean ({mx:.4f}, {my:.4f})")
         if perc >= 0:
             #determine if reaches are part of a separate network
             #from delta by looking for outlets. Remove if there 
@@ -1290,12 +1313,14 @@ def find_delta_tribs(delta_cls, sword):
             if perc == 0: 
                 ends = sword.reaches.end_rch[seg]
                 if 2 in ends:
+                    # delta_tribs.append(trib_check[t])  # was: continue
                     continue
                 else:
                     up_rchs = find_all_us_rchs(sword, seg_rchs) 
                     rmv_rchs.append(up_rchs)
+                    
             #remove reaches if there is more than 5% overlap. 
-            elif perc > 5:
+            elif perc > 2:
                 #condition for short 'junction' reaches that may have 
                 #larger percentage. If perc > 0 flag as tributary. 
                 if len(pts) < 20:
@@ -1308,7 +1333,7 @@ def find_delta_tribs(delta_cls, sword):
                     #remaining downstream reach as a tributary. 
                     max_dist = np.max(sword.reaches.dist_out[np.where(np.in1d(sword.reaches.id, up_rchs)==True)[0]])
                     min_dist = np.min(sword.reaches.dist_out[np.where(np.in1d(sword.reaches.id, up_rchs)==True)[0]])
-                    if (max_dist - min_dist) > 200000:
+                    if (max_dist - min_dist) > 1000:
                     # if len(up_rchs) > 100:
                         # print(t)
                         #filter the upstream reaches based on percent coverage.
@@ -1978,6 +2003,8 @@ def tributary_topo(sword, delta_tribs, basin):
     for trib in list(range(len(delta_tribs))):
         cl_rch = np.where(sword.centerlines.reach_id[0,l2] 
                         == delta_tribs[trib])[0]
+        if len(cl_rch) == 0:
+            continue  # skip if no centerlines found for this tributary reach ID
         mn_id = np.where(sword.centerlines.cl_id[l2[cl_rch]] == 
                         np.min(sword.centerlines.cl_id[l2[cl_rch]]))[0]
         nghs = np.unique(sword.centerlines.reach_id[0,l2[pt_ind[cl_rch[mn_id]]]])
