@@ -68,14 +68,23 @@ Unit test suite created with **40 passing tests**.
 - [ ] Integration tests for full workflow (load → modify → save)
 - [ ] Backward compatibility tests comparing outputs with original NetCDF implementation
 
-### Priority 2: Reactive Update System (HIGH) - IN PROGRESS
+### Priority 2: Reactive Update System (HIGH) - COMPLETE
 
 Created `reactive.py` with dependency graph and recalculation engine.
 
 - [x] **Dependency graph** - Maps which attributes depend on others
 - [x] **Topological sort** - Ensures recalculation in correct order
 - [x] **Change tracking** - DirtySet for marking changed entities
-- [ ] **Implement recalc functions** - Actual calculation logic for each attribute
+- [x] **Implement recalc functions** - All core recalculation functions implemented:
+  - `_recalc_reach_lengths()` - From centerline geodesic distances
+  - `_recalc_reach_bounds()` - Centroid and bounding box
+  - `_recalc_reach_dist_out()` - Graph traversal from outlets upstream
+  - `_recalc_reach_end_rch()` - From topology counts
+  - `_recalc_node_lengths()` - From centerline geometry
+  - `_recalc_node_xy()` - Centroid of centerlines
+  - `_recalc_node_dist_out()` - From reach dist_out + cumulative
+  - `_recalc_node_end_rch()` - Propagate from reach
+  - `_recalc_node_main_side()` - Propagate from reach
 - [ ] **Hook into WritableArray** - Auto-mark dirty on `__setitem__`
 
 **Attribute Dependency Chains:**
