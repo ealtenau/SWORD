@@ -101,13 +101,15 @@ class SWORD:
         orbits = self._reconstruct_orbits()
         iceflag = self._reconstruct_iceflag()
 
-        # Create view objects
+        # Create view objects with db and region for write support
         self._centerlines = CenterlinesView(
-            self._centerlines_df, cl_reach_id, cl_node_id
+            self._centerlines_df, cl_reach_id, cl_node_id,
+            db=self._db, region=self.region
         )
-        self._nodes = NodesView(self._nodes_df)
+        self._nodes = NodesView(self._nodes_df, db=self._db, region=self.region)
         self._reaches = ReachesView(
-            self._reaches_df, rch_id_up, rch_id_down, orbits, iceflag
+            self._reaches_df, rch_id_up, rch_id_down, orbits, iceflag,
+            db=self._db, region=self.region
         )
 
     def _reconstruct_centerline_neighbors(self) -> tuple[np.ndarray, np.ndarray]:
@@ -262,6 +264,46 @@ class SWORD:
     def reaches(self) -> ReachesView:
         """Reach data with numpy-array access."""
         return self._reaches
+
+    @property
+    def paths(self) -> dict:
+        """
+        Backward-compatible paths dictionary for file I/O operations.
+
+        Returns the same directory structure as the original SWORD class,
+        derived from the DuckDB database path.
+
+        Returns
+        -------
+        dict
+            Dictionary containing all SWORD file paths and filenames.
+        """
+        # Derive main_dir from db_path: data/duckdb/sword.duckdb -> project root
+        main_dir = str(self._db_path.parent.parent.parent)
+        region = self.region
+        version = self.version
+
+        paths = {}
+
+        # Directory paths
+        paths['shp_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/shp/{region}/"
+        paths['gpkg_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/gpkg/"
+        paths['nc_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/netcdf/"
+        paths['geom_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/reach_geometry/"
+        paths['update_dir'] = f"{main_dir}/data/update_requests/{version}/{region}/"
+        paths['topo_dir'] = f"{main_dir}/data/outputs/Topology/{version}/{region}/"
+        paths['version_dir'] = f"{main_dir}/data/outputs/Version_Differences/{version}/"
+        paths['pts_gpkg_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/gpkg_30m/{region}/"
+
+        # Filenames
+        paths['nc_fn'] = f"{region.lower()}_sword_{version}.nc"
+        paths['gpkg_rch_fn'] = f"{region.lower()}_sword_reaches_{version}.gpkg"
+        paths['gpkg_node_fn'] = f"{region.lower()}_sword_nodes_{version}.gpkg"
+        paths['shp_rch_fn'] = f"{region.lower()}_sword_reaches_hbXX_{version}.shp"
+        paths['shp_node_fn'] = f"{region.lower()}_sword_nodes_hbXX_{version}.shp"
+        paths['geom_fn'] = f"{region.lower()}_sword_{version}_connectivity.nc"
+
+        return paths
 
     def copy(self) -> None:
         """
