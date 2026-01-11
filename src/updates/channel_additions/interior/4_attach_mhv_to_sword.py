@@ -27,7 +27,7 @@ import time
 import glob
 import argparse
 import src.updates.channel_additions.interior.mhv_to_sword_tools as mst
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start_all = time.time()
 
@@ -43,8 +43,9 @@ version = args.version
 mhv_nc_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_nc_files = np.sort(glob.glob(os.path.join(mhv_nc_dir, '*.nc')))
 
-### read in sword data. 
-sword = SWORD(main_dir, region, version)
+### read in sword data.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword_rch_basins = np.array([int(str(ind)[0:6]) for ind in sword.reaches.id])
 sword_rch_nums = np.array([int(str(ind)[6:10]) for ind in sword.reaches.id])
 max_id = max(sword.centerlines.cl_id)

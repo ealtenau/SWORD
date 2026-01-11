@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="continental region", type = str)
@@ -37,7 +37,8 @@ region = args.region
 version = args.version
 
 #read data.
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 
 #isolate level 2 basin number for every centerline point. 
 level2_basins = np.array([int(str(ind)[0:2]) for ind in sword.centerlines.reach_id[0,:]])

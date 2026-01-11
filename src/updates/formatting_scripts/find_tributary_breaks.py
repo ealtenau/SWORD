@@ -32,7 +32,7 @@ from scipy import spatial as sp
 from shapely.geometry import Point
 import geopandas as gp
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 ###############################################################################
 
@@ -142,7 +142,8 @@ region = args.region
 version = args.version
 
 #reading data.
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 outgpkg = sword.paths['update_dir']+region.lower()+'_sword_tributaries_'+version+'.gpkg'
 
 #finding reach to break. 

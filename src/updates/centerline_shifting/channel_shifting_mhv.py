@@ -31,7 +31,7 @@ import time
 import pandas as pd
 import argparse
 import src.updates.geo_utils as geo 
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start_all = time.time()
 
@@ -49,8 +49,9 @@ save_plots = args.save_plots
 mhv_nc_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_nc_files = np.sort(glob.glob(os.path.join(mhv_nc_dir, '*.nc')))
 
-### read sword data. 
-sword = SWORD(main_dir, region, version)
+### read sword data.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #make a copy for version control. 
 old_x = np.copy(sword.centerlines.x)
 old_y = np.copy(sword.centerlines.y)

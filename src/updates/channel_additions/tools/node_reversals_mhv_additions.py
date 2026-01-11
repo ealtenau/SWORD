@@ -33,7 +33,7 @@ import argparse
 import sys
 import time
 from scipy import spatial as sp
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start_all = time.time()
 
@@ -52,7 +52,8 @@ nc_fn = main_dir+'/data/outputs/Reaches_Nodes/'\
 outpath = main_dir+'/data/update_requests/'+version+'/'+region+'/'
 
 #read sword
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 if update_nc == 'True':
      sword.copy() #copy file for version control. 
 

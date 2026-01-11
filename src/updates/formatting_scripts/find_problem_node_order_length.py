@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 import time
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start_all = time.time()
 
@@ -42,7 +42,8 @@ args = parser.parse_args()
 region = args.region
 version = args.version
  
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 out_dir = sword.paths['update_dir']
 
 #get node numbers. 

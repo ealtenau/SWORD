@@ -28,7 +28,7 @@ import pandas as pd
 import argparse
 import sys
 import time
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start = time.time()
 
@@ -42,8 +42,9 @@ region = args.region
 version = args.version
 basin = args.basin
 
-#read sword netcdf. 
-sword = SWORD(main_dir, region, version)
+#read sword netcdf.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #copies original file for version control. 
 
 if basin == 'All':

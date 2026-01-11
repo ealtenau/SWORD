@@ -27,7 +27,7 @@ import pandas as pd
 import argparse
 import glob
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 import src.updates.geo_utils as geo 
 # import matplotlib.pyplot as plt
 
@@ -77,8 +77,9 @@ multi_file = 'True'
 # reach = np.array([61680300053])
 # break_id = np.array([10823001])
 
-#read sword data. 
-sword = SWORD(main_dir, region, version)
+#read sword data.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #copies original file for version control. 
 
 ############################ Comment out for manual 

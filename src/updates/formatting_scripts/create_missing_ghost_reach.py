@@ -26,7 +26,7 @@ sys.path.append(main_dir)
 import pandas as pd
 import numpy as np
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="continental region", type = str)
@@ -37,7 +37,8 @@ region = args.region
 version = args.version
 
 #read data
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #copies original file for version control.
 
 csv_dir = sword.paths['update_dir']+region.lower()+'_missing_ghost_reaches.csv'

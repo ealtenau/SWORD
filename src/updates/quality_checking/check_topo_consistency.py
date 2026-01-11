@@ -22,7 +22,7 @@ sys.path.append(main_dir)
 import numpy as np
 import argparse
 import time
-from src.updates.sword import SWORD 
+from src.updates.sword_duckdb import SWORD
 
 def check_topology(domain_reachids,domain_reach_data,Output):
 
@@ -163,7 +163,8 @@ region = args.region
 version = args.version
 
 #reading data
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 
 domain_reachids = sword.reaches.id.tolist()
 domain_reach_data={}

@@ -2,18 +2,21 @@
 """
 Writing SWORD Vector Files (sword_vectors.py)
 =====================
-Script for creating the reach and node geopackage and 
-shapefile vectors from the netCDF master file of
-the SWOT River Database (SWORD). 
+Script for creating the reach and node geopackage and
+shapefile vectors from the DuckDB database of
+the SWOT River Database (SWORD).
 
-The script is run at a regional/continental scale. 
-Command line arguments required are the two-letter 
-region identifier (i.e. NA), SWORD version (i.e. v18), 
-and the data you would like to export ('All', 'reaches', 
+The script is run at a regional/continental scale.
+Command line arguments required are the two-letter
+region identifier (i.e. NA), SWORD version (i.e. v17b),
+and the data you would like to export ('All', 'reaches',
 or 'nodes').
 
+Note: This script uses the DuckDB backend. The database
+file is expected at: data/duckdb/sword_{version}.duckdb
+
 Execution example (terminal):
-    python path/to/sword_vectors.py NA v18 reaches
+    python path/to/sword_vectors.py NA v17b reaches
 
 """
 
@@ -25,7 +28,7 @@ sys.path.append(main_dir)
 import argparse
 import time
 import numpy as np
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -37,9 +40,10 @@ region = args.region
 version = args.version
 export = args.export
 
-#reading netCDF and writing vector data.
+# Reading DuckDB and writing vector data.
 start = time.time()
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.save_vectors(export)
 end = time.time()
 print('Time to Write Vectors:', str(np.round((end-start)/60, 2)), 'mins')

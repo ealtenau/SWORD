@@ -35,7 +35,7 @@ import netCDF4 as nc
 import argparse
 import glob
 import src.updates.geo_utils as geo 
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start_all = time.time()
 
@@ -52,7 +52,8 @@ mhv_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_files = glob.glob(os.path.join(mhv_dir, '*.nc'))
 
 #reading sword data
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 gpkg_fn = sword.paths['gpkg_dir']+sword.paths['gpkg_rch_fn']
 gpkg = gp.read_file(gpkg_fn)
 #creating outdir. 

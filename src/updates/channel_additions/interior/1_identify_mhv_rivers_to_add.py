@@ -34,7 +34,7 @@ import argparse
 import netCDF4 as nc
 from scipy import spatial as sp
 import glob
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 ###############################################################################
 
@@ -138,8 +138,9 @@ outpath = main_dir+'/data/inputs/MHV_SWORD/gpkg/'+region+'/additions/'
 if os.path.exists(outpath) == False:
     os.makedirs(outpath)
 
-#read sword. 
-sword = SWORD(main_dir, region, version)
+#read sword.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 cl_type_all = np.array([int(str(ind)[-1]) for ind in sword.centerlines.reach_id[0,:]])
 
 #loop through basins and find rivers to add. 
