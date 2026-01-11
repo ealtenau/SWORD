@@ -3,13 +3,13 @@
 ## Project Overview
 Migrating SWORD (SWOT River Database) from NetCDF4 to DuckDB for SQL query capabilities, better performance, and simpler tooling.
 
-## Current State: Phase 2 COMPLETE
+## Current State: Phase 3 COMPLETE
 
 ### Completed Phases
 
 **Phase 1: Schema & Infrastructure** ✅
-- Created `src/updates/sword_duckdb/` package (renamed from `duckdb` to avoid namespace conflict)
-- Files: `__init__.py`, `schema.py`, `sword_db.py`, `migrations.py`
+- Created `src/updates/sword_duckdb/` package
+- Files: `__init__.py`, `schema.py`, `sword_db.py`, `migrations.py`, `sword_class.py`, `views.py`
 - Schema v1.1.0 with composite primary keys
 
 **Phase 2: Data Migration** ✅
@@ -26,96 +26,195 @@ Migrating SWORD (SWOT River Database) from NetCDF4 to DuckDB for SQL query capab
 | AS | 25,820,450 | 4,294,089 | 100,185 |
 | **Total** | **66,931,432** | **11,112,454** | **248,673** |
 
+**Phase 3: SWORD Class & Script Migration** ✅
+- Full DuckDB-backed SWORD class with all methods
+- View wrapper classes (CenterlinesView, NodesView, ReachesView)
+- WritableArray class for in-place array modifications with DB persistence
+- **40+ scripts migrated** to use `from src.updates.sword_duckdb import SWORD`
+
 ### Key Technical Decisions
 
 1. **Composite Primary Keys** - cl_id and node_id are NOT globally unique, only unique within region:
    - centerlines: (cl_id, region)
    - nodes: (node_id, region)
-   - reaches: (reach_id, region) - reach_id IS globally unique but kept consistent
+   - reaches: (reach_id, region)
 
 2. **Package Name** - `sword_duckdb` not `duckdb` to avoid conflict with duckdb library
 
-3. **Geometry Deferred** - `build_geometry=False` by default, use `build_all_geometry()` after migration
+3. **WritableArray** - Intercepts `__setitem__` and syncs changes to DuckDB immediately
 
-4. **Batch Size** - 25,000 records (reduced from 100K to avoid memory crashes)
+4. **View Classes** - Provide numpy-array-style attribute access to database columns
+
+5. **gc.disable() Workaround** - Required during DuckDB write operations to avoid segfaults
 
 ### Git Status
 - Branch: `gearon_dev3`
-- Latest commit: `30d1424` - "Rename duckdb package to sword_duckdb and add composite key support"
-- GitHub Issue: #1 (https://github.com/ealtenau/SWORD/issues/1)
+- Latest commits:
+  - `bf72ed5` - Add WritableArray for in-place array modifications with DB persistence
+  - `0846265` - Migrate all scripts to use DuckDB SWORD backend
 
-## Next Steps: Phase 3 - SWORD Class Refactoring
+---
 
-### Goals
-1. Create DuckDB-backed version of SWORD class (`src/updates/sword.py`)
-2. Replace NumPy array operations with SQL queries
-3. Maintain backward compatibility with existing pipelines
-4. Add export functions (GeoParquet, Shapefile, GeoPackage)
+## NEXT GOALS
 
-### Key Files to Modify/Create
-- `src/updates/sword.py` - Main SWORD class (~1500 lines, uses NumPy arrays)
-- `src/updates/sword_utils.py` - I/O utilities with read_nc(), write_nc()
-- `src/updates/sword_duckdb/queries.py` - Common SQL patterns (TODO)
-- `src/updates/sword_duckdb/export.py` - Export functions (TODO)
+### Priority 1: Testing & Validation (HIGH) - IN PROGRESS
 
-### Architecture Notes
-Current SWORD class uses:
-- `centerlines`, `nodes`, `reaches` objects with NumPy arrays
-- Direct attribute access like `sword.reaches.wse`, `sword.nodes.facc`
-- Multi-dimensional arrays: `reach_id[4,N]`, `node_id[4,N]` for neighbors
+Unit test suite created with **40 passing tests**.
 
-DuckDB approach should:
-- Provide SQL query interface
-- Return pandas DataFrames or allow attribute-style access
-- Support spatial queries via DuckDB Spatial extension
-- Export to Shapefile/GeoPackage for downstream users
+- [x] Create `tests/` directory structure
+- [x] Unit tests for SWORD class methods (load, views, paths)
+- [x] Unit tests for WritableArray persistence
+- [x] Unit tests for SWORD methods (delete_data, delete_rchs, delete_nodes, save_nc)
+- [ ] Integration tests for full workflow (load → modify → save)
+- [ ] Backward compatibility tests comparing outputs with original NetCDF implementation
 
-### Usage Example (Target API)
+### Priority 2: Performance Optimization (HIGH)
+
+- [ ] **Vectorize WritableArray updates** - Current implementation uses loops for multi-value updates; should use batch UPDATE with CASE/WHEN
+- [ ] **Build spatial indexes** on geometry columns for faster spatial queries
+- [ ] **Connection pooling** for thread safety in multi-threaded scenarios
+- [ ] **Memory optimization** for large regions (AS has 25M+ centerlines)
+
+### Priority 3: Additional Modules (MEDIUM)
+
+- [ ] **Create `queries.py`** - Common SQL query patterns:
+  - Find upstream/downstream reaches
+  - Spatial bounding box queries
+  - Aggregate statistics
+  - Cross-region queries
+
+- [ ] **Create `export.py`** - Export functions:
+  - GeoParquet export
+  - Optimized Shapefile/GeoPackage export
+  - NetCDF export (for backward compatibility)
+
+### Priority 4: Documentation (MEDIUM)
+
+- [ ] API documentation for SWORD class methods
+- [ ] Migration guide for updating scripts
+- [ ] Example Jupyter notebooks demonstrating common workflows
+- [ ] Architecture decision records (ADRs)
+
+### Priority 5: Technical Debt (LOW)
+
+- [ ] **2D array WritableArray** - `centerlines.reach_id[4,N]` and `centerlines.node_id[4,N]` are read-only; need 2D-aware WritableArray if modification is required
+- [ ] **Error handling improvements** - Better error messages in WritableArray when DB updates fail
+- [ ] **Type hints** - Add comprehensive type hints throughout
+- [ ] **Logging** - Add structured logging for debugging
+
+---
+
+## Architecture Overview
+
+### Current Package Structure
+```
+src/updates/sword_duckdb/
+├── __init__.py         # Exports: SWORD, SWORDDatabase, migrate_region
+├── schema.py           # Table definitions (v1.1.0)
+├── sword_db.py         # Connection manager (SWORDDatabase class)
+├── migrations.py       # NetCDF → DuckDB migration
+├── sword_class.py      # Main SWORD class (backward compatible)
+├── views.py            # View classes + WritableArray
+├── queries.py          # TODO: Common SQL patterns
+└── export.py           # TODO: Export functions
+```
+
+### SWORD Class Methods
 ```python
-from sword_duckdb import SWORDDatabase
+class SWORD:
+    # Data access (read)
+    .centerlines      # CenterlinesView - numpy-style access to centerline data
+    .nodes            # NodesView - numpy-style access to node data
+    .reaches          # ReachesView - numpy-style access to reach data
+    .paths            # dict - backward-compatible file paths
 
-db = SWORDDatabase('data/duckdb/sword_v17b.duckdb')
+    # Data modification (write)
+    .append_data()    # Add new centerlines, nodes, reaches
+    .append_nodes()   # Add nodes to existing reaches
+    .delete_rchs()    # Delete reaches (and associated nodes/centerlines)
+    .delete_nodes()   # Delete specific nodes
+    .break_reaches()  # Split reach at node position
 
-# SQL queries
-df = db.query("SELECT * FROM reaches WHERE facc > 10000 AND region = 'NA'")
-
-# Spatial queries
-df = db.query("""
-    SELECT * FROM nodes
-    WHERE ST_Within(geom, ST_MakeEnvelope(-100, 30, -90, 40))
-""")
-
-# Export
-db.export_shapefile('reaches', 'output/na_reaches.shp', region='NA')
+    # Export
+    .save_vectors()   # Export to GeoPackage/Shapefile
 ```
 
-## Files Reference
+### WritableArray Pattern
+```python
+# Array modifications automatically persist to database
+sword.reaches.dist_out[idx] = 1234.5  # Single value
+sword.reaches.dist_out[mask] = new_values  # Multiple values
 
-```
-src/updates/
-├── sword_duckdb/           # NEW - DuckDB backend
-│   ├── __init__.py         # Exports: SWORDDatabase, migrate_region, etc.
-│   ├── schema.py           # Table definitions (v1.1.0)
-│   ├── sword_db.py         # Connection manager
-│   ├── migrations.py       # NetCDF → DuckDB migration
-│   ├── queries.py          # TODO: Common SQL patterns
-│   └── export.py           # TODO: Export functions
-├── sword.py                # Original SWORD class (to refactor)
-└── sword_utils.py          # I/O utilities
+# Under the hood:
+# 1. Updates local numpy array
+# 2. Executes UPDATE SQL statement
+# 3. Changes are immediately committed
 ```
 
-## Testing the Migration
+---
+
+## Testing the Current State
 
 ```python
-import sys
-sys.path.insert(0, './src/updates')
-from sword_duckdb import SWORDDatabase
+from src.updates.sword_duckdb import SWORD
+import os
 
-db = SWORDDatabase('data/duckdb/sword_v17b.duckdb', read_only=True)
-print(db.get_regions())  # ['AF', 'AS', 'EU', 'NA', 'OC', 'SA']
-print(db.count_records())  # Shows all table counts
+main_dir = os.getcwd()
+db_path = os.path.join(main_dir, 'data/duckdb/sword_v17b.duckdb')
+sword = SWORD(db_path, 'NA', 'v17b')
 
-# Example query
-df = db.query("SELECT region, COUNT(*) as cnt FROM reaches GROUP BY region")
-print(df)
+# Test attribute access
+print('Reaches:', len(sword.reaches.id))
+print('Nodes:', len(sword.nodes.id))
+print('Centerlines:', len(sword.centerlines.cl_id))
+
+# Test paths property
+print('GeoPackage dir:', sword.paths['gpkg_dir'])
+
+# Test WritableArray persistence
+idx = 0
+original = float(sword.reaches.dist_out[idx])
+sword.reaches.dist_out[idx] = 99999.0
+assert sword.reaches.dist_out[idx] == 99999.0
+
+# Reload and verify persistence
+sword2 = SWORD(db_path, 'NA', 'v17b')
+assert sword2.reaches.dist_out[idx] == 99999.0
+
+# Restore original
+sword2.reaches.dist_out[idx] = original
+print('All tests passed!')
 ```
+
+---
+
+## Migrated Scripts (40+)
+
+All scripts now use:
+```python
+from src.updates.sword_duckdb import SWORD
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
+```
+
+**Directories migrated:**
+- `src/updates/formatting_scripts/` (22 files)
+- `src/updates/delta_updates/` (2 files)
+- `src/updates/channel_additions/coastal/` (1 file)
+- `src/updates/channel_additions/interior/` (4 files)
+- `src/updates/channel_additions/tools/` (1 file)
+- `src/updates/centerline_shifting/` (2 files)
+- `src/updates/quality_checking/` (3 files)
+- `src/updates/network_analysis/` (4 files)
+- `src/updates/mhv_sword/` (1 file)
+- `src/updates/sword_vectors.py` (1 file)
+
+---
+
+## Known Issues
+
+1. **gc.disable() Required** - DuckDB segfaults during certain write operations if garbage collection runs. WritableArray and append methods disable GC during writes.
+
+2. **2D Arrays Read-Only** - `centerlines.reach_id` and `centerlines.node_id` return standard numpy arrays, not WritableArray. These 2D arrays require special handling if modification is needed.
+
+3. **No Spatial Indexing Yet** - Geometry columns exist but lack spatial indexes, making spatial queries slow on large datasets.

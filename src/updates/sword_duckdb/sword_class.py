@@ -23,6 +23,7 @@ Example Usage:
 
 from __future__ import annotations
 
+import gc
 from datetime import datetime
 from pathlib import Path
 from typing import Union, Optional, List
@@ -340,6 +341,10 @@ class SWORD:
 
         rm_rch = np.array(rm_rch)
 
+        # Disable GC during database operations to avoid DuckDB segfaults
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+
         # Start transaction
         conn = self._db.connect()
         conn.execute("BEGIN TRANSACTION")
@@ -440,6 +445,9 @@ class SWORD:
         except Exception as e:
             conn.execute("ROLLBACK")
             raise RuntimeError(f"Failed to delete data: {e}") from e
+        finally:
+            if gc_was_enabled:
+                gc.enable()
 
     def delete_rchs(self, rm_rch: Union[List[int], np.ndarray]) -> None:
         """
@@ -744,6 +752,7 @@ class SWORD:
             n_rch = len(self._reaches)
             rch_grp.createDimension('num_reaches', n_rch)
             rch_grp.createDimension('num_rch_neighbors', 4)
+            rch_grp.createDimension('num_cl_bounds', 2)
             rch_grp.createDimension('num_orbits', 75)
             rch_grp.createDimension('num_days', 366)
 
