@@ -8,18 +8,38 @@ It offers SQL query capabilities, spatial queries, and improved performance
 while maintaining compatibility with existing workflows.
 
 Modules:
+    sword_class: DuckDB-backed SWORD class (drop-in replacement for original)
     sword_db: Connection management and database operations
     schema: Table definitions and schema creation
     migrations: NetCDF to DuckDB migration utilities
+    views: View wrapper classes for numpy-array-style access
     queries: Common SQL query patterns (TODO)
     export: GeoParquet, Shapefile, and GeoPackage export functions (TODO)
+
+Example Usage:
+    from sword_duckdb import SWORD
+
+    # Load from DuckDB (same interface as original SWORD class)
+    sword = SWORD('data/duckdb/sword_v17b.duckdb', 'NA')
+
+    # Access data
+    print(sword.reaches.wse[:5])
+    print(sword.nodes.facc[:5])
 """
 
 from .sword_db import SWORDDatabase, create_database
 from .schema import create_schema, get_schema_sql, SCHEMA_VERSION
 from .migrations import migrate_region, migrate_all_regions, validate_migration, build_all_geometry
+from .sword_class import SWORD
+from .views import CenterlinesView, NodesView, ReachesView
 
 __all__ = [
+    # Main SWORD class (drop-in replacement)
+    'SWORD',
+    # View classes
+    'CenterlinesView',
+    'NodesView',
+    'ReachesView',
     # Connection management
     'SWORDDatabase',
     'create_database',
