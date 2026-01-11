@@ -89,15 +89,45 @@ reach.topology → reach.n_rch_up/down → reach.end_rch → node.end_rch
               → reach.main_side → node.main_side
 ```
 
-### Priority 3: QGIS/PostgreSQL Integration (HIGH)
+### Priority 3: QGIS/PostgreSQL Integration (HIGH) - IN PROGRESS
 
 Goal: Edit SWORD in QGIS with automatic recalculation and versioning.
 
-- [ ] **PostgreSQL/PostGIS export** - Export DuckDB to PostgreSQL for QGIS
-- [ ] **Database triggers** - PostgreSQL triggers for automatic recalc
-- [ ] **Change detection** - Track changes made in QGIS
-- [ ] **Sync back to DuckDB** - Import QGIS edits back to DuckDB
+- [x] **PostgreSQL/PostGIS export** - `export_to_postgres()` function in `export.py`
+- [x] **Sync back to DuckDB** - `sync_from_postgres()` function in `export.py`
+- [x] **Database triggers** - `install_triggers()` in `triggers.py`
+- [x] **Change detection** - `get_pending_changes()`, `get_changed_entities()` in `triggers.py`
 - [ ] **Git-like versioning** - Track edit history with before/after states
+
+**Complete QGIS Workflow:**
+```python
+from sword_duckdb import (
+    SWORD, export_to_postgres, install_triggers,
+    get_pending_changes, sync_from_postgres, mark_changes_synced
+)
+
+sword = SWORD('data/duckdb/sword_v17b.duckdb', 'NA', 'v17b')
+pg_conn = "postgresql://user:pass@localhost/sword_edit"
+
+# Step 1: Export to PostgreSQL for QGIS editing
+export_to_postgres(sword, pg_conn, tables=["reaches", "nodes"], prefix="na_")
+
+# Step 2: Install change tracking triggers
+install_triggers(pg_conn, prefix="na_")
+
+# Step 3: User edits data in QGIS...
+
+# Step 4: Check what changed
+changes = get_pending_changes(pg_conn, prefix="na_")
+print(f"Changed: {changes}")  # {'reaches': 5, 'nodes': 23}
+
+# Step 5: Sync changes back to DuckDB
+sync_from_postgres(sword, pg_conn, table="reaches", prefix="na_")
+sync_from_postgres(sword, pg_conn, table="nodes", prefix="na_")
+
+# Step 6: Mark changes as synced
+mark_changes_synced(pg_conn, prefix="na_", all_changes=True)
+```
 
 ### Priority 4: Performance Optimization (MEDIUM)
 
@@ -114,10 +144,11 @@ Goal: Edit SWORD in QGIS with automatic recalculation and versioning.
   - Aggregate statistics
   - Cross-region queries
 
-- [ ] **Create `export.py`** - Export functions:
-  - GeoParquet export
-  - PostgreSQL/PostGIS export
-  - Optimized Shapefile/GeoPackage export
+- [x] **Create `export.py`** - Export functions:
+  - `export_to_geoparquet()` - GeoParquet export
+  - `export_to_postgres()` - PostgreSQL/PostGIS export
+  - `export_to_geopackage()` - GeoPackage export
+  - `sync_from_postgres()` - Sync QGIS edits back to DuckDB
 
 ### Priority 6: Documentation (LOW)
 
@@ -147,8 +178,9 @@ src/updates/sword_duckdb/
 ├── sword_class.py      # Main SWORD class (backward compatible)
 ├── views.py            # View classes + WritableArray
 ├── reactive.py         # Dependency graph + recalculation engine
-├── queries.py          # TODO: Common SQL patterns
-└── export.py           # TODO: Export functions
+├── export.py           # Export to PostgreSQL, GeoParquet, GeoPackage
+├── triggers.py         # PostgreSQL triggers for change tracking
+└── queries.py          # TODO: Common SQL patterns
 ```
 
 ### SWORD Class Methods

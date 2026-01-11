@@ -47,6 +47,20 @@ from .reactive import (
     mark_topology_changed,
     full_recalculate,
 )
+from .export import (
+    export_to_postgres,
+    export_to_geoparquet,
+    export_to_geopackage,
+    sync_from_postgres,
+)
+from .triggers import (
+    install_triggers,
+    remove_triggers,
+    get_pending_changes,
+    get_changed_entities,
+    mark_changes_synced,
+    get_trigger_sql,
+)
 
 __all__ = [
     # Main SWORD class (drop-in replacement)
@@ -75,4 +89,16 @@ __all__ = [
     'migrate_all_regions',
     'validate_migration',
     'build_all_geometry',
+    # Export functions
+    'export_to_postgres',
+    'export_to_geoparquet',
+    'export_to_geopackage',
+    'sync_from_postgres',
+    # Trigger functions
+    'install_triggers',
+    'remove_triggers',
+    'get_pending_changes',
+    'get_changed_entities',
+    'mark_changes_synced',
+    'get_trigger_sql',
 ]
