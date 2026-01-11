@@ -19,13 +19,15 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"  # Updated for composite keys
 
 # Core table definitions
+# NOTE: cl_id and node_id are only unique within a region, so we use composite keys
 CENTERLINES_TABLE = """
 CREATE TABLE IF NOT EXISTS centerlines (
-    -- Primary key
-    cl_id BIGINT PRIMARY KEY,
+    -- Composite primary key (cl_id is only unique within region)
+    cl_id BIGINT NOT NULL,
+    region VARCHAR(2) NOT NULL,
 
     -- Coordinates
     x DOUBLE NOT NULL,
@@ -39,29 +41,32 @@ CREATE TABLE IF NOT EXISTS centerlines (
     node_id BIGINT NOT NULL,
 
     -- Metadata
-    region VARCHAR(2) NOT NULL,
-    version VARCHAR(10) NOT NULL
+    version VARCHAR(10) NOT NULL,
+
+    PRIMARY KEY (cl_id, region)
 );
 """
 
 CENTERLINE_NEIGHBORS_TABLE = """
 CREATE TABLE IF NOT EXISTS centerline_neighbors (
-    -- Composite primary key
+    -- Composite primary key (includes region for referential integrity)
     cl_id BIGINT NOT NULL,
+    region VARCHAR(2) NOT NULL,
     neighbor_rank TINYINT NOT NULL,  -- 1, 2, or 3 (0 is in main table)
 
     -- Neighbor IDs (from rows 1-3 of the [4,N] arrays)
     reach_id BIGINT,
     node_id BIGINT,
 
-    PRIMARY KEY (cl_id, neighbor_rank)
+    PRIMARY KEY (cl_id, region, neighbor_rank)
 );
 """
 
 NODES_TABLE = """
 CREATE TABLE IF NOT EXISTS nodes (
-    -- Primary key
-    node_id BIGINT PRIMARY KEY,
+    -- Composite primary key (node_id is only unique within region)
+    node_id BIGINT NOT NULL,
+    region VARCHAR(2) NOT NULL,
 
     -- Coordinates
     x DOUBLE NOT NULL,
@@ -128,15 +133,17 @@ CREATE TABLE IF NOT EXISTS nodes (
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
 
     -- Metadata
-    region VARCHAR(2) NOT NULL,
-    version VARCHAR(10) NOT NULL
+    version VARCHAR(10) NOT NULL,
+
+    PRIMARY KEY (node_id, region)
 );
 """
 
 REACHES_TABLE = """
 CREATE TABLE IF NOT EXISTS reaches (
-    -- Primary key
-    reach_id BIGINT PRIMARY KEY,
+    -- Composite primary key (reach_id is globally unique but include region for consistency)
+    reach_id BIGINT NOT NULL,
+    region VARCHAR(2) NOT NULL,
 
     -- Centroid coordinates
     x DOUBLE,
@@ -210,35 +217,42 @@ CREATE TABLE IF NOT EXISTS reaches (
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
 
     -- Metadata
-    region VARCHAR(2) NOT NULL,
-    version VARCHAR(10) NOT NULL
+    version VARCHAR(10) NOT NULL,
+
+    PRIMARY KEY (reach_id, region)
 );
 """
 
+# NOTE: reach_id IS globally unique in SWORD (first digits encode region/basin),
+# but we include region in PK for consistency and query efficiency.
+# Topology tables also include region for proper joins.
+
 REACH_TOPOLOGY_TABLE = """
 CREATE TABLE IF NOT EXISTS reach_topology (
-    -- Composite primary key
+    -- Composite primary key (includes region for efficient filtering)
     reach_id BIGINT NOT NULL,
+    region VARCHAR(2) NOT NULL,
     direction VARCHAR(4) NOT NULL,  -- 'up' or 'down'
     neighbor_rank TINYINT NOT NULL,  -- 0-3
 
     -- Neighbor reach ID
     neighbor_reach_id BIGINT NOT NULL,
 
-    PRIMARY KEY (reach_id, direction, neighbor_rank)
+    PRIMARY KEY (reach_id, region, direction, neighbor_rank)
 );
 """
 
 REACH_SWOT_ORBITS_TABLE = """
 CREATE TABLE IF NOT EXISTS reach_swot_orbits (
-    -- Composite primary key
+    -- Composite primary key (includes region for efficient filtering)
     reach_id BIGINT NOT NULL,
+    region VARCHAR(2) NOT NULL,
     orbit_rank TINYINT NOT NULL,  -- 0-74
 
     -- SWOT orbit pass_tile ID
     orbit_id BIGINT NOT NULL,
 
-    PRIMARY KEY (reach_id, orbit_rank)
+    PRIMARY KEY (reach_id, region, orbit_rank)
 );
 """
 

@@ -53,8 +53,9 @@ def migrate_region(
     db: SWORDDatabase,
     region: str,
     version: str,
-    batch_size: int = 100000,
-    verbose: bool = True
+    batch_size: int = 25000,
+    verbose: bool = True,
+    build_geometry: bool = False
 ) -> dict:
     """
     Migrate a single NetCDF file to DuckDB.
@@ -70,9 +71,13 @@ def migrate_region(
     version : str
         SWORD version (e.g., 'v18').
     batch_size : int, optional
-        Number of records to insert per batch. Default is 100000.
+        Number of records to insert per batch. Default is 25000.
     verbose : bool, optional
         If True, print progress messages. Default is True.
+    build_geometry : bool, optional
+        If True, build geometry columns after data migration. Default is False
+        to avoid memory issues during large migrations. Geometry can be built
+        separately using build_all_geometry() after migration completes.
 
     Returns
     -------
@@ -115,7 +120,7 @@ def migrate_region(
     # Migrate centerline neighbors
     if verbose:
         print("  Migrating centerline neighbors...")
-    cl_neighbor_count = _migrate_centerline_neighbors(conn, centerlines, batch_size)
+    cl_neighbor_count = _migrate_centerline_neighbors(conn, centerlines, region, batch_size)
     stats['row_counts']['centerline_neighbors'] = cl_neighbor_count
 
     # Migrate nodes
@@ -133,17 +138,17 @@ def migrate_region(
     # Migrate reach topology
     if verbose:
         print("  Migrating reach topology...")
-    topo_count = _migrate_reach_topology(conn, reaches, batch_size)
+    topo_count = _migrate_reach_topology(conn, reaches, region, batch_size)
     stats['row_counts']['reach_topology'] = topo_count
 
     # Migrate SWOT orbits
     if verbose:
         print("  Migrating SWOT orbits...")
-    orbit_count = _migrate_swot_orbits(conn, reaches, batch_size)
+    orbit_count = _migrate_swot_orbits(conn, reaches, region, batch_size)
     stats['row_counts']['reach_swot_orbits'] = orbit_count
 
-    # Build geometry columns
-    if db.spatial_available():
+    # Build geometry columns (optional - can cause memory issues on large datasets)
+    if build_geometry and db.spatial_available():
         if verbose:
             print("  Building geometry columns...")
         _build_geometry(conn, region)
@@ -165,17 +170,23 @@ def _migrate_centerlines(
     version: str,
     batch_size: int
 ) -> int:
-    """Migrate centerlines data to DuckDB."""
+    """
+    Migrate centerlines data to DuckDB.
+
+    NOTE: Schema uses composite primary key (cl_id, region) because cl_id
+    is only unique within a region, not globally across all SWORD data.
+    """
     n = len(centerlines.cl_id)
 
     # Create DataFrame with primary associations (row 0)
+    # Column order matches schema: cl_id, region, x, y, reach_id, node_id, version
     df = pd.DataFrame({
         'cl_id': centerlines.cl_id,
+        'region': region,
         'x': centerlines.x,
         'y': centerlines.y,
         'reach_id': centerlines.reach_id[0, :],  # Primary reach
         'node_id': centerlines.node_id[0, :],    # Primary node
-        'region': region,
         'version': version
     })
 
@@ -183,15 +194,19 @@ def _migrate_centerlines(
     for i in range(0, n, batch_size):
         batch = df.iloc[i:i + batch_size]
         conn.execute("""
-            INSERT INTO centerlines (cl_id, x, y, reach_id, node_id, region, version)
+            INSERT INTO centerlines (cl_id, region, x, y, reach_id, node_id, version)
             SELECT * FROM batch
         """)
 
     return n
 
 
-def _migrate_centerline_neighbors(conn, centerlines, batch_size: int) -> int:
-    """Migrate centerline neighbor relationships."""
+def _migrate_centerline_neighbors(conn, centerlines, region: str, batch_size: int) -> int:
+    """
+    Migrate centerline neighbor relationships.
+
+    NOTE: Region is part of the composite key since cl_id is only unique within a region.
+    """
     n = len(centerlines.cl_id)
     count = 0
 
@@ -206,6 +221,7 @@ def _migrate_centerline_neighbors(conn, centerlines, batch_size: int) -> int:
 
         df = pd.DataFrame({
             'cl_id': centerlines.cl_id[indices],
+            'region': region,
             'neighbor_rank': rank,
             'reach_id': centerlines.reach_id[rank, indices],
             'node_id': centerlines.node_id[rank, indices]
@@ -215,7 +231,7 @@ def _migrate_centerline_neighbors(conn, centerlines, batch_size: int) -> int:
         for i in range(0, len(df), batch_size):
             batch = df.iloc[i:i + batch_size]
             conn.execute("""
-                INSERT INTO centerline_neighbors (cl_id, neighbor_rank, reach_id, node_id)
+                INSERT INTO centerline_neighbors (cl_id, region, neighbor_rank, reach_id, node_id)
                 SELECT * FROM batch
             """)
 
@@ -225,12 +241,18 @@ def _migrate_centerline_neighbors(conn, centerlines, batch_size: int) -> int:
 
 
 def _migrate_nodes(conn, nodes, region: str, version: str, batch_size: int) -> int:
-    """Migrate nodes data to DuckDB."""
+    """
+    Migrate nodes data to DuckDB.
+
+    NOTE: Schema uses composite primary key (node_id, region) because node_id
+    is only unique within a region.
+    """
     n = len(nodes.id)
 
-    # Build DataFrame
+    # Build DataFrame - column order matches schema with (node_id, region) as PK
     df_dict = {
         'node_id': nodes.id,
+        'region': region,  # Part of composite PK
         'x': nodes.x,
         'y': nodes.y,
         'cl_id_min': nodes.cl_id[0, :],
@@ -265,7 +287,6 @@ def _migrate_nodes(conn, nodes, region: str, version: str, batch_size: int) -> i
         'main_side': nodes.main_side,
         'end_reach': nodes.end_rch,
         'network': nodes.network,
-        'region': region,
         'version': version
     }
 
@@ -291,12 +312,18 @@ def _migrate_nodes(conn, nodes, region: str, version: str, batch_size: int) -> i
 
 
 def _migrate_reaches(conn, reaches, region: str, version: str, batch_size: int) -> int:
-    """Migrate reaches data to DuckDB."""
+    """
+    Migrate reaches data to DuckDB.
+
+    NOTE: reach_id IS globally unique in SWORD (first digits encode region/basin),
+    but we include region in the composite PK for consistency and query efficiency.
+    """
     n = len(reaches.id)
 
-    # Build DataFrame
+    # Build DataFrame - column order matches schema with (reach_id, region) as PK
     df_dict = {
         'reach_id': reaches.id,
+        'region': region,  # Part of composite PK for consistency
         'x': reaches.x,
         'y': reaches.y,
         'x_min': reaches.x_min,
@@ -336,7 +363,6 @@ def _migrate_reaches(conn, reaches, region: str, version: str, batch_size: int) 
         'main_side': reaches.main_side,
         'end_reach': reaches.end_rch,
         'network': reaches.network,
-        'region': region,
         'version': version
     }
 
@@ -361,8 +387,13 @@ def _migrate_reaches(conn, reaches, region: str, version: str, batch_size: int) 
     return n
 
 
-def _migrate_reach_topology(conn, reaches, batch_size: int) -> int:
-    """Migrate reach topology (upstream/downstream neighbors)."""
+def _migrate_reach_topology(conn, reaches, region: str, batch_size: int) -> int:
+    """
+    Migrate reach topology (upstream/downstream neighbors).
+
+    NOTE: Region is included in the table for efficient filtering even though
+    reach_id is globally unique (encodes region in first digits).
+    """
     count = 0
 
     # Upstream neighbors
@@ -374,6 +405,7 @@ def _migrate_reach_topology(conn, reaches, batch_size: int) -> int:
         indices = np.where(mask)[0]
         df = pd.DataFrame({
             'reach_id': reaches.id[indices],
+            'region': region,
             'direction': 'up',
             'neighbor_rank': rank,
             'neighbor_reach_id': reaches.rch_id_up[rank, indices]
@@ -397,6 +429,7 @@ def _migrate_reach_topology(conn, reaches, batch_size: int) -> int:
         indices = np.where(mask)[0]
         df = pd.DataFrame({
             'reach_id': reaches.id[indices],
+            'region': region,
             'direction': 'down',
             'neighbor_rank': rank,
             'neighbor_reach_id': reaches.rch_id_down[rank, indices]
@@ -414,8 +447,12 @@ def _migrate_reach_topology(conn, reaches, batch_size: int) -> int:
     return count
 
 
-def _migrate_swot_orbits(conn, reaches, batch_size: int) -> int:
-    """Migrate SWOT orbit data."""
+def _migrate_swot_orbits(conn, reaches, region: str, batch_size: int) -> int:
+    """
+    Migrate SWOT orbit data.
+
+    NOTE: Region is included for efficient filtering.
+    """
     count = 0
 
     for rank in range(75):  # Max 75 orbits
@@ -426,6 +463,7 @@ def _migrate_swot_orbits(conn, reaches, batch_size: int) -> int:
         indices = np.where(mask)[0]
         df = pd.DataFrame({
             'reach_id': reaches.id[indices],
+            'region': region,
             'orbit_rank': rank,
             'orbit_id': reaches.orbits[rank, indices]
         })
@@ -460,6 +498,43 @@ def _build_geometry(conn, region: str) -> None:
 
     # Note: Reach geometry (LINESTRING) needs to be built separately
     # from centerline points, which is more complex and done in a later step
+
+
+def build_all_geometry(db: SWORDDatabase, regions: list = None, verbose: bool = True) -> None:
+    """
+    Build geometry columns for all migrated data.
+
+    This function should be called after all data migrations are complete
+    to avoid memory issues during the migration process.
+
+    Parameters
+    ----------
+    db : SWORDDatabase
+        Database connection.
+    regions : list, optional
+        List of regions to build geometry for. If None, builds for all regions.
+    verbose : bool, optional
+        If True, print progress messages.
+    """
+    if not db.spatial_available():
+        if verbose:
+            print("Warning: Spatial extension not available, skipping geometry build")
+        return
+
+    conn = db.connect()
+
+    if regions is None:
+        # Get all regions present in database
+        result = conn.execute("SELECT DISTINCT region FROM reaches ORDER BY region").fetchall()
+        regions = [r[0] for r in result]
+
+    for region in regions:
+        if verbose:
+            print(f"Building geometry for {region}...")
+        _build_geometry(conn, region)
+
+    if verbose:
+        print("Geometry build complete")
 
 
 def _decode_strings(arr: np.ndarray) -> list:

@@ -17,7 +17,7 @@ Modules:
 
 from .sword_db import SWORDDatabase, create_database
 from .schema import create_schema, get_schema_sql, SCHEMA_VERSION
-from .migrations import migrate_region, migrate_all_regions, validate_migration
+from .migrations import migrate_region, migrate_all_regions, validate_migration, build_all_geometry
 
 __all__ = [
     # Connection management
@@ -31,4 +31,5 @@ __all__ = [
     'migrate_region',
     'migrate_all_regions',
     'validate_migration',
+    'build_all_geometry',
 ]
