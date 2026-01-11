@@ -68,14 +68,45 @@ Unit test suite created with **40 passing tests**.
 - [ ] Integration tests for full workflow (load → modify → save)
 - [ ] Backward compatibility tests comparing outputs with original NetCDF implementation
 
-### Priority 2: Performance Optimization (HIGH)
+### Priority 2: Reactive Update System (HIGH) - IN PROGRESS
 
-- [ ] **Vectorize WritableArray updates** - Current implementation uses loops for multi-value updates; should use batch UPDATE with CASE/WHEN
-- [ ] **Build spatial indexes** on geometry columns for faster spatial queries
-- [ ] **Connection pooling** for thread safety in multi-threaded scenarios
+Created `reactive.py` with dependency graph and recalculation engine.
+
+- [x] **Dependency graph** - Maps which attributes depend on others
+- [x] **Topological sort** - Ensures recalculation in correct order
+- [x] **Change tracking** - DirtySet for marking changed entities
+- [ ] **Implement recalc functions** - Actual calculation logic for each attribute
+- [ ] **Hook into WritableArray** - Auto-mark dirty on `__setitem__`
+
+**Attribute Dependency Chains:**
+```
+centerline.geometry → reach.len, reach.bounds, node.len, node.xy
+                    → reach.dist_out → node.dist_out
+                    → centerline.node_id_neighbors (KDTree)
+
+reach.topology → reach.n_rch_up/down → reach.end_rch → node.end_rch
+              → reach.dist_out → node.dist_out
+              → reach.main_side → node.main_side
+```
+
+### Priority 3: QGIS/PostgreSQL Integration (HIGH)
+
+Goal: Edit SWORD in QGIS with automatic recalculation and versioning.
+
+- [ ] **PostgreSQL/PostGIS export** - Export DuckDB to PostgreSQL for QGIS
+- [ ] **Database triggers** - PostgreSQL triggers for automatic recalc
+- [ ] **Change detection** - Track changes made in QGIS
+- [ ] **Sync back to DuckDB** - Import QGIS edits back to DuckDB
+- [ ] **Git-like versioning** - Track edit history with before/after states
+
+### Priority 4: Performance Optimization (MEDIUM)
+
+- [ ] **Vectorize WritableArray updates** - Batch UPDATE with CASE/WHEN
+- [ ] **Build spatial indexes** on geometry columns
+- [ ] **Connection pooling** for thread safety
 - [ ] **Memory optimization** for large regions (AS has 25M+ centerlines)
 
-### Priority 3: Additional Modules (MEDIUM)
+### Priority 5: Additional Modules (MEDIUM)
 
 - [ ] **Create `queries.py`** - Common SQL query patterns:
   - Find upstream/downstream reaches
@@ -85,20 +116,20 @@ Unit test suite created with **40 passing tests**.
 
 - [ ] **Create `export.py`** - Export functions:
   - GeoParquet export
+  - PostgreSQL/PostGIS export
   - Optimized Shapefile/GeoPackage export
-  - NetCDF export (for backward compatibility)
 
-### Priority 4: Documentation (MEDIUM)
+### Priority 6: Documentation (LOW)
 
 - [ ] API documentation for SWORD class methods
 - [ ] Migration guide for updating scripts
 - [ ] Example Jupyter notebooks demonstrating common workflows
 - [ ] Architecture decision records (ADRs)
 
-### Priority 5: Technical Debt (LOW)
+### Priority 7: Technical Debt (LOW)
 
-- [ ] **2D array WritableArray** - `centerlines.reach_id[4,N]` and `centerlines.node_id[4,N]` are read-only; need 2D-aware WritableArray if modification is required
-- [ ] **Error handling improvements** - Better error messages in WritableArray when DB updates fail
+- [ ] **2D array WritableArray** - `centerlines.reach_id[4,N]` and `centerlines.node_id[4,N]` are read-only
+- [ ] **Error handling improvements** - Better error messages in WritableArray
 - [ ] **Type hints** - Add comprehensive type hints throughout
 - [ ] **Logging** - Add structured logging for debugging
 
@@ -109,12 +140,13 @@ Unit test suite created with **40 passing tests**.
 ### Current Package Structure
 ```
 src/updates/sword_duckdb/
-├── __init__.py         # Exports: SWORD, SWORDDatabase, migrate_region
+├── __init__.py         # Exports: SWORD, SWORDReactive, etc.
 ├── schema.py           # Table definitions (v1.1.0)
 ├── sword_db.py         # Connection manager (SWORDDatabase class)
 ├── migrations.py       # NetCDF → DuckDB migration
 ├── sword_class.py      # Main SWORD class (backward compatible)
 ├── views.py            # View classes + WritableArray
+├── reactive.py         # Dependency graph + recalculation engine
 ├── queries.py          # TODO: Common SQL patterns
 └── export.py           # TODO: Export functions
 ```
