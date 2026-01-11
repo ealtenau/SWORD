@@ -399,6 +399,244 @@ class SWORD:
             conn.execute("ROLLBACK")
             raise RuntimeError(f"Failed to delete data: {e}") from e
 
+    def delete_rchs(self, rm_rch: Union[List[int], np.ndarray]) -> None:
+        """
+        Delete reaches only (without cascading to centerlines/nodes).
+
+        Parameters
+        ----------
+        rm_rch : list or numpy.ndarray
+            List of reach IDs to delete.
+        """
+        import gc
+
+        rm_rch = np.array(rm_rch)
+        if len(rm_rch) == 0:
+            return
+
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+
+        conn = self._db.connect()
+        try:
+            conn.execute("BEGIN TRANSACTION")
+
+            for rid in rm_rch:
+                rid = int(rid)
+                # Delete from normalized tables
+                conn.execute(
+                    "DELETE FROM reach_topology WHERE reach_id = ? AND region = ?",
+                    [rid, self.region]
+                )
+                conn.execute(
+                    "DELETE FROM reach_swot_orbits WHERE reach_id = ? AND region = ?",
+                    [rid, self.region]
+                )
+                conn.execute(
+                    "DELETE FROM reach_ice_flags WHERE reach_id = ?",
+                    [rid]
+                )
+                # Delete the reach
+                conn.execute(
+                    "DELETE FROM reaches WHERE reach_id = ? AND region = ?",
+                    [rid, self.region]
+                )
+
+            conn.execute("COMMIT")
+            self._load_data()
+            print(f"Deleted {len(rm_rch)} reaches")
+
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise RuntimeError(f"Failed to delete reaches: {e}") from e
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+
+    def delete_nodes(self, node_ids: Union[List[int], np.ndarray]) -> None:
+        """
+        Delete nodes by node ID.
+
+        Parameters
+        ----------
+        node_ids : list or numpy.ndarray
+            List of node IDs to delete.
+        """
+        import gc
+
+        node_ids = np.array(node_ids)
+        if len(node_ids) == 0:
+            return
+
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+
+        conn = self._db.connect()
+        try:
+            conn.execute("BEGIN TRANSACTION")
+
+            for nid in node_ids:
+                conn.execute(
+                    "DELETE FROM nodes WHERE node_id = ? AND region = ?",
+                    [int(nid), self.region]
+                )
+
+            conn.execute("COMMIT")
+            self._load_data()
+            print(f"Deleted {len(node_ids)} nodes")
+
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise RuntimeError(f"Failed to delete nodes: {e}") from e
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+
+    def append_nodes(self, subnodes) -> None:
+        """
+        Append nodes to the database.
+
+        Parameters
+        ----------
+        subnodes : object
+            Object containing node data with attributes matching NodesView.
+        """
+        import gc
+
+        if len(subnodes.id) == 0:
+            return
+
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+
+        conn = self._db.connect()
+        try:
+            conn.execute("BEGIN TRANSACTION")
+            self._insert_nodes(conn, subnodes)
+            conn.execute("COMMIT")
+            self._load_data()
+            print(f"Appended {len(subnodes.id)} nodes")
+
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise RuntimeError(f"Failed to append nodes: {e}") from e
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+
+    def save_vectors(self, export: str = 'All', output_dir: Optional[str] = None) -> None:
+        """
+        Save SWORD data to vector formats (GeoPackage and/or Shapefile).
+
+        Parameters
+        ----------
+        export : str
+            'All' - writes both reach and node files.
+            'nodes' - writes node files only.
+            'reaches' - writes reach files only.
+        output_dir : str, optional
+            Output directory. If not provided, uses current directory.
+        """
+        try:
+            import geopandas as gpd
+            from shapely.geometry import Point, LineString
+        except ImportError:
+            raise ImportError("geopandas and shapely are required for save_vectors()")
+
+        if output_dir is None:
+            output_dir = Path('.')
+        else:
+            output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if export in ('All', 'reaches'):
+            print('Creating reach geometries...')
+            self._save_reach_vectors(output_dir)
+
+        if export in ('All', 'nodes'):
+            print('Creating node geometries...')
+            self._save_node_vectors(output_dir)
+
+    def _save_reach_vectors(self, output_dir: Path) -> None:
+        """Save reach data to GeoPackage and Shapefile."""
+        import geopandas as gpd
+        from shapely.geometry import LineString
+
+        # Build reach geometries from centerlines
+        reach_geoms = {}
+        for rid in self.reaches.id:
+            cl_idx = np.where(self.centerlines.reach_id[0, :] == rid)[0]
+            if len(cl_idx) > 1:
+                # Sort by cl_id
+                sorted_idx = cl_idx[np.argsort(self.centerlines.cl_id[cl_idx])]
+                coords = list(zip(
+                    self.centerlines.x[sorted_idx],
+                    self.centerlines.y[sorted_idx]
+                ))
+                if len(coords) >= 2:
+                    reach_geoms[rid] = LineString(coords)
+                else:
+                    reach_geoms[rid] = None
+            else:
+                reach_geoms[rid] = None
+
+        # Build GeoDataFrame
+        data = {
+            'reach_id': self.reaches.id,
+            'x': self.reaches.x,
+            'y': self.reaches.y,
+            'reach_len': self.reaches.len,
+            'wse': self.reaches.wse,
+            'width': self.reaches.wth,
+            'slope': self.reaches.slope,
+            'n_nodes': self.reaches.n_nodes,
+            'facc': self.reaches.facc,
+            'dist_out': self.reaches.dist_out,
+            'river_name': self.reaches.river_name,
+        }
+        gdf = gpd.GeoDataFrame(
+            data,
+            geometry=[reach_geoms.get(rid) for rid in self.reaches.id],
+            crs='EPSG:4326'
+        )
+        # Remove rows with null geometry
+        gdf = gdf[gdf.geometry.notna()]
+
+        # Save
+        gpkg_path = output_dir / f'sword_{self.region}_reaches.gpkg'
+        shp_path = output_dir / f'sword_{self.region}_reaches.shp'
+        gdf.to_file(gpkg_path, driver='GPKG')
+        gdf.to_file(shp_path, driver='ESRI Shapefile')
+        print(f'Saved reaches to {gpkg_path} and {shp_path}')
+
+    def _save_node_vectors(self, output_dir: Path) -> None:
+        """Save node data to GeoPackage and Shapefile."""
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        # Build GeoDataFrame
+        data = {
+            'node_id': self.nodes.id,
+            'x': self.nodes.x,
+            'y': self.nodes.y,
+            'reach_id': self.nodes.reach_id,
+            'node_len': self.nodes.len,
+            'wse': self.nodes.wse,
+            'width': self.nodes.wth,
+            'facc': self.nodes.facc,
+            'dist_out': self.nodes.dist_out,
+            'river_name': self.nodes.river_name,
+        }
+        geometry = [Point(x, y) for x, y in zip(self.nodes.x, self.nodes.y)]
+        gdf = gpd.GeoDataFrame(data, geometry=geometry, crs='EPSG:4326')
+
+        # Save
+        gpkg_path = output_dir / f'sword_{self.region}_nodes.gpkg'
+        shp_path = output_dir / f'sword_{self.region}_nodes.shp'
+        gdf.to_file(gpkg_path, driver='GPKG')
+        gdf.to_file(shp_path, driver='ESRI Shapefile')
+        print(f'Saved nodes to {gpkg_path} and {shp_path}')
+
     def save_nc(self, output_path: Optional[str] = None) -> None:
         """
         Export data to NetCDF format for backward compatibility.
