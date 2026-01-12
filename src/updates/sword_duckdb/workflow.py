@@ -1923,10 +1923,150 @@ class SWORDWorkflow:
                     results['attributes_updated'].append('dist_out')
                 else:
                     results['success'] = False
+            elif attr == 'stream_order':
+                so_result = self.recalculate_stream_order(
+                    reason=reason or f"Recalculate {attr}"
+                )
+                results['stream_order'] = so_result
+                results['attributes_updated'].append('stream_order')
+            elif attr == 'path_segs':
+                ps_result = self.recalculate_path_segs(
+                    reason=reason or f"Recalculate {attr}"
+                )
+                results['path_segs'] = ps_result
+                results['attributes_updated'].append('path_segs')
             else:
                 print(f"Warning: Unknown attribute '{attr}' - skipping")
 
         return results
+
+    def recalculate_stream_order(
+        self,
+        update_nodes: bool = True,
+        update_reaches: bool = True,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Recalculate stream_order from path_freq using the legacy formula.
+
+        Stream order is calculated as: round(ln(path_freq)) + 1
+        This provides a log-based stream ordering where higher values indicate
+        larger/more connected streams.
+
+        Parameters
+        ----------
+        update_nodes : bool, optional
+            If True (default), update stream_order in nodes table.
+        update_reaches : bool, optional
+            If True (default), update stream_order in reaches table (mode of node values).
+        reason : str, optional
+            Reason for the recalculation (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Operation results including nodes_updated, reaches_updated, etc.
+
+        Example
+        -------
+        >>> result = workflow.recalculate_stream_order()
+        >>> print(f"Updated {result['nodes_updated']} nodes")
+
+        Notes
+        -----
+        Algorithm from legacy stream_order.py:
+        - For nodes with path_freq > 0: stream_order = round(ln(path_freq)) + 1
+        - For nodes with path_freq <= 0: stream_order = -9999 (nodata)
+        - Reach values are the mode of node values
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Log operation if provenance enabled
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'RECALCULATE_STREAM_ORDER',
+                table_name='nodes',
+                entity_ids=[],  # Affects all nodes
+                region=self._region,
+                reason=reason or "Recalculate stream_order from path_freq",
+                details={'update_nodes': update_nodes, 'update_reaches': update_reaches},
+            ):
+                return self._sword.recalculate_stream_order(
+                    update_nodes=update_nodes,
+                    update_reaches=update_reaches,
+                    verbose=True
+                )
+        else:
+            return self._sword.recalculate_stream_order(
+                update_nodes=update_nodes,
+                update_reaches=update_reaches,
+                verbose=True
+            )
+
+    def recalculate_path_segs(
+        self,
+        update_nodes: bool = True,
+        update_reaches: bool = True,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Recalculate path_segs (path segments) from path_order and path_freq.
+
+        Path segments are unique IDs assigned to river segments between junctions.
+        Each unique combination of (path_order, path_freq) gets a unique segment ID.
+
+        Parameters
+        ----------
+        update_nodes : bool, optional
+            If True (default), update path_segs in nodes table.
+        update_reaches : bool, optional
+            If True (default), update path_segs in reaches table (mode of node values).
+        reason : str, optional
+            Reason for the recalculation (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Operation results including nodes_updated, reaches_updated, total_segments.
+
+        Example
+        -------
+        >>> result = workflow.recalculate_path_segs()
+        >>> print(f"Created {result['total_segments']} unique segments")
+
+        Notes
+        -----
+        Algorithm from legacy stream_order.py find_path_segs function:
+        1. For each unique path_order value (sorted):
+           - Find all nodes with that path_order
+           - For each unique path_freq value within those nodes:
+             - Assign a unique segment ID (incrementing counter)
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Log operation if provenance enabled
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'RECALCULATE_PATH_SEGS',
+                table_name='nodes',
+                entity_ids=[],  # Affects all nodes
+                region=self._region,
+                reason=reason or "Recalculate path_segs from path_order and path_freq",
+                details={'update_nodes': update_nodes, 'update_reaches': update_reaches},
+            ):
+                return self._sword.recalculate_path_segs(
+                    update_nodes=update_nodes,
+                    update_reaches=update_reaches,
+                    verbose=True
+                )
+        else:
+            return self._sword.recalculate_path_segs(
+                update_nodes=update_nodes,
+                update_reaches=update_reaches,
+                verbose=True
+            )
 
     # =========================================================================
     # STATUS AND UTILITY METHODS

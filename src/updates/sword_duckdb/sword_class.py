@@ -3711,6 +3711,357 @@ class SWORD:
             'total_incorrect': len(incorrect),
         }
 
+    # =========================================================================
+    # STREAM ORDER AND PATH SEGMENTS RECALCULATION
+    # =========================================================================
+
+    def recalculate_stream_order(
+        self,
+        update_nodes: bool = True,
+        update_reaches: bool = True,
+        verbose: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Recalculate stream_order from path_freq using the legacy formula.
+
+        Stream order is calculated as: round(ln(path_freq)) + 1
+        This provides a log-based stream ordering where higher values indicate
+        larger/more connected streams.
+
+        Algorithm (from stream_order.py):
+        1. For points with path_freq > 0: stream_order = round(ln(path_freq)) + 1
+        2. For points with path_freq <= 0: stream_order = -9999 (nodata)
+
+        Parameters
+        ----------
+        update_nodes : bool
+            If True, update stream_order in nodes table
+        update_reaches : bool
+            If True, update stream_order in reaches table (mode of node values)
+        verbose : bool
+            If True, print progress messages
+
+        Returns
+        -------
+        dict
+            Results including:
+            - 'nodes_updated': int - Number of nodes updated
+            - 'reaches_updated': int - Number of reaches updated
+            - 'nodes_with_valid_path_freq': int - Nodes that had valid path_freq
+            - 'nodes_missing_path_freq': int - Nodes with invalid/missing path_freq
+
+        Examples
+        --------
+        >>> result = sword.recalculate_stream_order()
+        >>> print(f"Updated {result['nodes_updated']} nodes")
+        """
+        import math
+        from scipy import stats
+
+        if verbose:
+            print("Recalculating stream_order from path_freq...")
+
+        conn = self._db.connect()
+
+        # Disable GC to avoid DuckDB segfaults
+        import gc
+        gc.disable()
+
+        try:
+            # Get all nodes with their path_freq
+            nodes_data = conn.execute("""
+                SELECT node_id, path_freq, stream_order
+                FROM nodes
+                WHERE region = ?
+                ORDER BY node_id
+            """, [self.region]).fetchall()
+
+            if verbose:
+                print(f"  Processing {len(nodes_data)} nodes...")
+
+            # Calculate new stream_order values
+            nodes_updated = 0
+            nodes_valid = 0
+            nodes_missing = 0
+            node_updates = []
+
+            for node_id, path_freq, old_stream_order in nodes_data:
+                if path_freq is not None and path_freq > 0:
+                    # Formula: round(ln(path_freq)) + 1
+                    new_stream_order = int(round(math.log(path_freq))) + 1
+                    nodes_valid += 1
+                else:
+                    new_stream_order = -9999
+                    nodes_missing += 1
+
+                # Only update if changed
+                if new_stream_order != old_stream_order:
+                    node_updates.append((new_stream_order, node_id))
+
+            # Batch update nodes
+            if update_nodes and node_updates:
+                if verbose:
+                    print(f"  Updating {len(node_updates)} nodes with new stream_order...")
+
+                conn.execute("BEGIN TRANSACTION")
+                for new_val, node_id in node_updates:
+                    conn.execute("""
+                        UPDATE nodes
+                        SET stream_order = ?
+                        WHERE node_id = ? AND region = ?
+                    """, [new_val, int(node_id), self.region])
+                conn.execute("COMMIT")
+                nodes_updated = len(node_updates)
+
+            # Update reaches with mode of node stream_order values
+            reaches_updated = 0
+            if update_reaches:
+                if verbose:
+                    print("  Aggregating stream_order to reaches (mode)...")
+
+                # Get reach stream_order as mode of node values
+                reach_data = conn.execute("""
+                    SELECT
+                        r.reach_id,
+                        r.stream_order as old_stream_order,
+                        (
+                            SELECT n.stream_order
+                            FROM nodes n
+                            WHERE n.reach_id = r.reach_id
+                              AND n.region = r.region
+                              AND n.stream_order > 0
+                            GROUP BY n.stream_order
+                            ORDER BY COUNT(*) DESC, n.stream_order DESC
+                            LIMIT 1
+                        ) as new_stream_order
+                    FROM reaches r
+                    WHERE r.region = ?
+                """, [self.region]).fetchall()
+
+                reach_updates = []
+                for reach_id, old_val, new_val in reach_data:
+                    if new_val is None:
+                        new_val = -9999
+                    if new_val != old_val:
+                        reach_updates.append((new_val, reach_id))
+
+                if reach_updates:
+                    if verbose:
+                        print(f"  Updating {len(reach_updates)} reaches...")
+
+                    conn.execute("BEGIN TRANSACTION")
+                    for new_val, reach_id in reach_updates:
+                        conn.execute("""
+                            UPDATE reaches
+                            SET stream_order = ?
+                            WHERE reach_id = ? AND region = ?
+                        """, [new_val, int(reach_id), self.region])
+                    conn.execute("COMMIT")
+                    reaches_updated = len(reach_updates)
+
+            if verbose:
+                print(f"  Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
+
+            return {
+                'nodes_updated': nodes_updated,
+                'reaches_updated': reaches_updated,
+                'nodes_with_valid_path_freq': nodes_valid,
+                'nodes_missing_path_freq': nodes_missing,
+            }
+
+        finally:
+            gc.enable()
+            # Don't close the shared connection - let SWORDDatabase manage it
+
+    def recalculate_path_segs(
+        self,
+        update_nodes: bool = True,
+        update_reaches: bool = True,
+        verbose: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Recalculate path_segs (path segments) from path_order and path_freq.
+
+        Path segments are unique IDs assigned to river segments between junctions.
+        Each unique combination of (path_order, path_freq) gets a unique segment ID.
+
+        Algorithm (from stream_order.py find_path_segs function):
+        1. For each unique path_order value (sorted):
+           - Find all points with that path_order
+           - For each unique path_freq value within those points:
+             - Assign a unique segment ID (incrementing counter)
+
+        Parameters
+        ----------
+        update_nodes : bool
+            If True, update path_segs in nodes table
+        update_reaches : bool
+            If True, update path_segs in reaches table (mode of node values)
+        verbose : bool
+            If True, print progress messages
+
+        Returns
+        -------
+        dict
+            Results including:
+            - 'nodes_updated': int - Number of nodes updated
+            - 'reaches_updated': int - Number of reaches updated
+            - 'total_segments': int - Total unique segments created
+            - 'nodes_assigned': int - Nodes that were assigned a segment
+
+        Examples
+        --------
+        >>> result = sword.recalculate_path_segs()
+        >>> print(f"Created {result['total_segments']} unique segments")
+        """
+        if verbose:
+            print("Recalculating path_segs from path_order and path_freq...")
+
+        conn = self._db.connect()
+
+        # Disable GC to avoid DuckDB segfaults
+        import gc
+        gc.disable()
+
+        try:
+            # Get all nodes with their path variables
+            nodes_data = conn.execute("""
+                SELECT node_id, path_order, path_freq, path_segs
+                FROM nodes
+                WHERE region = ?
+                ORDER BY node_id
+            """, [self.region]).fetchall()
+
+            if verbose:
+                print(f"  Processing {len(nodes_data)} nodes...")
+
+            # Build arrays for vectorized processing
+            node_ids = []
+            path_orders = []
+            path_freqs = []
+            old_path_segs = []
+
+            for node_id, path_order, path_freq, old_seg in nodes_data:
+                node_ids.append(node_id)
+                path_orders.append(path_order if path_order is not None else 0)
+                path_freqs.append(path_freq if path_freq is not None else 0)
+                old_path_segs.append(old_seg if old_seg is not None else 0)
+
+            import numpy as np
+            node_ids = np.array(node_ids)
+            path_orders = np.array(path_orders)
+            path_freqs = np.array(path_freqs)
+            old_path_segs = np.array(old_path_segs)
+
+            # Calculate path_segs using legacy algorithm
+            new_path_segs = np.zeros(len(node_ids), dtype=np.int64)
+
+            # Get unique path_order values > 0
+            unq_orders = np.unique(path_orders)
+            unq_orders = unq_orders[unq_orders > 0]
+
+            cnt = 1
+            nodes_assigned = 0
+
+            for path_ord in unq_orders:
+                # Find all nodes with this path_order
+                pth_idx = np.where(path_orders == path_ord)[0]
+
+                # Get unique path_freq values within these nodes
+                sections = np.unique(path_freqs[pth_idx])
+
+                for section_freq in sections:
+                    # Find nodes with this (path_order, path_freq) combination
+                    sec_idx = np.where(path_freqs[pth_idx] == section_freq)[0]
+                    new_path_segs[pth_idx[sec_idx]] = cnt
+                    nodes_assigned += len(sec_idx)
+                    cnt += 1
+
+            total_segments = cnt - 1
+
+            if verbose:
+                print(f"  Created {total_segments} unique segments")
+
+            # Find nodes that need updating
+            changed_mask = new_path_segs != old_path_segs
+            node_updates = list(zip(new_path_segs[changed_mask], node_ids[changed_mask]))
+
+            # Batch update nodes
+            nodes_updated = 0
+            if update_nodes and node_updates:
+                if verbose:
+                    print(f"  Updating {len(node_updates)} nodes with new path_segs...")
+
+                conn.execute("BEGIN TRANSACTION")
+                for new_val, node_id in node_updates:
+                    conn.execute("""
+                        UPDATE nodes
+                        SET path_segs = ?
+                        WHERE node_id = ? AND region = ?
+                    """, [int(new_val), int(node_id), self.region])
+                conn.execute("COMMIT")
+                nodes_updated = len(node_updates)
+
+            # Update reaches with mode of node path_segs values
+            reaches_updated = 0
+            if update_reaches:
+                if verbose:
+                    print("  Aggregating path_segs to reaches (mode)...")
+
+                # Get reach path_segs as mode of node values
+                reach_data = conn.execute("""
+                    SELECT
+                        r.reach_id,
+                        r.path_segs as old_path_segs,
+                        (
+                            SELECT n.path_segs
+                            FROM nodes n
+                            WHERE n.reach_id = r.reach_id
+                              AND n.region = r.region
+                              AND n.path_segs > 0
+                            GROUP BY n.path_segs
+                            ORDER BY COUNT(*) DESC, n.path_segs DESC
+                            LIMIT 1
+                        ) as new_path_segs
+                    FROM reaches r
+                    WHERE r.region = ?
+                """, [self.region]).fetchall()
+
+                reach_updates = []
+                for reach_id, old_val, new_val in reach_data:
+                    if new_val is None:
+                        new_val = 0
+                    if new_val != old_val:
+                        reach_updates.append((new_val, reach_id))
+
+                if reach_updates:
+                    if verbose:
+                        print(f"  Updating {len(reach_updates)} reaches...")
+
+                    conn.execute("BEGIN TRANSACTION")
+                    for new_val, reach_id in reach_updates:
+                        conn.execute("""
+                            UPDATE reaches
+                            SET path_segs = ?
+                            WHERE reach_id = ? AND region = ?
+                        """, [int(new_val), int(reach_id), self.region])
+                    conn.execute("COMMIT")
+                    reaches_updated = len(reach_updates)
+
+            if verbose:
+                print(f"  Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
+
+            return {
+                'nodes_updated': nodes_updated,
+                'reaches_updated': reaches_updated,
+                'total_segments': total_segments,
+                'nodes_assigned': nodes_assigned,
+            }
+
+        finally:
+            gc.enable()
+            # Don't close the shared connection - let SWORDDatabase manage it
+
     def close(self) -> None:
         """Close the database connection."""
         self._db.close()
