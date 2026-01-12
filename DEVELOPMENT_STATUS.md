@@ -350,3 +350,19 @@ workflow.close()
 | Delta handling | `2_add_deltas_to_sword.py` | 201 |
 
 ---
+
+## Remaining Work / Future Enhancements
+
+**All core QGIS workflow operations are complete.** Remaining items require external source data:
+
+| Item | Status | Blocker |
+|------|--------|---------|
+| `sinuosity` reconstruction | Pending | Needs MATLAB port or pre-computed values from legacy |
+| `trib_flag` reconstruction | Pending | Needs MERIT Hydro Vector (MHV) source data |
+| `facc` filtering reconstruction | Pending | Needs raw FACC raster values |
+| `stream_order` recalculation | Available | Trivial formula: `round(ln(path_freq)) + 1` |
+| `path_segs` recalculation | Available | Uses path_order + path_freq |
+
+**Note:** Most data is already populated from the NetCDF migration. Reconstruction methods exist for validation but are not required for normal workflow operations.
+
+---
