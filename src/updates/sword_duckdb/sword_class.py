@@ -4062,6 +4062,548 @@ class SWORD:
             gc.enable()
             # Don't close the shared connection - let SWORDDatabase manage it
 
+    # =========================================================================
+    # SINUOSITY RECALCULATION
+    # =========================================================================
+
+    def recalculate_sinuosity(
+        self,
+        reach_ids: Optional[List[int]] = None,
+        update_database: bool = True,
+        min_reach_len_factor: float = 1.0,
+        smoothing_span: int = 5,
+        verbose: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Recalculate sinuosity from centerline geometry using the legacy MATLAB algorithm.
+
+        Sinuosity is calculated by:
+        1. Projecting centerline coordinates to UTM for accurate distance measurements
+        2. Smoothing coordinates with a moving average to remove pixel-level noise
+        3. Detecting inflection points (where river curvature changes direction)
+        4. Merging short reaches based on similarity to neighbors
+        5. Computing sinuosity as arc_length / straight_line_distance for each bend
+
+        The algorithm is based on the legacy MATLAB code from:
+        - SinuosityMinAreaVarMinReach.m
+        - MergeShortReachesVarMin.m
+
+        Parameters
+        ----------
+        reach_ids : list of int, optional
+            Specific reaches to recalculate. If None, recalculates all reaches.
+        update_database : bool
+            If True, update sinuosity values in the database.
+        min_reach_len_factor : float
+            Multiplier for minimum reach length (based on width). Default 1.0.
+        smoothing_span : int
+            Number of points for moving average smoothing. Default 5.
+        verbose : bool
+            If True, print progress messages.
+
+        Returns
+        -------
+        dict
+            Results including:
+            - 'reaches_processed': int - Number of reaches processed
+            - 'reaches_updated': int - Number of reaches with changed sinuosity
+            - 'mean_sinuosity': float - Mean sinuosity across all processed reaches
+            - 'reach_sinuosities': dict - {reach_id: sinuosity} for each reach
+
+        Notes
+        -----
+        Sinuosity values:
+        - 1.0 = perfectly straight
+        - 1.0-1.5 = nearly straight
+        - 1.5-2.0 = sinuous
+        - >2.0 = highly sinuous/meandering
+
+        Examples
+        --------
+        >>> result = sword.recalculate_sinuosity()
+        >>> print(f"Mean sinuosity: {result['mean_sinuosity']:.2f}")
+
+        >>> # Recalculate specific reaches
+        >>> result = sword.recalculate_sinuosity(reach_ids=[123, 456])
+        """
+        import numpy as np
+        try:
+            from pyproj import CRS, Transformer
+        except ImportError:
+            raise ImportError("pyproj is required for sinuosity calculation. Install with: pip install pyproj")
+
+        if verbose:
+            print("Recalculating sinuosity from centerline geometry...")
+
+        conn = self._db.connect()
+
+        # Disable GC to avoid DuckDB segfaults
+        gc.disable()
+
+        try:
+            # Check if sinuosity column exists, create if not
+            columns = [col[0] for col in conn.execute(
+                "SELECT * FROM reaches LIMIT 1"
+            ).description]
+
+            if 'sinuosity' not in columns:
+                if verbose:
+                    print("  Adding sinuosity column to reaches table...")
+                conn.execute("ALTER TABLE reaches ADD COLUMN sinuosity DOUBLE")
+
+            # Get reach IDs to process
+            if reach_ids is None:
+                reach_data = conn.execute("""
+                    SELECT reach_id, sinuosity
+                    FROM reaches
+                    WHERE region = ?
+                    ORDER BY reach_id
+                """, [self.region]).fetchall()
+                reach_ids_to_process = [r[0] for r in reach_data]
+                old_sinuosities = {r[0]: r[1] for r in reach_data}
+            else:
+                reach_ids_to_process = list(reach_ids)
+                reach_data = conn.execute("""
+                    SELECT reach_id, sinuosity
+                    FROM reaches
+                    WHERE region = ? AND reach_id IN ({})
+                    ORDER BY reach_id
+                """.format(','.join('?' * len(reach_ids))),
+                    [self.region] + reach_ids_to_process
+                ).fetchall()
+                old_sinuosities = {r[0]: r[1] for r in reach_data}
+
+            if verbose:
+                print(f"  Processing {len(reach_ids_to_process)} reaches...")
+
+            # Calculate sinuosity for each reach
+            reach_sinuosities = {}
+            processed = 0
+            skipped = 0
+
+            for reach_id in reach_ids_to_process:
+                # Get centerlines for this reach (x, y only - width from reaches)
+                centerlines = conn.execute("""
+                    SELECT x, y
+                    FROM centerlines
+                    WHERE reach_id = ? AND region = ?
+                    ORDER BY cl_id
+                """, [reach_id, self.region]).fetchall()
+
+                if len(centerlines) < 3:
+                    # Too few points - set sinuosity to 1.0 (straight)
+                    reach_sinuosities[reach_id] = 1.0
+                    skipped += 1
+                    continue
+
+                # Get reach width (use same width for all centerlines in reach)
+                reach_width = conn.execute("""
+                    SELECT width FROM reaches WHERE reach_id = ? AND region = ?
+                """, [reach_id, self.region]).fetchone()
+                reach_width = reach_width[0] if reach_width and reach_width[0] else 100.0
+
+                lons = np.array([c[0] for c in centerlines])
+                lats = np.array([c[1] for c in centerlines])
+                # Use constant width for all points in reach
+                widths = np.full(len(centerlines), reach_width if reach_width > 0 else 100.0)
+
+                # Calculate sinuosity using the algorithm
+                sinuosity = self._calculate_reach_sinuosity(
+                    lats, lons, widths,
+                    smoothing_span=smoothing_span,
+                    min_reach_len_factor=min_reach_len_factor
+                )
+
+                reach_sinuosities[reach_id] = sinuosity
+                processed += 1
+
+                if verbose and processed % 1000 == 0:
+                    print(f"    Processed {processed}/{len(reach_ids_to_process)} reaches...")
+
+            if verbose:
+                print(f"  Processed {processed} reaches, skipped {skipped} (too few points)")
+
+            # Update database
+            reaches_updated = 0
+            if update_database:
+                reach_updates = []
+                for reach_id, new_sin in reach_sinuosities.items():
+                    old_sin = old_sinuosities.get(reach_id)
+                    # Compare with tolerance for floating point
+                    if old_sin is None or abs(new_sin - old_sin) > 0.001:
+                        reach_updates.append((new_sin, reach_id))
+
+                if reach_updates:
+                    if verbose:
+                        print(f"  Updating {len(reach_updates)} reaches in database...")
+
+                    conn.execute("BEGIN TRANSACTION")
+                    for new_val, reach_id in reach_updates:
+                        conn.execute("""
+                            UPDATE reaches
+                            SET sinuosity = ?
+                            WHERE reach_id = ? AND region = ?
+                        """, [float(new_val), int(reach_id), self.region])
+                    conn.execute("COMMIT")
+                    reaches_updated = len(reach_updates)
+
+            # Calculate statistics
+            sinuosity_values = list(reach_sinuosities.values())
+            mean_sinuosity = np.mean(sinuosity_values) if sinuosity_values else 0.0
+
+            if verbose:
+                print(f"  Done. Updated {reaches_updated} reaches.")
+                print(f"  Mean sinuosity: {mean_sinuosity:.3f}")
+
+            return {
+                'reaches_processed': processed,
+                'reaches_skipped': skipped,
+                'reaches_updated': reaches_updated,
+                'mean_sinuosity': float(mean_sinuosity),
+                'reach_sinuosities': reach_sinuosities,
+            }
+
+        finally:
+            gc.enable()
+            # Don't close the shared connection - let SWORDDatabase manage it
+
+    def _calculate_reach_sinuosity(
+        self,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        widths: np.ndarray,
+        smoothing_span: int = 5,
+        min_reach_len_factor: float = 1.0
+    ) -> float:
+        """
+        Calculate sinuosity for a single reach from its centerline coordinates.
+
+        This implements the core algorithm from SinuosityMinAreaVarMinReach.m.
+
+        Parameters
+        ----------
+        lats : np.ndarray
+            Latitude coordinates of centerline points
+        lons : np.ndarray
+            Longitude coordinates of centerline points
+        widths : np.ndarray
+            River widths at each point (meters)
+        smoothing_span : int
+            Moving average window size for smoothing
+        min_reach_len_factor : float
+            Multiplier for minimum reach length constraint
+
+        Returns
+        -------
+        float
+            Calculated sinuosity (arc_length / straight_line_distance)
+        """
+        import numpy as np
+        from pyproj import CRS, Transformer
+
+        n = len(lats)
+        if n < 3:
+            return 1.0
+
+        # Determine UTM zone from centroid
+        center_lon = np.mean(lons)
+        center_lat = np.mean(lats)
+        utm_zone = int((center_lon + 180) / 6) + 1
+        is_north = center_lat >= 0
+
+        # Create transformer to UTM
+        utm_crs = CRS.from_proj4(
+            f"+proj=utm +zone={utm_zone} +{'north' if is_north else 'south'} +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+        )
+        wgs84_crs = CRS.from_epsg(4326)
+        transformer = Transformer.from_crs(wgs84_crs, utm_crs, always_xy=True)
+
+        # Project to UTM
+        X, Y = transformer.transform(lons, lats)
+        X = np.array(X)
+        Y = np.array(Y)
+
+        # Apply moving average smoothing to remove pixel-level noise
+        X = self._moving_average(X, smoothing_span)
+        Y = self._moving_average(Y, smoothing_span)
+
+        # Calculate cumulative distance along centerline
+        D = np.zeros(n)
+        for i in range(1, n):
+            D[i] = D[i-1] + np.sqrt((X[i] - X[i-1])**2 + (Y[i] - Y[i-1])**2)
+
+        total_length = D[-1] - D[0]
+        if total_length < 1.0:  # Less than 1 meter
+            return 1.0
+
+        # For short reaches, use simple sinuosity
+        if n <= 20:
+            # Simple sinuosity: total arc length / straight line distance
+            straight_dist = np.sqrt((X[-1] - X[0])**2 + (Y[-1] - Y[0])**2)
+            if straight_dist < 1.0:
+                return 1.0
+            return total_length / straight_dist
+
+        # Find inflection points (where curvature changes direction)
+        # Using cross product of adjacent segment vectors
+        Dx = np.diff(X)
+        Dy = np.diff(Y)
+
+        # Cross product: Dx[i-1]*Dy[i] - Dx[i]*Dy[i-1]
+        Product = np.zeros(n)
+        for i in range(1, n-1):
+            Product[i] = Dx[i-1] * Dy[i] - Dx[i] * Dy[i-1]
+
+        # Extend to endpoints
+        Product[0] = Product[1] if n > 1 else 0
+        Product[-1] = Product[-2] if n > 1 else 0
+
+        # Expand to look at larger-scale curvature (like MATLAB code)
+        for count in range(1, n-1):
+            Base = np.sqrt((X[min(count+1, n-1)] - X[max(count-1, 0)])**2 +
+                          (Y[min(count+1, n-1)] - Y[max(count-1, 0)])**2)
+            if Base > 0:
+                height = abs(Product[count] / (2 * Base))
+            else:
+                height = 0
+
+            width = 4
+            while height < 30 and width < 30:
+                i1 = max(0, count - width // 2)
+                i2 = min(n-1, count + width // 2)
+
+                x1, y1 = X[i1], Y[i1]
+                x2, y2 = X[i2], Y[i2]
+
+                Dxup = X[count] - x1
+                Dxdo = x2 - X[count]
+                Dyup = Y[count] - y1
+                Dydo = y2 - Y[count]
+
+                prod = Dxup * Dydo - Dxdo * Dyup
+                Base = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                if Base > 0:
+                    height = abs(prod / (2 * Base))
+                else:
+                    height = 0
+
+                Product[count] = prod
+                width += 2
+
+        # Find inflection points (sign changes in Product)
+        bounds = [0]
+        for i in range(1, n-1):
+            if Product[i] * Product[i+1] < 0:
+                bounds.append(i + 1)
+        bounds.append(n - 1)
+
+        # Merge short reaches
+        bounds = self._merge_short_reaches(
+            bounds, D, Product, widths, min_reach_len_factor
+        )
+
+        # Remove boundaries where curvature no longer changes sign after merging
+        if len(bounds) > 2:
+            bounds = self._remove_invalid_boundaries(bounds, Product)
+
+        # Calculate sinuosity for each bend and average
+        if len(bounds) < 2:
+            straight_dist = np.sqrt((X[-1] - X[0])**2 + (Y[-1] - Y[0])**2)
+            if straight_dist < 1.0:
+                return 1.0
+            return total_length / straight_dist
+
+        # Calculate sinuosity as weighted average of bend sinuosities
+        total_arc = 0.0
+        total_straight = 0.0
+
+        for i in range(len(bounds) - 1):
+            i1, i2 = bounds[i], bounds[i+1]
+            arc_length = D[i2] - D[i1]
+            straight_dist = np.sqrt((X[i1] - X[i2])**2 + (Y[i1] - Y[i2])**2)
+
+            if straight_dist > 0:
+                total_arc += arc_length
+                total_straight += straight_dist
+
+        if total_straight < 1.0:
+            return 1.0
+
+        sinuosity = total_arc / total_straight
+
+        # Clamp to reasonable range
+        return max(1.0, min(sinuosity, 10.0))
+
+    def _moving_average(self, x: np.ndarray, span: int = 5) -> np.ndarray:
+        """
+        Apply moving average smoothing.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Input array
+        span : int
+            Window size (will be centered)
+
+        Returns
+        -------
+        np.ndarray
+            Smoothed array
+        """
+        import numpy as np
+
+        if len(x) < span:
+            return x
+
+        # Use cumsum for efficient moving average
+        pad = span // 2
+        x_padded = np.pad(x, (pad, pad), mode='edge')
+        cumsum = np.cumsum(x_padded)
+        result = (cumsum[span:] - cumsum[:-span]) / span
+
+        # Ensure same length
+        if len(result) > len(x):
+            result = result[:len(x)]
+        elif len(result) < len(x):
+            result = np.pad(result, (0, len(x) - len(result)), mode='edge')
+
+        return result
+
+    def _merge_short_reaches(
+        self,
+        bounds: List[int],
+        D: np.ndarray,
+        Product: np.ndarray,
+        widths: np.ndarray,
+        min_factor: float = 1.0
+    ) -> List[int]:
+        """
+        Merge short reaches by identifying which neighbor is more similar.
+
+        This implements MergeShortReachesVarMin.m algorithm.
+
+        Parameters
+        ----------
+        bounds : list of int
+            Reach boundary indices
+        D : np.ndarray
+            Cumulative distance array
+        Product : np.ndarray
+            Cross product (concavity) array
+        widths : np.ndarray
+            River widths
+        min_factor : float
+            Multiplier for minimum reach length
+
+        Returns
+        -------
+        list of int
+            Updated boundary indices
+        """
+        import numpy as np
+
+        bounds = list(bounds)
+        if len(bounds) <= 2:
+            return bounds
+
+        max_iterations = len(bounds) * 2  # Prevent infinite loops
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            if len(bounds) <= 2:
+                break
+
+            # Calculate reach lengths
+            reach_lengths = []
+            for i in range(len(bounds) - 1):
+                reach_lengths.append(D[bounds[i+1]] - D[bounds[i]])
+
+            # Calculate minimum lengths based on width
+            min_lengths = []
+            for i in range(len(bounds) - 1):
+                avg_width = np.mean(widths[bounds[i]:bounds[i+1]+1])
+                total_len = D[-1] - D[0]
+                min_len = min(avg_width * min_factor, total_len / 2)
+                min_len = max(min_len, 100)  # Minimum 100m
+                min_lengths.append(min_len)
+
+            # Find shortest reach
+            min_length = min(reach_lengths)
+            min_idx = reach_lengths.index(min_length)
+
+            # Check if shortest is long enough
+            if min_length >= min_lengths[min_idx]:
+                break
+
+            # Merge with similar neighbor
+            if min_idx == 0:
+                # First reach - merge with second
+                bounds.pop(1)
+            elif min_idx == len(reach_lengths) - 1:
+                # Last reach - merge with previous
+                bounds.pop(-2)
+            else:
+                # Middle reach - merge with more similar neighbor
+                curr_concav = np.mean(Product[bounds[min_idx]:bounds[min_idx+1]])
+                up_concav = np.mean(Product[bounds[min_idx-1]:bounds[min_idx]])
+                down_concav = np.mean(Product[bounds[min_idx+1]:bounds[min_idx+2]])
+
+                if abs(down_concav - curr_concav) < abs(up_concav - curr_concav):
+                    # More similar to downstream - remove boundary between current and downstream
+                    bounds.pop(min_idx + 1)
+                else:
+                    # More similar to upstream - remove boundary between upstream and current
+                    bounds.pop(min_idx)
+
+        return bounds
+
+    def _remove_invalid_boundaries(
+        self,
+        bounds: List[int],
+        Product: np.ndarray
+    ) -> List[int]:
+        """
+        Remove boundaries where curvature no longer changes sign after merging.
+
+        Parameters
+        ----------
+        bounds : list of int
+            Reach boundary indices
+        Product : np.ndarray
+            Cross product (concavity) array
+
+        Returns
+        -------
+        list of int
+            Updated boundary indices
+        """
+        import numpy as np
+
+        if len(bounds) <= 2:
+            return bounds
+
+        bounds = list(bounds)
+
+        # Recalculate average curvature for each reach
+        avg_products = []
+        for i in range(len(bounds) - 1):
+            avg_products.append(np.mean(Product[bounds[i]:bounds[i+1]]))
+
+        # Find boundaries to remove (where adjacent reaches have same-sign curvature)
+        to_remove = []
+        for i in range(len(avg_products) - 1):
+            if avg_products[i] * avg_products[i+1] > 0:
+                to_remove.append(i + 1)  # Index in bounds to remove
+
+        # Remove from end to preserve indices
+        for idx in reversed(to_remove):
+            if 0 < idx < len(bounds) - 1:  # Don't remove first or last
+                bounds.pop(idx)
+
+        return bounds
+
     def close(self) -> None:
         """Close the database connection."""
         self._db.close()

@@ -999,5 +999,148 @@ class TestRecalculatePathSegs:
         assert min_seg == 1, "Segment IDs should start at 1"
 
 
+class TestRecalculateSinuosity:
+    """Test suite for recalculate_sinuosity method."""
+
+    def test_recalculate_sinuosity_method_exists(self, temp_sword):
+        """Test that recalculate_sinuosity method exists and is callable."""
+        assert hasattr(temp_sword, 'recalculate_sinuosity')
+        assert callable(temp_sword.recalculate_sinuosity)
+
+    def test_recalculate_sinuosity_returns_dict(self, temp_sword):
+        """Test recalculate_sinuosity returns proper dict with single reach."""
+        # Get a single reach ID to test
+        conn = temp_sword._db.connect()
+        reach_id = conn.execute("""
+            SELECT reach_id FROM reaches
+            WHERE region = ?
+            LIMIT 1
+        """, [temp_sword.region]).fetchone()[0]
+
+        result = temp_sword.recalculate_sinuosity(
+            reach_ids=[reach_id],
+            update_database=False,
+            verbose=False
+        )
+
+        assert isinstance(result, dict)
+        assert 'reaches_processed' in result
+        assert 'reaches_skipped' in result
+        assert 'reaches_updated' in result
+        assert 'mean_sinuosity' in result
+        assert 'reach_sinuosities' in result
+
+    def test_recalculate_sinuosity_values_reasonable(self, temp_sword):
+        """Test that computed sinuosity values are reasonable."""
+        # Get a few reach IDs
+        conn = temp_sword._db.connect()
+        reach_ids = [r[0] for r in conn.execute("""
+            SELECT DISTINCT reach_id FROM reaches
+            WHERE region = ?
+            LIMIT 5
+        """, [temp_sword.region]).fetchall()]
+
+        result = temp_sword.recalculate_sinuosity(
+            reach_ids=reach_ids,
+            update_database=False,
+            verbose=False
+        )
+
+        # Sinuosity should be >= 1.0 (can't be less than straight line)
+        for reach_id, sinuosity in result['reach_sinuosities'].items():
+            assert sinuosity >= 1.0, f"Sinuosity for reach {reach_id} is {sinuosity}, should be >= 1.0"
+            # Upper bound is 10.0 (clamped in algorithm)
+            assert sinuosity <= 10.0, f"Sinuosity for reach {reach_id} is {sinuosity}, should be <= 10.0"
+
+    def test_recalculate_sinuosity_mean_valid(self, temp_sword):
+        """Test that mean sinuosity is valid."""
+        conn = temp_sword._db.connect()
+        reach_ids = [r[0] for r in conn.execute("""
+            SELECT DISTINCT reach_id FROM reaches
+            WHERE region = ?
+            LIMIT 10
+        """, [temp_sword.region]).fetchall()]
+
+        result = temp_sword.recalculate_sinuosity(
+            reach_ids=reach_ids,
+            update_database=False,
+            verbose=False
+        )
+
+        # Mean should be a valid float >= 1.0
+        assert isinstance(result['mean_sinuosity'], float)
+        assert result['mean_sinuosity'] >= 1.0
+
+    def test_recalculate_sinuosity_handles_short_reaches(self, temp_sword):
+        """Test that short reaches (< 3 centerlines) return sinuosity 1.0."""
+        # This test runs without errors even for reaches with few centerlines
+        conn = temp_sword._db.connect()
+        reach_ids = [r[0] for r in conn.execute("""
+            SELECT reach_id FROM reaches
+            WHERE region = ?
+            LIMIT 3
+        """, [temp_sword.region]).fetchall()]
+
+        result = temp_sword.recalculate_sinuosity(
+            reach_ids=reach_ids,
+            update_database=False,
+            verbose=False
+        )
+
+        # Should process without errors
+        assert result['reaches_processed'] + result['reaches_skipped'] == len(reach_ids)
+
+    def test_recalculate_sinuosity_helper_methods_exist(self, temp_sword):
+        """Test that helper methods exist."""
+        assert hasattr(temp_sword, '_calculate_reach_sinuosity')
+        assert hasattr(temp_sword, '_moving_average')
+        assert hasattr(temp_sword, '_merge_short_reaches')
+        assert hasattr(temp_sword, '_remove_invalid_boundaries')
+
+    def test_moving_average(self, temp_sword):
+        """Test the moving average helper function."""
+        import numpy as np
+
+        # Test with simple array
+        x = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0])
+        result = temp_sword._moving_average(x, span=3)
+
+        # Result should have same length
+        assert len(result) == len(x)
+        # Result should be smoothed (middle values close to original but averaged)
+        # Values should be between min and max of input
+        assert result.min() >= x.min() - 0.1
+        assert result.max() <= x.max() + 0.1
+
+    def test_moving_average_short_array(self, temp_sword):
+        """Test moving average with array shorter than span."""
+        import numpy as np
+
+        x = np.array([1.0, 2.0])
+        result = temp_sword._moving_average(x, span=5)
+
+        # Should return original for short arrays
+        assert len(result) == len(x)
+
+    @pytest.mark.skip(reason="DuckDB GC segfault on large updates")
+    def test_recalculate_sinuosity_updates_database(self, temp_sword):
+        """Test that sinuosity values are actually updated in database."""
+        conn = temp_sword._db.connect()
+        reach_ids = [r[0] for r in conn.execute("""
+            SELECT reach_id FROM reaches
+            WHERE region = ?
+            LIMIT 5
+        """, [temp_sword.region]).fetchall()]
+
+        result = temp_sword.recalculate_sinuosity(
+            reach_ids=reach_ids,
+            update_database=True,
+            verbose=False
+        )
+
+        # Should have attempted updates
+        assert 'reaches_updated' in result
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

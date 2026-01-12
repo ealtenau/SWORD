@@ -514,5 +514,57 @@ class TestRecalculateNetworkAttributes:
         assert 'path_segs' in result['attributes_updated']
 
 
+class TestRecalculateSinuosity:
+    """Test recalculate_sinuosity workflow method."""
+
+    def test_recalculate_sinuosity_method_exists(self, temp_workflow):
+        """Test recalculate_sinuosity method exists."""
+        assert hasattr(temp_workflow, 'recalculate_sinuosity')
+        assert callable(temp_workflow.recalculate_sinuosity)
+
+    def test_recalculate_sinuosity_requires_load(self, unloaded_workflow):
+        """Test recalculate_sinuosity raises error when not loaded."""
+        with pytest.raises(RuntimeError, match="No database loaded"):
+            unloaded_workflow.recalculate_sinuosity()
+
+    def test_recalculate_sinuosity_returns_dict(self, temp_workflow):
+        """Test recalculate_sinuosity returns proper dict with limited reaches."""
+        # Get a few reach IDs from the database
+        conn = temp_workflow._sword._db.connect()
+        reach_ids = [r[0] for r in conn.execute("""
+            SELECT reach_id FROM reaches
+            WHERE region = ?
+            LIMIT 3
+        """, [temp_workflow._sword.region]).fetchall()]
+
+        result = temp_workflow.recalculate_sinuosity(
+            reach_ids=reach_ids
+        )
+
+        assert isinstance(result, dict)
+        assert 'reaches_processed' in result
+        assert 'reaches_skipped' in result
+        assert 'reaches_updated' in result
+        assert 'mean_sinuosity' in result
+        assert 'reach_sinuosities' in result
+
+    def test_recalculate_sinuosity_values_reasonable(self, temp_workflow):
+        """Test that sinuosity values are within expected range."""
+        conn = temp_workflow._sword._db.connect()
+        reach_ids = [r[0] for r in conn.execute("""
+            SELECT reach_id FROM reaches
+            WHERE region = ?
+            LIMIT 5
+        """, [temp_workflow._sword.region]).fetchall()]
+
+        result = temp_workflow.recalculate_sinuosity(
+            reach_ids=reach_ids
+        )
+
+        for reach_id, sinuosity in result['reach_sinuosities'].items():
+            assert sinuosity >= 1.0, "Sinuosity must be >= 1.0"
+            assert sinuosity <= 10.0, "Sinuosity should be clamped to <= 10.0"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

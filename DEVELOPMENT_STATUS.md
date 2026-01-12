@@ -339,6 +339,7 @@ workflow.close()
 | 5 | `dist_out` from topology (BFS) | COMPLETE | Phase 4 Task 4.2 |
 | 6 | `stream_order` recalculation | COMPLETE | Based on stream_order.py |
 | 6 | `path_segs` recalculation | COMPLETE | Based on stream_order.py |
+| 7 | `sinuosity` recalculation | COMPLETE | Ported from MATLAB SinuosityMinAreaVarMinReach.m |
 
 ### Key Legacy File References
 
@@ -350,6 +351,7 @@ workflow.close()
 | Ghost reach creation | `create_missing_ghost_reach.py` | 717 |
 | Topology validation | `check_topo_consistency.py` | 202 |
 | Delta handling | `2_add_deltas_to_sword.py` | 201 |
+| Sinuosity calculation | `SWORD-Sinuosity/Code/SinuosityMinAreaVarMinReach.m` | 191 |
 
 ---
 
@@ -359,7 +361,7 @@ workflow.close()
 
 | Item | Status | Blocker |
 |------|--------|---------|
-| `sinuosity` reconstruction | Pending | Needs MATLAB port or pre-computed values from legacy |
+| `sinuosity` recalculation | **COMPLETE** | `recalculate_sinuosity()` ported from MATLAB |
 | `trib_flag` reconstruction | Pending | Needs MERIT Hydro Vector (MHV) source data |
 | `facc` filtering reconstruction | Pending | Needs raw FACC raster values |
 | `stream_order` recalculation | **COMPLETE** | `recalculate_stream_order()` implemented |

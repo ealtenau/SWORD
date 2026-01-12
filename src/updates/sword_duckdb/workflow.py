@@ -2068,6 +2068,92 @@ class SWORDWorkflow:
                 verbose=True
             )
 
+    def recalculate_sinuosity(
+        self,
+        reach_ids: Optional[List[int]] = None,
+        min_reach_len_factor: float = 1.0,
+        smoothing_span: int = 5,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Recalculate sinuosity from centerline geometry using the legacy MATLAB algorithm.
+
+        Sinuosity measures how winding a river is, calculated as the ratio of
+        the actual channel length to the straight-line distance between endpoints.
+
+        Parameters
+        ----------
+        reach_ids : list of int, optional
+            Specific reaches to recalculate. If None, recalculates all reaches.
+        min_reach_len_factor : float, optional
+            Multiplier for minimum reach length based on width. Default 1.0.
+        smoothing_span : int, optional
+            Number of points for moving average smoothing. Default 5.
+        reason : str, optional
+            Reason for the recalculation (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'reaches_processed': int - Number of reaches processed
+            - 'reaches_updated': int - Number of reaches with changed sinuosity
+            - 'mean_sinuosity': float - Mean sinuosity across all reaches
+            - 'reach_sinuosities': dict - {reach_id: sinuosity} for each reach
+
+        Example
+        -------
+        >>> result = workflow.recalculate_sinuosity()
+        >>> print(f"Mean sinuosity: {result['mean_sinuosity']:.2f}")
+
+        Notes
+        -----
+        Algorithm (ported from legacy MATLAB code):
+        1. Project centerline coordinates to UTM for accurate distance measurements
+        2. Smooth coordinates with moving average to remove pixel-level noise
+        3. Detect inflection points (where river curvature changes direction)
+        4. Merge short reaches based on similarity to neighbors
+        5. Calculate sinuosity as arc_length / straight_line_distance for each bend
+
+        Sinuosity interpretation:
+        - 1.0 = perfectly straight
+        - 1.0-1.5 = nearly straight
+        - 1.5-2.0 = sinuous
+        - >2.0 = highly sinuous/meandering
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Log operation if provenance enabled
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'RECALCULATE_SINUOSITY',
+                table_name='reaches',
+                entity_ids=reach_ids or [],  # Affects specified or all reaches
+                region=self._region,
+                reason=reason or "Recalculate sinuosity from centerline geometry",
+                details={
+                    'reach_ids': reach_ids,
+                    'min_reach_len_factor': min_reach_len_factor,
+                    'smoothing_span': smoothing_span,
+                },
+            ):
+                return self._sword.recalculate_sinuosity(
+                    reach_ids=reach_ids,
+                    update_database=True,
+                    min_reach_len_factor=min_reach_len_factor,
+                    smoothing_span=smoothing_span,
+                    verbose=True
+                )
+        else:
+            return self._sword.recalculate_sinuosity(
+                reach_ids=reach_ids,
+                update_database=True,
+                min_reach_len_factor=min_reach_len_factor,
+                smoothing_span=smoothing_span,
+                verbose=True
+            )
+
     # =========================================================================
     # STATUS AND UTILITY METHODS
     # =========================================================================
