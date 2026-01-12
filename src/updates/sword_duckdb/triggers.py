@@ -28,6 +28,14 @@ Example Usage:
     # After QGIS editing session
     changes = get_pending_changes(pg_connection_string, prefix="na_")
     print(f"Modified: {changes['reaches']} reaches, {changes['nodes']} nodes")
+
+TODO(MED): Implement git-like versioning system. Current change tracking only
+stores most recent old/new values. Full versioning would track:
+1. Edit history with timestamps and user info
+2. Ability to revert to previous versions
+3. Diff between any two versions
+4. Branch/merge support for concurrent editing sessions
+See MIGRATION_STATUS.md "GitHub Issues Needed" section.
 """
 
 from __future__ import annotations

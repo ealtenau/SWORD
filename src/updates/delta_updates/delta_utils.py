@@ -14,9 +14,13 @@ Dr. Paola Passalacqua's lab at UT Austin
 from __future__ import division
 import os
 import sys
+import logging
 main_dir = os.getcwd()
 import time
 import numpy as np
+
+# Configure logging for this module
+logger = logging.getLogger(__name__)
 from scipy import spatial as sp
 import glob
 import geopandas as gp
@@ -1302,10 +1306,10 @@ def find_delta_tribs(delta_cls, sword, delete_ids=None, tributary_ids=None):
         pts = np.where(np.in1d(sword.centerlines.reach_id[0,cl_keep], seg_rchs)==True)[0]
         radius = np.where(pt_dist[pts] < 0.0045)[0]
         perc = len(radius)/len(pts)*100
-        # DEBUG: print reach details
+        # Log reach details for debugging tributary detection
         mx = np.mean(sword.centerlines.x[pts]) if len(pts) else np.nan
         my = np.mean(sword.centerlines.y[pts]) if len(pts) else np.nan
-        print(f"DEBUG: rch {int(trib_check[t])} pts {len(pts)} perc {perc:.1f}% mean ({mx:.4f}, {my:.4f})")
+        logger.debug(f"rch {int(trib_check[t])} pts {len(pts)} perc {perc:.1f}% mean ({mx:.4f}, {my:.4f})")
         if perc >= 0:
             #determine if reaches are part of a separate network
             #from delta by looking for outlets. Remove if there 
@@ -1319,8 +1323,12 @@ def find_delta_tribs(delta_cls, sword, delete_ids=None, tributary_ids=None):
                     up_rchs = find_all_us_rchs(sword, seg_rchs) 
                     rmv_rchs.append(up_rchs)
                     
-            #remove reaches if there is more than 5% overlap. 
-            elif perc > 2:
+            # TODO(MED): This 5% threshold is still being tuned. Higher values
+            # preserve more reaches as tributaries rather than removing them.
+            # Original value was 2%, increased to reduce aggressive deletion.
+            # Consider making this a configurable parameter.
+            # Remove reaches if there is more than 5% overlap.
+            elif perc > 5:
                 #condition for short 'junction' reaches that may have 
                 #larger percentage. If perc > 0 flag as tributary. 
                 if len(pts) < 20:

@@ -21,6 +21,14 @@ Example Usage:
 
     # Export to GeoParquet
     export_to_geoparquet(sword, "/data/exports/na_reaches.parquet", table="reaches")
+
+TODO(LOW): Add error handling for network failures during PostgreSQL operations.
+Current implementation assumes stable connection. Should add:
+1. Connection retry logic with exponential backoff
+2. Transaction rollback on partial failure
+3. Progress checkpointing for large exports
+4. Informative error messages for common failures (auth, network, disk)
+See MIGRATION_STATUS.md "Immediate TODOs" section.
 """
 
 from __future__ import annotations

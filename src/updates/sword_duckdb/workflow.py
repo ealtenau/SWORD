@@ -1,0 +1,1192 @@
+# -*- coding: utf-8 -*-
+"""
+SWORD Workflow Orchestration
+============================
+
+This module provides high-level workflow orchestration for SWORD database operations.
+It ties together loading, modification tracking, provenance logging, reactive
+recalculation, and export into a unified workflow.
+
+SWORDWorkflow is the RECOMMENDED entry point for all SWORD operations.
+
+Example Usage:
+    from sword_duckdb import SWORDWorkflow
+
+    # Initialize workflow with provenance tracking
+    workflow = SWORDWorkflow(user_id="jake")
+
+    # Load a region
+    sword = workflow.load('data/duckdb/sword_v17b.duckdb', 'NA')
+
+    # Modify with transaction (automatic rollback on error)
+    with workflow.transaction("Fix elevation errors"):
+        workflow.modify_reach(123, wse=45.5, reason="Corrected from field data")
+
+    # Or batch modifications
+    with workflow.batch_modify():
+        sword.reaches.wse[mask] = new_values
+        sword.nodes.x[node_mask] = new_x_values
+
+    # Query history
+    history = workflow.get_history(entity_type='reach', entity_id=123)
+
+    # Export to various formats
+    workflow.export(formats=['geopackage'], output_dir='outputs/')
+"""
+
+from __future__ import annotations
+
+import logging
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Union
+
+import numpy as np
+
+if TYPE_CHECKING:
+    from .sword_class import SWORD
+    from .reactive import SWORDReactive
+    from .provenance import ProvenanceLogger
+    from .reconstruction import ReconstructionEngine
+
+logger = logging.getLogger(__name__)
+
+
+class SWORDWorkflow:
+    """
+    High-level workflow orchestrator for SWORD database operations.
+
+    This is the RECOMMENDED entry point for all SWORD operations. It provides:
+    - Loading SWORD databases
+    - Full provenance tracking (who, what, when, why)
+    - Transaction support with automatic rollback
+    - Reactive recalculation of derived attributes
+    - Export to various formats
+    - QGIS/PostgreSQL integration
+
+    Parameters
+    ----------
+    user_id : str, optional
+        User identifier for provenance logging. Defaults to system username.
+    enable_provenance : bool, optional
+        Whether to enable provenance logging. Defaults to True.
+
+    Attributes
+    ----------
+    sword : SWORD
+        The loaded SWORD instance (None until load() is called)
+    reactive : SWORDReactive
+        The reactive system for change tracking
+    provenance : ProvenanceLogger
+        The provenance logger for operation tracking
+
+    Example
+    -------
+    >>> workflow = SWORDWorkflow(user_id="jake")
+    >>> sword = workflow.load('sword_v17b.duckdb', 'NA')
+    >>> with workflow.transaction("Fix wse"):
+    ...     workflow.modify_reach(123, wse=45.5)
+    >>> workflow.close()
+    """
+
+    def __init__(
+        self,
+        user_id: Optional[str] = None,
+        enable_provenance: bool = True,
+    ):
+        """Initialize the workflow orchestrator."""
+        self._sword: Optional['SWORD'] = None
+        self._reactive: Optional['SWORDReactive'] = None
+        self._provenance: Optional['ProvenanceLogger'] = None
+        self._reconstruction: Optional['ReconstructionEngine'] = None
+        self._user_id = user_id
+        self._enable_provenance = enable_provenance
+        self._in_batch: bool = False
+        self._in_transaction: bool = False
+        self._current_transaction_op_id: Optional[int] = None
+        self._pending_changes: int = 0
+        self._db_path: Optional[Path] = None
+        self._region: Optional[str] = None
+
+    @property
+    def sword(self) -> Optional['SWORD']:
+        """Get the loaded SWORD instance."""
+        return self._sword
+
+    @property
+    def reactive(self) -> Optional['SWORDReactive']:
+        """Get the reactive system instance."""
+        return self._reactive
+
+    @property
+    def provenance(self) -> Optional['ProvenanceLogger']:
+        """Get the provenance logger instance."""
+        return self._provenance
+
+    @property
+    def reconstruction(self) -> Optional['ReconstructionEngine']:
+        """Get the reconstruction engine instance."""
+        return self._reconstruction
+
+    @property
+    def is_loaded(self) -> bool:
+        """Check if a SWORD database is currently loaded."""
+        return self._sword is not None
+
+    @property
+    def has_pending_changes(self) -> bool:
+        """Check if there are uncommitted changes."""
+        if self._reactive is None:
+            return False
+        return len(self._reactive._dirty_attrs) > 0
+
+    @property
+    def region(self) -> Optional[str]:
+        """Get the current region code."""
+        return self._region
+
+    # =========================================================================
+    # LIFECYCLE METHODS
+    # =========================================================================
+
+    def load(
+        self,
+        db_path: Union[str, Path],
+        region: str,
+        reason: str = "Load database",
+    ) -> 'SWORD':
+        """
+        Load a SWORD database and initialize all subsystems.
+
+        Parameters
+        ----------
+        db_path : str or Path
+            Path to the DuckDB database file
+        region : str
+            Region code (e.g., 'NA', 'EU', 'AS')
+        reason : str, optional
+            Reason for loading (logged to provenance)
+
+        Returns
+        -------
+        SWORD
+            The loaded SWORD instance with reactive tracking enabled
+
+        Raises
+        ------
+        FileNotFoundError
+            If the database file doesn't exist
+        ValueError
+            If a database is already loaded (call close() first)
+
+        Example
+        -------
+        >>> workflow = SWORDWorkflow()
+        >>> sword = workflow.load('sword_v17b.duckdb', 'NA')
+        >>> print(f"Loaded {len(sword.reaches)} reaches")
+        """
+        if self._sword is not None:
+            raise ValueError(
+                "A database is already loaded. Call close() before loading another."
+            )
+
+        db_path = Path(db_path)
+        if not db_path.exists():
+            raise FileNotFoundError(f"Database not found: {db_path}")
+
+        # Import here to avoid circular imports
+        from .sword_class import SWORD
+        from .reactive import SWORDReactive
+        from .provenance import ProvenanceLogger
+        from .schema import create_provenance_tables
+        from .reconstruction import ReconstructionEngine
+
+        logger.info(f"Loading SWORD database: {db_path}, region: {region}")
+
+        # Load the SWORD database
+        self._sword = SWORD(str(db_path), region)
+        self._db_path = db_path
+        self._region = region
+
+        # Initialize reactive system
+        self._reactive = SWORDReactive(self._sword)
+        self._sword.set_reactive(self._reactive)
+
+        # Initialize provenance system
+        if self._enable_provenance:
+            # Ensure provenance tables exist
+            try:
+                create_provenance_tables(self._sword.db.conn)
+            except Exception as e:
+                # Tables may already exist
+                logger.debug(f"Provenance tables check: {e}")
+
+            self._provenance = ProvenanceLogger(
+                self._sword.db.conn,
+                user_id=self._user_id,
+                enabled=self._enable_provenance,
+            )
+
+            # Log the load operation
+            with self._provenance.operation(
+                'IMPORT', None, None, region, reason=reason
+            ):
+                pass  # Just log the operation
+
+        # Initialize reconstruction engine
+        self._reconstruction = ReconstructionEngine(
+            self._sword,
+            provenance=self._provenance,
+        )
+
+        logger.info(
+            f"Loaded {len(self._sword.reaches)} reaches, "
+            f"{len(self._sword.nodes)} nodes"
+        )
+
+        return self._sword
+
+    def close(self, save: bool = True) -> None:
+        """
+        Close the current SWORD database connection.
+
+        Parameters
+        ----------
+        save : bool, optional
+            If True and there are pending changes, commit them first.
+            If False, pending changes are discarded.
+        """
+        if self._sword is not None:
+            if self.has_pending_changes:
+                if save:
+                    logger.info("Committing pending changes before close")
+                    self.commit()
+                else:
+                    logger.warning(
+                        "Closing with uncommitted changes. "
+                        "Changes will be lost."
+                    )
+
+            self._sword.close()
+            self._sword = None
+            self._reactive = None
+            self._provenance = None
+            self._reconstruction = None
+            self._db_path = None
+            self._region = None
+            logger.info("SWORD database closed")
+
+    # =========================================================================
+    # TRANSACTION METHODS
+    # =========================================================================
+
+    @contextmanager
+    def transaction(
+        self,
+        reason: str = None,
+    ) -> Generator[int, None, None]:
+        """
+        Context manager for atomic operations with automatic rollback on error.
+
+        All modifications within a transaction are logged together. If an
+        exception occurs, all changes are automatically rolled back.
+
+        Parameters
+        ----------
+        reason : str, optional
+            Description of what this transaction is doing
+
+        Yields
+        ------
+        int
+            The operation ID for this transaction
+
+        Example
+        -------
+        >>> with workflow.transaction("Fix delta reaches"):
+        ...     workflow.modify_reach(123, dist_out=1234.5)
+        ...     workflow.modify_reach(456, dist_out=5678.9)
+        ... # All changes committed atomically
+
+        >>> with workflow.transaction("This will fail"):
+        ...     workflow.modify_reach(123, dist_out=999)
+        ...     raise ValueError("Something went wrong")
+        ... # All changes rolled back
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if self._in_transaction:
+            raise RuntimeError("Already in a transaction. Nesting not supported.")
+
+        self._in_transaction = True
+
+        # Start provenance tracking
+        op_id = None
+        if self._provenance and self._enable_provenance:
+            # We'll use the operation context manager
+            with self._provenance.operation(
+                'BATCH',
+                table_name=None,
+                entity_ids=None,
+                region=self._region,
+                reason=reason,
+            ) as op_id:
+                self._current_transaction_op_id = op_id
+                try:
+                    yield op_id
+                    # On success, recalculate if there are dirty attrs
+                    if self.has_pending_changes:
+                        self._reactive.recalculate()
+                except Exception:
+                    # On failure, rollback
+                    if op_id is not None:
+                        try:
+                            self._provenance.rollback_operation(op_id)
+                            logger.info(f"Transaction {op_id} rolled back")
+                        except Exception as rollback_err:
+                            logger.error(f"Rollback failed: {rollback_err}")
+                    raise
+                finally:
+                    self._in_transaction = False
+                    self._current_transaction_op_id = None
+        else:
+            # No provenance, just track transaction state
+            try:
+                yield None
+                if self.has_pending_changes:
+                    self._reactive.recalculate()
+            finally:
+                self._in_transaction = False
+
+    @contextmanager
+    def batch_modify(self):
+        """
+        Context manager for batch modifications without transaction semantics.
+
+        Modifications are tracked and recalculation is deferred until exit.
+        Unlike transaction(), errors do NOT trigger automatic rollback.
+
+        Example
+        -------
+        >>> with workflow.batch_modify():
+        ...     sword.reaches.wse[0] = 100.0
+        ...     sword.reaches.wse[1] = 101.0
+        ...     sword.reaches.slope[0] = 0.001
+        ... # Recalculation runs once at exit
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        self._in_batch = True
+        logger.debug("Entering batch modification mode")
+
+        try:
+            yield
+        finally:
+            self._in_batch = False
+            logger.debug("Exiting batch modification mode")
+            if self.has_pending_changes:
+                self.commit()
+
+    def commit(self) -> Dict[str, Any]:
+        """
+        Commit pending changes by running reactive recalculation.
+
+        Returns
+        -------
+        dict
+            Statistics about what was recalculated
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded
+
+        Example
+        -------
+        >>> sword.reaches.dist_out[0] = 1234.5
+        >>> stats = workflow.commit()
+        >>> print(f"Recalculated: {stats}")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if not self.has_pending_changes:
+            logger.info("No pending changes to commit")
+            return {"recalculated": 0}
+
+        logger.info("Committing changes - running reactive recalculation")
+
+        dirty_attrs = list(self._reactive._dirty_attrs)
+        dirty_count = len(dirty_attrs)
+
+        # Log the recalculation operation
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'RECALCULATE',
+                table_name=None,
+                entity_ids=None,
+                region=self._region,
+                reason="Commit pending changes",
+                affected_columns=dirty_attrs,
+            ):
+                self._reactive.recalculate()
+        else:
+            self._reactive.recalculate()
+
+        logger.info(f"Recalculated {dirty_count} dirty attributes")
+
+        return {
+            "dirty_attributes": dirty_count,
+            "attributes_affected": dirty_attrs,
+        }
+
+    def rollback(self, operation_id: int) -> int:
+        """
+        Rollback a specific operation to restore previous values.
+
+        Parameters
+        ----------
+        operation_id : int
+            The operation ID to rollback
+
+        Returns
+        -------
+        int
+            Number of values restored
+
+        Raises
+        ------
+        RuntimeError
+            If provenance is not enabled
+        ValueError
+            If the operation cannot be rolled back
+        """
+        if not self._provenance:
+            raise RuntimeError("Provenance tracking is not enabled")
+
+        return self._provenance.rollback_operation(operation_id)
+
+    # =========================================================================
+    # MODIFICATION METHODS
+    # =========================================================================
+
+    def modify_reach(
+        self,
+        reach_id: int,
+        reason: str = None,
+        **attributes,
+    ) -> None:
+        """
+        Modify reach attributes with provenance logging.
+
+        Parameters
+        ----------
+        reach_id : int
+            The reach ID to modify
+        reason : str, optional
+            Why this modification is being made
+        **attributes : dict
+            Attribute name/value pairs to modify (e.g., wse=45.5, dist_out=1234)
+
+        Example
+        -------
+        >>> workflow.modify_reach(123, wse=45.5, reason="Corrected from field data")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Find the index for this reach_id
+        reach_idx = np.where(self._sword.reaches.id == reach_id)[0]
+        if len(reach_idx) == 0:
+            raise ValueError(f"Reach {reach_id} not found")
+        reach_idx = reach_idx[0]
+
+        # Get operation ID (from transaction or create new one)
+        op_id = self._current_transaction_op_id
+
+        if self._provenance and self._enable_provenance and op_id is None:
+            with self._provenance.operation(
+                'UPDATE',
+                table_name='reaches',
+                entity_ids=[reach_id],
+                region=self._region,
+                reason=reason,
+                affected_columns=list(attributes.keys()),
+            ) as op_id:
+                self._apply_reach_modifications(reach_idx, reach_id, op_id, attributes)
+        else:
+            self._apply_reach_modifications(reach_idx, reach_id, op_id, attributes)
+
+    def _apply_reach_modifications(
+        self,
+        reach_idx: int,
+        reach_id: int,
+        op_id: Optional[int],
+        attributes: Dict[str, Any],
+    ) -> None:
+        """Apply modifications to a reach, logging value changes."""
+        for attr_name, new_value in attributes.items():
+            # Get the writable array for this attribute
+            if not hasattr(self._sword.reaches, attr_name):
+                raise ValueError(f"Unknown reach attribute: {attr_name}")
+
+            arr = getattr(self._sword.reaches, attr_name)
+            old_value = float(arr[reach_idx])
+
+            # Log the change if provenance enabled
+            if self._provenance and op_id is not None:
+                self._provenance.log_value_change(
+                    op_id, 'reaches', reach_id, attr_name, old_value, new_value
+                )
+
+            # Apply the change
+            arr[reach_idx] = new_value
+
+    def modify_node(
+        self,
+        node_id: int,
+        reason: str = None,
+        **attributes,
+    ) -> None:
+        """
+        Modify node attributes with provenance logging.
+
+        Parameters
+        ----------
+        node_id : int
+            The node ID to modify
+        reason : str, optional
+            Why this modification is being made
+        **attributes : dict
+            Attribute name/value pairs to modify
+
+        Example
+        -------
+        >>> workflow.modify_node(456, wse=42.0, width=150.0, reason="Updated from lidar")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Find the index for this node_id
+        node_idx = np.where(self._sword.nodes.id == node_id)[0]
+        if len(node_idx) == 0:
+            raise ValueError(f"Node {node_id} not found")
+        node_idx = node_idx[0]
+
+        op_id = self._current_transaction_op_id
+
+        if self._provenance and self._enable_provenance and op_id is None:
+            with self._provenance.operation(
+                'UPDATE',
+                table_name='nodes',
+                entity_ids=[node_id],
+                region=self._region,
+                reason=reason,
+                affected_columns=list(attributes.keys()),
+            ) as op_id:
+                self._apply_node_modifications(node_idx, node_id, op_id, attributes)
+        else:
+            self._apply_node_modifications(node_idx, node_id, op_id, attributes)
+
+    def _apply_node_modifications(
+        self,
+        node_idx: int,
+        node_id: int,
+        op_id: Optional[int],
+        attributes: Dict[str, Any],
+    ) -> None:
+        """Apply modifications to a node, logging value changes."""
+        for attr_name, new_value in attributes.items():
+            if not hasattr(self._sword.nodes, attr_name):
+                raise ValueError(f"Unknown node attribute: {attr_name}")
+
+            arr = getattr(self._sword.nodes, attr_name)
+            old_value = float(arr[node_idx])
+
+            if self._provenance and op_id is not None:
+                self._provenance.log_value_change(
+                    op_id, 'nodes', node_id, attr_name, old_value, new_value
+                )
+
+            arr[node_idx] = new_value
+
+    def bulk_modify(
+        self,
+        entity_type: str,
+        entity_ids: List[int],
+        attributes: Dict[str, np.ndarray],
+        reason: str = None,
+    ) -> int:
+        """
+        Efficiently modify multiple entities at once.
+
+        Parameters
+        ----------
+        entity_type : str
+            Type of entity ('reach', 'node', 'centerline')
+        entity_ids : list of int
+            Entity IDs to modify
+        attributes : dict
+            Mapping of attribute name to array of new values
+        reason : str, optional
+            Why this modification is being made
+
+        Returns
+        -------
+        int
+            Number of entities modified
+
+        Example
+        -------
+        >>> workflow.bulk_modify(
+        ...     'reach',
+        ...     reach_ids=[123, 456, 789],
+        ...     attributes={'wse': np.array([45.0, 46.0, 47.0])},
+        ...     reason="Batch elevation correction"
+        ... )
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Get the view for this entity type
+        view_map = {
+            'reach': (self._sword.reaches, 'reaches'),
+            'node': (self._sword.nodes, 'nodes'),
+            'centerline': (self._sword.centerlines, 'centerlines'),
+        }
+
+        if entity_type not in view_map:
+            raise ValueError(f"Unknown entity type: {entity_type}")
+
+        view, table_name = view_map[entity_type]
+
+        # Find indices for all entity IDs
+        entity_ids_arr = np.array(entity_ids)
+        indices = np.searchsorted(view.id, entity_ids_arr)
+
+        # Verify all IDs exist
+        valid = (indices < len(view.id)) & (view.id[indices] == entity_ids_arr)
+        if not np.all(valid):
+            missing = entity_ids_arr[~valid]
+            raise ValueError(f"Entity IDs not found: {missing[:5]}...")
+
+        op_id = self._current_transaction_op_id
+
+        if self._provenance and self._enable_provenance and op_id is None:
+            with self._provenance.operation(
+                'UPDATE',
+                table_name=table_name,
+                entity_ids=list(entity_ids),
+                region=self._region,
+                reason=reason,
+                affected_columns=list(attributes.keys()),
+            ) as op_id:
+                self._apply_bulk_modifications(
+                    view, table_name, indices, entity_ids, op_id, attributes
+                )
+        else:
+            self._apply_bulk_modifications(
+                view, table_name, indices, entity_ids, op_id, attributes
+            )
+
+        return len(entity_ids)
+
+    def _apply_bulk_modifications(
+        self,
+        view,
+        table_name: str,
+        indices: np.ndarray,
+        entity_ids: List[int],
+        op_id: Optional[int],
+        attributes: Dict[str, np.ndarray],
+    ) -> None:
+        """Apply bulk modifications with optional provenance logging."""
+        for attr_name, new_values in attributes.items():
+            if not hasattr(view, attr_name):
+                raise ValueError(f"Unknown attribute: {attr_name}")
+
+            arr = getattr(view, attr_name)
+            old_values = arr[indices].copy()
+
+            # Log batch changes
+            if self._provenance and op_id is not None:
+                self._provenance.log_value_changes_batch(
+                    op_id, table_name, entity_ids, attr_name,
+                    list(old_values), list(new_values)
+                )
+
+            # Apply changes
+            arr[indices] = new_values
+
+    # =========================================================================
+    # PROVENANCE QUERY METHODS
+    # =========================================================================
+
+    def get_history(
+        self,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[int] = None,
+        since: Optional[datetime] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get operation history with optional filters.
+
+        Parameters
+        ----------
+        entity_type : str, optional
+            Filter by entity type ('reach', 'node', 'centerline')
+        entity_id : int, optional
+            Filter by specific entity ID
+        since : datetime, optional
+            Only return operations after this time
+        limit : int, optional
+            Maximum records to return
+
+        Returns
+        -------
+        list of dict
+            Operation history records
+
+        Example
+        -------
+        >>> history = workflow.get_history(entity_type='reach', entity_id=123)
+        >>> for op in history:
+        ...     print(f"{op['started_at']}: {op['operation_type']} - {op['reason']}")
+        """
+        if not self._provenance:
+            raise RuntimeError("Provenance tracking is not enabled")
+
+        if entity_id is not None and entity_type is not None:
+            return self._provenance.get_entity_history(
+                entity_type, entity_id, limit=limit
+            )
+        else:
+            # Map entity_type to table_name
+            table_name = None
+            if entity_type:
+                table_map = {
+                    'reach': 'reaches',
+                    'node': 'nodes',
+                    'centerline': 'centerlines',
+                }
+                table_name = table_map.get(entity_type, entity_type)
+
+            return self._provenance.get_operation_history(
+                since=since,
+                table_name=table_name,
+                region=self._region,
+                limit=limit,
+            )
+
+    def get_lineage(
+        self,
+        entity_type: str,
+        entity_id: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get source data lineage for an entity.
+
+        Shows which source datasets contributed to each attribute.
+
+        Parameters
+        ----------
+        entity_type : str
+            Type of entity ('reach', 'node', 'centerline')
+        entity_id : int
+            Entity ID
+
+        Returns
+        -------
+        list of dict
+            Lineage records showing source attribution
+        """
+        if not self._provenance:
+            raise RuntimeError("Provenance tracking is not enabled")
+
+        return self._provenance.get_lineage(entity_type, entity_id, self._region)
+
+    # =========================================================================
+    # RECONSTRUCTION METHODS
+    # =========================================================================
+
+    def reconstruct(
+        self,
+        attribute: str,
+        entity_ids: Optional[List[int]] = None,
+        force: bool = False,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Reconstruct an attribute from source data.
+
+        Parameters
+        ----------
+        attribute : str
+            Full attribute name (e.g., "reach.wse", "node.facc", "reach.dist_out")
+        entity_ids : list of int, optional
+            Specific entities to reconstruct. If None, reconstructs all.
+        force : bool, optional
+            If True, reconstruct even if values exist
+        reason : str, optional
+            Reason for reconstruction (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Reconstruction results including:
+            - 'reconstructed': number of values reconstructed
+            - 'entity_ids': list of affected entity IDs
+            - 'attribute': the attribute name
+
+        Example
+        -------
+        >>> result = workflow.reconstruct('reach.dist_out', reach_ids=[123, 456])
+        >>> print(f"Reconstructed {result['reconstructed']} values")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if not self._reconstruction:
+            raise RuntimeError("Reconstruction engine not initialized")
+
+        return self._reconstruction.reconstruct(
+            attribute,
+            entity_ids=entity_ids,
+            force=force,
+            reason=reason,
+        )
+
+    def reconstruct_from_centerlines(
+        self,
+        attributes: Optional[List[str]] = None,
+        reach_ids: Optional[List[int]] = None,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Reconstruct derived attributes from centerline geometry.
+
+        This reconstructs attributes that are computed from the centerline
+        points (wse, slope, length, facc).
+
+        Parameters
+        ----------
+        attributes : list of str, optional
+            Attributes to reconstruct. Defaults to all centerline-derived.
+        reach_ids : list of int, optional
+            Specific reaches. If None, all reaches.
+        reason : str, optional
+            Reason for reconstruction
+
+        Returns
+        -------
+        dict
+            Results for each attribute reconstructed
+
+        Example
+        -------
+        >>> results = workflow.reconstruct_from_centerlines(['reach.wse', 'reach.slope'])
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if not self._reconstruction:
+            raise RuntimeError("Reconstruction engine not initialized")
+
+        return self._reconstruction.reconstruct_from_centerlines(
+            attributes=attributes,
+            reach_ids=reach_ids,
+            reason=reason,
+        )
+
+    def validate_reconstruction(
+        self,
+        attribute: str,
+        entity_ids: Optional[List[int]] = None,
+        tolerance: float = 0.01,
+    ) -> Dict[str, Any]:
+        """
+        Validate reconstruction against existing values.
+
+        Compares reconstructed values to current values to verify
+        reconstruction accuracy.
+
+        Parameters
+        ----------
+        attribute : str
+            Attribute to validate
+        entity_ids : list of int, optional
+            Specific entities to validate
+        tolerance : float, optional
+            Relative tolerance for comparison (default 1%)
+
+        Returns
+        -------
+        dict
+            Validation report including:
+            - 'passed': bool - whether validation passed
+            - 'total': number of values compared
+            - 'within_tolerance': number within tolerance
+            - 'max_difference': maximum relative difference
+            - 'failures': list of entity IDs that failed
+
+        Example
+        -------
+        >>> report = workflow.validate_reconstruction('reach.wse', tolerance=0.01)
+        >>> if report['passed']:
+        ...     print("All values within 1% tolerance")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if not self._reconstruction:
+            raise RuntimeError("Reconstruction engine not initialized")
+
+        return self._reconstruction.validate(
+            attribute,
+            entity_ids=entity_ids,
+            tolerance=tolerance,
+        )
+
+    def get_source_info(self, attribute: str) -> Optional[Dict[str, Any]]:
+        """
+        Get source information for an attribute.
+
+        Shows which source dataset and derivation method was used
+        to construct the attribute.
+
+        Parameters
+        ----------
+        attribute : str
+            Full attribute name (e.g., "reach.wse")
+
+        Returns
+        -------
+        dict or None
+            Source specification including:
+            - 'source': source dataset name
+            - 'method': derivation method
+            - 'description': human-readable description
+
+        Example
+        -------
+        >>> info = workflow.get_source_info('reach.wse')
+        >>> print(f"Source: {info['source']}, Method: {info['method']}")
+        """
+        if not self._reconstruction:
+            return None
+
+        spec = self._reconstruction.get_source_info(attribute)
+        if not spec:
+            return None
+
+        return {
+            'attribute': spec.name,
+            'source': spec.source.value,
+            'method': spec.method.value,
+            'source_columns': spec.source_columns,
+            'dependencies': spec.dependencies,
+            'description': spec.description,
+        }
+
+    def list_reconstructable_attributes(self) -> List[str]:
+        """
+        List all attributes that can be reconstructed.
+
+        Returns
+        -------
+        list of str
+            Attribute names that have reconstruction functions
+
+        Example
+        -------
+        >>> attrs = workflow.list_reconstructable_attributes()
+        >>> print(f"Can reconstruct: {attrs}")
+        """
+        if not self._reconstruction:
+            return []
+
+        return self._reconstruction.list_reconstructable_attributes()
+
+    # =========================================================================
+    # EXPORT METHODS
+    # =========================================================================
+
+    def export(
+        self,
+        formats: List[str],
+        output_dir: Union[str, Path],
+        version: Optional[str] = None,
+        overwrite: bool = False,
+        reason: str = None,
+    ) -> Dict[str, Path]:
+        """
+        Export the SWORD database to various formats.
+
+        Parameters
+        ----------
+        formats : list of str
+            Export formats. Supported: 'geopackage', 'geoparquet', 'postgres'
+        output_dir : str or Path
+            Directory to write exported files
+        version : str, optional
+            Version string for filenames (e.g., 'v18')
+        overwrite : bool, optional
+            If True, overwrite existing files
+        reason : str, optional
+            Reason for export (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Mapping of format names to output file paths
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if self.has_pending_changes:
+            logger.warning(
+                "Exporting with uncommitted changes. "
+                "Consider calling commit() first."
+            )
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        version_str = f"_{version}" if version else ""
+        results = {}
+
+        from . import export
+
+        # Log export operation
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'EXPORT',
+                table_name=None,
+                entity_ids=None,
+                region=self._region,
+                reason=reason or f"Export to {formats}",
+                details={'formats': formats, 'output_dir': str(output_dir)},
+            ):
+                results = self._do_export(
+                    formats, output_dir, version_str, overwrite, export
+                )
+        else:
+            results = self._do_export(
+                formats, output_dir, version_str, overwrite, export
+            )
+
+        logger.info(f"Export complete: {list(results.keys())}")
+        return results
+
+    def _do_export(
+        self,
+        formats: List[str],
+        output_dir: Path,
+        version_str: str,
+        overwrite: bool,
+        export_module,
+    ) -> Dict[str, Path]:
+        """Perform the actual export operations."""
+        results = {}
+
+        for fmt in formats:
+            fmt_lower = fmt.lower()
+
+            if fmt_lower == 'geopackage':
+                output_path = output_dir / f"sword_{self._region}{version_str}.gpkg"
+                if output_path.exists() and not overwrite:
+                    raise FileExistsError(
+                        f"File exists: {output_path}. Use overwrite=True to replace."
+                    )
+                logger.info(f"Exporting to GeoPackage: {output_path}")
+                export_module.export_to_geopackage(
+                    self._sword.db,
+                    str(output_path),
+                    self._region,
+                )
+                results['geopackage'] = output_path
+
+            elif fmt_lower == 'geoparquet':
+                output_path = output_dir / f"sword_{self._region}{version_str}.parquet"
+                if output_path.exists() and not overwrite:
+                    raise FileExistsError(
+                        f"File exists: {output_path}. Use overwrite=True to replace."
+                    )
+                logger.info(f"Exporting to GeoParquet: {output_path}")
+                export_module.export_to_geoparquet(
+                    self._sword.db,
+                    str(output_path),
+                    self._region,
+                )
+                results['geoparquet'] = output_path
+
+            elif fmt_lower == 'postgres':
+                logger.info("Exporting to PostgreSQL")
+                export_module.export_to_postgres(self._sword.db, self._region)
+                results['postgres'] = None
+
+            else:
+                raise ValueError(
+                    f"Unsupported export format: {fmt}. "
+                    f"Supported: geopackage, geoparquet, postgres"
+                )
+
+        return results
+
+    # =========================================================================
+    # STATUS AND UTILITY METHODS
+    # =========================================================================
+
+    def status(self) -> Dict[str, Any]:
+        """
+        Get the current workflow status.
+
+        Returns
+        -------
+        dict
+            Status information including loaded state, counts, pending changes
+        """
+        status = {
+            "is_loaded": self.is_loaded,
+            "db_path": str(self._db_path) if self._db_path else None,
+            "region": self._region,
+            "has_pending_changes": self.has_pending_changes,
+            "in_batch_mode": self._in_batch,
+            "in_transaction": self._in_transaction,
+            "provenance_enabled": self._enable_provenance,
+        }
+
+        if self.is_loaded:
+            status["reach_count"] = len(self._sword.reaches)
+            status["node_count"] = len(self._sword.nodes)
+
+            if self._reactive:
+                status["dirty_attributes"] = list(self._reactive._dirty_attrs)
+
+            if self._provenance:
+                status["session_id"] = self._provenance.session_id
+                status["user_id"] = self._provenance.user_id
+
+        return status
+
+    def __repr__(self) -> str:
+        if self.is_loaded:
+            return (
+                f"SWORDWorkflow(db={self._db_path.name}, "
+                f"region={self._region}, "
+                f"pending={self.has_pending_changes})"
+            )
+        return "SWORDWorkflow(not loaded)"
+
+    def __enter__(self) -> 'SWORDWorkflow':
+        """Support using workflow as context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Close database on context exit."""
+        self.close()
+        return False

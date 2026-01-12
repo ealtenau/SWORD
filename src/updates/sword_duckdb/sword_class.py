@@ -24,6 +24,7 @@ Example Usage:
 from __future__ import annotations
 
 import gc
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Union, Optional, List
@@ -75,6 +76,7 @@ class SWORD:
         self._db_path = Path(db_path)
         # Always load spatial for write operations (needed for RTREE indexes)
         self._db = SWORDDatabase(db_path, read_only=False, spatial=spatial)
+        self._reactive = None  # Optional reactive system reference
 
         # Load data
         self._load_data()
@@ -103,14 +105,18 @@ class SWORD:
         iceflag = self._reconstruct_iceflag()
 
         # Create view objects with db and region for write support
+        # Also pass reactive reference if configured
         self._centerlines = CenterlinesView(
             self._centerlines_df, cl_reach_id, cl_node_id,
-            db=self._db, region=self.region
+            db=self._db, region=self.region, reactive=self._reactive
         )
-        self._nodes = NodesView(self._nodes_df, db=self._db, region=self.region)
+        self._nodes = NodesView(
+            self._nodes_df, db=self._db, region=self.region,
+            reactive=self._reactive
+        )
         self._reaches = ReachesView(
             self._reaches_df, rch_id_up, rch_id_down, orbits, iceflag,
-            db=self._db, region=self.region
+            db=self._db, region=self.region, reactive=self._reactive
         )
 
     def _reconstruct_centerline_neighbors(self) -> tuple[np.ndarray, np.ndarray]:
@@ -250,6 +256,88 @@ class SWORD:
                     arr[day, idx] = row['iceflag']
 
         return arr
+
+    def set_reactive(self, reactive) -> None:
+        """
+        Set the reactive system for automatic change tracking.
+
+        When a reactive system is configured, modifications to WritableArray
+        properties (e.g., sword.reaches.dist_out[0] = value) will automatically
+        call mark_dirty() on the reactive system, enabling cascading recalculation
+        of dependent attributes.
+
+        Parameters
+        ----------
+        reactive : SWORDReactive
+            The reactive system instance to use for change tracking.
+
+        Example
+        -------
+        >>> from sword_duckdb import SWORD, SWORDReactive
+        >>> sword = SWORD('data/duckdb/sword_v17b.duckdb', 'NA')
+        >>> reactive = SWORDReactive(sword)
+        >>> sword.set_reactive(reactive)
+        >>> sword.reaches.dist_out[0] = 1234.5  # Auto-calls mark_dirty()
+        >>> reactive.recalculate()  # Recalculates all dependent attributes
+        """
+        self._reactive = reactive
+        # Update views with the reactive reference
+        self._centerlines._reactive = reactive
+        self._nodes._reactive = reactive
+        self._reaches._reactive = reactive
+
+    @property
+    def reactive(self):
+        """Get the reactive system instance (if configured)."""
+        return self._reactive
+
+    @contextmanager
+    def batch_modify(self, auto_commit: bool = True):
+        """
+        Context manager for batch modifications with deferred recalculation.
+
+        Within this context, modifications are tracked but reactive
+        recalculation is deferred until the context exits (if auto_commit=True)
+        or until commit() is explicitly called.
+
+        Parameters
+        ----------
+        auto_commit : bool, optional
+            If True (default), automatically run recalculation on exit.
+            If False, changes are tracked but recalculation must be triggered
+            manually via reactive.recalculate().
+
+        Yields
+        ------
+        SWORDReactive or None
+            The reactive system instance (if configured), allowing direct
+            access to dirty_set and other reactive methods.
+
+        Example
+        -------
+        >>> with sword.batch_modify():
+        ...     sword.reaches.wse[0] = 100.0
+        ...     sword.reaches.wse[1] = 101.0
+        ...     sword.reaches.slope[0] = 0.001
+        ... # Recalculation runs once at exit
+
+        >>> # Or without auto-commit:
+        >>> with sword.batch_modify(auto_commit=False) as reactive:
+        ...     sword.reaches.wse[0] = 100.0
+        ...     # Check what's dirty:
+        ...     print(reactive.dirty_set.dirty_attributes)
+        ... # No recalculation - call reactive.recalculate() manually
+        """
+        if self._reactive is None:
+            # No reactive system - just yield None
+            yield None
+            return
+
+        try:
+            yield self._reactive
+        finally:
+            if auto_commit and len(self._reactive._dirty_attrs) > 0:
+                self._reactive.recalculate()
 
     @property
     def centerlines(self) -> CenterlinesView:

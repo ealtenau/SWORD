@@ -16,12 +16,13 @@ WritableArray enables in-place array modifications to persist to the database.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Any
+from typing import TYPE_CHECKING, Optional, Any, Callable
 import numpy as np
 import gc
 
 if TYPE_CHECKING:
     import pandas as pd
+    from .reactive import SWORDReactive
 
 
 class WritableArray:
@@ -47,7 +48,9 @@ class WritableArray:
         col_name: str,
         db_col_name: str,
         ids: np.ndarray,
-        region: str
+        region: str,
+        reactive: Optional['SWORDReactive'] = None,
+        attr_name: Optional[str] = None
     ):
         """
         Initialize WritableArray.
@@ -70,6 +73,12 @@ class WritableArray:
             Array of IDs corresponding to each row (for lookups).
         region : str
             Region code for WHERE clause.
+        reactive : SWORDReactive, optional
+            Reactive system instance for automatic change tracking.
+            When provided, modifications trigger mark_dirty() calls.
+        attr_name : str, optional
+            Attribute name for the reactive system (e.g., 'reach.dist_out').
+            Required if reactive is provided.
         """
         self._data = data
         self._db = db
@@ -79,6 +88,8 @@ class WritableArray:
         self._db_col_name = db_col_name
         self._ids = ids
         self._region = region
+        self._reactive = reactive
+        self._attr_name = attr_name
 
     def __getitem__(self, key):
         """Get items from underlying array."""
@@ -108,6 +119,10 @@ class WritableArray:
                     SET {self._db_col_name} = ?
                     WHERE {self._id_col} = ? AND region = ?
                 """, [val, id_val, self._region])
+
+                # Hook into reactive system if configured
+                if self._reactive and self._attr_name:
+                    self._mark_dirty_for_ids([id_val])
             else:
                 # Multiple value update
                 affected_ids = np.atleast_1d(affected_ids)
@@ -125,9 +140,53 @@ class WritableArray:
                         SET {self._db_col_name} = ?
                         WHERE {self._id_col} = ? AND region = ?
                     """, [val, id_val, self._region])
+
+                # Hook into reactive system if configured
+                if self._reactive and self._attr_name:
+                    self._mark_dirty_for_ids([int(i) for i in affected_ids])
         finally:
             if gc_was_enabled:
                 gc.enable()
+
+    def _mark_dirty_for_ids(self, entity_ids: list):
+        """
+        Mark the reactive system as dirty for the given entity IDs.
+
+        Maps table names to the appropriate dirty set parameter.
+        """
+        if not self._reactive or not self._attr_name:
+            return
+
+        # Import ChangeType here to avoid circular imports
+        from .reactive import ChangeType
+
+        # Determine change type based on attribute name
+        if 'geometry' in self._attr_name or self._col_name in ('x', 'y'):
+            change_type = ChangeType.GEOMETRY
+        elif 'topology' in self._attr_name:
+            change_type = ChangeType.TOPOLOGY
+        else:
+            change_type = ChangeType.ATTRIBUTE
+
+        # Map table to the appropriate parameter
+        if self._table == 'reaches':
+            self._reactive.mark_dirty(
+                self._attr_name,
+                change_type,
+                reach_ids=entity_ids
+            )
+        elif self._table == 'nodes':
+            self._reactive.mark_dirty(
+                self._attr_name,
+                change_type,
+                node_ids=entity_ids
+            )
+        elif self._table == 'centerlines':
+            self._reactive.mark_dirty(
+                self._attr_name,
+                change_type,
+                cl_ids=entity_ids
+            )
 
     def __len__(self):
         return len(self._data)
@@ -228,7 +287,8 @@ class CenterlinesView:
         reach_id_array: np.ndarray,
         node_id_array: np.ndarray,
         db=None,
-        region: str = None
+        region: str = None,
+        reactive: Optional['SWORDReactive'] = None
     ):
         """
         Initialize CenterlinesView.
@@ -245,6 +305,8 @@ class CenterlinesView:
             Database connection for write operations.
         region : str, optional
             Region code for write operations.
+        reactive : SWORDReactive, optional
+            Reactive system instance for automatic change tracking.
         """
         self._df = df
         self._reach_id = reach_id_array
@@ -252,11 +314,16 @@ class CenterlinesView:
         self._db = db
         self._region = region
         self._ids = df['cl_id'].values
+        self._reactive = reactive
 
     def _writable(self, col_name: str, db_col_name: str = None) -> WritableArray:
         """Create a WritableArray for the given column."""
         if db_col_name is None:
             db_col_name = col_name
+        # Determine reactive attribute name based on column
+        attr_name = f'centerline.{col_name}'
+        if col_name in ('x', 'y'):
+            attr_name = 'centerline.geometry'  # x,y changes are geometry changes
         return WritableArray(
             self._df[db_col_name].values,
             self._db,
@@ -265,7 +332,9 @@ class CenterlinesView:
             col_name,
             db_col_name,
             self._ids,
-            self._region
+            self._region,
+            reactive=self._reactive,
+            attr_name=attr_name
         )
 
     @property
@@ -331,7 +400,13 @@ class NodesView:
         cl_id[2,N] -> (cl_id_min, cl_id_max)
     """
 
-    def __init__(self, df: 'pd.DataFrame', db=None, region: str = None):
+    def __init__(
+        self,
+        df: 'pd.DataFrame',
+        db=None,
+        region: str = None,
+        reactive: Optional['SWORDReactive'] = None
+    ):
         """
         Initialize NodesView.
 
@@ -343,11 +418,14 @@ class NodesView:
             Database connection for write operations.
         region : str, optional
             Region code for write operations.
+        reactive : SWORDReactive, optional
+            Reactive system instance for automatic change tracking.
         """
         self._df = df
         self._db = db
         self._region = region
         self._ids = df['node_id'].values
+        self._reactive = reactive
         # Build cl_id [2,N] array from min/max columns
         self._cl_id = np.vstack([
             df['cl_id_min'].values,
@@ -358,6 +436,18 @@ class NodesView:
         """Create a WritableArray for the given column."""
         if db_col_name is None:
             db_col_name = col_name
+        # Determine reactive attribute name
+        attr_name = f'node.{col_name}'
+        if col_name in ('x', 'y'):
+            attr_name = 'node.xy'
+        elif col_name == 'len':
+            attr_name = 'node.len'
+        elif col_name == 'dist_out':
+            attr_name = 'node.dist_out'
+        elif col_name == 'end_rch':
+            attr_name = 'node.end_rch'
+        elif col_name == 'main_side':
+            attr_name = 'node.main_side'
         return WritableArray(
             self._df[db_col_name].values,
             self._db,
@@ -366,7 +456,9 @@ class NodesView:
             col_name,
             db_col_name,
             self._ids,
-            self._region
+            self._region,
+            reactive=self._reactive,
+            attr_name=attr_name
         )
 
     # Direct mappings (same name) - now writable
@@ -575,7 +667,8 @@ class ReachesView:
         orbits: np.ndarray = None,
         iceflag: np.ndarray = None,
         db=None,
-        region: str = None
+        region: str = None,
+        reactive: Optional['SWORDReactive'] = None
     ):
         """
         Initialize ReachesView.
@@ -596,6 +689,8 @@ class ReachesView:
             Database connection for write operations.
         region : str, optional
             Region code for write operations.
+        reactive : SWORDReactive, optional
+            Reactive system instance for automatic change tracking.
         """
         self._df = df
         self._rch_id_up = rch_id_up
@@ -605,6 +700,7 @@ class ReachesView:
         self._db = db
         self._region = region
         self._ids = df['reach_id'].values
+        self._reactive = reactive
 
         # Build cl_id [2,N] array from min/max columns
         self._cl_id = np.vstack([
@@ -616,6 +712,20 @@ class ReachesView:
         """Create a WritableArray for the given column."""
         if db_col_name is None:
             db_col_name = col_name
+        # Determine reactive attribute name
+        attr_name = f'reach.{col_name}'
+        if col_name in ('x', 'y', 'x_min', 'x_max', 'y_min', 'y_max'):
+            attr_name = 'reach.bounds'
+        elif col_name == 'len':
+            attr_name = 'reach.len'
+        elif col_name == 'dist_out':
+            attr_name = 'reach.dist_out'
+        elif col_name == 'end_rch':
+            attr_name = 'reach.end_rch'
+        elif col_name == 'main_side':
+            attr_name = 'reach.main_side'
+        elif col_name in ('n_rch_up', 'n_rch_down'):
+            attr_name = 'reach.topology'
         return WritableArray(
             self._df[db_col_name].values,
             self._db,
@@ -624,7 +734,9 @@ class ReachesView:
             col_name,
             db_col_name,
             self._ids,
-            self._region
+            self._region,
+            reactive=self._reactive,
+            attr_name=attr_name
         )
 
     # Direct mappings (same name) - now writable

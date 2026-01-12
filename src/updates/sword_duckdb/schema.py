@@ -19,7 +19,7 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.1.0"  # Updated for composite keys
+SCHEMA_VERSION = "1.2.0"  # Updated for provenance tables
 
 # Core table definitions
 # NOTE: cl_id and node_id are only unique within a region, so we use composite keys
@@ -279,6 +279,121 @@ CREATE TABLE IF NOT EXISTS sword_versions (
 );
 """
 
+# =============================================================================
+# PROVENANCE TABLES
+# =============================================================================
+# These tables track all operations on SWORD data with full provenance:
+# - WHO made the change (user_id, session_id)
+# - WHAT changed (table, entity_ids, columns, old/new values)
+# - WHEN it happened (timestamps)
+# - WHY it was done (reason)
+# =============================================================================
+
+SWORD_OPERATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS sword_operations (
+    -- Primary key
+    operation_id INTEGER PRIMARY KEY,
+
+    -- Operation type
+    operation_type VARCHAR(50) NOT NULL,  -- CREATE, UPDATE, DELETE, RECALCULATE, IMPORT, EXPORT, RECONSTRUCT
+
+    -- Target info
+    table_name VARCHAR(50),               -- reaches, nodes, centerlines
+    entity_ids BIGINT[],                  -- Affected entity IDs (array)
+    region VARCHAR(2),
+
+    -- Provenance: WHO
+    user_id VARCHAR(100),                 -- System username or QGIS user
+    session_id VARCHAR(50),               -- Workflow session ID
+
+    -- Provenance: WHEN
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+
+    -- Provenance: WHAT
+    operation_details JSON,               -- Operation-specific parameters
+    affected_columns VARCHAR[],           -- Which columns were modified
+
+    -- Provenance: WHY
+    reason VARCHAR(500),                  -- User-provided reason
+    source_operation_id INTEGER,          -- Parent operation (for cascades)
+
+    -- State tracking
+    status VARCHAR(20) DEFAULT 'PENDING', -- PENDING, IN_PROGRESS, COMPLETED, FAILED, ROLLED_BACK
+    error_message VARCHAR,
+
+    -- Checksums for verification (optional, for auditing)
+    before_checksum VARCHAR(64),          -- SHA256 of affected data before
+    after_checksum VARCHAR(64)            -- SHA256 of affected data after
+);
+"""
+
+SWORD_VALUE_SNAPSHOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS sword_value_snapshots (
+    -- Primary key
+    snapshot_id INTEGER PRIMARY KEY,
+
+    -- Link to operation
+    operation_id INTEGER NOT NULL,
+
+    -- What changed
+    table_name VARCHAR(50) NOT NULL,
+    entity_id BIGINT NOT NULL,
+    column_name VARCHAR(50) NOT NULL,
+
+    -- Old and new values (stored as JSON for type flexibility)
+    old_value JSON,
+    new_value JSON,
+    data_type VARCHAR(20)                 -- For proper type restoration on rollback
+);
+"""
+
+SWORD_SOURCE_LINEAGE_TABLE = """
+CREATE TABLE IF NOT EXISTS sword_source_lineage (
+    -- Primary key
+    lineage_id INTEGER PRIMARY KEY,
+
+    -- Entity identification
+    entity_type VARCHAR(20) NOT NULL,     -- reach, node, centerline
+    entity_id BIGINT NOT NULL,
+    region VARCHAR(2) NOT NULL,
+
+    -- Source attribution
+    source_dataset VARCHAR(50) NOT NULL,  -- GRWL, MERIT_HYDRO, HYDROBASINS, GRanD, GROD, etc.
+    source_id VARCHAR(100),               -- ID in source dataset (if applicable)
+    source_version VARCHAR(20),           -- Version of source dataset
+
+    -- Attribute mapping
+    attribute_name VARCHAR(50),           -- Which attribute came from this source
+    derivation_method VARCHAR(100),       -- direct, interpolated, aggregated, computed, etc.
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+SWORD_RECONSTRUCTION_RECIPES_TABLE = """
+CREATE TABLE IF NOT EXISTS sword_reconstruction_recipes (
+    -- Primary key
+    recipe_id INTEGER PRIMARY KEY,
+
+    -- Recipe identification
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description VARCHAR(500),
+
+    -- Recipe definition
+    target_attributes VARCHAR[],          -- Which attributes this recipe produces
+    required_sources VARCHAR[],           -- Source datasets needed
+    script_path VARCHAR(500),             -- Path to reconstruction script
+    script_hash VARCHAR(64),              -- Hash for reproducibility verification
+
+    -- Parameters
+    parameters JSON,                      -- Default parameters
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP
+);
+"""
+
 # Index definitions
 INDEXES = [
     # Spatial indexes (for DuckDB Spatial extension)
@@ -310,6 +425,18 @@ INDEXES = [
 
     # SWOT orbits lookup
     "CREATE INDEX IF NOT EXISTS idx_swot_orbits_reach ON reach_swot_orbits(reach_id);",
+
+    # Provenance indexes
+    "CREATE INDEX IF NOT EXISTS idx_operations_type ON sword_operations(operation_type);",
+    "CREATE INDEX IF NOT EXISTS idx_operations_table ON sword_operations(table_name);",
+    "CREATE INDEX IF NOT EXISTS idx_operations_region ON sword_operations(region);",
+    "CREATE INDEX IF NOT EXISTS idx_operations_session ON sword_operations(session_id);",
+    "CREATE INDEX IF NOT EXISTS idx_operations_started ON sword_operations(started_at);",
+    "CREATE INDEX IF NOT EXISTS idx_operations_status ON sword_operations(status);",
+    "CREATE INDEX IF NOT EXISTS idx_snapshots_operation ON sword_value_snapshots(operation_id);",
+    "CREATE INDEX IF NOT EXISTS idx_snapshots_entity ON sword_value_snapshots(table_name, entity_id);",
+    "CREATE INDEX IF NOT EXISTS idx_lineage_entity ON sword_source_lineage(entity_type, entity_id, region);",
+    "CREATE INDEX IF NOT EXISTS idx_lineage_source ON sword_source_lineage(source_dataset);",
 ]
 
 # Regional views for backward compatibility
@@ -355,7 +482,7 @@ def get_schema_sql() -> str:
     str
         Complete SQL for creating all tables, indexes, and views.
     """
-    tables = [
+    core_tables = [
         CENTERLINES_TABLE,
         CENTERLINE_NEIGHBORS_TABLE,
         NODES_TABLE,
@@ -366,14 +493,25 @@ def get_schema_sql() -> str:
         SWORD_VERSIONS_TABLE,
     ]
 
+    provenance_tables = [
+        SWORD_OPERATIONS_TABLE,
+        SWORD_VALUE_SNAPSHOTS_TABLE,
+        SWORD_SOURCE_LINEAGE_TABLE,
+        SWORD_RECONSTRUCTION_RECIPES_TABLE,
+    ]
+
     schema_parts = []
     schema_parts.append("-- SWORD DuckDB Schema")
     schema_parts.append(f"-- Schema Version: {SCHEMA_VERSION}")
     schema_parts.append("")
 
-    # Tables
+    # Core Tables
     schema_parts.append("-- Core Tables")
-    schema_parts.extend(tables)
+    schema_parts.extend(core_tables)
+
+    # Provenance Tables
+    schema_parts.append("\n-- Provenance Tables")
+    schema_parts.extend(provenance_tables)
 
     # Indexes
     schema_parts.append("\n-- Indexes")
@@ -400,8 +538,8 @@ def create_schema(conn) -> None:
     Exception
         If schema creation fails.
     """
-    # Create tables
-    tables = [
+    # Create core tables
+    core_tables = [
         CENTERLINES_TABLE,
         CENTERLINE_NEIGHBORS_TABLE,
         NODES_TABLE,
@@ -412,7 +550,18 @@ def create_schema(conn) -> None:
         SWORD_VERSIONS_TABLE,
     ]
 
-    for table_sql in tables:
+    for table_sql in core_tables:
+        conn.execute(table_sql)
+
+    # Create provenance tables
+    provenance_tables = [
+        SWORD_OPERATIONS_TABLE,
+        SWORD_VALUE_SNAPSHOTS_TABLE,
+        SWORD_SOURCE_LINEAGE_TABLE,
+        SWORD_RECONSTRUCTION_RECIPES_TABLE,
+    ]
+
+    for table_sql in provenance_tables:
         conn.execute(table_sql)
 
     # Create indexes (may fail if spatial extension not loaded)
@@ -462,8 +611,19 @@ def drop_schema(conn) -> None:
     for view in views:
         conn.execute(f"DROP VIEW IF EXISTS {view};")
 
-    # Drop tables in reverse dependency order
-    tables = [
+    # Drop provenance tables first (they have no dependencies)
+    provenance_tables = [
+        'sword_value_snapshots',
+        'sword_operations',
+        'sword_source_lineage',
+        'sword_reconstruction_recipes',
+    ]
+
+    for table in provenance_tables:
+        conn.execute(f"DROP TABLE IF EXISTS {table};")
+
+    # Drop core tables in reverse dependency order
+    core_tables = [
         'reach_ice_flags',
         'reach_swot_orbits',
         'reach_topology',
@@ -474,5 +634,44 @@ def drop_schema(conn) -> None:
         'sword_versions',
     ]
 
-    for table in tables:
+    for table in core_tables:
         conn.execute(f"DROP TABLE IF EXISTS {table};")
+
+
+def create_provenance_tables(conn) -> None:
+    """
+    Creates only the provenance tables in an existing database.
+
+    Use this to upgrade an existing SWORD database to include provenance tracking.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active DuckDB connection.
+    """
+    provenance_tables = [
+        SWORD_OPERATIONS_TABLE,
+        SWORD_VALUE_SNAPSHOTS_TABLE,
+        SWORD_SOURCE_LINEAGE_TABLE,
+        SWORD_RECONSTRUCTION_RECIPES_TABLE,
+    ]
+
+    for table_sql in provenance_tables:
+        conn.execute(table_sql)
+
+    # Create provenance indexes
+    provenance_indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_operations_type ON sword_operations(operation_type);",
+        "CREATE INDEX IF NOT EXISTS idx_operations_table ON sword_operations(table_name);",
+        "CREATE INDEX IF NOT EXISTS idx_operations_region ON sword_operations(region);",
+        "CREATE INDEX IF NOT EXISTS idx_operations_session ON sword_operations(session_id);",
+        "CREATE INDEX IF NOT EXISTS idx_operations_started ON sword_operations(started_at);",
+        "CREATE INDEX IF NOT EXISTS idx_operations_status ON sword_operations(status);",
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_operation ON sword_value_snapshots(operation_id);",
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_entity ON sword_value_snapshots(table_name, entity_id);",
+        "CREATE INDEX IF NOT EXISTS idx_lineage_entity ON sword_source_lineage(entity_type, entity_id, region);",
+        "CREATE INDEX IF NOT EXISTS idx_lineage_source ON sword_source_lineage(source_dataset);",
+    ]
+
+    for index_sql in provenance_indexes:
+        conn.execute(index_sql)

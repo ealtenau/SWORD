@@ -536,7 +536,7 @@ class SWORDReactive:
                 dist_out[idx] = reaches.len[idx]
             else:
                 # Get downstream neighbors
-                dn_ids = reaches.rch_id_dn[:, idx]
+                dn_ids = reaches.rch_id_down[:, idx]
                 dn_ids = dn_ids[dn_ids > 0]
 
                 # Check if all downstream reaches are processed
@@ -617,11 +617,12 @@ class SWORDReactive:
         external data (GPKG with accumulation values). For now, we
         preserve existing values and only recalculate if topology changed.
         """
+        # TODO(MED): Implement main_side recalculation. Requires:
+        # 1. External GeoPackage with flow accumulation values
+        # 2. Trace main channels using accumulated upstream reach counts
+        # 3. Classify reaches as main (1) vs side (2) channel
+        # See MIGRATION_STATUS.md "Immediate TODOs" section.
         print("  -> Recalculating reach.main_side (preserving existing values)")
-        # main_side calculation is complex and requires accumulation data
-        # from GeoPackage files. For now, we preserve existing values.
-        # Full implementation would trace main channels using accumulated
-        # upstream reach counts.
         pass
 
     def _recalc_node_lengths(self):
@@ -819,8 +820,12 @@ class SWORDReactive:
         Note: This requires scipy.spatial.KDTree and modifies
         the node_id[1:4] array which is currently read-only.
         """
+        # TODO(MED): Implement centerline neighbor recalculation. Requires:
+        # 1. scipy.spatial.KDTree for spatial queries
+        # 2. 2D WritableArray support for centerlines.node_id[1:4]
+        # 3. Query k=4 nearest node centroids for each centerline
+        # See MIGRATION_STATUS.md "Immediate TODOs" and "Technical Debt" sections.
         print("  -> Recalculating centerline.node_id[1:4] via spatial query")
-        # This requires 2D WritableArray support which is not yet implemented
         pass
 
 

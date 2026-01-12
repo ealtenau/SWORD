@@ -61,10 +61,22 @@ from .triggers import (
     mark_changes_synced,
     get_trigger_sql,
 )
+from .workflow import SWORDWorkflow
+from .provenance import ProvenanceLogger, OperationType, OperationStatus
+from .schema import create_provenance_tables
+from .reconstruction import (
+    ReconstructionEngine,
+    SourceDataset,
+    DerivationMethod,
+    AttributeSpec,
+    ATTRIBUTE_SOURCES,
+)
 
 __all__ = [
     # Main SWORD class (drop-in replacement)
     'SWORD',
+    # Workflow orchestration (recommended entry point)
+    'SWORDWorkflow',
     # View classes
     'CenterlinesView',
     'NodesView',
@@ -77,11 +89,22 @@ __all__ = [
     'mark_geometry_changed',
     'mark_topology_changed',
     'full_recalculate',
+    # Provenance logging
+    'ProvenanceLogger',
+    'OperationType',
+    'OperationStatus',
+    # Reconstruction
+    'ReconstructionEngine',
+    'SourceDataset',
+    'DerivationMethod',
+    'AttributeSpec',
+    'ATTRIBUTE_SOURCES',
     # Connection management
     'SWORDDatabase',
     'create_database',
     # Schema
     'create_schema',
+    'create_provenance_tables',
     'get_schema_sql',
     'SCHEMA_VERSION',
     # Migration
