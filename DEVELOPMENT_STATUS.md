@@ -337,6 +337,8 @@ workflow.close()
 | 3 | `create_ghost_reach` | COMPLETE | Phase 5 Task 5.4 |
 | 4 | `merge_reaches` | COMPLETE | Phase 5 Task 5.1 |
 | 5 | `dist_out` from topology (BFS) | COMPLETE | Phase 4 Task 4.2 |
+| 6 | `stream_order` recalculation | COMPLETE | Based on stream_order.py |
+| 6 | `path_segs` recalculation | COMPLETE | Based on stream_order.py |
 
 ### Key Legacy File References
 
@@ -360,8 +362,8 @@ workflow.close()
 | `sinuosity` reconstruction | Pending | Needs MATLAB port or pre-computed values from legacy |
 | `trib_flag` reconstruction | Pending | Needs MERIT Hydro Vector (MHV) source data |
 | `facc` filtering reconstruction | Pending | Needs raw FACC raster values |
-| `stream_order` recalculation | Available | Trivial formula: `round(ln(path_freq)) + 1` |
-| `path_segs` recalculation | Available | Uses path_order + path_freq |
+| `stream_order` recalculation | **COMPLETE** | `recalculate_stream_order()` implemented |
+| `path_segs` recalculation | **COMPLETE** | `recalculate_path_segs()` implemented |
 
 **Note:** Most data is already populated from the NetCDF migration. Reconstruction methods exist for validation but are not required for normal workflow operations.
 
