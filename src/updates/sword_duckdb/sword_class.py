@@ -419,10 +419,28 @@ class SWORD:
         """
         Delete reaches and associated data across all dimensions.
 
+        This method performs a cascade deletion of:
+        - Reaches (main table)
+        - Centerlines associated with those reaches
+        - Centerline neighbors for those centerlines
+        - Nodes associated with those reaches
+        - Reach topology entries (both as source and as neighbor)
+        - SWOT orbit data for those reaches
+        - Ice flag data for those reaches
+
+        After deletion, topology counts (n_rch_up, n_rch_down) are updated
+        for any reaches that were neighbors of the deleted reaches.
+
         Parameters
         ----------
         rm_rch : list or np.ndarray
             Reach IDs to delete.
+
+        Notes
+        -----
+        - Creates a database backup timestamp before deletion
+        - Uses transaction semantics (all-or-nothing)
+        - Automatically updates topology counts for remaining reaches
         """
         if len(rm_rch) == 0:
             return
@@ -441,23 +459,29 @@ class SWORD:
             # Convert to list for SQL IN clause
             rm_list = rm_rch.tolist()
 
+            # IMPORTANT: Get centerline IDs BEFORE deleting centerlines
+            # This is needed for cleaning up centerline_neighbors
+            cl_ids_result = conn.execute(f"""
+                SELECT cl_id FROM centerlines
+                WHERE reach_id IN ({','.join('?' * len(rm_list))})
+                AND region = ?
+            """, rm_list + [self.region]).fetchall()
+            cl_ids_to_delete = [row[0] for row in cl_ids_result]
+
+            # Delete centerline_neighbors FIRST (before centerlines are deleted)
+            if cl_ids_to_delete:
+                conn.execute(f"""
+                    DELETE FROM centerline_neighbors
+                    WHERE cl_id IN ({','.join('?' * len(cl_ids_to_delete))})
+                    AND region = ?
+                """, cl_ids_to_delete + [self.region])
+
             # Delete from centerlines
             conn.execute(f"""
                 DELETE FROM centerlines
                 WHERE reach_id IN ({','.join('?' * len(rm_list))})
                 AND region = ?
             """, rm_list + [self.region])
-
-            # Delete from centerline_neighbors (may have references)
-            conn.execute(f"""
-                DELETE FROM centerline_neighbors
-                WHERE cl_id IN (
-                    SELECT cl_id FROM centerlines
-                    WHERE reach_id IN ({','.join('?' * len(rm_list))})
-                    AND region = ?
-                )
-                AND region = ?
-            """, rm_list + [self.region, self.region])
 
             # Delete from nodes
             conn.execute(f"""
@@ -865,7 +889,108 @@ class SWORD:
 
         print(f"Exported to {output_path}")
 
-    def append_data(self, subcls, subnodes, subreaches) -> None:
+    def validate_reach_id(self, reach_id: int) -> bool:
+        """
+        Validate that a reach ID follows the SWORD format: CBBBBBRRRRT.
+
+        Parameters
+        ----------
+        reach_id : int
+            The reach ID to validate.
+
+        Returns
+        -------
+        bool
+            True if valid, False otherwise.
+
+        Notes
+        -----
+        Format: CBBBBBRRRRT (11 digits)
+        - C: Continent code (1-9)
+        - BBBBB: Basin code (5 digits)
+        - RRRR: Reach number within basin (4 digits)
+        - T: Type flag (1=river, 2=lake, 3=lake on river, 4=dam, 5=delta, 6=ghost)
+        """
+        rid_str = str(reach_id)
+        if len(rid_str) != 11:
+            return False
+
+        # Check continent code (must be 1-9)
+        if not rid_str[0].isdigit() or rid_str[0] == '0':
+            return False
+
+        # Check basin code (5 digits, can include leading zeros)
+        if not rid_str[1:6].isdigit():
+            return False
+
+        # Check reach number (4 digits)
+        if not rid_str[6:10].isdigit():
+            return False
+
+        # Check type flag (1-6)
+        type_flag = rid_str[-1]
+        if type_flag not in '123456':
+            return False
+
+        return True
+
+    def validate_node_id(self, node_id: int) -> bool:
+        """
+        Validate that a node ID follows the SWORD format: CBBBBBRRRRNNNT.
+
+        Parameters
+        ----------
+        node_id : int
+            The node ID to validate.
+
+        Returns
+        -------
+        bool
+            True if valid, False otherwise.
+
+        Notes
+        -----
+        Format: CBBBBBRRRRNNNT (14 digits)
+        - C: Continent code (1-9)
+        - BBBBB: Basin code (5 digits)
+        - RRRR: Reach number within basin (4 digits)
+        - NNN: Node number within reach (3 digits)
+        - T: Type flag (1=river, 2=lake, 3=lake on river, 4=dam, 5=delta, 6=ghost)
+        """
+        nid_str = str(node_id)
+        if len(nid_str) != 14:
+            return False
+
+        # Check continent code (must be 1-9)
+        if not nid_str[0].isdigit() or nid_str[0] == '0':
+            return False
+
+        # Check basin code (5 digits)
+        if not nid_str[1:6].isdigit():
+            return False
+
+        # Check reach number (4 digits)
+        if not nid_str[6:10].isdigit():
+            return False
+
+        # Check node number (3 digits)
+        if not nid_str[10:13].isdigit():
+            return False
+
+        # Check type flag (1-6)
+        type_flag = nid_str[-1]
+        if type_flag not in '123456':
+            return False
+
+        return True
+
+    def append_data(
+        self,
+        subcls,
+        subnodes,
+        subreaches,
+        validate_ids: bool = True
+    ) -> None:
         """
         Append new centerlines, nodes, and reaches to the database.
 
@@ -878,11 +1003,83 @@ class SWORD:
             Object containing nodes data with attributes matching NodesView.
         subreaches : object
             Object containing reaches data with attributes matching ReachesView.
+        validate_ids : bool, optional
+            If True (default), validate that reach and node IDs follow SWORD format.
+            Set to False to skip validation (e.g., for migration operations).
+
+        Raises
+        ------
+        ValueError
+            If validate_ids is True and any IDs fail format validation.
+        RuntimeError
+            If the database operation fails.
+
+        Notes
+        -----
+        ID Formats:
+        - Reach ID: CBBBBBRRRRT (11 digits)
+          C=continent, BBBBB=basin, RRRR=reach num, T=type
+        - Node ID: CBBBBBRRRRNNNT (14 digits)
+          Same prefix as reach, NNN=node number, T=type
+        - Type flags: 1=river, 2=lake, 3=lake-on-river, 4=dam, 5=delta, 6=ghost
         """
         import gc
 
         if len(subcls.cl_id) == 0 and len(subnodes.id) == 0 and len(subreaches.id) == 0:
             return
+
+        # Validate IDs if requested
+        if validate_ids:
+            # Validate reach IDs
+            if len(subreaches.id) > 0:
+                invalid_reaches = []
+                for rid in subreaches.id:
+                    if not self.validate_reach_id(int(rid)):
+                        invalid_reaches.append(rid)
+                if invalid_reaches:
+                    raise ValueError(
+                        f"Invalid reach ID format. Expected CBBBBBRRRRT (11 digits). "
+                        f"Invalid IDs: {invalid_reaches[:5]}..."
+                        if len(invalid_reaches) > 5 else
+                        f"Invalid reach ID format. Expected CBBBBBRRRRT (11 digits). "
+                        f"Invalid IDs: {invalid_reaches}"
+                    )
+
+            # Validate node IDs
+            if len(subnodes.id) > 0:
+                invalid_nodes = []
+                for nid in subnodes.id:
+                    if not self.validate_node_id(int(nid)):
+                        invalid_nodes.append(nid)
+                if invalid_nodes:
+                    raise ValueError(
+                        f"Invalid node ID format. Expected CBBBBBRRRRNNNT (14 digits). "
+                        f"Invalid IDs: {invalid_nodes[:5]}..."
+                        if len(invalid_nodes) > 5 else
+                        f"Invalid node ID format. Expected CBBBBBRRRRNNNT (14 digits). "
+                        f"Invalid IDs: {invalid_nodes}"
+                    )
+
+            # Check for duplicate IDs with existing data
+            if len(subreaches.id) > 0:
+                existing_reaches = set(self.reaches.id)
+                duplicates = [rid for rid in subreaches.id if int(rid) in existing_reaches]
+                if duplicates:
+                    raise ValueError(
+                        f"Duplicate reach IDs found. These already exist: {duplicates[:5]}..."
+                        if len(duplicates) > 5 else
+                        f"Duplicate reach IDs found. These already exist: {duplicates}"
+                    )
+
+            if len(subnodes.id) > 0:
+                existing_nodes = set(self.nodes.id)
+                duplicates = [nid for nid in subnodes.id if int(nid) in existing_nodes]
+                if duplicates:
+                    raise ValueError(
+                        f"Duplicate node IDs found. These already exist: {duplicates[:5]}..."
+                        if len(duplicates) > 5 else
+                        f"Duplicate node IDs found. These already exist: {duplicates}"
+                    )
 
         conn = self._db.connect()
         conn.execute("BEGIN TRANSACTION")
@@ -1848,6 +2045,833 @@ class SWORD:
                 UPDATE reaches SET dist_out = ?
                 WHERE reach_id = ? AND region = ?
             """, [float(rch_cs[i]), int(rch), self.region])
+
+    def check_topo_consistency(
+        self,
+        verbose: int = 1,
+        return_details: bool = False
+    ) -> dict:
+        """
+        Check the topological consistency of SWORD data.
+
+        This method validates the integrity of reach topology by running
+        several consistency checks based on the legacy check_topo_consistency.py
+        script.
+
+        Parameters
+        ----------
+        verbose : int, optional
+            Output verbosity level:
+            - 0: Silent (only return results)
+            - 1: Show errors only (default)
+            - 2: Show errors and warnings
+        return_details : bool, optional
+            If True, include detailed error information in results.
+            Default is False.
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'passed': bool - True if no errors found
+            - 'total_reaches': int - Number of reaches checked
+            - 'error_counts': dict - Count of each error type
+            - 'warning_counts': dict - Count of each warning type
+            - 'reaches_with_issues': list - Reach IDs with problems
+            - 'details': list (if return_details=True) - Detailed error messages
+
+        Notes
+        -----
+        Check types:
+        1. Count mismatch: n_rch_up/n_rch_down doesn't match actual neighbor count
+        2. Unrequited neighbors: A->B connection not reciprocated by B->A
+        3. Ghost reach warning: Ghost reach (type 6) has both up and downstream
+        4. Orphan reach warning: Non-ghost reach has no upstream neighbors
+        5. Self-reference: Reach references itself as neighbor
+
+        Example
+        -------
+        >>> results = sword.check_topo_consistency(verbose=1)
+        >>> if not results['passed']:
+        ...     print(f"Found issues in {len(results['reaches_with_issues'])} reaches")
+        """
+        error_counts = {
+            'type_0_missing_fields': 0,
+            'type_1_count_mismatch': 0,
+            'type_2_unrequited_neighbor': 0,
+            'type_5_self_reference': 0,
+        }
+        warning_counts = {
+            'type_3_ghost_both_neighbors': 0,
+            'type_4_no_upstream': 0,
+        }
+        reaches_with_issues = set()
+        details = []
+
+        # Build reach lookup for efficient neighbor checking
+        reach_ids = self.reaches.id
+        reach_idx = {rid: i for i, rid in enumerate(reach_ids)}
+
+        for idx, reach_id in enumerate(reach_ids):
+            rid_str = str(reach_id)
+            reach_type = rid_str[-1]
+
+            # Get topology data
+            n_rch_up = self.reaches.n_rch_up[idx]
+            n_rch_down = self.reaches.n_rch_down[idx]
+            rch_id_up = self.reaches.rch_id_up[:, idx]
+            rch_id_down = self.reaches.rch_id_down[:, idx]
+
+            # Check 1: Count mismatch
+            actual_up = np.count_nonzero(rch_id_up)
+            actual_down = np.count_nonzero(rch_id_down)
+
+            if actual_up != n_rch_up:
+                error_counts['type_1_count_mismatch'] += 1
+                reaches_with_issues.add(reach_id)
+                msg = f"Type 1: Reach {rid_str} claims {n_rch_up} upstream, but has {actual_up}"
+                if verbose >= 1:
+                    print(msg)
+                if return_details:
+                    details.append({'type': 1, 'reach_id': reach_id, 'message': msg})
+
+            if actual_down != n_rch_down:
+                error_counts['type_1_count_mismatch'] += 1
+                reaches_with_issues.add(reach_id)
+                msg = f"Type 1: Reach {rid_str} claims {n_rch_down} downstream, but has {actual_down}"
+                if verbose >= 1:
+                    print(msg)
+                if return_details:
+                    details.append({'type': 1, 'reach_id': reach_id, 'message': msg})
+
+            # Check 2: Unrequited neighbors - downstream
+            for neighbor_id in rch_id_down:
+                if neighbor_id == 0:
+                    continue
+                neighbor_idx = reach_idx.get(neighbor_id)
+                if neighbor_idx is None:
+                    error_counts['type_2_unrequited_neighbor'] += 1
+                    reaches_with_issues.add(reach_id)
+                    msg = f"Type 2: Reach {rid_str} references non-existent downstream {neighbor_id}"
+                    if verbose >= 1:
+                        print(msg)
+                    if return_details:
+                        details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+                else:
+                    # Check if neighbor has us as upstream
+                    neighbor_up = self.reaches.rch_id_up[:, neighbor_idx]
+                    if reach_id not in neighbor_up:
+                        error_counts['type_2_unrequited_neighbor'] += 1
+                        reaches_with_issues.add(reach_id)
+                        reaches_with_issues.add(neighbor_id)
+                        msg = f"Type 2: {rid_str} -> {neighbor_id} (down) is unrequited"
+                        if verbose >= 1:
+                            print(msg)
+                        if return_details:
+                            details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+
+            # Check 2: Unrequited neighbors - upstream
+            for neighbor_id in rch_id_up:
+                if neighbor_id == 0:
+                    continue
+                neighbor_idx = reach_idx.get(neighbor_id)
+                if neighbor_idx is None:
+                    error_counts['type_2_unrequited_neighbor'] += 1
+                    reaches_with_issues.add(reach_id)
+                    msg = f"Type 2: Reach {rid_str} references non-existent upstream {neighbor_id}"
+                    if verbose >= 1:
+                        print(msg)
+                    if return_details:
+                        details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+                else:
+                    # Check if neighbor has us as downstream
+                    neighbor_down = self.reaches.rch_id_down[:, neighbor_idx]
+                    if reach_id not in neighbor_down:
+                        error_counts['type_2_unrequited_neighbor'] += 1
+                        reaches_with_issues.add(reach_id)
+                        reaches_with_issues.add(neighbor_id)
+                        msg = f"Type 2: {rid_str} -> {neighbor_id} (up) is unrequited"
+                        if verbose >= 1:
+                            print(msg)
+                        if return_details:
+                            details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+
+            # Check 3: Ghost reach with both upstream and downstream (warning)
+            if reach_type == '6' and n_rch_up > 0 and n_rch_down > 0:
+                warning_counts['type_3_ghost_both_neighbors'] += 1
+                if verbose >= 2:
+                    print(f"Type 3 Warning: Ghost reach {rid_str} has both up and downstream")
+                if return_details:
+                    details.append({
+                        'type': 3,
+                        'reach_id': reach_id,
+                        'message': f"Ghost reach {rid_str} has both neighbors",
+                        'is_warning': True
+                    })
+
+            # Check 4: Non-ghost with no upstream (warning)
+            if n_rch_up == 0 and reach_type != '6':
+                warning_counts['type_4_no_upstream'] += 1
+                if verbose >= 2:
+                    print(f"Type 4 Warning: Non-ghost reach {rid_str} has no upstream")
+                if return_details:
+                    details.append({
+                        'type': 4,
+                        'reach_id': reach_id,
+                        'message': f"Non-ghost reach {rid_str} has no upstream",
+                        'is_warning': True
+                    })
+
+            # Check 5: Self-reference
+            if reach_id in rch_id_up or reach_id in rch_id_down:
+                error_counts['type_5_self_reference'] += 1
+                reaches_with_issues.add(reach_id)
+                msg = f"Type 5: Reach {rid_str} references itself as neighbor"
+                if verbose >= 1:
+                    print(msg)
+                if return_details:
+                    details.append({'type': 5, 'reach_id': reach_id, 'message': msg})
+
+        # Calculate totals
+        total_errors = sum(error_counts.values())
+        total_warnings = sum(warning_counts.values())
+
+        results = {
+            'passed': total_errors == 0,
+            'total_reaches': len(reach_ids),
+            'total_errors': total_errors,
+            'total_warnings': total_warnings,
+            'error_counts': error_counts,
+            'warning_counts': warning_counts,
+            'reaches_with_issues': list(reaches_with_issues),
+        }
+
+        if return_details:
+            results['details'] = details
+
+        if verbose >= 1:
+            print(f"\nTopology Check Summary:")
+            print(f"  Reaches checked: {len(reach_ids)}")
+            print(f"  Total errors: {total_errors}")
+            print(f"  Total warnings: {total_warnings}")
+            if error_counts['type_1_count_mismatch']:
+                print(f"    Type 1 (count mismatch): {error_counts['type_1_count_mismatch']}")
+            if error_counts['type_2_unrequited_neighbor']:
+                print(f"    Type 2 (unrequited): {error_counts['type_2_unrequited_neighbor']}")
+            if error_counts['type_5_self_reference']:
+                print(f"    Type 5 (self-ref): {error_counts['type_5_self_reference']}")
+
+        return results
+
+    def check_node_lengths(
+        self,
+        verbose: int = 1,
+        long_threshold: float = 1000.0,
+        warn_zero: bool = True
+    ) -> dict:
+        """
+        Check for abnormal node lengths.
+
+        Parameters
+        ----------
+        verbose : int, optional
+            Output verbosity level (0=silent, 1=errors, 2=all). Default is 1.
+        long_threshold : float, optional
+            Length threshold (meters) above which nodes are flagged. Default is 1000m.
+        warn_zero : bool, optional
+            If True, flag nodes with zero length. Default is True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'passed': bool - True if no issues found
+            - 'long_nodes': list - Node IDs exceeding threshold
+            - 'zero_length_nodes': list - Node IDs with zero length
+            - 'affected_reaches': list - Reaches containing problem nodes
+
+        Notes
+        -----
+        Target node length is 200m. Nodes over 1000m or with zero length
+        typically indicate processing issues.
+        """
+        long_nodes = []
+        zero_nodes = []
+        affected_reaches = set()
+
+        for idx, node_id in enumerate(self.nodes.id):
+            node_len = self.nodes.len[idx]
+            reach_id = self.nodes.reach_id[idx]
+
+            if node_len > long_threshold:
+                long_nodes.append(node_id)
+                affected_reaches.add(reach_id)
+                if verbose >= 1:
+                    print(f"Long node: {node_id} in reach {reach_id} ({node_len:.1f}m)")
+
+            if warn_zero and node_len == 0:
+                zero_nodes.append(node_id)
+                affected_reaches.add(reach_id)
+                if verbose >= 2:
+                    print(f"Zero length node: {node_id} in reach {reach_id}")
+
+        results = {
+            'passed': len(long_nodes) == 0 and (not warn_zero or len(zero_nodes) == 0),
+            'total_nodes': len(self.nodes.id),
+            'long_nodes': long_nodes,
+            'zero_length_nodes': zero_nodes,
+            'affected_reaches': list(affected_reaches),
+        }
+
+        if verbose >= 1:
+            print(f"\nNode Length Check Summary:")
+            print(f"  Nodes checked: {len(self.nodes.id)}")
+            print(f"  Long nodes (>{long_threshold}m): {len(long_nodes)}")
+            print(f"  Zero length nodes: {len(zero_nodes)}")
+
+        return results
+
+    def create_ghost_reach(
+        self,
+        reach_id: int,
+        position: str = 'auto',
+        verbose: bool = False
+    ) -> dict:
+        """
+        Create a ghost reach at the headwater or outlet of an existing reach.
+
+        Ghost reaches (type 6) are placeholder reaches used to mark network
+        endpoints. This method creates a new ghost reach by extracting the
+        first or last node from an existing reach and assigning it to a new
+        ghost reach with proper SWORD ID format.
+
+        Parameters
+        ----------
+        reach_id : int
+            The reach ID to split a ghost reach from.
+        position : str, optional
+            Where to create the ghost reach:
+            - 'headwater': Create at upstream end (takes first node)
+            - 'outlet': Create at downstream end (takes last node)
+            - 'auto': Automatically determine based on topology (default)
+              Uses 'headwater' if reach has no upstream neighbors,
+              'outlet' if reach has no downstream neighbors.
+        verbose : bool, optional
+            If True, print progress information. Default is False.
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'success': bool - Whether operation succeeded
+            - 'original_reach': int - The original reach ID
+            - 'ghost_reach_id': int - The new ghost reach ID
+            - 'ghost_node_id': int - The new ghost node ID
+            - 'position': str - Where the ghost was created ('headwater' or 'outlet')
+
+        Raises
+        ------
+        ValueError
+            If position='auto' but reach has both up and down neighbors,
+            or if the reach has only one node and can't be split.
+
+        Notes
+        -----
+        ID Generation:
+        - Ghost Reach ID: CBBBBBRRRR6 (11 digits, type=6)
+          where RRRR is max(basin_reach_nums) + 1
+        - Ghost Node ID: CBBBBBRRRRNNNG (14 digits, type=6)
+          where NNN starts at 001
+
+        Algorithm (from create_missing_ghost_reach.py):
+        1. Find the node to extract (first for headwater, last for outlet)
+        2. Generate new ghost reach ID (basin + max_rch + 1 + '6')
+        3. Generate new ghost node ID (reach_prefix + node_num + '6')
+        4. Update centerlines to reference new reach/node
+        5. Update or create node record
+        6. Create new reach record with copied attributes
+        7. Update topology connections
+
+        Example
+        -------
+        >>> # Create ghost at headwater of a reach with no upstream
+        >>> result = sword.create_ghost_reach(72140300041, position='headwater')
+        >>> print(f"Created ghost reach: {result['ghost_reach_id']}")
+        """
+        import gc
+
+        # Validate reach exists
+        rch_idx = np.where(self.reaches.id == reach_id)[0]
+        if len(rch_idx) == 0:
+            raise ValueError(f"Reach {reach_id} not found")
+        rch_idx = rch_idx[0]
+
+        # Determine position if auto
+        n_up = self.reaches.n_rch_up[rch_idx]
+        n_down = self.reaches.n_rch_down[rch_idx]
+
+        if position == 'auto':
+            if n_up == 0 and n_down == 0:
+                # Isolated reach - default to headwater
+                position = 'headwater'
+            elif n_up == 0:
+                position = 'headwater'
+            elif n_down == 0:
+                position = 'outlet'
+            else:
+                raise ValueError(
+                    f"Reach {reach_id} has both upstream ({n_up}) and "
+                    f"downstream ({n_down}) neighbors. Specify position explicitly."
+                )
+
+        if position not in ('headwater', 'outlet'):
+            raise ValueError(f"Invalid position: {position}. Use 'headwater', 'outlet', or 'auto'")
+
+        # Get nodes for this reach, sorted by ID
+        node_indices = np.where(self.nodes.reach_id == reach_id)[0]
+        if len(node_indices) == 0:
+            raise ValueError(f"Reach {reach_id} has no nodes")
+
+        node_ids_sorted = np.sort(self.nodes.id[node_indices])
+
+        # Check if reach has enough nodes to split
+        if len(node_ids_sorted) < 2:
+            raise ValueError(
+                f"Reach {reach_id} has only {len(node_ids_sorted)} node(s). "
+                f"Cannot create ghost reach (need at least 2 nodes)."
+            )
+
+        # Select node to extract
+        if position == 'headwater':
+            ghost_node_old_id = node_ids_sorted[-1]  # Upstream = highest node ID
+        else:
+            ghost_node_old_id = node_ids_sorted[0]   # Downstream = lowest node ID
+
+        ghost_node_idx = np.where(self.nodes.id == ghost_node_old_id)[0][0]
+
+        # Get basin info from reach ID
+        reach_str = str(reach_id)
+        level6_basin = reach_str[0:6]  # CBBBBB
+        reach_type = reach_str[-1]
+
+        # Find max reach number in this basin
+        cl_level6 = np.array([str(nid)[0:6] for nid in self.centerlines.node_id[0, :]])
+        basin_mask = cl_level6 == level6_basin
+        cl_rch_nums = np.array([
+            int(str(nid)[6:10])
+            for nid in self.centerlines.node_id[0, basin_mask]
+        ])
+        new_rch_num = np.max(cl_rch_nums) + 1 if len(cl_rch_nums) > 0 else 1
+
+        # Generate new ghost reach ID (type 6)
+        new_ghost_rch_id = int(f"{level6_basin}{new_rch_num:04d}6")
+
+        # Generate new ghost node ID
+        new_ghost_node_id = int(f"{level6_basin}{new_rch_num:04d}0016")
+
+        if verbose:
+            print(f"Creating ghost reach {new_ghost_rch_id} at {position} of {reach_id}")
+            print(f"  Extracting node {ghost_node_old_id} -> {new_ghost_node_id}")
+
+        # Get centerlines for the node being extracted
+        cl_indices = np.where(self.centerlines.node_id[0, :] == ghost_node_old_id)[0]
+        if len(cl_indices) == 0:
+            raise ValueError(f"No centerlines found for node {ghost_node_old_id}")
+
+        # Disable GC during database operations
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+
+        conn = self._db.connect()
+        conn.execute("BEGIN TRANSACTION")
+
+        try:
+            # 1. Update centerlines to reference new reach/node
+            for cl_idx in cl_indices:
+                cl_id = int(self.centerlines.cl_id[cl_idx])
+                conn.execute("""
+                    UPDATE centerlines SET
+                        reach_id = ?,
+                        node_id = ?
+                    WHERE cl_id = ? AND region = ?
+                """, [new_ghost_rch_id, new_ghost_node_id, cl_id, self.region])
+
+            # Also update neighbor references in centerline_neighbors
+            conn.execute("""
+                UPDATE centerline_neighbors SET reach_id = ?
+                WHERE reach_id = ? AND region = ?
+            """, [new_ghost_rch_id, reach_id, self.region])
+
+            conn.execute("""
+                UPDATE centerline_neighbors SET node_id = ?
+                WHERE node_id = ? AND region = ?
+            """, [new_ghost_node_id, ghost_node_old_id, self.region])
+
+            # 2. Update node record with new IDs
+            conn.execute("""
+                UPDATE nodes SET
+                    node_id = ?,
+                    reach_id = ?,
+                    edit_flag = CASE
+                        WHEN edit_flag IS NULL OR edit_flag = '' OR edit_flag = 'NaN'
+                        THEN '6'
+                        WHEN edit_flag NOT LIKE '%6%'
+                        THEN edit_flag || ',6'
+                        ELSE edit_flag
+                    END
+                WHERE node_id = ? AND region = ?
+            """, [new_ghost_node_id, new_ghost_rch_id, ghost_node_old_id, self.region])
+
+            # 3. Create new ghost reach record by copying from original
+            # Get attributes from original reach
+            reach_data = conn.execute("""
+                SELECT * FROM reaches WHERE reach_id = ? AND region = ?
+            """, [reach_id, self.region]).fetchone()
+
+            if reach_data is None:
+                raise ValueError(f"Could not find reach {reach_id} in database")
+
+            # Get node data for geometry
+            node_data = conn.execute("""
+                SELECT x, y, node_length, wse, wse_var, width, width_var,
+                       max_width, facc, dist_out, lakeflag, obstr_type,
+                       grod_id, hfalls_id, n_chan_max, n_chan_mod,
+                       river_name, trib_flag, stream_order, network
+                FROM nodes WHERE node_id = ? AND region = ?
+            """, [new_ghost_node_id, self.region]).fetchone()
+
+            if node_data is None:
+                raise ValueError(f"Could not find updated node {new_ghost_node_id}")
+
+            # Get cl_id bounds for ghost reach
+            cl_bounds = conn.execute("""
+                SELECT MIN(cl_id), MAX(cl_id) FROM centerlines
+                WHERE reach_id = ? AND region = ?
+            """, [new_ghost_rch_id, self.region]).fetchone()
+
+            # Determine end_reach value and topology
+            if position == 'headwater':
+                end_reach = 1
+                n_rch_up_ghost = 0
+                n_rch_down_ghost = 1
+            else:
+                end_reach = 2
+                n_rch_up_ghost = 1
+                n_rch_down_ghost = 0
+
+            # Calculate edit flag
+            edit_flag = '6'
+
+            # Insert new ghost reach
+            conn.execute("""
+                INSERT INTO reaches (
+                    reach_id, region, x, y, x_min, x_max, y_min, y_max,
+                    cl_id_min, cl_id_max, reach_length, n_nodes, wse, wse_var,
+                    width, width_var, slope, max_width, facc, dist_out, lakeflag,
+                    obstr_type, grod_id, hfalls_id, n_chan_max, n_chan_mod,
+                    n_rch_up, n_rch_down, swot_obs, low_slope_flag, river_name,
+                    edit_flag, trib_flag, path_freq, path_order, path_segs,
+                    stream_order, main_side, end_reach, network, add_flag, version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                new_ghost_rch_id,
+                self.region,
+                float(node_data[0]),  # x
+                float(node_data[1]),  # y
+                float(node_data[0]),  # x_min
+                float(node_data[0]),  # x_max
+                float(node_data[1]),  # y_min
+                float(node_data[1]),  # y_max
+                int(cl_bounds[0]) if cl_bounds[0] else 0,  # cl_id_min
+                int(cl_bounds[1]) if cl_bounds[1] else 0,  # cl_id_max
+                float(node_data[2]),  # reach_length = node_length
+                1,  # n_nodes
+                float(node_data[3]),  # wse
+                float(node_data[4]),  # wse_var
+                float(node_data[5]),  # width
+                float(node_data[6]),  # width_var
+                0.0,  # slope - ghost reaches typically have no slope
+                float(node_data[7]),  # max_width
+                float(node_data[8]),  # facc
+                float(node_data[9]),  # dist_out
+                int(node_data[10]),  # lakeflag
+                int(node_data[11]),  # obstr_type
+                int(node_data[12]),  # grod_id
+                int(node_data[13]),  # hfalls_id
+                int(node_data[14]),  # n_chan_max
+                int(node_data[15]),  # n_chan_mod
+                n_rch_up_ghost,
+                n_rch_down_ghost,
+                0,  # swot_obs
+                0,  # low_slope_flag
+                str(node_data[16]) if node_data[16] else '',  # river_name
+                edit_flag,
+                int(node_data[17]) if node_data[17] else 0,  # trib_flag
+                0,  # path_freq
+                0,  # path_order
+                0,  # path_segs
+                int(node_data[18]) if node_data[18] else 0,  # stream_order
+                0,  # main_side
+                end_reach,
+                int(node_data[19]) if node_data[19] else 0,  # network
+                0,  # add_flag
+                self.version
+            ])
+
+            # 4. Update topology for ghost reach
+            if position == 'headwater':
+                # Ghost is upstream of original reach
+                conn.execute("""
+                    INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                    VALUES (?, ?, 'down', 0, ?)
+                """, [new_ghost_rch_id, self.region, reach_id])
+            else:
+                # Ghost is downstream of original reach
+                conn.execute("""
+                    INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                    VALUES (?, ?, 'up', 0, ?)
+                """, [new_ghost_rch_id, self.region, reach_id])
+
+            # 5. Update original reach's topology to reference ghost
+            if position == 'headwater':
+                # Original reach now has ghost as upstream neighbor
+                # First check if there's an existing 'up' entry
+                existing = conn.execute("""
+                    SELECT COUNT(*) FROM reach_topology
+                    WHERE reach_id = ? AND region = ? AND direction = 'up'
+                """, [reach_id, self.region]).fetchone()[0]
+
+                if existing == 0:
+                    conn.execute("""
+                        INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                        VALUES (?, ?, 'up', 0, ?)
+                    """, [reach_id, self.region, new_ghost_rch_id])
+                else:
+                    # Find next available rank
+                    max_rank = conn.execute("""
+                        SELECT MAX(neighbor_rank) FROM reach_topology
+                        WHERE reach_id = ? AND region = ? AND direction = 'up'
+                    """, [reach_id, self.region]).fetchone()[0]
+                    conn.execute("""
+                        INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                        VALUES (?, ?, 'up', ?, ?)
+                    """, [reach_id, self.region, max_rank + 1, new_ghost_rch_id])
+
+                # Update n_rch_up for original reach
+                conn.execute("""
+                    UPDATE reaches SET n_rch_up = n_rch_up + 1, end_reach = 0
+                    WHERE reach_id = ? AND region = ?
+                """, [reach_id, self.region])
+            else:
+                # Original reach now has ghost as downstream neighbor
+                existing = conn.execute("""
+                    SELECT COUNT(*) FROM reach_topology
+                    WHERE reach_id = ? AND region = ? AND direction = 'down'
+                """, [reach_id, self.region]).fetchone()[0]
+
+                if existing == 0:
+                    conn.execute("""
+                        INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                        VALUES (?, ?, 'down', 0, ?)
+                    """, [reach_id, self.region, new_ghost_rch_id])
+                else:
+                    max_rank = conn.execute("""
+                        SELECT MAX(neighbor_rank) FROM reach_topology
+                        WHERE reach_id = ? AND region = ? AND direction = 'down'
+                    """, [reach_id, self.region]).fetchone()[0]
+                    conn.execute("""
+                        INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                        VALUES (?, ?, 'down', ?, ?)
+                    """, [reach_id, self.region, max_rank + 1, new_ghost_rch_id])
+
+                # Update n_rch_down for original reach
+                conn.execute("""
+                    UPDATE reaches SET n_rch_down = n_rch_down + 1, end_reach = 0
+                    WHERE reach_id = ? AND region = ?
+                """, [reach_id, self.region])
+
+            # 6. Update original reach attributes
+            # Recalculate geometry excluding the extracted node
+            remaining_cl = conn.execute("""
+                SELECT cl_id, x, y FROM centerlines
+                WHERE reach_id = ? AND region = ?
+                ORDER BY cl_id
+            """, [reach_id, self.region]).fetchall()
+
+            if len(remaining_cl) > 0:
+                x_coords = [r[1] for r in remaining_cl]
+                y_coords = [r[2] for r in remaining_cl]
+                cl_ids = [r[0] for r in remaining_cl]
+
+                conn.execute("""
+                    UPDATE reaches SET
+                        x = ?,
+                        y = ?,
+                        x_min = ?,
+                        x_max = ?,
+                        y_min = ?,
+                        y_max = ?,
+                        cl_id_min = ?,
+                        cl_id_max = ?,
+                        n_nodes = n_nodes - 1,
+                        edit_flag = CASE
+                            WHEN edit_flag IS NULL OR edit_flag = '' OR edit_flag = 'NaN'
+                            THEN '6'
+                            WHEN edit_flag NOT LIKE '%6%'
+                            THEN edit_flag || ',6'
+                            ELSE edit_flag
+                        END
+                    WHERE reach_id = ? AND region = ?
+                """, [
+                    float(np.median(x_coords)),
+                    float(np.median(y_coords)),
+                    float(np.min(x_coords)),
+                    float(np.max(x_coords)),
+                    float(np.min(y_coords)),
+                    float(np.max(y_coords)),
+                    int(np.min(cl_ids)),
+                    int(np.max(cl_ids)),
+                    reach_id,
+                    self.region
+                ])
+
+            # Copy orbits and ice flags from original reach
+            self._copy_reach_orbits(conn, reach_id, new_ghost_rch_id)
+            self._copy_reach_ice_flags(conn, reach_id, new_ghost_rch_id)
+
+            conn.execute("COMMIT")
+
+            # Reload data to refresh views
+            self._load_data()
+
+            if verbose:
+                print(f"Successfully created ghost reach {new_ghost_rch_id}")
+
+            return {
+                'success': True,
+                'original_reach': reach_id,
+                'ghost_reach_id': new_ghost_rch_id,
+                'ghost_node_id': new_ghost_node_id,
+                'position': position,
+            }
+
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise RuntimeError(f"Failed to create ghost reach: {e}") from e
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+
+    def find_missing_ghost_reaches(self) -> dict:
+        """
+        Find reaches that should have ghost reaches but don't.
+
+        Ghost reaches are typically needed at:
+        - Headwaters: Non-ghost reaches (type != 6) with no upstream neighbors
+        - Outlets: Non-ghost reaches (type != 6) with no downstream neighbors
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'missing_headwaters': list of reach IDs needing headwater ghosts
+            - 'missing_outlets': list of reach IDs needing outlet ghosts
+            - 'total_missing': int total count
+
+        Example
+        -------
+        >>> missing = sword.find_missing_ghost_reaches()
+        >>> print(f"Found {missing['total_missing']} reaches needing ghost reaches")
+        >>> for rid in missing['missing_headwaters'][:5]:
+        ...     sword.create_ghost_reach(rid, position='headwater')
+        """
+        missing_headwaters = []
+        missing_outlets = []
+
+        for idx, reach_id in enumerate(self.reaches.id):
+            reach_type = str(reach_id)[-1]
+
+            # Skip existing ghost reaches
+            if reach_type == '6':
+                continue
+
+            n_up = self.reaches.n_rch_up[idx]
+            n_down = self.reaches.n_rch_down[idx]
+
+            if n_up == 0:
+                missing_headwaters.append(reach_id)
+            if n_down == 0:
+                missing_outlets.append(reach_id)
+
+        return {
+            'missing_headwaters': missing_headwaters,
+            'missing_outlets': missing_outlets,
+            'total_missing': len(missing_headwaters) + len(missing_outlets),
+        }
+
+    def find_incorrect_ghost_reaches(self) -> dict:
+        """
+        Find ghost reaches that are incorrectly labeled.
+
+        A ghost reach (type 6) should only have neighbors in ONE direction
+        (either upstream OR downstream, not both). Ghost reaches with both
+        are likely mislabeled and should be a different type.
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'incorrect_ghost_reaches': list of dicts with reach_id and suggested_type
+            - 'total_incorrect': int
+
+        Example
+        -------
+        >>> incorrect = sword.find_incorrect_ghost_reaches()
+        >>> for item in incorrect['incorrect_ghost_reaches']:
+        ...     print(f"Reach {item['reach_id']} should be type {item['suggested_type']}")
+        """
+        incorrect = []
+
+        for idx, reach_id in enumerate(self.reaches.id):
+            reach_type = str(reach_id)[-1]
+
+            # Only check ghost reaches
+            if reach_type != '6':
+                continue
+
+            n_up = self.reaches.n_rch_up[idx]
+            n_down = self.reaches.n_rch_down[idx]
+
+            # Ghost reach should NOT have both up and down neighbors
+            if n_up > 0 and n_down > 0:
+                # Determine suggested type from neighbors
+                rch_id_up = self.reaches.rch_id_up[:, idx]
+                rch_id_down = self.reaches.rch_id_down[:, idx]
+
+                neighbor_types = []
+                for nid in np.concatenate([rch_id_up, rch_id_down]):
+                    if nid > 0:
+                        ntype = str(nid)[-1]
+                        if ntype != '6':  # Don't use other ghost types
+                            neighbor_types.append(int(ntype))
+
+                # Suggest the most common neighbor type
+                if neighbor_types:
+                    suggested = max(set(neighbor_types), key=neighbor_types.count)
+                else:
+                    suggested = 1  # Default to river type
+
+                incorrect.append({
+                    'reach_id': reach_id,
+                    'suggested_type': suggested,
+                    'n_rch_up': n_up,
+                    'n_rch_down': n_down,
+                })
+
+        return {
+            'incorrect_ghost_reaches': incorrect,
+            'total_incorrect': len(incorrect),
+        }
 
     def close(self) -> None:
         """Close the database connection."""

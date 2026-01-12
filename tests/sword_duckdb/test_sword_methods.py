@@ -218,6 +218,97 @@ class TestContextManager:
             assert len(sword.reaches) > 0
 
 
+class TestIDValidation:
+    """Test ID validation methods."""
+
+    def test_validate_reach_id_valid(self, temp_sword):
+        """Test valid reach IDs pass validation."""
+        # Standard river reach ID: CBBBBBRRRRT
+        assert temp_sword.validate_reach_id(72140300041) == True  # River
+        assert temp_sword.validate_reach_id(72140300042) == True  # Lake
+        assert temp_sword.validate_reach_id(72140300043) == True  # Lake on river
+        assert temp_sword.validate_reach_id(72140300044) == True  # Dam
+        assert temp_sword.validate_reach_id(72140300045) == True  # Delta
+        assert temp_sword.validate_reach_id(72140300046) == True  # Ghost
+
+    def test_validate_reach_id_invalid(self, temp_sword):
+        """Test invalid reach IDs fail validation."""
+        # Wrong length
+        assert temp_sword.validate_reach_id(7214030004) == False  # Too short
+        assert temp_sword.validate_reach_id(721403000411) == False  # Too long
+        # Invalid type flag
+        assert temp_sword.validate_reach_id(72140300040) == False  # Type 0 invalid
+        assert temp_sword.validate_reach_id(72140300047) == False  # Type 7 invalid
+        # Invalid continent code
+        assert temp_sword.validate_reach_id(2140300041) == False  # 10 digits, no continent
+
+    def test_validate_node_id_valid(self, temp_sword):
+        """Test valid node IDs pass validation."""
+        # Standard node ID: CBBBBBRRRRNNNT
+        assert temp_sword.validate_node_id(72140300040011) == True
+
+    def test_validate_node_id_invalid(self, temp_sword):
+        """Test invalid node IDs fail validation."""
+        # Wrong length
+        assert temp_sword.validate_node_id(7214030004001) == False  # Too short (13 digits)
+        assert temp_sword.validate_node_id(721403000400111) == False  # Too long (15 digits)
+        # Invalid type flag
+        assert temp_sword.validate_node_id(72140300040010) == False  # Type 0 invalid
+
+
+class TestTopologyConsistency:
+    """Test topology consistency checking."""
+
+    def test_check_topo_consistency_exists(self, temp_sword):
+        """Test check_topo_consistency method exists."""
+        assert hasattr(temp_sword, 'check_topo_consistency')
+        assert callable(temp_sword.check_topo_consistency)
+
+    def test_check_topo_consistency_returns_dict(self, temp_sword):
+        """Test check_topo_consistency returns a dictionary."""
+        result = temp_sword.check_topo_consistency(verbose=0)
+        assert isinstance(result, dict)
+        assert 'passed' in result
+        assert 'total_reaches' in result
+        assert 'error_counts' in result
+        assert 'warning_counts' in result
+        assert 'reaches_with_issues' in result
+
+    def test_check_topo_consistency_with_details(self, temp_sword):
+        """Test check_topo_consistency with return_details=True."""
+        result = temp_sword.check_topo_consistency(verbose=0, return_details=True)
+        assert 'details' in result
+
+
+class TestNodeLengthCheck:
+    """Test node length checking."""
+
+    def test_check_node_lengths_exists(self, temp_sword):
+        """Test check_node_lengths method exists."""
+        assert hasattr(temp_sword, 'check_node_lengths')
+        assert callable(temp_sword.check_node_lengths)
+
+    def test_check_node_lengths_returns_dict(self, temp_sword):
+        """Test check_node_lengths returns proper dict."""
+        result = temp_sword.check_node_lengths(verbose=0)
+        assert isinstance(result, dict)
+        assert 'passed' in result
+        assert 'total_nodes' in result
+        assert 'long_nodes' in result
+        assert 'zero_length_nodes' in result
+        assert 'affected_reaches' in result
+
+
+class TestAppendDataValidation:
+    """Test append_data with ID validation."""
+
+    def test_append_data_has_validate_parameter(self, temp_sword):
+        """Test append_data has validate_ids parameter."""
+        import inspect
+        sig = inspect.signature(temp_sword.append_data)
+        assert 'validate_ids' in sig.parameters
+
+
 class TestCloseMethod:
     """Test close method."""
 
@@ -229,6 +320,164 @@ class TestCloseMethod:
         sword = SWORD(TEST_DB_PATH, TEST_REGION, TEST_VERSION)
         sword.close()
         # Should not raise an error
+
+
+class TestGhostReachMethods:
+    """Test ghost reach related methods."""
+
+    def test_create_ghost_reach_method_exists(self, temp_sword):
+        """Test create_ghost_reach method exists."""
+        assert hasattr(temp_sword, 'create_ghost_reach')
+        assert callable(temp_sword.create_ghost_reach)
+
+    def test_find_missing_ghost_reaches_method_exists(self, temp_sword):
+        """Test find_missing_ghost_reaches method exists."""
+        assert hasattr(temp_sword, 'find_missing_ghost_reaches')
+        assert callable(temp_sword.find_missing_ghost_reaches)
+
+    def test_find_incorrect_ghost_reaches_method_exists(self, temp_sword):
+        """Test find_incorrect_ghost_reaches method exists."""
+        assert hasattr(temp_sword, 'find_incorrect_ghost_reaches')
+        assert callable(temp_sword.find_incorrect_ghost_reaches)
+
+    def test_find_missing_ghost_reaches_returns_dict(self, temp_sword):
+        """Test find_missing_ghost_reaches returns proper dict."""
+        result = temp_sword.find_missing_ghost_reaches()
+
+        assert isinstance(result, dict)
+        assert 'missing_headwaters' in result
+        assert 'missing_outlets' in result
+        assert 'total_missing' in result
+        assert isinstance(result['missing_headwaters'], list)
+        assert isinstance(result['missing_outlets'], list)
+
+    def test_find_incorrect_ghost_reaches_returns_dict(self, temp_sword):
+        """Test find_incorrect_ghost_reaches returns proper dict."""
+        result = temp_sword.find_incorrect_ghost_reaches()
+
+        assert isinstance(result, dict)
+        assert 'incorrect_ghost_reaches' in result
+        assert 'total_incorrect' in result
+        assert isinstance(result['incorrect_ghost_reaches'], list)
+
+    def test_create_ghost_reach_invalid_reach(self, temp_sword):
+        """Test create_ghost_reach raises error for non-existent reach."""
+        with pytest.raises(ValueError, match="not found"):
+            temp_sword.create_ghost_reach(99999999999)
+
+    def test_create_ghost_reach_invalid_position(self, temp_sword):
+        """Test create_ghost_reach raises error for invalid position."""
+        # Get a valid reach ID
+        reach_id = int(temp_sword.reaches.id[0])
+        with pytest.raises(ValueError, match="Invalid position"):
+            temp_sword.create_ghost_reach(reach_id, position='invalid')
+
+    def test_create_ghost_reach_headwater(self, temp_sword):
+        """Test creating a ghost reach at headwater position."""
+        # Find a reach that has:
+        # 1. No upstream neighbors (n_rch_up == 0)
+        # 2. At least 2 nodes (so we can split)
+        # 3. Not already a ghost reach (type != 6)
+        candidate_reach = None
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            reach_type = str(reach_id)[-1]
+            if reach_type == '6':
+                continue  # Skip ghost reaches
+            n_up = temp_sword.reaches.n_rch_up[idx]
+            if n_up == 0:
+                # Check node count
+                node_count = np.sum(temp_sword.nodes.reach_id == reach_id)
+                if node_count >= 2:
+                    candidate_reach = int(reach_id)
+                    break
+
+        if candidate_reach is None:
+            pytest.skip("No suitable reach found for headwater ghost test")
+
+        initial_reach_count = len(temp_sword.reaches.id)
+        result = temp_sword.create_ghost_reach(candidate_reach, position='headwater')
+
+        assert result['success'] is True
+        assert result['original_reach'] == candidate_reach
+        assert result['position'] == 'headwater'
+        assert result['ghost_reach_id'] is not None
+        assert result['ghost_node_id'] is not None
+
+        # Verify ghost reach ID format (should end in 6)
+        assert str(result['ghost_reach_id'])[-1] == '6'
+
+        # Verify new reach was created
+        assert len(temp_sword.reaches.id) == initial_reach_count + 1
+
+        # Verify ghost reach exists in data
+        assert result['ghost_reach_id'] in temp_sword.reaches.id
+
+    def test_create_ghost_reach_outlet(self, temp_sword):
+        """Test creating a ghost reach at outlet position."""
+        # Find a reach with no downstream neighbors but has >= 2 nodes
+        candidate_reach = None
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            reach_type = str(reach_id)[-1]
+            if reach_type == '6':
+                continue
+            n_down = temp_sword.reaches.n_rch_down[idx]
+            if n_down == 0:
+                node_count = np.sum(temp_sword.nodes.reach_id == reach_id)
+                if node_count >= 2:
+                    candidate_reach = int(reach_id)
+                    break
+
+        if candidate_reach is None:
+            pytest.skip("No suitable reach found for outlet ghost test")
+
+        result = temp_sword.create_ghost_reach(candidate_reach, position='outlet')
+
+        assert result['success'] is True
+        assert result['position'] == 'outlet'
+        assert str(result['ghost_reach_id'])[-1] == '6'
+
+    def test_create_ghost_reach_auto_position(self, temp_sword):
+        """Test create_ghost_reach with auto position detection."""
+        # Find a reach with no upstream but has downstream (clear headwater)
+        candidate_reach = None
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            reach_type = str(reach_id)[-1]
+            if reach_type == '6':
+                continue
+            n_up = temp_sword.reaches.n_rch_up[idx]
+            n_down = temp_sword.reaches.n_rch_down[idx]
+            if n_up == 0 and n_down > 0:
+                node_count = np.sum(temp_sword.nodes.reach_id == reach_id)
+                if node_count >= 2:
+                    candidate_reach = int(reach_id)
+                    break
+
+        if candidate_reach is None:
+            pytest.skip("No suitable reach found for auto position test")
+
+        result = temp_sword.create_ghost_reach(candidate_reach, position='auto')
+
+        assert result['success'] is True
+        assert result['position'] == 'headwater'  # Should auto-detect headwater
+
+    def test_create_ghost_reach_single_node_fails(self, temp_sword):
+        """Test create_ghost_reach fails for single-node reaches."""
+        # Find a reach with only 1 node
+        candidate_reach = None
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            reach_type = str(reach_id)[-1]
+            if reach_type == '6':
+                continue
+            node_count = temp_sword.reaches.rch_n_nodes[idx]
+            if node_count == 1:
+                candidate_reach = int(reach_id)
+                break
+
+        if candidate_reach is None:
+            pytest.skip("No single-node reach found for test")
+
+        with pytest.raises(ValueError, match="only.*node"):
+            temp_sword.create_ghost_reach(candidate_reach, position='headwater')
 
 
 if __name__ == '__main__':

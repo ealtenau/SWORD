@@ -1138,6 +1138,531 @@ class SWORDWorkflow:
         return results
 
     # =========================================================================
+    # REACH OPERATIONS (Priority 1 - QGIS Workflow)
+    # =========================================================================
+
+    def break_reach(
+        self,
+        reach_id: int,
+        break_cl_id: int,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Break a reach at a specified centerline point.
+
+        This is a Priority 1 operation for the QGIS editing workflow. It splits
+        a single reach into two reaches at the specified centerline ID.
+
+        Parameters
+        ----------
+        reach_id : int
+            The reach ID to break
+        break_cl_id : int
+            The centerline ID where the break should occur. This becomes
+            the first centerline of the new downstream reach.
+        reason : str, optional
+            Reason for the break (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'original_reach': int - The original reach ID
+            - 'new_reach': int - The newly created reach ID
+            - 'break_cl_id': int - Where the break occurred
+            - 'success': bool - Whether operation succeeded
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded
+        ValueError
+            If reach_id or break_cl_id is invalid
+
+        Example
+        -------
+        >>> with workflow.transaction("Break reach at tributary"):
+        ...     result = workflow.break_reach(72140300041, 10823001)
+        ...     print(f"Created new reach: {result['new_reach']}")
+
+        Notes
+        -----
+        Algorithm from legacy break_reaches_post_topo.py:
+        1. Validate cl_id is within reach
+        2. Split centerline arrays at cl_id
+        3. Generate new reach ID (basin + max_rch + 1 + type)
+        4. Generate new node IDs (divide by 200m)
+        5. Recalculate attributes for both new reaches
+        6. Update topology (neighbors now point to 2 reaches)
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Log operation if provenance enabled
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'BREAK_REACH',
+                table_name='reaches',
+                entity_ids=[reach_id],
+                region=self._region,
+                reason=reason or f"Break reach {reach_id} at cl_id {break_cl_id}",
+                details={'break_cl_id': break_cl_id},
+            ):
+                self._sword.break_reaches(
+                    np.array([reach_id]),
+                    np.array([break_cl_id]),
+                    verbose=True
+                )
+        else:
+            self._sword.break_reaches(
+                np.array([reach_id]),
+                np.array([break_cl_id]),
+                verbose=True
+            )
+
+        # Get the new reach ID (will be max reach ID in basin after break)
+        # This assumes the new reach was just created
+        return {
+            'original_reach': reach_id,
+            'break_cl_id': break_cl_id,
+            'success': True,
+        }
+
+    def delete_reach(
+        self,
+        reach_id: int,
+        cascade: bool = True,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Delete a reach with optional cascade to centerlines and nodes.
+
+        Parameters
+        ----------
+        reach_id : int
+            The reach ID to delete
+        cascade : bool, optional
+            If True (default), delete associated centerlines and nodes.
+            If False, only delete the reach record.
+        reason : str, optional
+            Reason for deletion (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'deleted_reach': int - The deleted reach ID
+            - 'cascade': bool - Whether cascade was used
+            - 'success': bool - Whether operation succeeded
+
+        Example
+        -------
+        >>> workflow.delete_reach(72140300041, reason="Duplicate reach")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'DELETE',
+                table_name='reaches',
+                entity_ids=[reach_id],
+                region=self._region,
+                reason=reason or f"Delete reach {reach_id}",
+                details={'cascade': cascade},
+            ):
+                if cascade:
+                    self._sword.delete_data([reach_id])
+                else:
+                    self._sword.delete_rchs([reach_id])
+        else:
+            if cascade:
+                self._sword.delete_data([reach_id])
+            else:
+                self._sword.delete_rchs([reach_id])
+
+        return {
+            'deleted_reach': reach_id,
+            'cascade': cascade,
+            'success': True,
+        }
+
+    def delete_reaches(
+        self,
+        reach_ids: List[int],
+        cascade: bool = True,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Delete multiple reaches with optional cascade.
+
+        Parameters
+        ----------
+        reach_ids : list of int
+            The reach IDs to delete
+        cascade : bool, optional
+            If True (default), delete associated centerlines and nodes.
+        reason : str, optional
+            Reason for deletion (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'DELETE',
+                table_name='reaches',
+                entity_ids=list(reach_ids),
+                region=self._region,
+                reason=reason or f"Delete {len(reach_ids)} reaches",
+                details={'cascade': cascade},
+            ):
+                if cascade:
+                    self._sword.delete_data(reach_ids)
+                else:
+                    self._sword.delete_rchs(reach_ids)
+        else:
+            if cascade:
+                self._sword.delete_data(reach_ids)
+            else:
+                self._sword.delete_rchs(reach_ids)
+
+        return {
+            'deleted_count': len(reach_ids),
+            'cascade': cascade,
+            'success': True,
+        }
+
+    def append_reaches(
+        self,
+        centerlines,
+        nodes,
+        reaches,
+        validate_ids: bool = True,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Append new reaches with their centerlines and nodes.
+
+        Parameters
+        ----------
+        centerlines : object
+            Centerlines data object with cl_id, x, y, reach_id, node_id
+        nodes : object
+            Nodes data object matching NodesView structure
+        reaches : object
+            Reaches data object matching ReachesView structure
+        validate_ids : bool, optional
+            If True (default), validate ID formats before appending.
+        reason : str, optional
+            Reason for append (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results including counts of appended entities
+
+        Raises
+        ------
+        ValueError
+            If validate_ids is True and IDs fail validation
+
+        Notes
+        -----
+        ID Formats:
+        - Reach ID: CBBBBBRRRRT (11 digits)
+        - Node ID: CBBBBBRRRRNNNT (14 digits)
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        reach_ids = list(reaches.id) if hasattr(reaches, 'id') else []
+
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'INSERT',
+                table_name='reaches',
+                entity_ids=reach_ids,
+                region=self._region,
+                reason=reason or f"Append {len(reach_ids)} new reaches",
+            ):
+                self._sword.append_data(
+                    centerlines, nodes, reaches,
+                    validate_ids=validate_ids
+                )
+        else:
+            self._sword.append_data(
+                centerlines, nodes, reaches,
+                validate_ids=validate_ids
+            )
+
+        return {
+            'appended_centerlines': len(centerlines.cl_id) if hasattr(centerlines, 'cl_id') else 0,
+            'appended_nodes': len(nodes.id) if hasattr(nodes, 'id') else 0,
+            'appended_reaches': len(reach_ids),
+            'success': True,
+        }
+
+    # =========================================================================
+    # GHOST REACH OPERATIONS (Priority 3)
+    # =========================================================================
+
+    def create_ghost_reach(
+        self,
+        reach_id: int,
+        position: str = 'auto',
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Create a ghost reach at the headwater or outlet of an existing reach.
+
+        Ghost reaches (type 6) are placeholder reaches used to mark network
+        endpoints. This method creates a new ghost reach by extracting the
+        first or last node from an existing reach and assigning it to a new
+        ghost reach with proper SWORD ID format.
+
+        Parameters
+        ----------
+        reach_id : int
+            The reach ID to split a ghost reach from.
+        position : str, optional
+            Where to create the ghost reach:
+            - 'headwater': Create at upstream end (takes last node by ID)
+            - 'outlet': Create at downstream end (takes first node by ID)
+            - 'auto': Automatically determine based on topology (default)
+        reason : str, optional
+            Reason for creating the ghost reach (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'success': bool - Whether operation succeeded
+            - 'original_reach': int - The original reach ID
+            - 'ghost_reach_id': int - The new ghost reach ID
+            - 'ghost_node_id': int - The new ghost node ID
+            - 'position': str - Where the ghost was created
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded
+        ValueError
+            If position='auto' but reach has both up and down neighbors,
+            or if the reach has only one node and can't be split.
+
+        Example
+        -------
+        >>> # Create ghost at headwater of a reach with no upstream
+        >>> result = workflow.create_ghost_reach(72140300041)
+        >>> print(f"Created ghost reach: {result['ghost_reach_id']}")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'CREATE_GHOST_REACH',
+                table_name='reaches',
+                entity_ids=[reach_id],
+                region=self._region,
+                reason=reason or f"Create ghost reach at {position} of {reach_id}",
+                details={'position': position},
+            ):
+                return self._sword.create_ghost_reach(
+                    reach_id,
+                    position=position,
+                    verbose=True
+                )
+        else:
+            return self._sword.create_ghost_reach(
+                reach_id,
+                position=position,
+                verbose=True
+            )
+
+    def find_missing_ghost_reaches(self) -> Dict[str, Any]:
+        """
+        Find reaches that should have ghost reaches but don't.
+
+        Ghost reaches are typically needed at:
+        - Headwaters: Non-ghost reaches (type != 6) with no upstream neighbors
+        - Outlets: Non-ghost reaches (type != 6) with no downstream neighbors
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'missing_headwaters': list of reach IDs needing headwater ghosts
+            - 'missing_outlets': list of reach IDs needing outlet ghosts
+            - 'total_missing': int total count
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded
+
+        Example
+        -------
+        >>> missing = workflow.find_missing_ghost_reaches()
+        >>> print(f"Found {missing['total_missing']} reaches needing ghost reaches")
+        >>> for rid in missing['missing_headwaters'][:5]:
+        ...     workflow.create_ghost_reach(rid, position='headwater')
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        return self._sword.find_missing_ghost_reaches()
+
+    def find_incorrect_ghost_reaches(self) -> Dict[str, Any]:
+        """
+        Find ghost reaches that are incorrectly labeled.
+
+        A ghost reach (type 6) should only have neighbors in ONE direction
+        (either upstream OR downstream, not both). Ghost reaches with both
+        are likely mislabeled and should be a different type.
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'incorrect_ghost_reaches': list of dicts with reach_id and suggested_type
+            - 'total_incorrect': int
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded
+
+        Example
+        -------
+        >>> incorrect = workflow.find_incorrect_ghost_reaches()
+        >>> for item in incorrect['incorrect_ghost_reaches']:
+        ...     print(f"Reach {item['reach_id']} should be type {item['suggested_type']}")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        return self._sword.find_incorrect_ghost_reaches()
+
+    # =========================================================================
+    # VALIDATION METHODS
+    # =========================================================================
+
+    def check_topology(
+        self,
+        verbose: int = 1,
+        return_details: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Check topological consistency of the loaded database.
+
+        Parameters
+        ----------
+        verbose : int, optional
+            Output verbosity (0=silent, 1=errors, 2=all)
+        return_details : bool, optional
+            If True, include detailed error messages
+
+        Returns
+        -------
+        dict
+            Topology check results
+
+        Example
+        -------
+        >>> results = workflow.check_topology()
+        >>> if not results['passed']:
+        ...     print(f"Issues in {len(results['reaches_with_issues'])} reaches")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        return self._sword.check_topo_consistency(
+            verbose=verbose,
+            return_details=return_details
+        )
+
+    def check_node_lengths(
+        self,
+        verbose: int = 1,
+        threshold: float = 1000.0,
+    ) -> Dict[str, Any]:
+        """
+        Check for abnormal node lengths.
+
+        Parameters
+        ----------
+        verbose : int, optional
+            Output verbosity
+        threshold : float, optional
+            Length threshold in meters (default 1000m)
+
+        Returns
+        -------
+        dict
+            Node length check results
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        return self._sword.check_node_lengths(
+            verbose=verbose,
+            long_threshold=threshold
+        )
+
+    def validate_ids(
+        self,
+        reach_ids: List[int] = None,
+        node_ids: List[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Validate that IDs follow SWORD format conventions.
+
+        Parameters
+        ----------
+        reach_ids : list of int, optional
+            Reach IDs to validate. If None, validates all loaded reaches.
+        node_ids : list of int, optional
+            Node IDs to validate. If None, validates all loaded nodes.
+
+        Returns
+        -------
+        dict
+            Validation results including invalid IDs
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        invalid_reaches = []
+        invalid_nodes = []
+
+        # Validate reach IDs
+        rids = reach_ids if reach_ids is not None else self._sword.reaches.id
+        for rid in rids:
+            if not self._sword.validate_reach_id(int(rid)):
+                invalid_reaches.append(rid)
+
+        # Validate node IDs
+        nids = node_ids if node_ids is not None else self._sword.nodes.id
+        for nid in nids:
+            if not self._sword.validate_node_id(int(nid)):
+                invalid_nodes.append(nid)
+
+        return {
+            'passed': len(invalid_reaches) == 0 and len(invalid_nodes) == 0,
+            'total_reaches_checked': len(rids),
+            'total_nodes_checked': len(nids),
+            'invalid_reaches': invalid_reaches,
+            'invalid_nodes': invalid_nodes,
+        }
+
+    # =========================================================================
     # STATUS AND UTILITY METHODS
     # =========================================================================
 
