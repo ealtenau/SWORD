@@ -1338,6 +1338,148 @@ class SWORDWorkflow:
             'success': True,
         }
 
+    def merge_reach(
+        self,
+        source_reach_id: int,
+        target_reach_id: int,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Merge a source reach into a target reach.
+
+        This is a Priority 4 operation for reach aggregation. It combines two
+        adjacent reaches by moving all centerlines and nodes from the source
+        into the target, recalculating attributes, and deleting the source.
+
+        Parameters
+        ----------
+        source_reach_id : int
+            The reach ID to merge (will be deleted after merge)
+        target_reach_id : int
+            The reach ID to merge into (will be preserved and expanded)
+        reason : str, optional
+            Reason for the merge (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'source_reach': int - The merged (deleted) reach ID
+            - 'target_reach': int - The expanded reach ID
+            - 'merged_nodes': int - Number of nodes merged
+            - 'merged_centerlines': int - Number of centerlines merged
+            - 'success': bool - Whether operation succeeded
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded
+        ValueError
+            If reaches are not adjacent or cannot be merged
+
+        Example
+        -------
+        >>> with workflow.transaction("Merge short reach"):
+        ...     result = workflow.merge_reach(72140300061, 72140300041)
+        ...     print(f"Merged {result['merged_nodes']} nodes")
+
+        Notes
+        -----
+        Algorithm from legacy aggregate_1node_rchs.py:
+        1. Validate source and target are topologically adjacent
+        2. Reassign centerlines from source to target
+        3. Update node IDs and reach assignments
+        4. Recalculate reach attributes:
+           - wse, wth: median of nodes
+           - wse_var, wth_var: max of nodes
+           - nchan_max, grod: max of nodes
+           - nchan_mod, lakeflag: mode of nodes
+           - slope: linear regression of wse vs dist_out
+        5. Update topology (target inherits source's neighbors)
+        6. Delete source reach
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Log operation if provenance enabled
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'MERGE_REACH',
+                table_name='reaches',
+                entity_ids=[source_reach_id, target_reach_id],
+                region=self._region,
+                reason=reason or f"Merge reach {source_reach_id} into {target_reach_id}",
+                details={
+                    'source_reach': source_reach_id,
+                    'target_reach': target_reach_id
+                },
+            ):
+                result = self._sword.merge_reaches(
+                    source_reach_id,
+                    target_reach_id,
+                    verbose=True
+                )
+        else:
+            result = self._sword.merge_reaches(
+                source_reach_id,
+                target_reach_id,
+                verbose=True
+            )
+
+        return result
+
+    def merge_reaches(
+        self,
+        merge_pairs: List[tuple],
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Merge multiple reach pairs.
+
+        Parameters
+        ----------
+        merge_pairs : list of tuple
+            List of (source_reach_id, target_reach_id) tuples to merge
+        reason : str, optional
+            Reason for the merges (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results including total counts
+
+        Example
+        -------
+        >>> pairs = [(72140300061, 72140300041), (72140300071, 72140300051)]
+        >>> result = workflow.merge_reaches(pairs, reason="Aggregate short reaches")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        total_nodes = 0
+        total_centerlines = 0
+        merged_count = 0
+
+        for source_id, target_id in merge_pairs:
+            try:
+                result = self.merge_reach(
+                    source_id, target_id,
+                    reason=reason or f"Batch merge: {source_id} -> {target_id}"
+                )
+                total_nodes += result.get('merged_nodes', 0)
+                total_centerlines += result.get('merged_centerlines', 0)
+                merged_count += 1
+            except ValueError as e:
+                print(f"Warning: Could not merge {source_id} -> {target_id}: {e}")
+                continue
+
+        return {
+            'merged_count': merged_count,
+            'total_nodes': total_nodes,
+            'total_centerlines': total_centerlines,
+            'success': merged_count > 0,
+        }
+
     def append_reaches(
         self,
         centerlines,

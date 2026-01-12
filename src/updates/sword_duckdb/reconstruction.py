@@ -870,7 +870,7 @@ class ReconstructionEngine:
         self._sword = sword
         self._provenance = provenance
         self._source_data_dir = Path(source_data_dir) if source_data_dir else None
-        self._conn = sword.db.conn
+        self._conn = sword._db.connect()  # Use private _db attribute
         self._region = sword.region
 
         # Reconstruction function registry

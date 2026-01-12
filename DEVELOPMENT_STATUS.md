@@ -128,8 +128,9 @@ Re-engineering the SWOT River Database (SWORD) from NetCDF to a modern DuckDB ba
 | bulk_modify method | COMPLETE | Efficient batch modifications |
 | get_history/get_lineage | COMPLETE | Query provenance records |
 | rollback method | COMPLETE | Restore previous values |
-| delete_reaches with cascade | Pending | |
-| split_reach/merge_reaches | Pending | |
+| delete_reaches with cascade | COMPLETE | Cascade bug fixed |
+| split_reach (break_reach) | COMPLETE | break_reach in workflow, break_reaches in SWORD class |
+| merge_reaches | COMPLETE | merge_reach/merge_reaches in workflow, merge_reaches in SWORD class |
 
 ### Phase 3: Reconstruction Engine - COMPLETE
 

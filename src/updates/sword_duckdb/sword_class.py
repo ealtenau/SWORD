@@ -27,7 +27,7 @@ import gc
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Dict, Any
 import numpy as np
 
 from .sword_db import SWORDDatabase
@@ -2045,6 +2045,528 @@ class SWORD:
                 UPDATE reaches SET dist_out = ?
                 WHERE reach_id = ? AND region = ?
             """, [float(rch_cs[i]), int(rch), self.region])
+
+    def merge_reaches(
+        self,
+        source_reach_id: int,
+        target_reach_id: int,
+        verbose: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Merge a source reach into a target reach.
+
+        This method combines two adjacent reaches by moving all centerlines and
+        nodes from the source reach into the target reach, recalculating attributes,
+        updating topology, and deleting the source reach.
+
+        Parameters
+        ----------
+        source_reach_id : int
+            The reach ID to merge (will be deleted after merge)
+        target_reach_id : int
+            The reach ID to merge into (will be preserved and expanded)
+        verbose : bool, optional
+            If True, print progress information. Default is False.
+
+        Returns
+        -------
+        dict
+            Results including:
+            - 'source_reach': int - The merged (deleted) reach ID
+            - 'target_reach': int - The expanded reach ID
+            - 'merged_nodes': int - Number of nodes merged
+            - 'merged_centerlines': int - Number of centerlines merged
+            - 'success': bool - Whether operation succeeded
+
+        Raises
+        ------
+        ValueError
+            If reaches are not adjacent or cannot be merged
+        RuntimeError
+            If database operation fails
+
+        Notes
+        -----
+        Algorithm based on legacy aggregate_1node_rchs.py:
+        1. Validate source and target are topologically adjacent
+        2. Reassign centerlines from source to target
+        3. Update node IDs and reach assignments
+        4. Recalculate reach attributes using aggregation methods:
+           - wse, wth: median
+           - wse_var, wth_var: max
+           - nchan_max, grod: max
+           - nchan_mod, lakeflag: mode
+           - slope: linear regression of wse vs dist_out
+        5. Update topology (target inherits source's neighbors)
+        6. Delete source reach
+        """
+        import gc
+        from statistics import mode as stat_mode
+
+        # Validate inputs
+        source_idx = np.where(self.reaches.id == source_reach_id)[0]
+        target_idx = np.where(self.reaches.id == target_reach_id)[0]
+
+        if len(source_idx) == 0:
+            raise ValueError(f"Source reach {source_reach_id} not found")
+        if len(target_idx) == 0:
+            raise ValueError(f"Target reach {target_reach_id} not found")
+
+        source_idx = source_idx[0]
+        target_idx = target_idx[0]
+
+        # Check if reaches are adjacent
+        is_adjacent = self._check_reaches_adjacent(source_reach_id, target_reach_id)
+        if not is_adjacent:
+            raise ValueError(
+                f"Reaches {source_reach_id} and {target_reach_id} are not adjacent"
+            )
+
+        if verbose:
+            print(f"Merging reach {source_reach_id} into {target_reach_id}")
+
+        # Disable GC during bulk operations
+        gc_was_enabled = gc.isenabled()
+        gc.disable()
+
+        conn = self._db.connect()
+        conn.execute("BEGIN TRANSACTION")
+
+        try:
+            # Get source centerlines and nodes
+            source_cl_idx = np.where(
+                self.centerlines.reach_id[0, :] == source_reach_id
+            )[0]
+            source_node_idx = np.where(
+                self.nodes.reach_id == source_reach_id
+            )[0]
+
+            if verbose:
+                print(f"  Moving {len(source_cl_idx)} centerlines, {len(source_node_idx)} nodes")
+
+            # Determine merge direction (upstream or downstream)
+            merge_direction = self._get_merge_direction(
+                source_reach_id, target_reach_id
+            )
+
+            # Update centerlines: reassign to target reach
+            self._reassign_centerlines_for_merge(
+                conn, source_reach_id, target_reach_id, merge_direction
+            )
+
+            # Update nodes: reassign to target reach with new node IDs
+            merged_node_count = self._reassign_nodes_for_merge(
+                conn, source_reach_id, target_reach_id, merge_direction
+            )
+
+            # Recalculate target reach attributes
+            self._recalculate_merged_reach_attributes(
+                conn, target_reach_id, stat_mode
+            )
+
+            # Update topology: target inherits source's neighbors
+            self._update_topology_for_merge(
+                conn, source_reach_id, target_reach_id, merge_direction
+            )
+
+            # Delete source reach and its topology entries
+            self._delete_merged_source_reach(conn, source_reach_id)
+
+            conn.execute("COMMIT")
+
+            # Reload data
+            self._load_data()
+
+            if verbose:
+                print(f"Merge complete. Target reach {target_reach_id} now has "
+                      f"{self.reaches.rch_n_nodes[np.where(self.reaches.id == target_reach_id)[0][0]]} nodes")
+
+            return {
+                'source_reach': source_reach_id,
+                'target_reach': target_reach_id,
+                'merged_nodes': len(source_node_idx),
+                'merged_centerlines': len(source_cl_idx),
+                'success': True,
+            }
+
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise RuntimeError(f"Failed to merge reaches: {e}") from e
+        finally:
+            if gc_was_enabled:
+                gc.enable()
+
+    def _check_reaches_adjacent(self, reach_id_1: int, reach_id_2: int) -> bool:
+        """Check if two reaches are topologically adjacent."""
+        conn = self._db.connect()
+
+        # Check if reach_id_2 is upstream or downstream of reach_id_1
+        result = conn.execute("""
+            SELECT COUNT(*) FROM reach_topology
+            WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ?
+        """, [int(reach_id_1), int(reach_id_2), self.region]).fetchone()
+
+        if result[0] > 0:
+            return True
+
+        # Check the reverse
+        result = conn.execute("""
+            SELECT COUNT(*) FROM reach_topology
+            WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ?
+        """, [int(reach_id_2), int(reach_id_1), self.region]).fetchone()
+
+        return result[0] > 0
+
+    def _get_merge_direction(self, source_reach_id: int, target_reach_id: int) -> str:
+        """
+        Determine the direction of merge.
+
+        Returns 'downstream' if source is upstream of target,
+        'upstream' if source is downstream of target.
+        """
+        conn = self._db.connect()
+
+        # Check if target is downstream of source
+        result = conn.execute("""
+            SELECT COUNT(*) FROM reach_topology
+            WHERE reach_id = ? AND neighbor_reach_id = ?
+            AND direction = 'down' AND region = ?
+        """, [int(source_reach_id), int(target_reach_id), self.region]).fetchone()
+
+        if result[0] > 0:
+            return 'downstream'  # source flows into target
+
+        return 'upstream'  # target flows into source
+
+    def _reassign_centerlines_for_merge(
+        self,
+        conn,
+        source_reach_id: int,
+        target_reach_id: int,
+        merge_direction: str
+    ) -> None:
+        """Reassign centerlines from source reach to target reach."""
+        # Update reach_id for all centerlines of source reach
+        conn.execute("""
+            UPDATE centerlines
+            SET reach_id = ?
+            WHERE reach_id = ? AND region = ?
+        """, [int(target_reach_id), int(source_reach_id), self.region])
+
+        # Update centerline_neighbors: replace source reach references with target
+        conn.execute("""
+            UPDATE centerline_neighbors
+            SET reach_id = ?
+            WHERE reach_id = ? AND region = ?
+        """, [int(target_reach_id), int(source_reach_id), self.region])
+
+    def _reassign_nodes_for_merge(
+        self,
+        conn,
+        source_reach_id: int,
+        target_reach_id: int,
+        merge_direction: str
+    ) -> int:
+        """
+        Reassign nodes from source reach to target reach.
+
+        Updates node IDs to follow target reach's ID pattern.
+        Returns the number of nodes reassigned.
+        """
+        # Get source nodes
+        source_node_idx = np.where(self.nodes.reach_id == source_reach_id)[0]
+        if len(source_node_idx) == 0:
+            return 0
+
+        # Get target reach's existing max node number
+        target_node_idx = np.where(self.nodes.reach_id == target_reach_id)[0]
+        if len(target_node_idx) > 0:
+            target_node_nums = np.array([
+                int(str(nid)[10:13]) for nid in self.nodes.id[target_node_idx]
+            ])
+            max_node_num = np.max(target_node_nums)
+        else:
+            max_node_num = 0
+
+        # Get reach type digit from target reach
+        reach_type = str(target_reach_id)[-1]
+
+        # Update each source node
+        for i, src_idx in enumerate(source_node_idx):
+            old_node_id = int(self.nodes.id[src_idx])
+
+            if merge_direction == 'downstream':
+                # Source is upstream, so its nodes get higher numbers (added at end)
+                new_node_num = max_node_num + i + 1
+            else:
+                # Source is downstream, need to renumber all nodes
+                # For simplicity, just append to end with new numbers
+                new_node_num = max_node_num + i + 1
+
+            # Format new node ID: reach_id[:-1] + node_num (3 digits) + type
+            new_node_id = int(f"{str(target_reach_id)[:-1]}{new_node_num:03d}{reach_type}")
+
+            # Update node record
+            conn.execute("""
+                UPDATE nodes
+                SET node_id = ?, reach_id = ?, edit_flag = CASE
+                    WHEN edit_flag IS NULL OR edit_flag = 'NaN' OR edit_flag = '' THEN '6'
+                    WHEN edit_flag NOT LIKE '%6%' THEN edit_flag || ',6'
+                    ELSE edit_flag
+                END
+                WHERE node_id = ? AND region = ?
+            """, [new_node_id, int(target_reach_id), old_node_id, self.region])
+
+            # Update centerlines that reference this node
+            conn.execute("""
+                UPDATE centerlines
+                SET node_id = ?
+                WHERE node_id = ? AND region = ?
+            """, [new_node_id, old_node_id, self.region])
+
+        return len(source_node_idx)
+
+    def _recalculate_merged_reach_attributes(
+        self,
+        conn,
+        target_reach_id: int,
+        stat_mode
+    ) -> None:
+        """
+        Recalculate reach attributes after merge using aggregation methods.
+
+        Aggregation methods (from legacy aggregate_1node_rchs.py):
+        - x, y: median of centerlines
+        - x_min, x_max, y_min, y_max: min/max of centerlines
+        - wse, wth: median of nodes
+        - wse_var, wth_var: max of nodes
+        - nchan_max, grod, hfalls_id, max_width: max of nodes
+        - nchan_mod, lakeflag: mode of nodes
+        - slope: linear regression of wse vs dist_out
+        - reach_length: sum of node lengths
+        - n_nodes: count of nodes
+        """
+        # Get updated centerlines for target reach
+        target_cl_idx = np.where(
+            self.centerlines.reach_id[0, :] == target_reach_id
+        )[0]
+
+        # Recalculate geometry from centerlines
+        if len(target_cl_idx) > 0:
+            x_coords = self.centerlines.x[target_cl_idx]
+            y_coords = self.centerlines.y[target_cl_idx]
+            cl_ids = self.centerlines.cl_id[target_cl_idx]
+
+            new_x = float(np.median(x_coords))
+            new_y = float(np.median(y_coords))
+            new_x_min = float(np.min(x_coords))
+            new_x_max = float(np.max(x_coords))
+            new_y_min = float(np.min(y_coords))
+            new_y_max = float(np.max(y_coords))
+            new_cl_id_min = int(np.min(cl_ids))
+            new_cl_id_max = int(np.max(cl_ids))
+
+        # Get node-level data from database (after reassignment)
+        node_data = conn.execute("""
+            SELECT node_id, wse, wse_var, width, width_var, n_chan_max, n_chan_mod,
+                   obstr_type, grod_id, hfalls_id, lakeflag, max_width, node_length,
+                   dist_out
+            FROM nodes
+            WHERE reach_id = ? AND region = ?
+            ORDER BY node_id
+        """, [int(target_reach_id), self.region]).fetchall()
+
+        if len(node_data) == 0:
+            return
+
+        # Extract arrays
+        node_ids = np.array([r[0] for r in node_data])
+        wse_vals = np.array([r[1] for r in node_data])
+        wse_var_vals = np.array([r[2] for r in node_data])
+        wth_vals = np.array([r[3] for r in node_data])
+        wth_var_vals = np.array([r[4] for r in node_data])
+        nchan_max_vals = np.array([r[5] for r in node_data])
+        nchan_mod_vals = np.array([r[6] for r in node_data])
+        grod_vals = np.array([r[7] for r in node_data])
+        grod_fid_vals = np.array([r[8] for r in node_data])
+        hfalls_fid_vals = np.array([r[9] for r in node_data])
+        lakeflag_vals = np.array([r[10] for r in node_data])
+        max_wth_vals = np.array([r[11] for r in node_data])
+        node_len_vals = np.array([r[12] for r in node_data])
+        dist_out_vals = np.array([r[13] for r in node_data])
+
+        # Calculate aggregated values
+        new_wse = float(np.median(wse_vals))
+        new_wse_var = float(np.max(wse_var_vals))
+        new_wth = float(np.median(wth_vals))
+        new_wth_var = float(np.max(wth_var_vals))
+        new_nchan_max = int(np.max(nchan_max_vals))
+        new_grod = int(np.max(grod_vals))
+        new_grod_fid = int(np.max(grod_fid_vals))
+        new_hfalls_fid = int(np.max(hfalls_fid_vals))
+        new_max_wth = float(np.max(max_wth_vals))
+        new_n_nodes = len(node_data)
+        new_reach_length = float(np.sum(node_len_vals))
+        new_dist_out = float(np.max(dist_out_vals))
+
+        # Mode calculations (with fallback)
+        try:
+            new_nchan_mod = int(stat_mode(nchan_mod_vals.tolist()))
+        except Exception:
+            new_nchan_mod = int(nchan_mod_vals[0]) if len(nchan_mod_vals) > 0 else 1
+
+        try:
+            new_lakeflag = int(stat_mode(lakeflag_vals.tolist()))
+        except Exception:
+            new_lakeflag = int(lakeflag_vals[0]) if len(lakeflag_vals) > 0 else 0
+
+        # Slope calculation: linear regression of wse vs dist_out/1000
+        if len(node_data) >= 2:
+            order_ids = np.argsort(node_ids)
+            slope_pts = np.vstack([
+                dist_out_vals[order_ids] / 1000,
+                np.ones(len(order_ids))
+            ]).T
+            try:
+                slope, _ = np.linalg.lstsq(
+                    slope_pts, wse_vals[order_ids], rcond=None
+                )[0]
+                new_slope = abs(float(slope))
+            except Exception:
+                new_slope = 0.0
+        else:
+            new_slope = 0.0
+
+        # Update reach record
+        conn.execute("""
+            UPDATE reaches SET
+                x = ?, y = ?, x_min = ?, x_max = ?, y_min = ?, y_max = ?,
+                cl_id_min = ?, cl_id_max = ?,
+                wse = ?, wse_var = ?, width = ?, width_var = ?,
+                slope = ?, max_width = ?, dist_out = ?,
+                n_chan_max = ?, n_chan_mod = ?,
+                obstr_type = ?, grod_id = ?, hfalls_id = ?,
+                lakeflag = ?,
+                reach_length = ?, n_nodes = ?,
+                edit_flag = CASE
+                    WHEN edit_flag IS NULL OR edit_flag = 'NaN' OR edit_flag = '' THEN '6'
+                    WHEN edit_flag NOT LIKE '%6%' THEN edit_flag || ',6'
+                    ELSE edit_flag
+                END
+            WHERE reach_id = ? AND region = ?
+        """, [
+            new_x, new_y, new_x_min, new_x_max, new_y_min, new_y_max,
+            new_cl_id_min, new_cl_id_max,
+            new_wse, new_wse_var, new_wth, new_wth_var,
+            new_slope, new_max_wth, new_dist_out,
+            new_nchan_max, new_nchan_mod,
+            new_grod, new_grod_fid, new_hfalls_fid,
+            new_lakeflag,
+            new_reach_length, new_n_nodes,
+            int(target_reach_id), self.region
+        ])
+
+    def _update_topology_for_merge(
+        self,
+        conn,
+        source_reach_id: int,
+        target_reach_id: int,
+        merge_direction: str
+    ) -> None:
+        """
+        Update topology after merge.
+
+        Target reach inherits source's neighbors (excluding each other).
+        Neighbors that pointed to source now point to target.
+        """
+        # Get source's neighbors
+        source_neighbors = conn.execute("""
+            SELECT direction, neighbor_rank, neighbor_reach_id
+            FROM reach_topology
+            WHERE reach_id = ? AND region = ?
+        """, [int(source_reach_id), self.region]).fetchall()
+
+        for direction, rank, neighbor_id in source_neighbors:
+            # Skip the target reach (they were connected to each other)
+            if neighbor_id == target_reach_id:
+                continue
+
+            # Check if this neighbor relationship already exists for target
+            existing = conn.execute("""
+                SELECT COUNT(*) FROM reach_topology
+                WHERE reach_id = ? AND neighbor_reach_id = ?
+                AND direction = ? AND region = ?
+            """, [int(target_reach_id), int(neighbor_id), direction, self.region]).fetchone()
+
+            if existing[0] == 0:
+                # Get next available rank for this direction
+                max_rank = conn.execute("""
+                    SELECT COALESCE(MAX(neighbor_rank), -1) FROM reach_topology
+                    WHERE reach_id = ? AND direction = ? AND region = ?
+                """, [int(target_reach_id), direction, self.region]).fetchone()[0]
+                new_rank = max_rank + 1
+
+                # Add this neighbor to target with new rank
+                conn.execute("""
+                    INSERT INTO reach_topology
+                    (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                    VALUES (?, ?, ?, ?, ?)
+                """, [int(target_reach_id), self.region, direction, new_rank, int(neighbor_id)])
+
+            # Update the neighbor to point to target instead of source
+            conn.execute("""
+                UPDATE reach_topology
+                SET neighbor_reach_id = ?
+                WHERE neighbor_reach_id = ? AND region = ?
+            """, [int(target_reach_id), int(source_reach_id), self.region])
+
+        # Remove source's entry pointing to target (and vice versa) from topology
+        conn.execute("""
+            DELETE FROM reach_topology
+            WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ?
+        """, [int(target_reach_id), int(source_reach_id), self.region])
+
+        # Update n_rch_up and n_rch_down for target
+        up_count = conn.execute("""
+            SELECT COUNT(*) FROM reach_topology
+            WHERE reach_id = ? AND direction = 'up' AND region = ?
+        """, [int(target_reach_id), self.region]).fetchone()[0]
+
+        down_count = conn.execute("""
+            SELECT COUNT(*) FROM reach_topology
+            WHERE reach_id = ? AND direction = 'down' AND region = ?
+        """, [int(target_reach_id), self.region]).fetchone()[0]
+
+        conn.execute("""
+            UPDATE reaches SET n_rch_up = ?, n_rch_down = ?
+            WHERE reach_id = ? AND region = ?
+        """, [up_count, down_count, int(target_reach_id), self.region])
+
+    def _delete_merged_source_reach(self, conn, source_reach_id: int) -> None:
+        """Delete the source reach after merge (without cascade since data was moved)."""
+        # Delete topology entries for source
+        conn.execute("""
+            DELETE FROM reach_topology
+            WHERE reach_id = ? AND region = ?
+        """, [int(source_reach_id), self.region])
+
+        # Delete orbit data
+        conn.execute("""
+            DELETE FROM reach_swot_orbits
+            WHERE reach_id = ? AND region = ?
+        """, [int(source_reach_id), self.region])
+
+        # Delete ice flag data
+        conn.execute("""
+            DELETE FROM reach_ice_flags
+            WHERE reach_id = ?
+        """, [int(source_reach_id)])
+
+        # Delete the reach record
+        conn.execute("""
+            DELETE FROM reaches
+            WHERE reach_id = ? AND region = ?
+        """, [int(source_reach_id), self.region])
 
     def check_topo_consistency(
         self,

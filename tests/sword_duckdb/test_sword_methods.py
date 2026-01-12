@@ -480,5 +480,206 @@ class TestGhostReachMethods:
             temp_sword.create_ghost_reach(candidate_reach, position='headwater')
 
 
+class TestMergeReaches:
+    """Test merge_reaches method."""
+
+    def test_merge_reaches_method_exists(self, temp_sword):
+        """Test merge_reaches method exists."""
+        assert hasattr(temp_sword, 'merge_reaches')
+        assert callable(temp_sword.merge_reaches)
+
+    def test_merge_reaches_invalid_source(self, temp_sword):
+        """Test merge_reaches raises error for non-existent source reach."""
+        valid_target = int(temp_sword.reaches.id[0])
+        with pytest.raises(ValueError, match="Source reach.*not found"):
+            temp_sword.merge_reaches(99999999999, valid_target)
+
+    def test_merge_reaches_invalid_target(self, temp_sword):
+        """Test merge_reaches raises error for non-existent target reach."""
+        valid_source = int(temp_sword.reaches.id[0])
+        with pytest.raises(ValueError, match="Target reach.*not found"):
+            temp_sword.merge_reaches(valid_source, 99999999999)
+
+    def test_merge_reaches_non_adjacent(self, temp_sword):
+        """Test merge_reaches raises error for non-adjacent reaches."""
+        # Get two reaches from different basins (guaranteed non-adjacent)
+        reach_ids = temp_sword.reaches.id
+        if len(reach_ids) < 2:
+            pytest.skip("Need at least 2 reaches")
+
+        # Find two reaches that are in different parts of network
+        # Check reaches with different level-6 basin prefixes
+        source = None
+        target = None
+        for i, rid1 in enumerate(reach_ids):
+            basin1 = str(rid1)[:6]
+            for j, rid2 in enumerate(reach_ids):
+                if i == j:
+                    continue
+                basin2 = str(rid2)[:6]
+                if basin1 != basin2:
+                    source = int(rid1)
+                    target = int(rid2)
+                    break
+            if source and target:
+                break
+
+        if source is None or target is None:
+            pytest.skip("Could not find non-adjacent reaches in different basins")
+
+        with pytest.raises(ValueError, match="not adjacent"):
+            temp_sword.merge_reaches(source, target)
+
+    def test_merge_reaches_adjacent_pair(self, temp_sword):
+        """Test merging two adjacent reaches."""
+        # Find two adjacent reaches (source has target as downstream neighbor)
+        source_reach = None
+        target_reach = None
+
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            reach_type = str(reach_id)[-1]
+            # Skip ghost reaches (type 6) and dam reaches (type 4)
+            if reach_type in ('6', '4'):
+                continue
+
+            # Check if has exactly 1 downstream neighbor
+            n_down = temp_sword.reaches.n_rch_down[idx]
+            if n_down == 1:
+                # Get downstream neighbor ID from topology
+                down_ids = temp_sword.reaches.rch_id_down[:, idx]
+                down_id = down_ids[down_ids > 0][0] if np.any(down_ids > 0) else None
+
+                if down_id is not None:
+                    # Check downstream reach exists and is not a ghost
+                    target_idx = np.where(temp_sword.reaches.id == down_id)[0]
+                    if len(target_idx) > 0:
+                        target_type = str(down_id)[-1]
+                        if target_type not in ('6', '4'):
+                            # Also verify downstream has only 1 upstream neighbor
+                            # (to avoid complex junctions)
+                            target_n_up = temp_sword.reaches.n_rch_up[target_idx[0]]
+                            if target_n_up == 1:
+                                source_reach = int(reach_id)
+                                target_reach = int(down_id)
+                                break
+
+        if source_reach is None or target_reach is None:
+            pytest.skip("No suitable adjacent reach pair found for merge test")
+
+        # Record initial state
+        initial_reach_count = len(temp_sword.reaches.id)
+        initial_target_n_nodes = temp_sword.reaches.rch_n_nodes[
+            np.where(temp_sword.reaches.id == target_reach)[0][0]
+        ]
+        source_n_nodes = temp_sword.reaches.rch_n_nodes[
+            np.where(temp_sword.reaches.id == source_reach)[0][0]
+        ]
+
+        # Perform merge
+        result = temp_sword.merge_reaches(source_reach, target_reach, verbose=True)
+
+        # Verify result structure
+        assert result['success'] is True
+        assert result['source_reach'] == source_reach
+        assert result['target_reach'] == target_reach
+        assert result['merged_nodes'] >= 0
+        assert result['merged_centerlines'] >= 0
+
+        # Verify source reach was deleted
+        assert source_reach not in temp_sword.reaches.id
+
+        # Verify reach count decreased by 1
+        assert len(temp_sword.reaches.id) == initial_reach_count - 1
+
+        # Verify target reach still exists
+        assert target_reach in temp_sword.reaches.id
+
+        # Verify target reach node count increased
+        new_target_n_nodes = temp_sword.reaches.rch_n_nodes[
+            np.where(temp_sword.reaches.id == target_reach)[0][0]
+        ]
+        assert new_target_n_nodes == initial_target_n_nodes + source_n_nodes
+
+        # Verify edit flag was set
+        target_idx = np.where(temp_sword.reaches.id == target_reach)[0][0]
+        edit_flag = temp_sword.reaches.edit_flag[target_idx]
+        assert '6' in str(edit_flag)
+
+    def test_merge_reaches_topology_update(self, temp_sword):
+        """Test that topology is correctly updated after merge."""
+        # Find a chain of 3 reaches: A -> B -> C
+        # We'll merge B into C and verify A now points to C
+        source_reach = None
+        target_reach = None
+        upstream_reach = None
+
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            reach_type = str(reach_id)[-1]
+            if reach_type in ('6', '4'):
+                continue
+
+            # Check for 1 upstream and 1 downstream
+            n_up = temp_sword.reaches.n_rch_up[idx]
+            n_down = temp_sword.reaches.n_rch_down[idx]
+
+            if n_up == 1 and n_down == 1:
+                # Get upstream and downstream
+                up_ids = temp_sword.reaches.rch_id_up[:, idx]
+                down_ids = temp_sword.reaches.rch_id_down[:, idx]
+
+                up_id = up_ids[up_ids > 0][0] if np.any(up_ids > 0) else None
+                down_id = down_ids[down_ids > 0][0] if np.any(down_ids > 0) else None
+
+                if up_id and down_id:
+                    # Verify neighbors are not ghost/dam
+                    up_type = str(up_id)[-1]
+                    down_type = str(down_id)[-1]
+                    if up_type not in ('6', '4') and down_type not in ('6', '4'):
+                        source_reach = int(reach_id)
+                        target_reach = int(down_id)
+                        upstream_reach = int(up_id)
+                        break
+
+        if source_reach is None:
+            pytest.skip("No 3-reach chain found for topology test")
+
+        # Perform merge
+        temp_sword.merge_reaches(source_reach, target_reach, verbose=True)
+
+        # Verify upstream_reach now points to target_reach as downstream
+        upstream_idx = np.where(temp_sword.reaches.id == upstream_reach)[0][0]
+        down_ids = temp_sword.reaches.rch_id_down[:, upstream_idx]
+        down_neighbors = down_ids[down_ids > 0]
+
+        assert target_reach in down_neighbors, \
+            f"After merge, upstream reach should point to target. Got {down_neighbors}"
+
+    def test_check_reaches_adjacent_helper(self, temp_sword):
+        """Test _check_reaches_adjacent helper method."""
+        # Get two reaches known to be adjacent from topology
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            n_down = temp_sword.reaches.n_rch_down[idx]
+            if n_down >= 1:
+                down_ids = temp_sword.reaches.rch_id_down[:, idx]
+                neighbor_id = down_ids[down_ids > 0][0]
+
+                assert temp_sword._check_reaches_adjacent(int(reach_id), int(neighbor_id)) is True
+                break
+
+    def test_merge_direction_detection(self, temp_sword):
+        """Test _get_merge_direction helper method."""
+        # Find adjacent pair and verify direction detection
+        for idx, reach_id in enumerate(temp_sword.reaches.id):
+            n_down = temp_sword.reaches.n_rch_down[idx]
+            if n_down >= 1:
+                down_ids = temp_sword.reaches.rch_id_down[:, idx]
+                neighbor_id = down_ids[down_ids > 0][0]
+
+                direction = temp_sword._get_merge_direction(int(reach_id), int(neighbor_id))
+                assert direction == 'downstream', \
+                    "Source flowing to target should give 'downstream' direction"
+                break
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
