@@ -1805,6 +1805,130 @@ class SWORDWorkflow:
         }
 
     # =========================================================================
+    # NETWORK ANALYSIS (Priority 5)
+    # =========================================================================
+
+    def calculate_dist_out(
+        self,
+        update_nodes: bool = True,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Calculate distance from outlet (dist_out) using topology BFS.
+
+        This is a Priority 5 operation for network analysis. It traverses the
+        river network from outlets upstream, computing cumulative reach lengths
+        as the distance from the nearest outlet.
+
+        Parameters
+        ----------
+        update_nodes : bool, optional
+            If True (default), also update node-level dist_out values.
+        reason : str, optional
+            Reason for the recalculation (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'success': bool - Whether all reaches were computed
+            - 'reaches_updated': int - Number of reaches updated
+            - 'nodes_updated': int - Number of nodes updated
+            - 'outlets_found': int - Number of outlet reaches
+            - 'unfilled_reaches': list - Reaches that couldn't be computed
+
+        Example
+        -------
+        >>> result = workflow.calculate_dist_out()
+        >>> print(f"Updated {result['reaches_updated']} reaches")
+
+        Notes
+        -----
+        Algorithm from legacy dist_out_from_topo.py:
+        - For outlets (n_rch_down == 0): dist_out = reach_length
+        - For non-outlets: dist_out = reach_length + max(downstream dist_out)
+        - Node dist_out: cumsum(node_lengths) + (reach_dist_out - reach_length)
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        # Log operation if provenance enabled
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'CALCULATE_DIST_OUT',
+                table_name='reaches',
+                entity_ids=[],  # Affects all reaches
+                region=self._region,
+                reason=reason or "Recalculate dist_out from topology",
+                details={'update_nodes': update_nodes},
+            ):
+                result = self._sword.calculate_dist_out_from_topology(
+                    update_nodes=update_nodes,
+                    verbose=True
+                )
+        else:
+            result = self._sword.calculate_dist_out_from_topology(
+                update_nodes=update_nodes,
+                verbose=True
+            )
+
+        return result
+
+    def recalculate_network_attributes(
+        self,
+        attributes: List[str] = None,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Recalculate network-derived attributes.
+
+        Parameters
+        ----------
+        attributes : list of str, optional
+            Specific attributes to recalculate. If None, recalculates all:
+            - 'dist_out': Distance from outlet (reaches and nodes)
+            Default is ['dist_out'].
+        reason : str, optional
+            Reason for recalculation (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Combined results from all recalculations
+
+        Example
+        -------
+        >>> result = workflow.recalculate_network_attributes(['dist_out'])
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        if attributes is None:
+            attributes = ['dist_out']
+
+        results = {
+            'attributes_requested': attributes,
+            'attributes_updated': [],
+            'success': True,
+        }
+
+        for attr in attributes:
+            if attr == 'dist_out':
+                dist_result = self.calculate_dist_out(
+                    update_nodes=True,
+                    reason=reason or f"Recalculate {attr}"
+                )
+                results['dist_out'] = dist_result
+                if dist_result['success']:
+                    results['attributes_updated'].append('dist_out')
+                else:
+                    results['success'] = False
+            else:
+                print(f"Warning: Unknown attribute '{attr}' - skipping")
+
+        return results
+
+    # =========================================================================
     # STATUS AND UTILITY METHODS
     # =========================================================================
 

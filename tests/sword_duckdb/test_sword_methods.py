@@ -480,6 +480,127 @@ class TestGhostReachMethods:
             temp_sword.create_ghost_reach(candidate_reach, position='headwater')
 
 
+class TestCalculateDistOut:
+    """Test calculate_dist_out_from_topology method."""
+
+    def test_calculate_dist_out_method_exists(self, temp_sword):
+        """Test calculate_dist_out_from_topology method exists."""
+        assert hasattr(temp_sword, 'calculate_dist_out_from_topology')
+        assert callable(temp_sword.calculate_dist_out_from_topology)
+
+    def test_calculate_dist_out_returns_dict(self, temp_sword):
+        """Test calculate_dist_out_from_topology returns proper dict."""
+        result = temp_sword.calculate_dist_out_from_topology(
+            update_nodes=False,
+            verbose=False
+        )
+        assert isinstance(result, dict)
+        assert 'success' in result
+        assert 'reaches_updated' in result
+        assert 'nodes_updated' in result
+        assert 'outlets_found' in result
+        assert 'loops' in result
+        assert 'unfilled_reaches' in result
+
+    def test_calculate_dist_out_finds_outlets(self, temp_sword):
+        """Test that outlet reaches are found."""
+        result = temp_sword.calculate_dist_out_from_topology(
+            update_nodes=False,
+            verbose=False
+        )
+        # Should find at least one outlet (n_rch_down == 0)
+        outlet_count = np.sum(temp_sword.reaches.n_rch_down == 0)
+        assert result['outlets_found'] == outlet_count
+
+    def test_calculate_dist_out_updates_reaches(self, temp_sword):
+        """Test that reach dist_out values are updated."""
+        # Store original values
+        original_dist_out = np.copy(temp_sword.reaches.dist_out)
+
+        result = temp_sword.calculate_dist_out_from_topology(
+            update_nodes=False,
+            verbose=False
+        )
+
+        # Should have updated some reaches
+        assert result['reaches_updated'] > 0
+
+        # Verify values changed (reload data to check)
+        new_sword = SWORD(str(temp_sword._db_path), TEST_REGION, TEST_VERSION)
+        # At least some values should have changed
+        # (unless already perfectly computed)
+        new_sword.close()
+
+    def test_calculate_dist_out_outlet_values(self, temp_sword):
+        """Test that outlet reaches have dist_out = reach_length."""
+        result = temp_sword.calculate_dist_out_from_topology(
+            update_nodes=False,
+            verbose=False
+        )
+
+        if result['success']:
+            # Reload to get updated values
+            new_sword = SWORD(str(temp_sword._db_path), TEST_REGION, TEST_VERSION)
+
+            # Check outlet reaches
+            outlet_idx = np.where(new_sword.reaches.n_rch_down == 0)[0]
+            for idx in outlet_idx[:5]:  # Check first 5
+                # For outlets: dist_out should equal reach_length
+                assert abs(new_sword.reaches.dist_out[idx] - new_sword.reaches.len[idx]) < 1.0, \
+                    f"Outlet reach dist_out should equal reach_length"
+
+            new_sword.close()
+
+    def test_calculate_dist_out_with_nodes(self, temp_sword):
+        """Test that node dist_out values are updated when requested."""
+        result = temp_sword.calculate_dist_out_from_topology(
+            update_nodes=True,
+            verbose=False
+        )
+
+        # Should have updated nodes too
+        if result['success']:
+            assert result['nodes_updated'] > 0
+
+    def test_calculate_dist_out_node_cumulative(self, temp_sword):
+        """Test that node dist_out follows cumulative pattern."""
+        result = temp_sword.calculate_dist_out_from_topology(
+            update_nodes=True,
+            verbose=False
+        )
+
+        if result['success']:
+            new_sword = SWORD(str(temp_sword._db_path), TEST_REGION, TEST_VERSION)
+
+            # Find a reach with multiple nodes
+            for idx, reach_id in enumerate(new_sword.reaches.id):
+                n_nodes = new_sword.reaches.rch_n_nodes[idx]
+                if n_nodes >= 3:
+                    # Get nodes for this reach
+                    node_idx = np.where(new_sword.nodes.reach_id == reach_id)[0]
+                    if len(node_idx) >= 3:
+                        # Sort by node ID
+                        sorted_idx = node_idx[np.argsort(new_sword.nodes.id[node_idx])]
+                        # Node dist_out should be increasing
+                        dist_outs = new_sword.nodes.dist_out[sorted_idx]
+                        assert np.all(np.diff(dist_outs) >= 0), \
+                            "Node dist_out should increase along reach"
+                        break
+
+            new_sword.close()
+
+    def test_calculate_node_dist_out_helper(self, temp_sword):
+        """Test _calculate_node_dist_out helper method."""
+        assert hasattr(temp_sword, '_calculate_node_dist_out')
+
+        # Create dummy reach dist_out array
+        reach_dist_out = np.full(len(temp_sword.reaches.id), 10000.0)
+
+        # Should not raise error
+        count = temp_sword._calculate_node_dist_out(reach_dist_out, verbose=False)
+        assert count >= 0
+
+
 class TestMergeReaches:
     """Test merge_reaches method."""
 

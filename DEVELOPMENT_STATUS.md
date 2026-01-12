@@ -327,16 +327,16 @@ workflow.close()
 
 ### Next Implementation Priorities
 
-| Priority | Task | Documentation Reference |
-|----------|------|------------------------|
-| 1 | **Implement `break_reaches`** | Phase 5 Task 5.1 |
-| 1 | **Implement `delete_reaches` cascade** | Phase 5 Task 5.1 |
-| 1 | **Implement `append_data`** | Phase 7 Roadmap |
-| 2 | `check_topo_consistency` | Phase 6 Task 6.1 |
-| 2 | `rch_node_length_check` | Phase 6 Task 6.1 |
-| 3 | `create_ghost_reach` | Phase 5 Task 5.4 |
-| 4 | `aggregate_1node_rchs` | Phase 5 Task 5.1 |
-| 5 | `dist_out` from topology (BFS) | Phase 4 Task 4.2 |
+| Priority | Task | Status | Documentation Reference |
+|----------|------|--------|------------------------|
+| 1 | **Implement `break_reaches`** | COMPLETE | Phase 5 Task 5.1 |
+| 1 | **Implement `delete_reaches` cascade** | COMPLETE | Phase 5 Task 5.1 |
+| 1 | **Implement `append_data`** | COMPLETE | Phase 7 Roadmap |
+| 2 | `check_topo_consistency` | COMPLETE | Phase 6 Task 6.1 |
+| 2 | `rch_node_length_check` | COMPLETE | Phase 6 Task 6.1 |
+| 3 | `create_ghost_reach` | COMPLETE | Phase 5 Task 5.4 |
+| 4 | `merge_reaches` | COMPLETE | Phase 5 Task 5.1 |
+| 5 | `dist_out` from topology (BFS) | COMPLETE | Phase 4 Task 4.2 |
 
 ### Key Legacy File References
 

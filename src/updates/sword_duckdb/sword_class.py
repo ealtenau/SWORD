@@ -2853,6 +2853,322 @@ class SWORD:
 
         return results
 
+    def calculate_dist_out_from_topology(
+        self,
+        update_nodes: bool = True,
+        verbose: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Calculate distance from outlet (dist_out) using topology BFS traversal.
+
+        This method implements the legacy dist_out_from_topo.py algorithm exactly.
+        It traverses the river network from outlets upstream, computing cumulative
+        reach lengths as distance from the nearest outlet.
+
+        Parameters
+        ----------
+        update_nodes : bool, optional
+            If True (default), also update node-level dist_out values after
+            computing reach-level values.
+        verbose : bool, optional
+            If True (default), print progress information.
+
+        Returns
+        -------
+        dict
+            Operation results including:
+            - 'success': bool - Whether operation completed
+            - 'reaches_updated': int - Number of reaches with updated dist_out
+            - 'nodes_updated': int - Number of nodes with updated dist_out
+            - 'outlets_found': int - Number of outlet reaches processed
+            - 'loops': int - Number of BFS iterations
+            - 'unfilled_reaches': list - Reach IDs that couldn't be computed
+
+        Notes
+        -----
+        Algorithm (from legacy dist_out_from_topo.py):
+        1. Initialize dist_out = -9999 for all reaches
+        2. Find all outlets (reaches with n_rch_down == 0)
+        3. Start BFS from first outlet:
+           - For outlets: dist_out = reach_length
+           - For non-outlets: dist_out = reach_length + max(downstream dist_out)
+        4. Handle multi-channel cases with flag system
+        5. When upstream exhausted, move to next unfilled outlet
+        6. Continue until all reaches processed
+        7. Update node dist_out: cumsum(node_lengths) + base_val
+
+        Multi-Downstream Handling:
+        When a reach has multiple downstream neighbors, uses max(downstream dist_out)
+        to ensure distance is calculated along the longest path to outlet.
+        """
+        from itertools import chain
+
+        if verbose:
+            print('Calculating dist_out from Topology')
+
+        # Initialize arrays following legacy code exactly
+        dist_out = np.repeat(-9999.0, len(self.reaches.id))
+        flag = np.zeros(len(self.reaches.id))
+
+        # Find all outlets (reaches with no downstream neighbors)
+        outlets = self.reaches.id[np.where(self.reaches.n_rch_down == 0)[0]]
+        outlets_found = len(outlets)
+
+        if len(outlets) == 0:
+            if verbose:
+                print("Warning: No outlet reaches found (n_rch_down == 0)")
+            return {
+                'success': False,
+                'reaches_updated': 0,
+                'nodes_updated': 0,
+                'outlets_found': 0,
+                'loops': 0,
+                'unfilled_reaches': list(self.reaches.id),
+            }
+
+        # Start with first outlet
+        start_rchs = np.array([outlets[0]])
+        loop = 1
+        max_loops = 5 * len(self.reaches.id)
+
+        # BFS traversal - following legacy algorithm exactly
+        while len(start_rchs) > 0:
+            up_ngh_list = []
+
+            for r in range(len(start_rchs)):
+                rch_idx = np.where(self.reaches.id == start_rchs[r])[0]
+                if len(rch_idx) == 0:
+                    continue
+                rch = rch_idx[0]
+                rch_flag = np.max(flag[rch])
+
+                if self.reaches.n_rch_down[rch] == 0:
+                    # Outlet reach: dist_out = reach_length
+                    dist_out[rch] = self.reaches.len[rch]
+
+                    # Get upstream neighbors
+                    up_nghs = self.reaches.rch_id_up[:, rch]
+                    up_nghs = up_nghs[up_nghs > 0]
+
+                    # Filter out already-flagged neighbors
+                    up_flag = np.array([
+                        np.max(flag[np.where(self.reaches.id == n)[0]])
+                        for n in up_nghs if len(np.where(self.reaches.id == n)[0]) > 0
+                    ])
+                    if len(up_flag) > 0:
+                        up_nghs = up_nghs[:len(up_flag)][up_flag == 0]
+
+                    up_ngh_list.append(up_nghs)
+                else:
+                    # Non-outlet reach: need downstream dist_out first
+                    dn_nghs = self.reaches.rch_id_down[:, rch]
+                    dn_nghs = dn_nghs[dn_nghs > 0]
+
+                    # Get downstream distances
+                    dn_dist = np.array([
+                        dist_out[np.where(self.reaches.id == n)[0][0]]
+                        for n in dn_nghs if len(np.where(self.reaches.id == n)[0]) > 0
+                    ])
+
+                    if len(dn_dist) == 0:
+                        continue
+
+                    if min(dn_dist) == -9999:
+                        # Some downstream not yet computed
+                        if rch_flag == 1:
+                            # Already visited once, use max of available
+                            add_val = max(dn_dist)
+                            dist_out[rch] = self.reaches.len[rch] + add_val
+
+                            # Get upstream neighbors
+                            up_nghs = self.reaches.rch_id_up[:, rch]
+                            up_nghs = up_nghs[up_nghs > 0]
+
+                            up_flag = np.array([
+                                np.max(flag[np.where(self.reaches.id == n)[0]])
+                                for n in up_nghs if len(np.where(self.reaches.id == n)[0]) > 0
+                            ])
+                            if len(up_flag) > 0:
+                                up_nghs = up_nghs[:len(up_flag)][up_flag == 0]
+                                # Flag these upstream for next iteration
+                                flag[np.where(np.isin(self.reaches.id, up_nghs))[0]] = 1
+                        else:
+                            # First visit, set flag and wait
+                            flag[rch] = 1
+                    else:
+                        # All downstream computed, use max
+                        add_val = max(dn_dist)
+                        dist_out[rch] = self.reaches.len[rch] + add_val
+
+                        # Get upstream neighbors
+                        up_nghs = self.reaches.rch_id_up[:, rch]
+                        up_nghs = up_nghs[up_nghs > 0]
+
+                        up_flag = np.array([
+                            np.max(flag[np.where(self.reaches.id == n)[0]])
+                            for n in up_nghs if len(np.where(self.reaches.id == n)[0]) > 0
+                        ])
+                        if len(up_flag) > 0:
+                            up_nghs = up_nghs[:len(up_flag)][up_flag == 0]
+
+                        up_ngh_list.append(up_nghs)
+
+            # Flatten and get unique upstream neighbors for next iteration
+            up_ngh_arr = np.array(list(chain.from_iterable(up_ngh_list)))
+            start_rchs = np.unique(up_ngh_arr)
+
+            # If no more upstream neighbors, move to next outlet
+            if len(start_rchs) == 0:
+                # Find unfilled outlets
+                unfilled_outlets = self.reaches.id[
+                    np.where((self.reaches.n_rch_down == 0) & (dist_out == -9999))[0]
+                ]
+
+                if len(unfilled_outlets) == 0 and np.min(dist_out) > -9999:
+                    # All done
+                    start_rchs = np.array([])
+                elif len(unfilled_outlets) == 0 and np.min(dist_out) == -9999:
+                    # Check for flagged but unfilled reaches
+                    check_flag = np.where((flag == 1) & (dist_out == -9999))[0]
+                    if len(check_flag) > 0:
+                        start_rchs = np.array([self.reaches.id[check_flag[0]]])
+                    else:
+                        if verbose:
+                            print('Warning: No more outlets but still -9999 values')
+                        break
+                else:
+                    start_rchs = np.array([unfilled_outlets[0]])
+
+            loop += 1
+            if loop > max_loops:
+                if verbose:
+                    print('Warning: Loop limit reached')
+                break
+
+        # Count unfilled reaches
+        unfilled_idx = np.where(dist_out == -9999)[0]
+        unfilled_reaches = list(self.reaches.id[unfilled_idx])
+
+        if verbose:
+            print(f'  Processed {loop} iterations')
+            print(f'  {len(self.reaches.id) - len(unfilled_reaches)}/{len(self.reaches.id)} reaches computed')
+            if len(unfilled_reaches) > 0:
+                print(f'  Warning: {len(unfilled_reaches)} reaches unfilled')
+
+        # Update reach dist_out in database
+        conn = self._db.connect()
+        conn.execute("BEGIN TRANSACTION")
+
+        try:
+            for idx, rch_id in enumerate(self.reaches.id):
+                if dist_out[idx] != -9999:
+                    conn.execute("""
+                        UPDATE reaches SET dist_out = ?
+                        WHERE reach_id = ? AND region = ?
+                    """, [float(dist_out[idx]), int(rch_id), self.region])
+
+            conn.execute("COMMIT")
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise RuntimeError(f"Failed to update reach dist_out: {e}") from e
+
+        # Update nodes if requested
+        nodes_updated = 0
+        if update_nodes:
+            if verbose:
+                print('Updating node dist_out values')
+            nodes_updated = self._calculate_node_dist_out(dist_out, verbose)
+
+        # Reload data
+        self._load_data()
+
+        return {
+            'success': len(unfilled_reaches) == 0,
+            'reaches_updated': len(self.reaches.id) - len(unfilled_reaches),
+            'nodes_updated': nodes_updated,
+            'outlets_found': outlets_found,
+            'loops': loop,
+            'unfilled_reaches': unfilled_reaches,
+        }
+
+    def _calculate_node_dist_out(
+        self,
+        reach_dist_out: np.ndarray,
+        verbose: bool = False
+    ) -> int:
+        """
+        Calculate node-level dist_out from reach-level values.
+
+        For each reach, node dist_out is the cumulative node length plus
+        the base value (reach dist_out minus reach length).
+
+        Parameters
+        ----------
+        reach_dist_out : np.ndarray
+            Array of reach-level dist_out values (indexed same as self.reaches.id)
+        verbose : bool, optional
+            If True, print progress. Default is False.
+
+        Returns
+        -------
+        int
+            Number of nodes updated
+
+        Notes
+        -----
+        Algorithm (from legacy dist_out_from_topo.py):
+        ```python
+        base_val = dist_out[reach] - reach_length
+        node_dist_out = cumsum(node_lengths) + base_val
+        ```
+        """
+        nodes_out = np.copy(self.nodes.dist_out)
+        updated_count = 0
+
+        for r in range(len(self.reaches.id)):
+            if reach_dist_out[r] == -9999:
+                continue
+
+            # Find nodes for this reach
+            nds = np.where(self.nodes.reach_id == self.reaches.id[r])[0]
+            if len(nds) == 0:
+                continue
+
+            # Sort nodes by ID (ascending = downstream to upstream)
+            sort_nodes = np.argsort(self.nodes.id[nds])
+
+            # Base value: reach dist_out minus reach length
+            base_val = reach_dist_out[r] - self.reaches.len[r]
+
+            # Cumulative node lengths
+            node_cs = np.cumsum(self.nodes.len[nds[sort_nodes]])
+
+            # Node dist_out = cumsum + base
+            nodes_out[nds[sort_nodes]] = node_cs + base_val
+            updated_count += len(nds)
+
+        # Update database
+        conn = self._db.connect()
+        conn.execute("BEGIN TRANSACTION")
+
+        try:
+            for idx, node_id in enumerate(self.nodes.id):
+                if nodes_out[idx] != self.nodes.dist_out[idx]:
+                    conn.execute("""
+                        UPDATE nodes SET dist_out = ?
+                        WHERE node_id = ? AND region = ?
+                    """, [float(nodes_out[idx]), int(node_id), self.region])
+
+            conn.execute("COMMIT")
+        except Exception as e:
+            conn.execute("ROLLBACK")
+            raise RuntimeError(f"Failed to update node dist_out: {e}") from e
+
+        if verbose:
+            print(f'  Updated {updated_count} nodes')
+
+        return updated_count
+
     def create_ghost_reach(
         self,
         reach_id: int,
