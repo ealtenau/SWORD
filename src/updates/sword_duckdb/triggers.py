@@ -29,18 +29,20 @@ Example Usage:
     changes = get_pending_changes(pg_connection_string, prefix="na_")
     print(f"Modified: {changes['reaches']} reaches, {changes['nodes']} nodes")
 
-TODO(MED): Implement git-like versioning system. Current change tracking only
-stores most recent old/new values. Full versioning would track:
-1. Edit history with timestamps and user info
-2. Ability to revert to previous versions
-3. Diff between any two versions
-4. Branch/merge support for concurrent editing sessions
-See MIGRATION_STATUS.md "GitHub Issues Needed" section.
+NOTE: Git-like versioning has been implemented in workflow.py (v1.3.0):
+1. Edit history with timestamps and user info - DONE (provenance.py)
+2. Ability to revert to previous versions - DONE (workflow.snapshot/restore_snapshot)
+3. Diff between any two versions - FUTURE (not yet implemented)
+4. Branch/merge support for concurrent editing sessions - FUTURE (not yet implemented)
+See DEVELOPMENT_STATUS.md for tracking.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # SQL to create the change tracking table
 CHANGE_TRACKING_TABLE = """
@@ -220,7 +222,7 @@ DROP TABLE IF EXISTS {prefix}sword_changes;
 """
 
 
-def _get_pg_connection(connection_string: str):
+def _get_pg_connection(connection_string: str) -> 'psycopg2.extensions.connection':
     """Get a PostgreSQL connection using psycopg2."""
     try:
         import psycopg2
@@ -265,30 +267,30 @@ def install_triggers(
     try:
         # Create change tracking table
         if verbose:
-            print(f"Creating change tracking table: {prefix}sword_changes")
+            logger.info(f"Creating change tracking table: {prefix}sword_changes")
         cursor.execute(CHANGE_TRACKING_TABLE.format(prefix=prefix))
         conn.commit()
 
         # Create trigger functions
         if verbose:
-            print("Creating trigger functions...")
+            logger.info("Creating trigger functions...")
         cursor.execute(REACHES_TRIGGER_FUNCTION.format(prefix=prefix))
         cursor.execute(NODES_TRIGGER_FUNCTION.format(prefix=prefix))
         conn.commit()
 
         # Create triggers
         if verbose:
-            print("Installing triggers on tables...")
+            logger.info("Installing triggers on tables...")
         cursor.execute(CREATE_TRIGGERS.format(prefix=prefix))
         conn.commit()
 
         if verbose:
-            print("Triggers installed successfully!")
+            logger.info("Triggers installed successfully!")
         return True
 
     except Exception as e:
         conn.rollback()
-        print(f"Error installing triggers: {e}")
+        logger.error(f"Error installing triggers: {e}")
         return False
 
     finally:
@@ -323,17 +325,17 @@ def remove_triggers(
 
     try:
         if verbose:
-            print("Removing triggers...")
+            logger.info("Removing triggers...")
         cursor.execute(DROP_TRIGGERS.format(prefix=prefix))
         conn.commit()
 
         if verbose:
-            print("Triggers removed successfully!")
+            logger.info("Triggers removed successfully!")
         return True
 
     except Exception as e:
         conn.rollback()
-        print(f"Error removing triggers: {e}")
+        logger.error(f"Error removing triggers: {e}")
         return False
 
     finally:

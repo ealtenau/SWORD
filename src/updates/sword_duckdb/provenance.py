@@ -53,6 +53,8 @@ class OperationType(Enum):
     EXPORT = "EXPORT"
     RECONSTRUCT = "RECONSTRUCT"
     BATCH = "BATCH"
+    SNAPSHOT = "SNAPSHOT"
+    RESTORE = "RESTORE"
 
 
 class OperationStatus(Enum):
@@ -782,3 +784,89 @@ class ProvenanceLogger:
         ])
 
         return lineage_id
+
+    def get_max_operation_id(self) -> int:
+        """
+        Get the highest completed operation ID.
+
+        Used by the snapshot system to mark a reference point in history.
+
+        Returns
+        -------
+        int
+            The maximum operation_id with status='COMPLETED', or 0 if none exist.
+        """
+        result = self._conn.execute("""
+            SELECT COALESCE(MAX(operation_id), 0)
+            FROM sword_operations
+            WHERE status = 'COMPLETED'
+        """).fetchone()
+        return result[0] if result else 0
+
+    def get_operations_after(
+        self,
+        operation_id: int,
+        include_in_progress: bool = False,
+        exclude_types: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all operations after a specific operation ID.
+
+        Used by the restore system to find operations that need to be rolled back.
+
+        Parameters
+        ----------
+        operation_id : int
+            The reference operation ID. Returns operations with ID > this value.
+        include_in_progress : bool, optional
+            If True, include IN_PROGRESS operations. Default False.
+        exclude_types : list of str, optional
+            Operation types to exclude (e.g., ['SNAPSHOT', 'RESTORE']).
+            These are metadata operations that shouldn't be rolled back.
+
+        Returns
+        -------
+        list of dict
+            Operations in reverse chronological order (most recent first),
+            suitable for rollback processing.
+        """
+        status_filter = "IN ('COMPLETED')"
+        if include_in_progress:
+            status_filter = "IN ('COMPLETED', 'IN_PROGRESS')"
+
+        # Build type exclusion clause
+        type_exclusion = ""
+        query_params = [operation_id]
+        if exclude_types:
+            placeholders = ", ".join(["?" for _ in exclude_types])
+            type_exclusion = f" AND operation_type NOT IN ({placeholders})"
+            query_params.extend(exclude_types)
+
+        results = self._conn.execute(f"""
+            SELECT
+                operation_id, operation_type, table_name, entity_ids, region,
+                user_id, session_id, started_at, completed_at,
+                reason, status
+            FROM sword_operations
+            WHERE operation_id > ?
+              AND status {status_filter}
+              {type_exclusion}
+            ORDER BY operation_id DESC
+        """, query_params).fetchall()
+
+        return [
+            {
+                'operation_id': r[0],
+                'operation_type': r[1],
+                'table_name': r[2],
+                'entity_ids': r[3],
+                'region': r[4],
+                'user_id': r[5],
+                'session_id': r[6],
+                'started_at': r[7],
+                'completed_at': r[8],
+                'reason': r[9],
+                'status': r[10],
+            }
+            for r in results
+        ]

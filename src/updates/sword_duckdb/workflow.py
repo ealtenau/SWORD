@@ -361,7 +361,7 @@ class SWORDWorkflow:
                 self._in_transaction = False
 
     @contextmanager
-    def batch_modify(self):
+    def batch_modify(self) -> Generator[None, None, None]:
         """
         Context manager for batch modifications without transaction semantics.
 
@@ -808,6 +808,454 @@ class SWORDWorkflow:
             raise RuntimeError("Provenance tracking is not enabled")
 
         return self._provenance.get_lineage(entity_type, entity_id, self._region)
+
+    # =========================================================================
+    # SNAPSHOT VERSIONING METHODS
+    # =========================================================================
+
+    def snapshot(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        auto: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Create a named snapshot of the current database state.
+
+        Snapshots are like git tags - they mark a specific point in the
+        operation history that you can later restore to.
+
+        Parameters
+        ----------
+        name : str
+            Unique snapshot name (alphanumeric, hyphens, underscores only).
+            Maximum 100 characters.
+        description : str, optional
+            Human-readable description of the snapshot.
+        auto : bool, optional
+            If True, marks this as an auto-snapshot (for internal use).
+
+        Returns
+        -------
+        dict
+            Snapshot metadata including:
+            - 'snapshot_id': int
+            - 'name': str
+            - 'operation_id_max': int - Reference point in operation history
+            - 'created_at': datetime
+            - 'reach_count', 'node_count', 'centerline_count': int
+
+        Raises
+        ------
+        ValueError
+            If snapshot name already exists or is invalid.
+        RuntimeError
+            If no database is loaded or provenance is disabled.
+
+        Example
+        -------
+        >>> workflow.snapshot("before-bulk-edit", description="Clean state")
+        >>> # ... make changes ...
+        >>> workflow.restore_snapshot("before-bulk-edit")  # Revert changes
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+        if not self._provenance or not self._enable_provenance:
+            raise RuntimeError("Provenance tracking must be enabled for snapshots")
+
+        # Validate name
+        self._validate_snapshot_name(name)
+
+        conn = self._sword.db.conn
+
+        # Check uniqueness
+        if self._snapshot_exists(name):
+            raise ValueError(f"Snapshot '{name}' already exists")
+
+        # Commit pending changes
+        if self.has_pending_changes:
+            self.commit()
+
+        # Get current max operation_id
+        max_op_id = self._provenance.get_max_operation_id()
+
+        # Get entity counts
+        reach_count = len(self._sword.reaches)
+        node_count = len(self._sword.nodes)
+        centerline_count = conn.execute(
+            "SELECT COUNT(*) FROM centerlines WHERE region = ?", [self._region]
+        ).fetchone()[0]
+
+        # Get next snapshot ID
+        result = conn.execute(
+            "SELECT COALESCE(MAX(snapshot_id), 0) + 1 FROM sword_snapshots"
+        ).fetchone()
+        snapshot_id = result[0]
+
+        # Insert snapshot
+        conn.execute("""
+            INSERT INTO sword_snapshots (
+                snapshot_id, name, description, operation_id_max,
+                created_by, session_id,
+                reach_count, node_count, centerline_count,
+                is_auto_snapshot
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [
+            snapshot_id, name, description, max_op_id,
+            self._provenance.user_id, self._provenance.session_id,
+            reach_count, node_count, centerline_count,
+            auto
+        ])
+
+        # Log as operation
+        with self._provenance.operation(
+            'SNAPSHOT', None, None, self._region,
+            reason=f"Created snapshot: {name}",
+            details={'snapshot_name': name, 'snapshot_id': snapshot_id}
+        ):
+            pass
+
+        created_at = datetime.now()
+        logger.info(f"Created snapshot '{name}' at operation_id {max_op_id}")
+
+        return {
+            'snapshot_id': snapshot_id,
+            'name': name,
+            'operation_id_max': max_op_id,
+            'created_at': created_at,
+            'reach_count': reach_count,
+            'node_count': node_count,
+            'centerline_count': centerline_count,
+        }
+
+    def list_snapshots(
+        self,
+        include_auto: bool = False,
+        limit: int = 100,
+    ):
+        """
+        List all available snapshots.
+
+        Parameters
+        ----------
+        include_auto : bool, optional
+            If True, include auto-created snapshots. Default False.
+        limit : int, optional
+            Maximum number of snapshots to return.
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with columns: name, created_at, description,
+            operation_id_max, reach_count, node_count, centerline_count,
+            created_by
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded.
+
+        Example
+        -------
+        >>> snapshots = workflow.list_snapshots()
+        >>> print(snapshots[['name', 'created_at', 'description']])
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        import pandas as pd
+
+        conn = self._sword.db.conn
+
+        auto_filter = "" if include_auto else "WHERE is_auto_snapshot = FALSE"
+
+        result = conn.execute(f"""
+            SELECT
+                name, created_at, description, operation_id_max,
+                reach_count, node_count, centerline_count, created_by
+            FROM sword_snapshots
+            {auto_filter}
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, [limit]).fetchdf()
+
+        return result
+
+    def delete_snapshot(self, name: str) -> bool:
+        """
+        Delete a snapshot by name.
+
+        Note: This only removes the snapshot metadata. It does NOT restore
+        any data or affect the operation history.
+
+        Parameters
+        ----------
+        name : str
+            Name of the snapshot to delete.
+
+        Returns
+        -------
+        bool
+            True if snapshot was deleted, False if not found.
+
+        Example
+        -------
+        >>> workflow.delete_snapshot("old-snapshot")
+        True
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        conn = self._sword.db.conn
+
+        # Check if exists
+        if not self._snapshot_exists(name):
+            return False
+
+        conn.execute(
+            "DELETE FROM sword_snapshots WHERE name = ?", [name]
+        )
+
+        logger.info(f"Deleted snapshot '{name}'")
+        return True
+
+    def restore_snapshot(
+        self,
+        name: str,
+        dry_run: bool = False,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Restore the database to a named snapshot state.
+
+        This rolls back all operations that occurred after the snapshot,
+        in reverse chronological order.
+
+        Parameters
+        ----------
+        name : str
+            Name of the snapshot to restore to.
+        dry_run : bool, optional
+            If True, return what would be done without actually doing it.
+        reason : str, optional
+            Reason for the restore (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Restore results including:
+            - 'operations_rolled_back': int
+            - 'values_restored': int
+            - 'snapshot_name': str
+            - 'restored_to_operation_id': int
+
+        Raises
+        ------
+        ValueError
+            If snapshot name doesn't exist.
+        RuntimeError
+            If database not loaded or provenance disabled.
+
+        Example
+        -------
+        >>> # Preview what would be restored
+        >>> result = workflow.restore_snapshot("before-edit", dry_run=True)
+        >>> print(f"Would rollback {result['operations_to_rollback']} operations")
+        >>>
+        >>> # Actually restore
+        >>> result = workflow.restore_snapshot("before-edit")
+        >>> print(f"Rolled back {result['operations_rolled_back']} operations")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+        if not self._provenance:
+            raise RuntimeError("Provenance tracking must be enabled for restore")
+
+        conn = self._sword.db.conn
+
+        # Look up snapshot
+        result = conn.execute(
+            "SELECT snapshot_id, operation_id_max, created_at FROM sword_snapshots WHERE name = ?",
+            [name]
+        ).fetchone()
+
+        if not result:
+            raise ValueError(f"Snapshot '{name}' not found")
+
+        snapshot_id, target_op_id, snapshot_created = result
+
+        # Delegate to internal method
+        results = self._rollback_to_operation_id(
+            target_op_id,
+            reason=reason or f"Restore to snapshot: {name}",
+            dry_run=dry_run
+        )
+
+        results['snapshot_name'] = name
+        results['snapshot_created_at'] = snapshot_created
+        return results
+
+    def restore_to_timestamp(
+        self,
+        timestamp: Union[str, datetime],
+        dry_run: bool = False,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Restore the database to its state at a specific timestamp.
+
+        Parameters
+        ----------
+        timestamp : str or datetime
+            The target timestamp. Strings are parsed as ISO format.
+            Example: "2024-01-15 10:30:00"
+        dry_run : bool, optional
+            If True, return what would be done without actually doing it.
+        reason : str, optional
+            Reason for the restore (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Restore results including:
+            - 'operations_rolled_back': int
+            - 'values_restored': int
+            - 'restored_to_timestamp': datetime
+            - 'target_operation_id': int
+
+        Raises
+        ------
+        ValueError
+            If timestamp is invalid or before first operation.
+        RuntimeError
+            If database not loaded or provenance disabled.
+
+        Example
+        -------
+        >>> result = workflow.restore_to_timestamp("2024-01-15 10:30:00")
+        >>> print(f"Rolled back {result['operations_rolled_back']} operations")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+        if not self._provenance:
+            raise RuntimeError("Provenance tracking must be enabled for restore")
+
+        # Parse timestamp if string
+        if isinstance(timestamp, str):
+            timestamp = datetime.fromisoformat(timestamp)
+
+        # Check if timestamp is in the future
+        if timestamp > datetime.now():
+            raise ValueError("Cannot restore to a future timestamp")
+
+        conn = self._sword.db.conn
+
+        # Find the last operation completed before timestamp
+        result = conn.execute("""
+            SELECT MAX(operation_id) FROM sword_operations
+            WHERE completed_at <= ? AND status = 'COMPLETED'
+        """, [timestamp]).fetchone()
+
+        target_op_id = result[0] if result and result[0] else 0
+
+        # Delegate to internal method
+        results = self._rollback_to_operation_id(
+            target_op_id,
+            reason=reason or f"Restore to timestamp: {timestamp}",
+            dry_run=dry_run
+        )
+
+        results['restored_to_timestamp'] = timestamp
+        return results
+
+    def _validate_snapshot_name(self, name: str) -> None:
+        """Validate snapshot name format."""
+        import re
+
+        if not name:
+            raise ValueError("Snapshot name cannot be empty")
+        if len(name) > 100:
+            raise ValueError("Snapshot name too long (max 100 characters)")
+        if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+            raise ValueError(
+                "Snapshot name can only contain letters, numbers, hyphens, and underscores"
+            )
+
+    def _snapshot_exists(self, name: str) -> bool:
+        """Check if a snapshot with this name exists."""
+        conn = self._sword.db.conn
+        result = conn.execute(
+            "SELECT COUNT(*) FROM sword_snapshots WHERE name = ?", [name]
+        ).fetchone()
+        return result[0] > 0
+
+    def _rollback_to_operation_id(
+        self,
+        target_op_id: int,
+        reason: Optional[str] = None,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Internal method to rollback all operations after a target operation.
+
+        Used by both restore_snapshot and restore_to_timestamp.
+        """
+        # Get operations to rollback (excluding SNAPSHOT and RESTORE which are metadata operations)
+        operations = self._provenance.get_operations_after(
+            target_op_id,
+            exclude_types=['SNAPSHOT', 'RESTORE']
+        )
+
+        if dry_run:
+            return {
+                'dry_run': True,
+                'operations_to_rollback': len(operations),
+                'operation_ids': [op['operation_id'] for op in operations],
+                'restored_to_operation_id': target_op_id,
+            }
+
+        if len(operations) == 0:
+            logger.info("Already at target state, nothing to rollback")
+            return {
+                'operations_rolled_back': 0,
+                'values_restored': 0,
+                'restored_to_operation_id': target_op_id,
+            }
+
+        # Track statistics
+        total_values_restored = 0
+        operations_rolled_back = 0
+
+        # Log the RESTORE operation
+        with self._provenance.operation(
+            'RESTORE', None, None, self._region,
+            reason=reason,
+            details={
+                'target_operation_id': target_op_id,
+                'operations_to_rollback': len(operations)
+            }
+        ):
+            # Rollback each operation in reverse order (already sorted by get_operations_after)
+            for op in operations:
+                op_id = op['operation_id']
+                try:
+                    values_restored = self._provenance.rollback_operation(op_id)
+                    total_values_restored += values_restored
+                    operations_rolled_back += 1
+                except ValueError as e:
+                    # Operation already rolled back or no snapshots
+                    logger.warning(f"Could not rollback operation {op_id}: {e}")
+
+        logger.info(
+            f"Rolled back {operations_rolled_back} operations, "
+            f"restored {total_values_restored} values"
+        )
+
+        return {
+            'operations_rolled_back': operations_rolled_back,
+            'values_restored': total_values_restored,
+            'restored_to_operation_id': target_op_id,
+        }
 
     # =========================================================================
     # RECONSTRUCTION METHODS
@@ -1470,7 +1918,7 @@ class SWORDWorkflow:
                 total_centerlines += result.get('merged_centerlines', 0)
                 merged_count += 1
             except ValueError as e:
-                print(f"Warning: Could not merge {source_id} -> {target_id}: {e}")
+                logger.warning(f"Could not merge {source_id} -> {target_id}: {e}")
                 continue
 
         return {
@@ -1936,7 +2384,7 @@ class SWORDWorkflow:
                 results['path_segs'] = ps_result
                 results['attributes_updated'].append('path_segs')
             else:
-                print(f"Warning: Unknown attribute '{attr}' - skipping")
+                logger.warning(f"Unknown attribute '{attr}' - skipping")
 
         return results
 

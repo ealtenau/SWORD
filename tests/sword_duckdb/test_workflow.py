@@ -566,5 +566,250 @@ class TestRecalculateSinuosity:
             assert sinuosity <= 10.0, "Sinuosity should be clamped to <= 10.0"
 
 
+# =============================================================================
+# SNAPSHOT VERSIONING TESTS
+# =============================================================================
+
+@pytest.fixture
+def temp_workflow_with_provenance():
+    """Create a temporary workflow with provenance enabled."""
+    if not os.path.exists(TEST_DB_PATH):
+        pytest.skip(f"Test database not found: {TEST_DB_PATH}")
+
+    # Create temp copy
+    temp_dir = tempfile.mkdtemp()
+    temp_db = os.path.join(temp_dir, 'sword_test.duckdb')
+    try:
+        shutil.copy2(TEST_DB_PATH, temp_db)
+    except OSError as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        pytest.skip(f"Cannot copy database (disk space?): {e}")
+
+    workflow = SWORDWorkflow(
+        user_id="test_user",
+        enable_provenance=True,  # Enable provenance for snapshot tests
+    )
+    workflow.load(temp_db, TEST_REGION)
+    yield workflow
+
+    # Cleanup
+    workflow.close()
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+class TestSnapshotVersioning:
+    """Test snapshot versioning methods."""
+
+    def test_snapshot_method_exists(self, temp_workflow_with_provenance):
+        """Test snapshot method exists."""
+        assert hasattr(temp_workflow_with_provenance, 'snapshot')
+        assert callable(temp_workflow_with_provenance.snapshot)
+
+    def test_snapshot_requires_load(self, unloaded_workflow):
+        """Test snapshot raises error when database not loaded."""
+        with pytest.raises(RuntimeError, match="No database loaded"):
+            unloaded_workflow.snapshot("test-snapshot")
+
+    def test_snapshot_requires_provenance(self, temp_workflow):
+        """Test snapshot raises error when provenance disabled."""
+        with pytest.raises(RuntimeError, match="Provenance tracking must be enabled"):
+            temp_workflow.snapshot("test-snapshot")
+
+    def test_create_snapshot_basic(self, temp_workflow_with_provenance):
+        """Test creating a basic snapshot."""
+        result = temp_workflow_with_provenance.snapshot("test-snapshot")
+
+        assert result['name'] == 'test-snapshot'
+        assert result['snapshot_id'] > 0
+        assert result['operation_id_max'] >= 0
+        assert result['reach_count'] > 0
+        assert result['node_count'] > 0
+
+    def test_create_snapshot_with_description(self, temp_workflow_with_provenance):
+        """Test creating a snapshot with description."""
+        result = temp_workflow_with_provenance.snapshot(
+            "described-snapshot",
+            description="This is a test snapshot"
+        )
+
+        assert result['name'] == 'described-snapshot'
+        assert result['snapshot_id'] > 0
+
+    def test_create_snapshot_duplicate_name_raises(self, temp_workflow_with_provenance):
+        """Test creating snapshot with duplicate name raises error."""
+        temp_workflow_with_provenance.snapshot("unique-name")
+
+        with pytest.raises(ValueError, match="already exists"):
+            temp_workflow_with_provenance.snapshot("unique-name")
+
+    def test_create_snapshot_invalid_name_empty(self, temp_workflow_with_provenance):
+        """Test creating snapshot with empty name raises error."""
+        with pytest.raises(ValueError, match="cannot be empty"):
+            temp_workflow_with_provenance.snapshot("")
+
+    def test_create_snapshot_invalid_name_spaces(self, temp_workflow_with_provenance):
+        """Test creating snapshot with spaces raises error."""
+        with pytest.raises(ValueError, match="can only contain"):
+            temp_workflow_with_provenance.snapshot("invalid name")
+
+    def test_create_snapshot_invalid_name_special_chars(self, temp_workflow_with_provenance):
+        """Test creating snapshot with special chars raises error."""
+        with pytest.raises(ValueError, match="can only contain"):
+            temp_workflow_with_provenance.snapshot("invalid@name!")
+
+    def test_create_snapshot_valid_name_with_hyphens(self, temp_workflow_with_provenance):
+        """Test creating snapshot with hyphens is valid."""
+        result = temp_workflow_with_provenance.snapshot("valid-name-with-hyphens")
+        assert result['name'] == 'valid-name-with-hyphens'
+
+    def test_create_snapshot_valid_name_with_underscores(self, temp_workflow_with_provenance):
+        """Test creating snapshot with underscores is valid."""
+        result = temp_workflow_with_provenance.snapshot("valid_name_with_underscores")
+        assert result['name'] == 'valid_name_with_underscores'
+
+
+class TestListSnapshots:
+    """Test list_snapshots method."""
+
+    def test_list_snapshots_method_exists(self, temp_workflow_with_provenance):
+        """Test list_snapshots method exists."""
+        assert hasattr(temp_workflow_with_provenance, 'list_snapshots')
+        assert callable(temp_workflow_with_provenance.list_snapshots)
+
+    def test_list_snapshots_requires_load(self, unloaded_workflow):
+        """Test list_snapshots raises error when database not loaded."""
+        with pytest.raises(RuntimeError, match="No database loaded"):
+            unloaded_workflow.list_snapshots()
+
+    def test_list_snapshots_empty(self, temp_workflow_with_provenance):
+        """Test listing snapshots when none exist."""
+        result = temp_workflow_with_provenance.list_snapshots()
+
+        # Should return empty DataFrame
+        assert len(result) == 0
+
+    def test_list_snapshots_after_creating(self, temp_workflow_with_provenance):
+        """Test listing snapshots after creating one."""
+        temp_workflow_with_provenance.snapshot("first-snapshot")
+        temp_workflow_with_provenance.snapshot("second-snapshot")
+
+        result = temp_workflow_with_provenance.list_snapshots()
+
+        assert len(result) == 2
+        assert 'name' in result.columns
+        assert 'created_at' in result.columns
+        assert 'first-snapshot' in result['name'].values
+        assert 'second-snapshot' in result['name'].values
+
+
+class TestDeleteSnapshot:
+    """Test delete_snapshot method."""
+
+    def test_delete_snapshot_method_exists(self, temp_workflow_with_provenance):
+        """Test delete_snapshot method exists."""
+        assert hasattr(temp_workflow_with_provenance, 'delete_snapshot')
+        assert callable(temp_workflow_with_provenance.delete_snapshot)
+
+    def test_delete_snapshot_requires_load(self, unloaded_workflow):
+        """Test delete_snapshot raises error when database not loaded."""
+        with pytest.raises(RuntimeError, match="No database loaded"):
+            unloaded_workflow.delete_snapshot("test")
+
+    def test_delete_snapshot_success(self, temp_workflow_with_provenance):
+        """Test deleting an existing snapshot."""
+        temp_workflow_with_provenance.snapshot("to-delete")
+        assert len(temp_workflow_with_provenance.list_snapshots()) == 1
+
+        result = temp_workflow_with_provenance.delete_snapshot("to-delete")
+
+        assert result is True
+        assert len(temp_workflow_with_provenance.list_snapshots()) == 0
+
+    def test_delete_snapshot_not_found(self, temp_workflow_with_provenance):
+        """Test deleting non-existent snapshot returns False."""
+        result = temp_workflow_with_provenance.delete_snapshot("does-not-exist")
+        assert result is False
+
+
+class TestRestoreSnapshot:
+    """Test restore_snapshot method."""
+
+    def test_restore_snapshot_method_exists(self, temp_workflow_with_provenance):
+        """Test restore_snapshot method exists."""
+        assert hasattr(temp_workflow_with_provenance, 'restore_snapshot')
+        assert callable(temp_workflow_with_provenance.restore_snapshot)
+
+    def test_restore_snapshot_requires_load(self, unloaded_workflow):
+        """Test restore_snapshot raises error when database not loaded."""
+        with pytest.raises(RuntimeError, match="No database loaded"):
+            unloaded_workflow.restore_snapshot("test")
+
+    def test_restore_snapshot_requires_provenance(self, temp_workflow):
+        """Test restore_snapshot raises error when provenance disabled."""
+        with pytest.raises(RuntimeError, match="Provenance tracking"):
+            temp_workflow.restore_snapshot("test")
+
+    def test_restore_snapshot_not_found(self, temp_workflow_with_provenance):
+        """Test restoring non-existent snapshot raises error."""
+        with pytest.raises(ValueError, match="not found"):
+            temp_workflow_with_provenance.restore_snapshot("does-not-exist")
+
+    def test_restore_snapshot_dry_run(self, temp_workflow_with_provenance):
+        """Test restore_snapshot dry run mode."""
+        temp_workflow_with_provenance.snapshot("before-changes")
+
+        result = temp_workflow_with_provenance.restore_snapshot(
+            "before-changes", dry_run=True
+        )
+
+        assert result['dry_run'] is True
+        assert 'operations_to_rollback' in result
+        assert result['operations_to_rollback'] == 0  # No changes since snapshot
+
+    def test_restore_snapshot_already_at_state(self, temp_workflow_with_provenance):
+        """Test restoring when already at snapshot state."""
+        temp_workflow_with_provenance.snapshot("current-state")
+
+        result = temp_workflow_with_provenance.restore_snapshot("current-state")
+
+        assert result['operations_rolled_back'] == 0
+        assert result['values_restored'] == 0
+
+
+class TestRestoreToTimestamp:
+    """Test restore_to_timestamp method."""
+
+    def test_restore_to_timestamp_method_exists(self, temp_workflow_with_provenance):
+        """Test restore_to_timestamp method exists."""
+        assert hasattr(temp_workflow_with_provenance, 'restore_to_timestamp')
+        assert callable(temp_workflow_with_provenance.restore_to_timestamp)
+
+    def test_restore_to_timestamp_requires_load(self, unloaded_workflow):
+        """Test restore_to_timestamp raises error when database not loaded."""
+        with pytest.raises(RuntimeError, match="No database loaded"):
+            unloaded_workflow.restore_to_timestamp("2024-01-01 00:00:00")
+
+    def test_restore_to_timestamp_requires_provenance(self, temp_workflow):
+        """Test restore_to_timestamp raises error when provenance disabled."""
+        with pytest.raises(RuntimeError, match="Provenance tracking"):
+            temp_workflow.restore_to_timestamp("2024-01-01 00:00:00")
+
+    def test_restore_to_timestamp_future_raises(self, temp_workflow_with_provenance):
+        """Test restoring to future timestamp raises error."""
+        with pytest.raises(ValueError, match="future timestamp"):
+            temp_workflow_with_provenance.restore_to_timestamp("2099-01-01 00:00:00")
+
+    def test_restore_to_timestamp_dry_run(self, temp_workflow_with_provenance):
+        """Test restore_to_timestamp dry run mode."""
+        from datetime import datetime
+
+        result = temp_workflow_with_provenance.restore_to_timestamp(
+            datetime.now().isoformat(), dry_run=True
+        )
+
+        assert result['dry_run'] is True
+        assert 'operations_to_rollback' in result
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

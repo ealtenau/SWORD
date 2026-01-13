@@ -19,7 +19,7 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.2.0"  # Updated for provenance tables
+SCHEMA_VERSION = "1.3.0"  # Updated for snapshot versioning
 
 # Core table definitions
 # NOTE: cl_id and node_id are only unique within a region, so we use composite keys
@@ -394,6 +394,42 @@ CREATE TABLE IF NOT EXISTS sword_reconstruction_recipes (
 );
 """
 
+# =============================================================================
+# VERSIONING TABLES
+# =============================================================================
+# Named snapshots for git-like versioning functionality.
+# Snapshots reference a point in operation history (operation_id_max) rather
+# than duplicating data, enabling restore by rolling back subsequent operations.
+# =============================================================================
+
+SWORD_SNAPSHOTS_TABLE = """
+CREATE TABLE IF NOT EXISTS sword_snapshots (
+    -- Primary key
+    snapshot_id INTEGER PRIMARY KEY,
+
+    -- Snapshot identification
+    name VARCHAR(100) NOT NULL UNIQUE,    -- User-friendly name like "before-bulk-edit"
+    description VARCHAR(500),             -- Optional description
+
+    -- Reference point in operation history
+    operation_id_max INTEGER NOT NULL,    -- Highest operation_id included in this snapshot
+
+    -- Provenance: WHO/WHEN
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(100),              -- User who created the snapshot
+    session_id VARCHAR(50),               -- Session that created the snapshot
+
+    -- Statistics at snapshot time (for quick reference)
+    reach_count INTEGER,
+    node_count INTEGER,
+    centerline_count INTEGER,
+
+    -- Flags
+    is_auto_snapshot BOOLEAN DEFAULT FALSE,  -- Auto-created vs user-created
+    tags VARCHAR[]                           -- Optional tags for categorization
+);
+"""
+
 # Index definitions
 INDEXES = [
     # Spatial indexes (for DuckDB Spatial extension)
@@ -437,6 +473,11 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_snapshots_entity ON sword_value_snapshots(table_name, entity_id);",
     "CREATE INDEX IF NOT EXISTS idx_lineage_entity ON sword_source_lineage(entity_type, entity_id, region);",
     "CREATE INDEX IF NOT EXISTS idx_lineage_source ON sword_source_lineage(source_dataset);",
+
+    # Snapshot versioning indexes
+    "CREATE INDEX IF NOT EXISTS idx_snapshots_name ON sword_snapshots(name);",
+    "CREATE INDEX IF NOT EXISTS idx_snapshots_created ON sword_snapshots(created_at);",
+    "CREATE INDEX IF NOT EXISTS idx_snapshots_operation ON sword_snapshots(operation_id_max);",
 ]
 
 # Regional views for backward compatibility
@@ -498,6 +539,7 @@ def get_schema_sql() -> str:
         SWORD_VALUE_SNAPSHOTS_TABLE,
         SWORD_SOURCE_LINEAGE_TABLE,
         SWORD_RECONSTRUCTION_RECIPES_TABLE,
+        SWORD_SNAPSHOTS_TABLE,
     ]
 
     schema_parts = []
@@ -559,6 +601,7 @@ def create_schema(conn) -> None:
         SWORD_VALUE_SNAPSHOTS_TABLE,
         SWORD_SOURCE_LINEAGE_TABLE,
         SWORD_RECONSTRUCTION_RECIPES_TABLE,
+        SWORD_SNAPSHOTS_TABLE,
     ]
 
     for table_sql in provenance_tables:
@@ -613,6 +656,7 @@ def drop_schema(conn) -> None:
 
     # Drop provenance tables first (they have no dependencies)
     provenance_tables = [
+        'sword_snapshots',
         'sword_value_snapshots',
         'sword_operations',
         'sword_source_lineage',
@@ -654,6 +698,7 @@ def create_provenance_tables(conn) -> None:
         SWORD_VALUE_SNAPSHOTS_TABLE,
         SWORD_SOURCE_LINEAGE_TABLE,
         SWORD_RECONSTRUCTION_RECIPES_TABLE,
+        SWORD_SNAPSHOTS_TABLE,
     ]
 
     for table_sql in provenance_tables:
@@ -671,6 +716,10 @@ def create_provenance_tables(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_snapshots_entity ON sword_value_snapshots(table_name, entity_id);",
         "CREATE INDEX IF NOT EXISTS idx_lineage_entity ON sword_source_lineage(entity_type, entity_id, region);",
         "CREATE INDEX IF NOT EXISTS idx_lineage_source ON sword_source_lineage(source_dataset);",
+        # Snapshot versioning indexes
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_name ON sword_snapshots(name);",
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_created ON sword_snapshots(created_at);",
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_operation ON sword_snapshots(operation_id_max);",
     ]
 
     for index_sql in provenance_indexes:
