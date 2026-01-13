@@ -412,6 +412,12 @@ tests/
 
 **Note:** Most data is already populated from the NetCDF migration. Reconstruction methods exist for validation but are not required for normal workflow operations.
 
+### Known Issues / To Investigate
+
+| Issue | Details |
+|-------|---------|
+| `trib_flag` 2.2% discrepancy | Recalculation matches 97.8% of legacy values (9,761 of 9,983 nodes). 222 nodes flagged in legacy but not in recalc. MHV_SWORD v18 data at `/Volumes/SWORD_DATA/data/MHV_SWORD` should be same version - investigate why small difference exists. |
+
 ### Code Quality Tasks (Low Priority)
 
 | Task | Status | Notes |

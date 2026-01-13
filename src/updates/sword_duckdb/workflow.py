@@ -2673,12 +2673,25 @@ class SWORDWorkflow:
                 f"MHV data not found for region {self._region}: {region_path}"
             )
 
-        # Get all gpkg files for this region
-        gpkg_files = sorted(glob.glob(str(region_path / '*.gpkg')))
+        # Get all gpkg files for this region (exclude macOS ._ metadata files)
+        all_files = sorted(glob.glob(str(region_path / '*.gpkg')))
+        gpkg_files = [f for f in all_files if not Path(f).name.startswith('._')]
         if not gpkg_files:
             raise FileNotFoundError(f"No gpkg files found in {region_path}")
 
+        # Build mapping from basin code (hbXX) to file path
+        basin_to_file = {}
+        for f in gpkg_files:
+            # Extract basin code from filename like "mhv_sword_hb71_pts_v18.gpkg"
+            name = Path(f).stem
+            if '_hb' in name:
+                # Extract the 2-digit basin code after 'hb'
+                idx = name.index('_hb') + 3
+                basin_code = name[idx:idx+2]
+                basin_to_file[basin_code] = f
+
         logger.info(f"Found {len(gpkg_files)} MHV files for region {self._region}")
+        logger.info(f"Basin codes available: {sorted(basin_to_file.keys())}")
 
         # Get SWORD node coordinates
         conn = self._sword.db.conn
@@ -2698,19 +2711,36 @@ class SWORDWorkflow:
             SELECT reach_id FROM reaches WHERE region = ?
         """, [self._region]).fetchdf()['reach_id'].values
 
+        # Compute level-2 basin code for each node (first 2 digits of node_id)
+        sword_l2 = np.array([str(nid)[:2] for nid in sword_nid])
+        unique_basins = np.unique(sword_l2)
+
         # Initialize flags
         node_tribs = np.zeros(len(sword_nid), dtype=int)
         rch_tribs = np.zeros(len(reach_ids), dtype=int)
 
-        # Build node coordinate array for KD-tree queries
-        node_pts = np.vstack((sword_x, sword_y)).T
-
         total_mhv_points = 0
         files_processed = 0
 
-        # Process each MHV file
-        for gpkg_file in gpkg_files:
-            logger.info(f"Processing {Path(gpkg_file).name}")
+        # Process basin-by-basin (matching legacy algorithm)
+        for basin_code in unique_basins:
+            if basin_code not in basin_to_file:
+                logger.warning(f"No MHV file for basin {basin_code}, skipping")
+                continue
+
+            gpkg_file = basin_to_file[basin_code]
+            logger.info(f"Processing basin {basin_code}: {Path(gpkg_file).name}")
+
+            # Get indices of nodes in this basin
+            basin_mask = sword_l2 == basin_code
+            basin_indices = np.where(basin_mask)[0]
+            if len(basin_indices) == 0:
+                continue
+
+            swd_x = sword_x[basin_indices]
+            swd_y = sword_y[basin_indices]
+            swd_nid = sword_nid[basin_indices]
+            swd_nrid = sword_nrid[basin_indices]
 
             try:
                 mhv = gpd.read_file(gpkg_file)
@@ -2718,8 +2748,8 @@ class SWORDWorkflow:
                 logger.warning(f"Could not read {gpkg_file}: {e}")
                 continue
 
-            # Filter: sword_flag=0 (not in SWORD) - strmorder already >= 3
-            subset = mhv[mhv['sword_flag'] == 0]
+            # Filter: sword_flag=0 AND strmorder>=3 (matching legacy exactly)
+            subset = mhv[(mhv['sword_flag'] == 0) & (mhv['strmorder'] >= 3)]
             if len(subset) == 0:
                 logger.debug(f"No unmatched MHV points in {Path(gpkg_file).name}")
                 files_processed += 1
@@ -2731,23 +2761,27 @@ class SWORDWorkflow:
 
             # Build KD-tree from MHV points
             mhv_pts = np.vstack((mhv_x, mhv_y)).T
+            node_pts = np.vstack((swd_x, swd_y)).T
             kdt = sp.cKDTree(mhv_pts)
 
-            # Query: find closest MHV point to each SWORD node
+            # Query: find closest MHV point to each SWORD node in this basin
             distances, _ = kdt.query(node_pts, k=1)
 
             # Flag nodes within threshold
             matches = distances <= distance_threshold
-            matching_indices = np.where(matches)[0]
+            matching_local_indices = np.where(matches)[0]
 
-            if len(matching_indices) > 0:
-                # Flag matching nodes
-                node_tribs[matching_indices] = 1
+            if len(matching_local_indices) > 0:
+                # Get the global node IDs that matched
+                fg_nodes = np.unique(swd_nid[matching_local_indices])
+                fg_rchs = np.unique(swd_nrid[matching_local_indices])
 
-                # Flag corresponding reaches
-                matching_reach_ids = np.unique(sword_nrid[matching_indices])
-                reach_mask = np.isin(reach_ids, matching_reach_ids)
-                rch_tribs[reach_mask] = 1
+                # Find indices in global arrays and flag them
+                node_match_mask = np.isin(sword_nid, fg_nodes)
+                node_tribs[node_match_mask] = 1
+
+                reach_match_mask = np.isin(reach_ids, fg_rchs)
+                rch_tribs[reach_match_mask] = 1
 
             files_processed += 1
 
