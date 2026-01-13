@@ -2602,6 +2602,258 @@ class SWORDWorkflow:
                 verbose=True
             )
 
+    def recalculate_trib_flag(
+        self,
+        mhv_data_dir: str,
+        distance_threshold: float = 0.003,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Recalculate trib_flag for nodes and reaches using MERIT Hydro Vector data.
+
+        trib_flag marks nodes/reaches that are near MHV river segments that are
+        NOT already in SWORD (i.e., smaller tributaries). This helps identify
+        locations where smaller streams join SWORD rivers.
+
+        Parameters
+        ----------
+        mhv_data_dir : str
+            Path to MHV_SWORD data directory containing gpkg/{region}/ subfolders.
+            Each subfolder should have files like: mhv_sword_hb71_pts_v18.gpkg
+        distance_threshold : float, optional
+            Maximum distance in degrees to consider a match. Default 0.003 (~333m).
+        reason : str, optional
+            Reason for recalculation (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Results including:
+            - 'nodes_flagged': int - Number of nodes with trib_flag=1
+            - 'reaches_flagged': int - Number of reaches with trib_flag=1
+            - 'mhv_files_processed': int - Number of MHV files used
+            - 'total_mhv_points': int - Total MHV points checked
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded.
+        FileNotFoundError
+            If MHV data directory doesn't exist.
+
+        Example
+        -------
+        >>> result = workflow.recalculate_trib_flag(
+        ...     mhv_data_dir='/Volumes/SWORD_DATA/data/MHV_SWORD',
+        ...     reason="Update tributary flags from MHV v18"
+        ... )
+        >>> print(f"Flagged {result['nodes_flagged']} nodes as tributaries")
+
+        Notes
+        -----
+        Algorithm from legacy Add_Trib_Flag.py:
+        1. Load MHV points filtered by sword_flag=0 (not in SWORD)
+        2. Build KD-tree from MHV coordinates
+        3. Find SWORD nodes within distance_threshold
+        4. Flag matching nodes and their reaches with trib_flag=1
+        """
+        import glob
+        from pathlib import Path
+        from scipy import spatial as sp
+        import numpy as np
+        import geopandas as gpd
+
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        mhv_path = Path(mhv_data_dir)
+        region_path = mhv_path / 'gpkg' / self._region
+        if not region_path.exists():
+            raise FileNotFoundError(
+                f"MHV data not found for region {self._region}: {region_path}"
+            )
+
+        # Get all gpkg files for this region
+        gpkg_files = sorted(glob.glob(str(region_path / '*.gpkg')))
+        if not gpkg_files:
+            raise FileNotFoundError(f"No gpkg files found in {region_path}")
+
+        logger.info(f"Found {len(gpkg_files)} MHV files for region {self._region}")
+
+        # Get SWORD node coordinates
+        conn = self._sword.db.conn
+        nodes_df = conn.execute("""
+            SELECT node_id, reach_id, x, y
+            FROM nodes
+            WHERE region = ?
+        """, [self._region]).fetchdf()
+
+        sword_x = nodes_df['x'].values
+        sword_y = nodes_df['y'].values
+        sword_nid = nodes_df['node_id'].values
+        sword_nrid = nodes_df['reach_id'].values
+
+        # Get reach IDs
+        reach_ids = conn.execute("""
+            SELECT reach_id FROM reaches WHERE region = ?
+        """, [self._region]).fetchdf()['reach_id'].values
+
+        # Initialize flags
+        node_tribs = np.zeros(len(sword_nid), dtype=int)
+        rch_tribs = np.zeros(len(reach_ids), dtype=int)
+
+        # Build node coordinate array for KD-tree queries
+        node_pts = np.vstack((sword_x, sword_y)).T
+
+        total_mhv_points = 0
+        files_processed = 0
+
+        # Process each MHV file
+        for gpkg_file in gpkg_files:
+            logger.info(f"Processing {Path(gpkg_file).name}")
+
+            try:
+                mhv = gpd.read_file(gpkg_file)
+            except Exception as e:
+                logger.warning(f"Could not read {gpkg_file}: {e}")
+                continue
+
+            # Filter: sword_flag=0 (not in SWORD) - strmorder already >= 3
+            subset = mhv[mhv['sword_flag'] == 0]
+            if len(subset) == 0:
+                logger.debug(f"No unmatched MHV points in {Path(gpkg_file).name}")
+                files_processed += 1
+                continue
+
+            mhv_x = subset['x'].values
+            mhv_y = subset['y'].values
+            total_mhv_points += len(subset)
+
+            # Build KD-tree from MHV points
+            mhv_pts = np.vstack((mhv_x, mhv_y)).T
+            kdt = sp.cKDTree(mhv_pts)
+
+            # Query: find closest MHV point to each SWORD node
+            distances, _ = kdt.query(node_pts, k=1)
+
+            # Flag nodes within threshold
+            matches = distances <= distance_threshold
+            matching_indices = np.where(matches)[0]
+
+            if len(matching_indices) > 0:
+                # Flag matching nodes
+                node_tribs[matching_indices] = 1
+
+                # Flag corresponding reaches
+                matching_reach_ids = np.unique(sword_nrid[matching_indices])
+                reach_mask = np.isin(reach_ids, matching_reach_ids)
+                rch_tribs[reach_mask] = 1
+
+            files_processed += 1
+
+        nodes_flagged = int(np.sum(node_tribs))
+        reaches_flagged = int(np.sum(rch_tribs))
+
+        logger.info(
+            f"Flagging {nodes_flagged} nodes and {reaches_flagged} reaches "
+            f"as tributaries from {total_mhv_points} MHV points"
+        )
+
+        # Update database
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'RECALCULATE',
+                'nodes',
+                entity_ids=[],
+                region=self._region,
+                reason=reason or "Recalculate trib_flag from MHV data",
+                details={
+                    'mhv_data_dir': str(mhv_data_dir),
+                    'distance_threshold': distance_threshold,
+                    'nodes_flagged': nodes_flagged,
+                    'reaches_flagged': reaches_flagged,
+                },
+            ):
+                self._update_trib_flag_in_db(
+                    sword_nid, node_tribs, reach_ids, rch_tribs
+                )
+        else:
+            self._update_trib_flag_in_db(
+                sword_nid, node_tribs, reach_ids, rch_tribs
+            )
+
+        return {
+            'nodes_flagged': nodes_flagged,
+            'reaches_flagged': reaches_flagged,
+            'mhv_files_processed': files_processed,
+            'total_mhv_points': total_mhv_points,
+        }
+
+    def _update_trib_flag_in_db(
+        self,
+        node_ids: 'np.ndarray',
+        node_flags: 'np.ndarray',
+        reach_ids: 'np.ndarray',
+        reach_flags: 'np.ndarray',
+    ) -> None:
+        """Update trib_flag values in database for nodes and reaches."""
+        import numpy as np
+
+        conn = self._sword.db.conn
+
+        # Update nodes
+        flagged_node_ids = node_ids[node_flags == 1]
+        unflagged_node_ids = node_ids[node_flags == 0]
+
+        if len(flagged_node_ids) > 0:
+            # Batch update for flagged nodes
+            for batch_start in range(0, len(flagged_node_ids), 1000):
+                batch = flagged_node_ids[batch_start:batch_start + 1000]
+                # Convert numpy int64 to Python int for DuckDB
+                batch_list = [int(x) for x in batch]
+                placeholders = ','.join(['?'] * len(batch_list))
+                conn.execute(f"""
+                    UPDATE nodes SET trib_flag = 1
+                    WHERE node_id IN ({placeholders}) AND region = ?
+                """, batch_list + [self._region])
+
+        if len(unflagged_node_ids) > 0:
+            # Batch update for unflagged nodes
+            for batch_start in range(0, len(unflagged_node_ids), 1000):
+                batch = unflagged_node_ids[batch_start:batch_start + 1000]
+                batch_list = [int(x) for x in batch]
+                placeholders = ','.join(['?'] * len(batch_list))
+                conn.execute(f"""
+                    UPDATE nodes SET trib_flag = 0
+                    WHERE node_id IN ({placeholders}) AND region = ?
+                """, batch_list + [self._region])
+
+        # Update reaches
+        flagged_reach_ids = reach_ids[reach_flags == 1]
+        unflagged_reach_ids = reach_ids[reach_flags == 0]
+
+        if len(flagged_reach_ids) > 0:
+            for batch_start in range(0, len(flagged_reach_ids), 1000):
+                batch = flagged_reach_ids[batch_start:batch_start + 1000]
+                batch_list = [int(x) for x in batch]
+                placeholders = ','.join(['?'] * len(batch_list))
+                conn.execute(f"""
+                    UPDATE reaches SET trib_flag = 1
+                    WHERE reach_id IN ({placeholders}) AND region = ?
+                """, batch_list + [self._region])
+
+        if len(unflagged_reach_ids) > 0:
+            for batch_start in range(0, len(unflagged_reach_ids), 1000):
+                batch = unflagged_reach_ids[batch_start:batch_start + 1000]
+                batch_list = [int(x) for x in batch]
+                placeholders = ','.join(['?'] * len(batch_list))
+                conn.execute(f"""
+                    UPDATE reaches SET trib_flag = 0
+                    WHERE reach_id IN ({placeholders}) AND region = ?
+                """, batch_list + [self._region])
+
+        logger.info("Updated trib_flag in database")
+
     # =========================================================================
     # STATUS AND UTILITY METHODS
     # =========================================================================

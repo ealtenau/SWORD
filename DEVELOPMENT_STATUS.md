@@ -168,7 +168,7 @@ Re-engineering the SWOT River Database (SWORD) from NetCDF to a modern DuckDB ba
 
 | Component | Status | Description |
 |-----------|--------|-------------|
-| DuckDB schema | COMPLETE | Schema v1.2.0 with composite keys |
+| DuckDB schema | COMPLETE | Schema v1.3.0 with composite keys |
 | Data migration | COMPLETE | All 6 regions migrated (9.9 GB) |
 | SWORD class | COMPLETE | Drop-in replacement for NetCDF version |
 | View classes | COMPLETE | CenterlinesView, NodesView, ReachesView |
@@ -302,12 +302,24 @@ workflow.close()
 
 - Branch: `gearon_dev3`
 - Recent work:
+  - **Testing infrastructure overhaul** (Jan 2026):
+    - Created `tests/sword_duckdb/conftest.py` with centralized fixtures
+    - Created minimal test database generator (`tests/sword_duckdb/fixtures/create_test_db.py`)
+    - Created integration tests (`tests/integration/test_workflow_integration.py`) - 13 tests
+    - Test runtime improved 16x (1.78s vs 28.83s with 8.26MB fixture vs 9.9GB production)
+  - **Bug fixes** (Jan 2026):
+    - Fixed SWORDWorkflow.load() attribute error (added `db` property to SWORD, `conn` property to SWORDDatabase)
+  - **Code quality improvements** (Jan 2026):
+    - Converted ALL print statements to logging across sword_duckdb package
+    - sword_class.py: 57 prints → logger (info/debug/warning)
+    - Other modules: sword_db.py, workflow.py, triggers.py, reactive.py, export.py, migrations.py
+    - Cleaned up stale MIGRATION_STATUS.md references
   - ReconstructionEngine with attribute source mappings
   - Provenance infrastructure (schema + ProvenanceLogger)
   - Transaction support in SWORDWorkflow
   - Reactive system completion
   - PostgreSQL export and change tracking
-  - Unit test suite (110+ tests)
+  - Unit test suite (120+ tests)
 
 ---
 
@@ -340,6 +352,7 @@ workflow.close()
 | 6 | `stream_order` recalculation | COMPLETE | Based on stream_order.py |
 | 6 | `path_segs` recalculation | COMPLETE | Based on stream_order.py |
 | 7 | `sinuosity` recalculation | COMPLETE | Ported from MATLAB SinuosityMinAreaVarMinReach.m |
+| 8 | `trib_flag` recalculation | COMPLETE | Using MHV_SWORD data with KD-tree spatial matching |
 
 ### Key Legacy File References
 
@@ -355,6 +368,36 @@ workflow.close()
 
 ---
 
+## Testing Infrastructure
+
+```
+tests/
+├── sword_duckdb/
+│   ├── conftest.py              # Centralized fixtures (session-scoped, writable)
+│   ├── fixtures/
+│   │   ├── create_test_db.py    # Generates 8.26MB minimal test database
+│   │   └── sword_test_minimal.duckdb
+│   ├── test_sword_class.py      # 28 tests - SWORD class functionality
+│   ├── test_sword_methods.py    # SWORD method tests
+│   ├── test_workflow.py         # SWORDWorkflow tests
+│   ├── test_provenance.py       # Provenance logging tests
+│   ├── test_reconstruction.py   # Reconstruction engine tests
+│   ├── test_reactive.py         # Reactive update tests
+│   ├── test_triggers.py         # PostgreSQL trigger tests
+│   └── test_export.py           # Export function tests
+└── integration/
+    └── test_workflow_integration.py  # 13 tests - end-to-end workflows
+```
+
+**Minimal Test Database Contents:**
+- 100 reaches (IDs 11000000000-11000000099)
+- 500 nodes (5 per reach)
+- 2,000 centerlines (20 per reach)
+- Full topology with 10 headwaters, 1 outlet
+- SWOT orbits and ice flags
+
+---
+
 ## Remaining Work / Future Enhancements
 
 **All core QGIS workflow operations are complete.** Remaining items require external source data:
@@ -362,11 +405,31 @@ workflow.close()
 | Item | Status | Blocker |
 |------|--------|---------|
 | `sinuosity` recalculation | **COMPLETE** | `recalculate_sinuosity()` ported from MATLAB |
-| `trib_flag` reconstruction | Pending | Needs MERIT Hydro Vector (MHV) source data |
+| `trib_flag` reconstruction | **COMPLETE** | `recalculate_trib_flag()` using MHV_SWORD data |
 | `facc` filtering reconstruction | Pending | Needs raw FACC raster values |
 | `stream_order` recalculation | **COMPLETE** | `recalculate_stream_order()` implemented |
 | `path_segs` recalculation | **COMPLETE** | `recalculate_path_segs()` implemented |
 
 **Note:** Most data is already populated from the NetCDF migration. Reconstruction methods exist for validation but are not required for normal workflow operations.
+
+### Code Quality Tasks (Low Priority)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Convert prints to logging | **COMPLETE** | All sword_duckdb modules now use logging |
+| Add type hints | **COMPLETE** | All public functions now have return type hints |
+| Wire provenance into WritableArray | **COMPLETE** | Optional provenance logging at array level |
+| Docstring coverage | Good | Most public APIs documented |
+
+**Logging Conversion Summary (Jan 2026):**
+- `sword_class.py` - 57 prints → logger (25 info, 18 debug, 14 warning)
+- `sword_db.py`, `workflow.py`, `triggers.py`, `reactive.py`, `export.py`, `migrations.py` - All converted
+- Remaining prints in sword_class.py are docstring examples (expected)
+
+**Type Hints Completion (Jan 2026):**
+- `views.py` - Added return types to WritableArray methods (27 functions)
+- `sword_class.py` - Added Generator type to batch_modify, reactive property
+- `reconstruction.py` - Added return type to _get_view
+- All modules now have consistent return type annotations
 
 ---

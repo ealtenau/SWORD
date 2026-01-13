@@ -566,6 +566,104 @@ class TestRecalculateSinuosity:
             assert sinuosity <= 10.0, "Sinuosity should be clamped to <= 10.0"
 
 
+class TestRecalculateTribFlag:
+    """Test recalculate_trib_flag workflow method."""
+
+    # Path to MHV_SWORD data - skip tests if not available
+    MHV_DATA_DIR = '/Volumes/SWORD_DATA/data/MHV_SWORD'
+
+    def test_recalculate_trib_flag_method_exists(self, temp_workflow):
+        """Test recalculate_trib_flag method exists."""
+        assert hasattr(temp_workflow, 'recalculate_trib_flag')
+        assert callable(temp_workflow.recalculate_trib_flag)
+
+    def test_recalculate_trib_flag_requires_load(self, unloaded_workflow):
+        """Test recalculate_trib_flag raises error when not loaded."""
+        with pytest.raises(RuntimeError, match="No database loaded"):
+            unloaded_workflow.recalculate_trib_flag(self.MHV_DATA_DIR)
+
+    def test_recalculate_trib_flag_requires_valid_dir(self, temp_workflow):
+        """Test recalculate_trib_flag raises error for invalid directory."""
+        with pytest.raises(FileNotFoundError):
+            temp_workflow.recalculate_trib_flag('/nonexistent/path')
+
+    def test_recalculate_trib_flag_returns_dict(self, temp_workflow):
+        """Test recalculate_trib_flag returns proper dict."""
+        if not os.path.exists(self.MHV_DATA_DIR):
+            pytest.skip(f"MHV data not available: {self.MHV_DATA_DIR}")
+
+        result = temp_workflow.recalculate_trib_flag(self.MHV_DATA_DIR)
+
+        assert isinstance(result, dict)
+        assert 'nodes_flagged' in result
+        assert 'reaches_flagged' in result
+        assert 'mhv_files_processed' in result
+        assert 'total_mhv_points' in result
+
+    def test_recalculate_trib_flag_values_reasonable(self, temp_workflow):
+        """Test that trib_flag results are within expected range."""
+        if not os.path.exists(self.MHV_DATA_DIR):
+            pytest.skip(f"MHV data not available: {self.MHV_DATA_DIR}")
+
+        result = temp_workflow.recalculate_trib_flag(self.MHV_DATA_DIR)
+
+        # Should process at least some files
+        assert result['mhv_files_processed'] > 0
+
+        # Nodes flagged should be non-negative
+        assert result['nodes_flagged'] >= 0
+        assert result['reaches_flagged'] >= 0
+
+        # Should have processed some MHV points
+        assert result['total_mhv_points'] >= 0
+
+    def test_recalculate_trib_flag_updates_database(self, temp_workflow):
+        """Test that trib_flag values are actually updated in the database."""
+        if not os.path.exists(self.MHV_DATA_DIR):
+            pytest.skip(f"MHV data not available: {self.MHV_DATA_DIR}")
+
+        result = temp_workflow.recalculate_trib_flag(self.MHV_DATA_DIR)
+
+        # Verify database was updated
+        conn = temp_workflow._sword._db.connect()
+
+        # Count nodes with trib_flag=1
+        flagged_nodes = conn.execute("""
+            SELECT COUNT(*) FROM nodes
+            WHERE region = ? AND trib_flag = 1
+        """, [temp_workflow._sword.region]).fetchone()[0]
+
+        assert flagged_nodes == result['nodes_flagged']
+
+        # Count reaches with trib_flag=1
+        flagged_reaches = conn.execute("""
+            SELECT COUNT(*) FROM reaches
+            WHERE region = ? AND trib_flag = 1
+        """, [temp_workflow._sword.region]).fetchone()[0]
+
+        assert flagged_reaches == result['reaches_flagged']
+
+    def test_recalculate_trib_flag_custom_threshold(self, temp_workflow):
+        """Test recalculate_trib_flag with custom distance threshold."""
+        if not os.path.exists(self.MHV_DATA_DIR):
+            pytest.skip(f"MHV data not available: {self.MHV_DATA_DIR}")
+
+        # Use a smaller threshold - should flag fewer nodes
+        result_small = temp_workflow.recalculate_trib_flag(
+            self.MHV_DATA_DIR,
+            distance_threshold=0.001  # ~111m
+        )
+
+        # Use a larger threshold - should flag more nodes
+        result_large = temp_workflow.recalculate_trib_flag(
+            self.MHV_DATA_DIR,
+            distance_threshold=0.005  # ~555m
+        )
+
+        # Larger threshold should generally flag more or equal nodes
+        assert result_large['nodes_flagged'] >= result_small['nodes_flagged']
+
+
 # =============================================================================
 # SNAPSHOT VERSIONING TESTS
 # =============================================================================
