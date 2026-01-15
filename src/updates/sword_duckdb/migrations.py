@@ -29,6 +29,7 @@ Example Usage:
 
 from __future__ import annotations
 
+import logging
 import sys
 import os
 from pathlib import Path
@@ -42,6 +43,8 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from .sword_db import SWORDDatabase
+
+logger = logging.getLogger(__name__)
 
 
 # Region codes and their NetCDF file prefixes
@@ -102,63 +105,63 @@ def migrate_region(
     }
 
     if verbose:
-        print(f"Starting migration for {region} from {nc_path}")
+        logger.info(f"Starting migration for {region} from {nc_path}")
 
     # Read NetCDF data
     if verbose:
-        print("  Reading NetCDF file...")
+        logger.info("Reading NetCDF file...")
     centerlines, nodes, reaches = read_nc(nc_path)
 
     conn = db.connect()
 
     # Migrate centerlines
     if verbose:
-        print(f"  Migrating centerlines ({len(centerlines.cl_id):,} records)...")
+        logger.info(f"Migrating centerlines ({len(centerlines.cl_id):,} records)...")
     cl_count = _migrate_centerlines(conn, centerlines, region, version, batch_size)
     stats['row_counts']['centerlines'] = cl_count
 
     # Migrate centerline neighbors
     if verbose:
-        print("  Migrating centerline neighbors...")
+        logger.info("Migrating centerline neighbors...")
     cl_neighbor_count = _migrate_centerline_neighbors(conn, centerlines, region, batch_size)
     stats['row_counts']['centerline_neighbors'] = cl_neighbor_count
 
     # Migrate nodes
     if verbose:
-        print(f"  Migrating nodes ({len(nodes.id):,} records)...")
+        logger.info(f"Migrating nodes ({len(nodes.id):,} records)...")
     node_count = _migrate_nodes(conn, nodes, region, version, batch_size)
     stats['row_counts']['nodes'] = node_count
 
     # Migrate reaches
     if verbose:
-        print(f"  Migrating reaches ({len(reaches.id):,} records)...")
+        logger.info(f"Migrating reaches ({len(reaches.id):,} records)...")
     reach_count = _migrate_reaches(conn, reaches, region, version, batch_size)
     stats['row_counts']['reaches'] = reach_count
 
     # Migrate reach topology
     if verbose:
-        print("  Migrating reach topology...")
+        logger.info("Migrating reach topology...")
     topo_count = _migrate_reach_topology(conn, reaches, region, batch_size)
     stats['row_counts']['reach_topology'] = topo_count
 
     # Migrate SWOT orbits
     if verbose:
-        print("  Migrating SWOT orbits...")
+        logger.info("Migrating SWOT orbits...")
     orbit_count = _migrate_swot_orbits(conn, reaches, region, batch_size)
     stats['row_counts']['reach_swot_orbits'] = orbit_count
 
     # Build geometry columns (optional - can cause memory issues on large datasets)
     if build_geometry and db.spatial_available():
         if verbose:
-            print("  Building geometry columns...")
+            logger.info("Building geometry columns...")
         _build_geometry(conn, region)
 
     stats['end_time'] = datetime.now()
     stats['duration'] = stats['end_time'] - stats['start_time']
 
     if verbose:
-        print(f"  Migration complete in {stats['duration']}")
-        print(f"  Row counts: {stats['row_counts']}")
+        logger.info(f"Migration complete in {stats['duration']}")
+        logger.info(f"Row counts: {stats['row_counts']}")
 
     return stats
 
@@ -518,7 +521,7 @@ def build_all_geometry(db: SWORDDatabase, regions: list = None, verbose: bool = 
     """
     if not db.spatial_available():
         if verbose:
-            print("Warning: Spatial extension not available, skipping geometry build")
+            logger.warning("Spatial extension not available, skipping geometry build")
         return
 
     conn = db.connect()
@@ -530,11 +533,11 @@ def build_all_geometry(db: SWORDDatabase, regions: list = None, verbose: bool = 
 
     for region in regions:
         if verbose:
-            print(f"Building geometry for {region}...")
+            logger.info(f"Building geometry for {region}...")
         _build_geometry(conn, region)
 
     if verbose:
-        print("Geometry build complete")
+        logger.info("Geometry build complete")
 
 
 def _decode_strings(arr: np.ndarray) -> list:
@@ -597,7 +600,7 @@ def migrate_all_regions(
             all_stats[region] = stats
         else:
             if verbose:
-                print(f"Warning: NetCDF file not found for {region}: {nc_path}")
+                logger.warning(f"NetCDF file not found for {region}: {nc_path}")
 
     return all_stats
 

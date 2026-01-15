@@ -2888,6 +2888,363 @@ class SWORDWorkflow:
 
         logger.info("Updated trib_flag in database")
 
+    def recalculate_facc(
+        self,
+        merit_hydro_dir: str,
+        facc_threshold: float = 0.01,
+        k_neighbors: int = 20,
+        dry_run: bool = False,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Recalculate flow accumulation (facc) from MERIT Hydro rasters.
+
+        Improved algorithm:
+        1. Extract facc from MERIT using KD-tree (median of k nearest river pixels)
+        2. Validate using network topology (facc must increase downstream)
+        3. Smooth within reaches for monotonic progression
+        4. Sanity checks for unreasonable jumps
+
+        Args:
+            merit_hydro_dir: Path to MERIT Hydro data directory containing
+                             region subfolders with upa rasters.
+            facc_threshold: Minimum facc value to consider as river pixel.
+                           Defaults to 0.01 (very permissive to catch small tribs).
+            k_neighbors: Number of nearest MERIT points to use. Defaults to 20.
+            dry_run: If True, return comparison without updating database.
+            reason: Optional reason for the recalculation.
+
+        Returns:
+            Dict with extraction stats, validation results, and update counts.
+
+        Raises:
+            RuntimeError: If no database is loaded.
+            FileNotFoundError: If MERIT Hydro data directory not found.
+        """
+        from pathlib import Path
+        import numpy as np
+        import rasterio
+        from rasterio.errors import RasterioIOError
+        from scipy import spatial as sp
+
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        mh_path = Path(merit_hydro_dir)
+        upa_path = mh_path / self._region / 'upa'
+        if not upa_path.exists():
+            raise FileNotFoundError(
+                f"MERIT Hydro upa data not found for region {self._region}: {upa_path}"
+            )
+
+        logger.info(f"Recalculating facc from MERIT Hydro data at {upa_path}")
+
+        # Get node coordinates and current facc
+        conn = self._sword.db.conn
+        nodes_df = conn.execute("""
+            SELECT node_id, reach_id, x, y, facc, wse
+            FROM nodes
+            WHERE region = ?
+            ORDER BY reach_id, node_id
+        """, [self._region]).fetchdf()
+
+        node_ids = nodes_df['node_id'].values
+        reach_ids_per_node = nodes_df['reach_id'].values
+        node_x = nodes_df['x'].values
+        node_y = nodes_df['y'].values
+        node_wse = nodes_df['wse'].values
+        current_facc = nodes_df['facc'].values
+
+        # Get reach topology for validation (downstream neighbors)
+        topology_df = conn.execute("""
+            SELECT reach_id, neighbor_reach_id
+            FROM reach_topology
+            WHERE region = ? AND direction = 'down'
+        """, [self._region]).fetchdf()
+
+        # Build tile index - find all upa tiles
+        tile_files = {}
+        for subdir in upa_path.iterdir():
+            if subdir.is_dir() and subdir.name.startswith('upa_'):
+                for tif in subdir.glob('*.tif'):
+                    if not tif.name.startswith('._'):
+                        tile_files[tif.stem.replace('_upa', '')] = str(tif)
+
+        logger.info(f"Found {len(tile_files)} upa tiles")
+
+        # =====================================================================
+        # PHASE 1: Extract raw facc from MERIT Hydro
+        # =====================================================================
+        raw_facc = np.full(len(node_ids), np.nan, dtype=np.float64)
+        tiles_used = set()
+
+        # Group nodes by tile for efficient processing
+        tile_to_indices = {}
+        for i, (x, y) in enumerate(zip(node_x, node_y)):
+            tile_name = self._get_merit_tile_name(x, y)
+            if tile_name in tile_files:
+                if tile_name not in tile_to_indices:
+                    tile_to_indices[tile_name] = []
+                tile_to_indices[tile_name].append(i)
+
+        logger.info(f"Phase 1: Extracting from {len(tile_to_indices)} tiles")
+
+        for tile_idx, (tile_name, indices) in enumerate(tile_to_indices.items()):
+            if tile_idx % 20 == 0:
+                logger.info(f"  Processing tile {tile_idx + 1}/{len(tile_to_indices)}")
+
+            try:
+                with rasterio.open(tile_files[tile_name]) as src:
+                    data = src.read(1)
+                    transform = src.transform
+
+                    # Get coordinates of valid river pixels (facc > threshold)
+                    valid_mask = data > facc_threshold
+                    valid_rows, valid_cols = np.where(valid_mask)
+
+                    if len(valid_rows) == 0:
+                        continue
+
+                    # Convert pixel coords to geographic coords
+                    mh_x = transform.c + (valid_cols + 0.5) * transform.a
+                    mh_y = transform.f + (valid_rows + 0.5) * transform.e
+                    mh_facc = data[valid_rows, valid_cols]
+
+                    # Build KD-tree of valid MERIT points
+                    mh_pts = np.vstack((mh_x, mh_y)).T
+                    kdt = sp.cKDTree(mh_pts)
+
+                    # Query for each node in this tile
+                    for i in indices:
+                        x, y = node_x[i], node_y[i]
+                        node_pt = np.array([[x, y]])
+
+                        # Find k nearest valid MERIT points
+                        k = min(k_neighbors, len(mh_pts))
+                        dists, inds = kdt.query(node_pt, k=k)
+                        dists = dists.flatten()
+                        inds = inds.flatten()
+
+                        # Get facc values of nearest points and take median
+                        neighbor_facc = mh_facc[inds]
+                        raw_facc[i] = np.median(neighbor_facc)
+
+                    tiles_used.add(tile_name)
+
+            except (RasterioIOError, IndexError) as e:
+                logger.warning(f"Error reading tile {tile_name}: {e}")
+                continue
+
+        valid_extractions = int(np.sum(~np.isnan(raw_facc)))
+        logger.info(f"Phase 1 complete: {valid_extractions}/{len(node_ids)} extracted")
+
+        # =====================================================================
+        # PHASE 2: Within-reach filtering (legacy algorithm improved)
+        # =====================================================================
+        logger.info("Phase 2: Within-reach filtering")
+        filtered_facc = np.copy(raw_facc)
+        unique_reaches = np.unique(reach_ids_per_node)
+
+        for reach_id in unique_reaches:
+            reach_mask = reach_ids_per_node == reach_id
+            reach_facc = raw_facc[reach_mask]
+            reach_wse = node_wse[reach_mask]
+
+            if np.all(np.isnan(reach_facc)) or np.sum(~np.isnan(reach_facc)) < 2:
+                continue
+
+            # Apply improved filter: remove outliers, interpolate
+            filtered_reach = self._filter_facc_reach(reach_facc, reach_wse)
+            filtered_facc[reach_mask] = filtered_reach
+
+        # =====================================================================
+        # PHASE 3: Network topology validation
+        # =====================================================================
+        logger.info("Phase 3: Network topology validation")
+        validated_facc = np.copy(filtered_facc)
+        violations = []
+
+        # Build reach-level facc (max of nodes in reach)
+        reach_facc_new = {}
+        for reach_id in unique_reaches:
+            reach_mask = reach_ids_per_node == reach_id
+            reach_vals = filtered_facc[reach_mask]
+            if not np.all(np.isnan(reach_vals)):
+                reach_facc_new[reach_id] = np.nanmax(reach_vals)
+
+        # Check topology: facc should increase downstream
+        for _, row in topology_df.iterrows():
+            reach_id = row['reach_id']
+            dn_id = row['neighbor_reach_id']
+
+            if reach_id not in reach_facc_new or dn_id not in reach_facc_new:
+                continue
+
+            upstream_facc = reach_facc_new[reach_id]
+            downstream_facc = reach_facc_new[dn_id]
+
+            # Violation: upstream has MORE facc than downstream
+            if upstream_facc > downstream_facc * 1.1:  # 10% tolerance
+                violations.append({
+                    'upstream_reach': int(reach_id),
+                    'downstream_reach': int(dn_id),
+                    'upstream_facc': float(upstream_facc),
+                    'downstream_facc': float(downstream_facc),
+                })
+
+        logger.info(f"Phase 3 complete: {len(violations)} topology violations found")
+
+        # =====================================================================
+        # PHASE 4: Sanity checks
+        # =====================================================================
+        logger.info("Phase 4: Sanity checks")
+        sanity_issues = {
+            'negative_values': int(np.sum(validated_facc < 0)),
+            'zero_values': int(np.sum(validated_facc == 0)),
+            'topology_violations': len(violations),
+        }
+
+        # Check for unreasonable jumps within reaches
+        jump_count = 0
+        for reach_id in unique_reaches:
+            reach_mask = reach_ids_per_node == reach_id
+            reach_vals = validated_facc[reach_mask]
+            if len(reach_vals) > 1 and not np.all(np.isnan(reach_vals)):
+                diffs = np.abs(np.diff(reach_vals[~np.isnan(reach_vals)]))
+                max_val = np.nanmax(reach_vals)
+                if max_val > 0:
+                    # Flag jumps > 50% of max value
+                    big_jumps = np.sum(diffs > max_val * 0.5)
+                    jump_count += big_jumps
+
+        sanity_issues['large_jumps_within_reach'] = jump_count
+
+        # =====================================================================
+        # PHASE 5: Update database (unless dry_run)
+        # =====================================================================
+        result = {
+            'total_nodes': len(node_ids),
+            'valid_extractions': valid_extractions,
+            'tiles_used': len(tiles_used),
+            'topology_violations': len(violations),
+            'sanity_issues': sanity_issues,
+            'sample_violations': violations[:10] if violations else [],
+        }
+
+        # Compare with current values
+        valid_both = ~np.isnan(validated_facc) & (current_facc > 0)
+        if np.sum(valid_both) > 0:
+            pct_diffs = np.abs(validated_facc[valid_both] - current_facc[valid_both])
+            pct_diffs = pct_diffs / current_facc[valid_both] * 100
+            result['comparison'] = {
+                'nodes_compared': int(np.sum(valid_both)),
+                'median_pct_diff': float(np.median(pct_diffs)),
+                'nodes_within_10pct': int(np.sum(pct_diffs < 10)),
+                'nodes_over_100pct': int(np.sum(pct_diffs > 100)),
+            }
+
+        if dry_run:
+            logger.info("Dry run - no database updates")
+            result['dry_run'] = True
+            return result
+
+        # Update nodes
+        logger.info("Phase 5: Updating database")
+        nodes_updated = 0
+        for i, (nid, facc_val) in enumerate(zip(node_ids, validated_facc)):
+            if not np.isnan(facc_val) and facc_val > 0:
+                conn.execute("""
+                    UPDATE nodes SET facc = ?
+                    WHERE node_id = ? AND region = ?
+                """, [float(facc_val), int(nid), self._region])
+                nodes_updated += 1
+
+        # Update reaches (max facc of nodes)
+        reaches_updated = 0
+        for reach_id in unique_reaches:
+            reach_mask = reach_ids_per_node == reach_id
+            reach_vals = validated_facc[reach_mask]
+            if not np.all(np.isnan(reach_vals)):
+                max_facc = np.nanmax(reach_vals)
+                if max_facc > 0:
+                    conn.execute("""
+                        UPDATE reaches SET facc = ?
+                        WHERE reach_id = ? AND region = ?
+                    """, [float(max_facc), int(reach_id), self._region])
+                    reaches_updated += 1
+
+        result['nodes_updated'] = nodes_updated
+        result['reaches_updated'] = reaches_updated
+        logger.info(f"Updated {nodes_updated} nodes and {reaches_updated} reaches")
+
+        return result
+
+    def _get_merit_tile_name(self, lon: float, lat: float) -> str:
+        """Get MERIT Hydro tile name for a coordinate."""
+        import math
+
+        # MERIT tiles are 5x5 degrees, named by lower-left corner
+        lat_tile = int(math.floor(lat / 5) * 5)
+        lon_tile = int(math.floor(lon / 5) * 5)
+
+        # Format: n{lat}w{lon} or n{lat}e{lon}
+        lat_str = f"n{abs(lat_tile):02d}" if lat_tile >= 0 else f"s{abs(lat_tile):02d}"
+        lon_str = f"w{abs(lon_tile):03d}" if lon_tile < 0 else f"e{abs(lon_tile):03d}"
+
+        return f"{lat_str}{lon_str}"
+
+    def _filter_facc_reach(
+        self,
+        facc: 'np.ndarray',
+        wse: 'np.ndarray',
+    ) -> 'np.ndarray':
+        """
+        Filter facc values for a single reach.
+
+        Ensures monotonic downstream increase by interpolating between
+        min and max values based on elevation direction.
+        """
+        import numpy as np
+
+        if len(facc) == 0 or np.all(np.isnan(facc)):
+            return facc
+
+        result = np.copy(facc)
+        valid_mask = ~np.isnan(facc)
+
+        if np.sum(valid_mask) < 2:
+            return result
+
+        # Get min/max of valid values
+        facc_min = np.nanmin(facc)
+        facc_max = np.nanmax(facc)
+
+        # If range is too small, just return original values
+        if facc_max - facc_min < facc_max * 0.01:
+            return result
+
+        # Interpolate between min and max
+        interp_vals = np.linspace(facc_min, facc_max, len(facc))
+
+        # Determine direction using elevation
+        wse_valid = wse[~np.isnan(wse)]
+        if len(wse_valid) >= 2:
+            wse_beg = wse[0] if not np.isnan(wse[0]) else wse_valid[0]
+            wse_end = wse[-1] if not np.isnan(wse[-1]) else wse_valid[-1]
+
+            if wse_end == wse_beg:
+                result[:] = facc_max
+            elif wse_end > wse_beg:
+                # End is higher = upstream, reverse interpolation
+                result = interp_vals[::-1]
+            else:
+                # End is lower = downstream
+                result = interp_vals
+        else:
+            result = interp_vals
+
+        return result
+
     # =========================================================================
     # STATUS AND UTILITY METHODS
     # =========================================================================
@@ -2923,6 +3280,132 @@ class SWORDWorkflow:
                 status["user_id"] = self._provenance.user_id
 
         return status
+
+    def fix_topology_violations(
+        self,
+        min_ratio: float = 100.0,
+        dry_run: bool = True,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Remove extreme topology violations where upstream facc >> downstream facc.
+
+        These are cases where a large river is incorrectly linked as flowing INTO
+        a small tributary, which is physically impossible. This method removes
+        the erroneous downstream links from reach_topology.
+
+        Args:
+            min_ratio: Minimum facc ratio (upstream/downstream) to consider a violation.
+                       Default 100 means upstream is 100x larger than downstream.
+            dry_run: If True, only report what would be removed without making changes.
+            reason: Optional reason for the modification.
+
+        Returns:
+            Dict with statistics about violations found and removed.
+
+        Example:
+            # Preview what would be removed
+            result = workflow.fix_topology_violations(min_ratio=100, dry_run=True)
+            print(f"Would remove {result['violations_found']} erroneous links")
+
+            # Actually remove them
+            result = workflow.fix_topology_violations(min_ratio=100, dry_run=False)
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        conn = self._sword.db.conn
+
+        # Find extreme violations
+        violations_df = conn.execute("""
+            WITH reach_facc AS (
+                SELECT
+                    reach_id,
+                    AVG(facc) as avg_facc
+                FROM nodes
+                WHERE facc IS NOT NULL AND region = ?
+                GROUP BY reach_id
+            ),
+            violations AS (
+                SELECT
+                    t.reach_id as upstream_reach,
+                    t.neighbor_reach_id as downstream_reach,
+                    r1.avg_facc as upstream_facc,
+                    r2.avg_facc as downstream_facc,
+                    r1.avg_facc / r2.avg_facc as ratio
+                FROM reach_topology t
+                JOIN reach_facc r1 ON t.reach_id = r1.reach_id
+                JOIN reach_facc r2 ON t.neighbor_reach_id = r2.reach_id
+                WHERE t.direction = 'down'
+                  AND t.region = ?
+                  AND r2.avg_facc > 0
+                  AND r1.avg_facc / r2.avg_facc >= ?
+            )
+            SELECT * FROM violations
+            ORDER BY ratio DESC
+        """, [self._region, self._region, min_ratio]).fetchdf()
+
+        result = {
+            'violations_found': len(violations_df),
+            'min_ratio_threshold': min_ratio,
+            'dry_run': dry_run,
+        }
+
+        if len(violations_df) == 0:
+            logger.info(f"No topology violations found with ratio >= {min_ratio}")
+            return result
+
+        # Add sample violations to result
+        samples = []
+        for _, row in violations_df.head(10).iterrows():
+            samples.append({
+                'upstream_reach': int(row['upstream_reach']),
+                'downstream_reach': int(row['downstream_reach']),
+                'upstream_facc': float(row['upstream_facc']),
+                'downstream_facc': float(row['downstream_facc']),
+                'ratio': float(row['ratio']),
+            })
+        result['sample_violations'] = samples
+
+        if dry_run:
+            logger.info(
+                f"Dry run: Would remove {len(violations_df)} erroneous topology links "
+                f"(ratio >= {min_ratio})"
+            )
+            return result
+
+        # Remove the erroneous links
+        removed_count = 0
+        for _, row in violations_df.iterrows():
+            up_reach = int(row['upstream_reach'])
+            dn_reach = int(row['downstream_reach'])
+
+            # Delete the downstream link
+            conn.execute("""
+                DELETE FROM reach_topology
+                WHERE reach_id = ?
+                  AND neighbor_reach_id = ?
+                  AND direction = 'down'
+                  AND region = ?
+            """, [up_reach, dn_reach, self._region])
+
+            # Also delete the corresponding upstream link (reverse direction)
+            conn.execute("""
+                DELETE FROM reach_topology
+                WHERE reach_id = ?
+                  AND neighbor_reach_id = ?
+                  AND direction = 'up'
+                  AND region = ?
+            """, [dn_reach, up_reach, self._region])
+
+            removed_count += 1
+
+        result['links_removed'] = removed_count
+        logger.info(
+            f"Removed {removed_count} erroneous topology links (ratio >= {min_ratio})"
+        )
+
+        return result
 
     def __repr__(self) -> str:
         if self.is_loaded:
