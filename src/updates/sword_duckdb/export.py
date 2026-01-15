@@ -28,21 +28,25 @@ Current implementation assumes stable connection. Should add:
 2. Transaction rollback on partial failure
 3. Progress checkpointing for large exports
 4. Informative error messages for common failures (auth, network, disk)
-See MIGRATION_STATUS.md "Immediate TODOs" section.
+See DEVELOPMENT_STATUS.md for tracking.
 """
 
 from __future__ import annotations
 
 import gc
+import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
+    import psycopg2
     from .sword_class import SWORD
+
+logger = logging.getLogger(__name__)
 
 
 # PostgreSQL/PostGIS schema definitions
@@ -169,7 +173,7 @@ CREATE TABLE IF NOT EXISTS {table_name} (
 """
 
 
-def _get_pg_connection(connection_string: str):
+def _get_pg_connection(connection_string: str) -> 'psycopg2.extensions.connection':
     """
     Get a PostgreSQL connection using psycopg2.
 
@@ -194,7 +198,7 @@ def _get_pg_connection(connection_string: str):
     return psycopg2.connect(connection_string)
 
 
-def _ensure_postgis(conn) -> bool:
+def _ensure_postgis(conn: 'psycopg2.extensions.connection') -> bool:
     """
     Ensure PostGIS extension is enabled.
 
@@ -207,7 +211,7 @@ def _ensure_postgis(conn) -> bool:
         return True
     except Exception as e:
         conn.rollback()
-        print(f"Warning: Could not enable PostGIS: {e}")
+        logger.warning(f"Could not enable PostGIS: {e}")
         return False
     finally:
         cursor.close()
@@ -294,7 +298,7 @@ def export_to_postgres(
             table_name = f"{prefix}{table}" if prefix else table
 
             if verbose:
-                print(f"Exporting {table} to {table_name}...")
+                logger.info(f"Exporting {table} to {table_name}...")
 
             if table == 'reaches':
                 count = _export_reaches_to_pg(
@@ -312,7 +316,7 @@ def export_to_postgres(
                     drop_existing, batch_size, has_postgis, verbose
                 )
             else:
-                print(f"Unknown table: {table}")
+                logger.warning(f"Unknown table: {table}")
                 continue
 
             results[table_name] = count
@@ -321,7 +325,7 @@ def export_to_postgres(
         if include_topology and 'reaches' in tables:
             topo_name = f"{prefix}reach_topology" if prefix else "reach_topology"
             if verbose:
-                print(f"Exporting topology to {topo_name}...")
+                logger.info(f"Exporting topology to {topo_name}...")
             count = _export_topology_to_pg(
                 sword, cursor, conn, topo_name,
                 drop_existing, batch_size, verbose
@@ -341,15 +345,15 @@ def export_to_postgres(
         conn.close()
 
     if verbose:
-        print(f"Export complete: {results}")
+        logger.info(f"Export complete: {results}")
 
     return results
 
 
 def _export_reaches_to_pg(
     sword: 'SWORD',
-    cursor,
-    conn,
+    cursor: 'psycopg2.extensions.cursor',
+    conn: 'psycopg2.extensions.connection',
     table_name: str,
     drop_existing: bool,
     batch_size: int,
@@ -437,7 +441,7 @@ def _export_reaches_to_pg(
         cursor.executemany(insert_sql, values)
         count += len(batch)
         if verbose and count % 50000 == 0:
-            print(f"  Inserted {count}/{n_reaches} reaches...")
+            logger.debug(f"Inserted {count}/{n_reaches} reaches...")
 
     conn.commit()
 
@@ -455,8 +459,8 @@ def _export_reaches_to_pg(
 
 def _export_nodes_to_pg(
     sword: 'SWORD',
-    cursor,
-    conn,
+    cursor: 'psycopg2.extensions.cursor',
+    conn: 'psycopg2.extensions.connection',
     table_name: str,
     drop_existing: bool,
     batch_size: int,
@@ -544,7 +548,7 @@ def _export_nodes_to_pg(
             cursor.executemany(insert_sql, values)
             count += len(batch)
             if verbose and count % 100000 == 0:
-                print(f"  Inserted {count}/{n_nodes} nodes...")
+                logger.debug(f"Inserted {count}/{n_nodes} nodes...")
 
         conn.commit()
     finally:
@@ -565,8 +569,8 @@ def _export_nodes_to_pg(
 
 def _export_centerlines_to_pg(
     sword: 'SWORD',
-    cursor,
-    conn,
+    cursor: 'psycopg2.extensions.cursor',
+    conn: 'psycopg2.extensions.connection',
     table_name: str,
     drop_existing: bool,
     batch_size: int,
@@ -620,7 +624,7 @@ def _export_centerlines_to_pg(
             cursor.executemany(insert_sql, values)
             count += len(batch)
             if verbose and count % 500000 == 0:
-                print(f"  Inserted {count}/{n_cls} centerlines...")
+                logger.debug(f"Inserted {count}/{n_cls} centerlines...")
 
         conn.commit()
     finally:
@@ -641,8 +645,8 @@ def _export_centerlines_to_pg(
 
 def _export_topology_to_pg(
     sword: 'SWORD',
-    cursor,
-    conn,
+    cursor: 'psycopg2.extensions.cursor',
+    conn: 'psycopg2.extensions.connection',
     table_name: str,
     drop_existing: bool,
     batch_size: int,
@@ -693,13 +697,18 @@ def _export_topology_to_pg(
         cursor.executemany(insert_sql, batch)
         count += len(batch)
         if verbose and count % 100000 == 0:
-            print(f"  Inserted {count}/{len(records)} topology records...")
+            logger.debug(f"Inserted {count}/{len(records)} topology records...")
 
     conn.commit()
     return count
 
 
-def _create_pg_spatial_index(cursor, conn, table_name: str, verbose: bool):
+def _create_pg_spatial_index(
+    cursor: 'psycopg2.extensions.cursor',
+    conn: 'psycopg2.extensions.connection',
+    table_name: str,
+    verbose: bool
+) -> None:
     """Create spatial index on PostGIS geometry column."""
     try:
         cursor.execute(f"""
@@ -708,10 +717,10 @@ def _create_pg_spatial_index(cursor, conn, table_name: str, verbose: bool):
         """)
         conn.commit()
         if verbose:
-            print(f"  Created spatial index on {table_name}")
+            logger.debug(f"Created spatial index on {table_name}")
     except Exception as e:
         conn.rollback()
-        print(f"  Warning: Could not create spatial index: {e}")
+        logger.warning(f"Could not create spatial index: {e}")
 
 
 def export_to_geoparquet(
@@ -935,7 +944,7 @@ def sync_from_postgres(
 
 def _sync_reaches_from_pg(
     sword: 'SWORD',
-    cursor,
+    cursor: 'psycopg2.extensions.cursor',
     table_name: str,
     changed_only: bool,
     verbose: bool
@@ -966,7 +975,7 @@ def _sync_reaches_from_pg(
     rows = cursor.fetchall()
 
     if verbose:
-        print(f"Syncing {len(rows)} reaches from {table_name}...")
+        logger.info(f"Syncing {len(rows)} reaches from {table_name}...")
 
     updated = 0
     for row in rows:
@@ -992,7 +1001,7 @@ def _sync_reaches_from_pg(
 
 def _sync_nodes_from_pg(
     sword: 'SWORD',
-    cursor,
+    cursor: 'psycopg2.extensions.cursor',
     table_name: str,
     changed_only: bool,
     verbose: bool
@@ -1020,7 +1029,7 @@ def _sync_nodes_from_pg(
     rows = cursor.fetchall()
 
     if verbose:
-        print(f"Syncing {len(rows)} nodes from {table_name}...")
+        logger.info(f"Syncing {len(rows)} nodes from {table_name}...")
 
     # Disable GC during bulk updates
     gc_was_enabled = gc.isenabled()

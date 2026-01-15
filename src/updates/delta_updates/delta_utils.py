@@ -394,7 +394,7 @@ def cut_delta_segments(delta_cls, thresh):
     delta_cls.new_n_rch_down = np.copy(delta_cls.n_rch_down)
     check_topo_down = []; check_topo_up = []
     if len(cut_rchs) == 0:
-        print('----> No long segments')
+        logger.info('No long segments found - no cutting required')
     else:
         for ind in list(range(len(cut_rchs))):
             #Finding current reach id and length.
@@ -592,8 +592,6 @@ def find_tributary_junctions(sword, delta_tribs):
     # uniq_segs = np.unique(sword.centerlines.reach_id[0,:])
     uniq_segs = delta_tribs
     for ind in list(range(len(uniq_segs))):
-        # print(ind, len(uniq_segs)-1)
-
         # Isolate endpoints for the edited segment.
         seg = np.where(sword.centerlines.reach_id[0,:] == uniq_segs[ind])[0]
         if len(seg) == 0:
@@ -779,10 +777,10 @@ def find_ds_sword_rchs(delta_cls, sword, pt_radius):
                         delete_rchs = np.unique(delete_rchs)
                     else:
                         delete_rchs = np.unique(ds_rchs)
-            #if multiple reaches are detected or no reaches are detected print warnings. 
+            #if multiple reaches are detected or no reaches are detected log warnings.
             else:
-                print("!!! WARNING: insufficient junction reaches detected !!!")
-                print("----> Check 'find_ds_sword_rchs' function in 'delta_utils.py'")
+                logger.warning("Insufficient junction reaches detected")
+                logger.debug("Check 'find_ds_sword_rchs' function in 'delta_utils.py'")
 
     else:
         #don't delete reaches. 
@@ -859,9 +857,8 @@ def number_segments(delta_cls):
     cnt = 1
     ### While loop 
     while len(start_rchs) > 0:
-        #for loop to go through all start_rchs, which are the upstream neighbors of 
-        #the previously updated reaches. The first reach is any outlet. 
-        # print('LOOP:',loop, start_rchs)
+        #for loop to go through all start_rchs, which are the upstream neighbors of
+        #the previously updated reaches. The first reach is any outlet.
         up_ngh_list = []
         for r in list(range(len(start_rchs))):
             rch = np.where(delta_cls.new_seg == start_rchs[r])[0]
@@ -913,14 +910,11 @@ def number_segments(delta_cls):
                     #just randomly fill in reach numbers... needed for amazon... odd topology...
                     na_rchs = np.unique(delta_cls.new_seg[np.where(rch_num == -9999)[0]])
                     start_rchs = np.array([na_rchs[0]])
-                    #find reach with downstream distances filled but a value of -9999
-                    # print('!!! PROBLEM !!! --> Still -9999 values in reach number array')
-                    # break
             else:
                 start_rchs = np.array([outlets[0]])
         loop = loop+1
         if loop > 5*len(np.unique(delta_cls.new_seg)):
-            print('!!! LOOP STUCK !!!')
+            logger.error('Loop stuck - breaking out of reach numbering')
             break
 
     #add to object
@@ -1008,7 +1002,6 @@ def create_sword_ids(delta_cls, sword):
     sword_rch_id_up = np.copy(delta_cls.new_rch_id_up)
     sword_rch_id_down = np.copy(delta_cls.new_rch_id_down)
     for ind in list(range(len(unq_basins))):
-        # print(ind)
         bsn = np.where(basins_l6 == unq_basins[ind])[0]
         swd_bsn = np.where(sword_l6 == unq_basins[ind])[0]
         unq_rchs = np.unique(delta_cls.rch_num[bsn])
@@ -1342,8 +1335,6 @@ def find_delta_tribs(delta_cls, sword, delete_ids=None, tributary_ids=None):
                     max_dist = np.max(sword.reaches.dist_out[np.where(np.in1d(sword.reaches.id, up_rchs)==True)[0]])
                     min_dist = np.min(sword.reaches.dist_out[np.where(np.in1d(sword.reaches.id, up_rchs)==True)[0]])
                     if (max_dist - min_dist) > 1000:
-                    # if len(up_rchs) > 100:
-                        # print(t)
                         #filter the upstream reaches based on percent coverage.
                         up_rchs_del, up_rchs_tribs = filter_us_reaches(sword, 
                                                                        up_rchs, 
@@ -1780,9 +1771,7 @@ def create_reaches(delta_cls):
 
     # Loop through and calculate reach locations and attributes for each
     # unique reach ID.
-    # print('2')
     for ind in list(range(len(uniq_rch))):
-        # print(ind)
         reach = np.where(delta_cls.reach_id[0,:] == uniq_rch[ind])[0]
         subreaches.id[ind] = int(np.unique(delta_cls.reach_id[0,reach]))
         subreaches.cl_id[0,ind] = np.min(delta_cls.cl_id[reach])

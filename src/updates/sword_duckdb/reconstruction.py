@@ -1370,7 +1370,7 @@ class ReconstructionEngine:
     # RECONSTRUCTION IMPLEMENTATIONS
     # =========================================================================
 
-    def _get_view(self, entity_type: str):
+    def _get_view(self, entity_type: str) -> Any:
         """Get the view for an entity type."""
         view_map = {
             'reach': self._sword.reaches,

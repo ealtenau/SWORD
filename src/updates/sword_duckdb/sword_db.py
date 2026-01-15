@@ -22,6 +22,7 @@ Example Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Optional, Union, Any
@@ -30,6 +31,8 @@ import duckdb
 import pandas as pd
 
 from .schema import create_schema, SCHEMA_VERSION
+
+logger = logging.getLogger(__name__)
 
 
 class SWORDDatabase:
@@ -123,8 +126,13 @@ class SWORDDatabase:
                 self._conn.execute("LOAD spatial;")
                 self._spatial_loaded = True
             else:
-                print(f"Warning: Could not load spatial extension: {e}")
+                logger.warning(f"Could not load spatial extension: {e}")
                 self._spatial_loaded = False
+
+    @property
+    def conn(self) -> duckdb.DuckDBPyConnection:
+        """Get the database connection (alias for connect())."""
+        return self.connect()
 
     def close(self) -> None:
         """Close the database connection."""

@@ -24,14 +24,17 @@ Example Usage:
 from __future__ import annotations
 
 import gc
+import logging
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Union, Optional, List, Dict, Any
+from typing import Union, Optional, List, Dict, Any, Generator
 import numpy as np
 
 from .sword_db import SWORDDatabase
 from .views import CenterlinesView, NodesView, ReachesView
+
+logger = logging.getLogger(__name__)
 
 
 class SWORD:
@@ -287,12 +290,12 @@ class SWORD:
         self._reaches._reactive = reactive
 
     @property
-    def reactive(self):
+    def reactive(self) -> Optional['SWORDReactive']:
         """Get the reactive system instance (if configured)."""
         return self._reactive
 
     @contextmanager
-    def batch_modify(self, auto_commit: bool = True):
+    def batch_modify(self, auto_commit: bool = True) -> Generator[Optional['SWORDReactive'], None, None]:
         """
         Context manager for batch modifications with deferred recalculation.
 
@@ -355,6 +358,11 @@ class SWORD:
         return self._reaches
 
     @property
+    def db(self) -> SWORDDatabase:
+        """Get the underlying database connection."""
+        return self._db
+
+    @property
     def paths(self) -> dict:
         """
         Backward-compatible paths dictionary for file I/O operations.
@@ -413,7 +421,7 @@ class SWORD:
             VALUES (?, ?)
         """, [f'backup_{current_datetime.strftime("%Y%m%d_%H%M%S")}', backup_note])
 
-        print(f"Checkpoint created: {backup_note}")
+        logger.info(f"Checkpoint created: {backup_note}")
 
     def delete_data(self, rm_rch: Union[List[int], np.ndarray]) -> None:
         """
@@ -552,7 +560,7 @@ class SWORD:
             # Reload data
             self._load_data()
 
-            print(f"Deleted {len(rm_rch)} reaches and associated data")
+            logger.info(f"Deleted {len(rm_rch)} reaches and associated data")
 
         except Exception as e:
             conn.execute("ROLLBACK")
@@ -606,7 +614,7 @@ class SWORD:
 
             conn.execute("COMMIT")
             self._load_data()
-            print(f"Deleted {len(rm_rch)} reaches")
+            logger.info(f"Deleted {len(rm_rch)} reaches")
 
         except Exception as e:
             conn.execute("ROLLBACK")
@@ -645,7 +653,7 @@ class SWORD:
 
             conn.execute("COMMIT")
             self._load_data()
-            print(f"Deleted {len(node_ids)} nodes")
+            logger.info(f"Deleted {len(node_ids)} nodes")
 
         except Exception as e:
             conn.execute("ROLLBACK")
@@ -677,7 +685,7 @@ class SWORD:
             self._insert_nodes(conn, subnodes)
             conn.execute("COMMIT")
             self._load_data()
-            print(f"Appended {len(subnodes.id)} nodes")
+            logger.info(f"Appended {len(subnodes.id)} nodes")
 
         except Exception as e:
             conn.execute("ROLLBACK")
@@ -712,11 +720,11 @@ class SWORD:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         if export in ('All', 'reaches'):
-            print('Creating reach geometries...')
+            logger.info('Creating reach geometries...')
             self._save_reach_vectors(output_dir)
 
         if export in ('All', 'nodes'):
-            print('Creating node geometries...')
+            logger.info('Creating node geometries...')
             self._save_node_vectors(output_dir)
 
     def _save_reach_vectors(self, output_dir: Path) -> None:
@@ -769,7 +777,7 @@ class SWORD:
         shp_path = output_dir / f'sword_{self.region}_reaches.shp'
         gdf.to_file(gpkg_path, driver='GPKG')
         gdf.to_file(shp_path, driver='ESRI Shapefile')
-        print(f'Saved reaches to {gpkg_path} and {shp_path}')
+        logger.info(f'Saved reaches to {gpkg_path} and {shp_path}')
 
     def _save_node_vectors(self, output_dir: Path) -> None:
         """Save node data to GeoPackage and Shapefile."""
@@ -797,7 +805,7 @@ class SWORD:
         shp_path = output_dir / f'sword_{self.region}_nodes.shp'
         gdf.to_file(gpkg_path, driver='GPKG')
         gdf.to_file(shp_path, driver='ESRI Shapefile')
-        print(f'Saved nodes to {gpkg_path} and {shp_path}')
+        logger.info(f'Saved nodes to {gpkg_path} and {shp_path}')
 
     def save_nc(self, output_path: Optional[str] = None) -> None:
         """
@@ -887,7 +895,7 @@ class SWORD:
             rch_grp.createVariable('strm_order', 'i4', ('num_reaches',))[:] = self._reaches.strm_order
             rch_grp.createVariable('end_rch', 'i4', ('num_reaches',))[:] = self._reaches.end_rch
 
-        print(f"Exported to {output_path}")
+        logger.info(f"Exported to {output_path}")
 
     def validate_reach_id(self, reach_id: int) -> bool:
         """
@@ -1106,8 +1114,8 @@ class SWORD:
             # Reload data to refresh views
             self._load_data()
 
-            print(f"Appended {len(subcls.cl_id)} centerlines, "
-                  f"{len(subnodes.id)} nodes, {len(subreaches.id)} reaches")
+            logger.info(f"Appended {len(subcls.cl_id)} centerlines, "
+                        f"{len(subnodes.id)} nodes, {len(subreaches.id)} reaches")
 
         except Exception as e:
             conn.execute("ROLLBACK")
@@ -1117,7 +1125,7 @@ class SWORD:
             if gc_was_enabled:
                 gc.enable()
 
-    def _to_python(self, val):
+    def _to_python(self, val) -> Any:
         """Convert numpy types to Python types for DuckDB."""
         if hasattr(val, 'item'):
             return val.item()
@@ -1542,7 +1550,7 @@ class SWORD:
             unq_rchs = np.unique(reach)
             for r in range(len(unq_rchs)):
                 if verbose:
-                    print(f"Processing reach {r}: {unq_rchs[r]} ({r}/{len(unq_rchs)-1})")
+                    logger.debug(f"Processing reach {r}: {unq_rchs[r]} ({r}/{len(unq_rchs)-1})")
 
                 # Find centerline points for this reach and sort by cl_id
                 cl_r = np.where(self.centerlines.reach_id[0, :] == unq_rchs[r])[0]
@@ -1687,7 +1695,7 @@ class SWORD:
             self._load_data()
 
             if verbose:
-                print(f"Break reaches complete. Processed {len(unq_rchs)} reaches.")
+                logger.info(f"Break reaches complete. Processed {len(unq_rchs)} reaches.")
 
         except Exception as e:
             raise RuntimeError(f"Failed to break reaches: {e}") from e
@@ -2123,7 +2131,7 @@ class SWORD:
             )
 
         if verbose:
-            print(f"Merging reach {source_reach_id} into {target_reach_id}")
+            logger.info(f"Merging reach {source_reach_id} into {target_reach_id}")
 
         # Disable GC during bulk operations
         gc_was_enabled = gc.isenabled()
@@ -2142,7 +2150,7 @@ class SWORD:
             )[0]
 
             if verbose:
-                print(f"  Moving {len(source_cl_idx)} centerlines, {len(source_node_idx)} nodes")
+                logger.debug(f"Moving {len(source_cl_idx)} centerlines, {len(source_node_idx)} nodes")
 
             # Determine merge direction (upstream or downstream)
             merge_direction = self._get_merge_direction(
@@ -2178,8 +2186,8 @@ class SWORD:
             self._load_data()
 
             if verbose:
-                print(f"Merge complete. Target reach {target_reach_id} now has "
-                      f"{self.reaches.rch_n_nodes[np.where(self.reaches.id == target_reach_id)[0][0]]} nodes")
+                logger.info(f"Merge complete. Target reach {target_reach_id} now has "
+                            f"{self.reaches.rch_n_nodes[np.where(self.reaches.id == target_reach_id)[0][0]]} nodes")
 
             return {
                 'source_reach': source_reach_id,
@@ -2653,7 +2661,7 @@ class SWORD:
                 reaches_with_issues.add(reach_id)
                 msg = f"Type 1: Reach {rid_str} claims {n_rch_up} upstream, but has {actual_up}"
                 if verbose >= 1:
-                    print(msg)
+                    logger.warning(msg)
                 if return_details:
                     details.append({'type': 1, 'reach_id': reach_id, 'message': msg})
 
@@ -2662,7 +2670,7 @@ class SWORD:
                 reaches_with_issues.add(reach_id)
                 msg = f"Type 1: Reach {rid_str} claims {n_rch_down} downstream, but has {actual_down}"
                 if verbose >= 1:
-                    print(msg)
+                    logger.warning(msg)
                 if return_details:
                     details.append({'type': 1, 'reach_id': reach_id, 'message': msg})
 
@@ -2676,7 +2684,7 @@ class SWORD:
                     reaches_with_issues.add(reach_id)
                     msg = f"Type 2: Reach {rid_str} references non-existent downstream {neighbor_id}"
                     if verbose >= 1:
-                        print(msg)
+                        logger.warning(msg)
                     if return_details:
                         details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
                 else:
@@ -2688,7 +2696,7 @@ class SWORD:
                         reaches_with_issues.add(neighbor_id)
                         msg = f"Type 2: {rid_str} -> {neighbor_id} (down) is unrequited"
                         if verbose >= 1:
-                            print(msg)
+                            logger.warning(msg)
                         if return_details:
                             details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
 
@@ -2702,7 +2710,7 @@ class SWORD:
                     reaches_with_issues.add(reach_id)
                     msg = f"Type 2: Reach {rid_str} references non-existent upstream {neighbor_id}"
                     if verbose >= 1:
-                        print(msg)
+                        logger.warning(msg)
                     if return_details:
                         details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
                 else:
@@ -2714,7 +2722,7 @@ class SWORD:
                         reaches_with_issues.add(neighbor_id)
                         msg = f"Type 2: {rid_str} -> {neighbor_id} (up) is unrequited"
                         if verbose >= 1:
-                            print(msg)
+                            logger.warning(msg)
                         if return_details:
                             details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
 
@@ -2722,7 +2730,7 @@ class SWORD:
             if reach_type == '6' and n_rch_up > 0 and n_rch_down > 0:
                 warning_counts['type_3_ghost_both_neighbors'] += 1
                 if verbose >= 2:
-                    print(f"Type 3 Warning: Ghost reach {rid_str} has both up and downstream")
+                    logger.warning(f"Type 3 Warning: Ghost reach {rid_str} has both up and downstream")
                 if return_details:
                     details.append({
                         'type': 3,
@@ -2735,7 +2743,7 @@ class SWORD:
             if n_rch_up == 0 and reach_type != '6':
                 warning_counts['type_4_no_upstream'] += 1
                 if verbose >= 2:
-                    print(f"Type 4 Warning: Non-ghost reach {rid_str} has no upstream")
+                    logger.warning(f"Type 4 Warning: Non-ghost reach {rid_str} has no upstream")
                 if return_details:
                     details.append({
                         'type': 4,
@@ -2750,7 +2758,7 @@ class SWORD:
                 reaches_with_issues.add(reach_id)
                 msg = f"Type 5: Reach {rid_str} references itself as neighbor"
                 if verbose >= 1:
-                    print(msg)
+                    logger.warning(msg)
                 if return_details:
                     details.append({'type': 5, 'reach_id': reach_id, 'message': msg})
 
@@ -2772,16 +2780,16 @@ class SWORD:
             results['details'] = details
 
         if verbose >= 1:
-            print(f"\nTopology Check Summary:")
-            print(f"  Reaches checked: {len(reach_ids)}")
-            print(f"  Total errors: {total_errors}")
-            print(f"  Total warnings: {total_warnings}")
+            logger.info(f"Topology Check Summary:")
+            logger.info(f"  Reaches checked: {len(reach_ids)}")
+            logger.info(f"  Total errors: {total_errors}")
+            logger.info(f"  Total warnings: {total_warnings}")
             if error_counts['type_1_count_mismatch']:
-                print(f"    Type 1 (count mismatch): {error_counts['type_1_count_mismatch']}")
+                logger.info(f"    Type 1 (count mismatch): {error_counts['type_1_count_mismatch']}")
             if error_counts['type_2_unrequited_neighbor']:
-                print(f"    Type 2 (unrequited): {error_counts['type_2_unrequited_neighbor']}")
+                logger.info(f"    Type 2 (unrequited): {error_counts['type_2_unrequited_neighbor']}")
             if error_counts['type_5_self_reference']:
-                print(f"    Type 5 (self-ref): {error_counts['type_5_self_reference']}")
+                logger.info(f"    Type 5 (self-ref): {error_counts['type_5_self_reference']}")
 
         return results
 
@@ -2829,13 +2837,13 @@ class SWORD:
                 long_nodes.append(node_id)
                 affected_reaches.add(reach_id)
                 if verbose >= 1:
-                    print(f"Long node: {node_id} in reach {reach_id} ({node_len:.1f}m)")
+                    logger.warning(f"Long node: {node_id} in reach {reach_id} ({node_len:.1f}m)")
 
             if warn_zero and node_len == 0:
                 zero_nodes.append(node_id)
                 affected_reaches.add(reach_id)
                 if verbose >= 2:
-                    print(f"Zero length node: {node_id} in reach {reach_id}")
+                    logger.warning(f"Zero length node: {node_id} in reach {reach_id}")
 
         results = {
             'passed': len(long_nodes) == 0 and (not warn_zero or len(zero_nodes) == 0),
@@ -2846,10 +2854,10 @@ class SWORD:
         }
 
         if verbose >= 1:
-            print(f"\nNode Length Check Summary:")
-            print(f"  Nodes checked: {len(self.nodes.id)}")
-            print(f"  Long nodes (>{long_threshold}m): {len(long_nodes)}")
-            print(f"  Zero length nodes: {len(zero_nodes)}")
+            logger.info(f"Node Length Check Summary:")
+            logger.info(f"  Nodes checked: {len(self.nodes.id)}")
+            logger.info(f"  Long nodes (>{long_threshold}m): {len(long_nodes)}")
+            logger.info(f"  Zero length nodes: {len(zero_nodes)}")
 
         return results
 
@@ -2904,7 +2912,7 @@ class SWORD:
         from itertools import chain
 
         if verbose:
-            print('Calculating dist_out from Topology')
+            logger.info('Calculating dist_out from Topology')
 
         # Initialize arrays following legacy code exactly
         dist_out = np.repeat(-9999.0, len(self.reaches.id))
@@ -2916,7 +2924,7 @@ class SWORD:
 
         if len(outlets) == 0:
             if verbose:
-                print("Warning: No outlet reaches found (n_rch_down == 0)")
+                logger.warning("No outlet reaches found (n_rch_down == 0)")
             return {
                 'success': False,
                 'reaches_updated': 0,
@@ -3034,7 +3042,7 @@ class SWORD:
                         start_rchs = np.array([self.reaches.id[check_flag[0]]])
                     else:
                         if verbose:
-                            print('Warning: No more outlets but still -9999 values')
+                            logger.warning('No more outlets but still -9999 values')
                         break
                 else:
                     start_rchs = np.array([unfilled_outlets[0]])
@@ -3042,7 +3050,7 @@ class SWORD:
             loop += 1
             if loop > max_loops:
                 if verbose:
-                    print('Warning: Loop limit reached')
+                    logger.warning('Loop limit reached')
                 break
 
         # Count unfilled reaches
@@ -3050,10 +3058,10 @@ class SWORD:
         unfilled_reaches = list(self.reaches.id[unfilled_idx])
 
         if verbose:
-            print(f'  Processed {loop} iterations')
-            print(f'  {len(self.reaches.id) - len(unfilled_reaches)}/{len(self.reaches.id)} reaches computed')
+            logger.info(f'Processed {loop} iterations')
+            logger.info(f'{len(self.reaches.id) - len(unfilled_reaches)}/{len(self.reaches.id)} reaches computed')
             if len(unfilled_reaches) > 0:
-                print(f'  Warning: {len(unfilled_reaches)} reaches unfilled')
+                logger.warning(f'{len(unfilled_reaches)} reaches unfilled')
 
         # Update reach dist_out in database
         conn = self._db.connect()
@@ -3076,7 +3084,7 @@ class SWORD:
         nodes_updated = 0
         if update_nodes:
             if verbose:
-                print('Updating node dist_out values')
+                logger.info('Updating node dist_out values')
             nodes_updated = self._calculate_node_dist_out(dist_out, verbose)
 
         # Reload data
@@ -3165,7 +3173,7 @@ class SWORD:
             raise RuntimeError(f"Failed to update node dist_out: {e}") from e
 
         if verbose:
-            print(f'  Updated {updated_count} nodes')
+            logger.info(f'Updated {updated_count} nodes')
 
         return updated_count
 
@@ -3308,8 +3316,8 @@ class SWORD:
         new_ghost_node_id = int(f"{level6_basin}{new_rch_num:04d}0016")
 
         if verbose:
-            print(f"Creating ghost reach {new_ghost_rch_id} at {position} of {reach_id}")
-            print(f"  Extracting node {ghost_node_old_id} -> {new_ghost_node_id}")
+            logger.info(f"Creating ghost reach {new_ghost_rch_id} at {position} of {reach_id}")
+            logger.debug(f"Extracting node {ghost_node_old_id} -> {new_ghost_node_id}")
 
         # Get centerlines for the node being extracted
         cl_indices = np.where(self.centerlines.node_id[0, :] == ghost_node_old_id)[0]
@@ -3583,7 +3591,7 @@ class SWORD:
             self._load_data()
 
             if verbose:
-                print(f"Successfully created ghost reach {new_ghost_rch_id}")
+                logger.info(f"Successfully created ghost reach {new_ghost_rch_id}")
 
             return {
                 'success': True,
@@ -3759,7 +3767,7 @@ class SWORD:
         from scipy import stats
 
         if verbose:
-            print("Recalculating stream_order from path_freq...")
+            logger.info("Recalculating stream_order from path_freq...")
 
         conn = self._db.connect()
 
@@ -3777,7 +3785,7 @@ class SWORD:
             """, [self.region]).fetchall()
 
             if verbose:
-                print(f"  Processing {len(nodes_data)} nodes...")
+                logger.debug(f"Processing {len(nodes_data)} nodes...")
 
             # Calculate new stream_order values
             nodes_updated = 0
@@ -3801,7 +3809,7 @@ class SWORD:
             # Batch update nodes
             if update_nodes and node_updates:
                 if verbose:
-                    print(f"  Updating {len(node_updates)} nodes with new stream_order...")
+                    logger.debug(f"Updating {len(node_updates)} nodes with new stream_order...")
 
                 conn.execute("BEGIN TRANSACTION")
                 for new_val, node_id in node_updates:
@@ -3817,7 +3825,7 @@ class SWORD:
             reaches_updated = 0
             if update_reaches:
                 if verbose:
-                    print("  Aggregating stream_order to reaches (mode)...")
+                    logger.debug("Aggregating stream_order to reaches (mode)...")
 
                 # Get reach stream_order as mode of node values
                 reach_data = conn.execute("""
@@ -3847,7 +3855,7 @@ class SWORD:
 
                 if reach_updates:
                     if verbose:
-                        print(f"  Updating {len(reach_updates)} reaches...")
+                        logger.debug(f"Updating {len(reach_updates)} reaches...")
 
                     conn.execute("BEGIN TRANSACTION")
                     for new_val, reach_id in reach_updates:
@@ -3860,7 +3868,7 @@ class SWORD:
                     reaches_updated = len(reach_updates)
 
             if verbose:
-                print(f"  Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
+                logger.info(f"Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
 
             return {
                 'nodes_updated': nodes_updated,
@@ -3915,7 +3923,7 @@ class SWORD:
         >>> print(f"Created {result['total_segments']} unique segments")
         """
         if verbose:
-            print("Recalculating path_segs from path_order and path_freq...")
+            logger.info("Recalculating path_segs from path_order and path_freq...")
 
         conn = self._db.connect()
 
@@ -3933,7 +3941,7 @@ class SWORD:
             """, [self.region]).fetchall()
 
             if verbose:
-                print(f"  Processing {len(nodes_data)} nodes...")
+                logger.debug(f"Processing {len(nodes_data)} nodes...")
 
             # Build arrays for vectorized processing
             node_ids = []
@@ -3980,7 +3988,7 @@ class SWORD:
             total_segments = cnt - 1
 
             if verbose:
-                print(f"  Created {total_segments} unique segments")
+                logger.debug(f"Created {total_segments} unique segments")
 
             # Find nodes that need updating
             changed_mask = new_path_segs != old_path_segs
@@ -3990,7 +3998,7 @@ class SWORD:
             nodes_updated = 0
             if update_nodes and node_updates:
                 if verbose:
-                    print(f"  Updating {len(node_updates)} nodes with new path_segs...")
+                    logger.debug(f"Updating {len(node_updates)} nodes with new path_segs...")
 
                 conn.execute("BEGIN TRANSACTION")
                 for new_val, node_id in node_updates:
@@ -4006,7 +4014,7 @@ class SWORD:
             reaches_updated = 0
             if update_reaches:
                 if verbose:
-                    print("  Aggregating path_segs to reaches (mode)...")
+                    logger.debug("Aggregating path_segs to reaches (mode)...")
 
                 # Get reach path_segs as mode of node values
                 reach_data = conn.execute("""
@@ -4036,7 +4044,7 @@ class SWORD:
 
                 if reach_updates:
                     if verbose:
-                        print(f"  Updating {len(reach_updates)} reaches...")
+                        logger.debug(f"Updating {len(reach_updates)} reaches...")
 
                     conn.execute("BEGIN TRANSACTION")
                     for new_val, reach_id in reach_updates:
@@ -4049,7 +4057,7 @@ class SWORD:
                     reaches_updated = len(reach_updates)
 
             if verbose:
-                print(f"  Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
+                logger.info(f"Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
 
             return {
                 'nodes_updated': nodes_updated,
@@ -4133,7 +4141,7 @@ class SWORD:
             raise ImportError("pyproj is required for sinuosity calculation. Install with: pip install pyproj")
 
         if verbose:
-            print("Recalculating sinuosity from centerline geometry...")
+            logger.info("Recalculating sinuosity from centerline geometry...")
 
         conn = self._db.connect()
 
@@ -4148,7 +4156,7 @@ class SWORD:
 
             if 'sinuosity' not in columns:
                 if verbose:
-                    print("  Adding sinuosity column to reaches table...")
+                    logger.debug("Adding sinuosity column to reaches table...")
                 conn.execute("ALTER TABLE reaches ADD COLUMN sinuosity DOUBLE")
 
             # Get reach IDs to process
@@ -4174,7 +4182,7 @@ class SWORD:
                 old_sinuosities = {r[0]: r[1] for r in reach_data}
 
             if verbose:
-                print(f"  Processing {len(reach_ids_to_process)} reaches...")
+                logger.debug(f"Processing {len(reach_ids_to_process)} reaches...")
 
             # Calculate sinuosity for each reach
             reach_sinuosities = {}
@@ -4218,10 +4226,10 @@ class SWORD:
                 processed += 1
 
                 if verbose and processed % 1000 == 0:
-                    print(f"    Processed {processed}/{len(reach_ids_to_process)} reaches...")
+                    logger.debug(f"Processed {processed}/{len(reach_ids_to_process)} reaches...")
 
             if verbose:
-                print(f"  Processed {processed} reaches, skipped {skipped} (too few points)")
+                logger.debug(f"Processed {processed} reaches, skipped {skipped} (too few points)")
 
             # Update database
             reaches_updated = 0
@@ -4235,7 +4243,7 @@ class SWORD:
 
                 if reach_updates:
                     if verbose:
-                        print(f"  Updating {len(reach_updates)} reaches in database...")
+                        logger.debug(f"Updating {len(reach_updates)} reaches in database...")
 
                     conn.execute("BEGIN TRANSACTION")
                     for new_val, reach_id in reach_updates:
@@ -4252,8 +4260,8 @@ class SWORD:
             mean_sinuosity = np.mean(sinuosity_values) if sinuosity_values else 0.0
 
             if verbose:
-                print(f"  Done. Updated {reaches_updated} reaches.")
-                print(f"  Mean sinuosity: {mean_sinuosity:.3f}")
+                logger.info(f"Done. Updated {reaches_updated} reaches.")
+                logger.info(f"Mean sinuosity: {mean_sinuosity:.3f}")
 
             return {
                 'reaches_processed': processed,

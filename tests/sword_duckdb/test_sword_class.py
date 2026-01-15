@@ -8,14 +8,14 @@ Tests cover:
 - WritableArray persistence
 - SWORD methods (delete_data, append_data, break_reaches, etc.)
 - Paths property
+
+Note: Uses fixtures from conftest.py which creates a minimal test database.
 """
 
 import os
 import sys
 import pytest
 import numpy as np
-import tempfile
-import shutil
 
 # Add project root to path
 main_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,18 +24,14 @@ sys.path.insert(0, main_dir)
 from src.updates.sword_duckdb import SWORD
 
 
-# Test configuration
-TEST_DB_PATH = os.path.join(main_dir, 'data/duckdb/sword_v17b.duckdb')
+# Test configuration (used by conftest.py)
 TEST_REGION = 'NA'
 TEST_VERSION = 'v17b'
 
 
-@pytest.fixture(scope='module')
-def sword():
-    """Create SWORD instance for testing (read-only operations)."""
-    if not os.path.exists(TEST_DB_PATH):
-        pytest.skip(f"Test database not found: {TEST_DB_PATH}")
-    return SWORD(TEST_DB_PATH, TEST_REGION, TEST_VERSION)
+# Fixtures are now provided by conftest.py:
+# - sword: read-only SWORD instance using minimal test database
+# - sword_writable: writable SWORD instance with temp database copy
 
 
 class TestSWORDLoading:
@@ -232,55 +228,39 @@ class TestWritableArray:
 class TestWritableArrayPersistence:
     """Test WritableArray write persistence (requires temp database)."""
 
-    @pytest.fixture
-    def temp_sword(self):
-        """Create a temporary copy of the database for write tests."""
-        if not os.path.exists(TEST_DB_PATH):
-            pytest.skip(f"Test database not found: {TEST_DB_PATH}")
+    # Uses sword_writable fixture from conftest.py (aliased as temp_sword)
 
-        # Create temp copy
-        temp_dir = tempfile.mkdtemp()
-        temp_db = os.path.join(temp_dir, 'sword_test.duckdb')
-        shutil.copy2(TEST_DB_PATH, temp_db)
-
-        sword = SWORD(temp_db, TEST_REGION, TEST_VERSION)
-        yield sword
-
-        # Cleanup
-        sword.close()
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-    def test_single_value_write(self, temp_sword):
+    def test_single_value_write(self, sword_writable):
         """Test writing a single value persists to database."""
         idx = 0
-        original = float(temp_sword.reaches.dist_out[idx])
+        original = float(sword_writable.reaches.dist_out[idx])
         test_value = 99999.0
 
         # Write new value
-        temp_sword.reaches.dist_out[idx] = test_value
+        sword_writable.reaches.dist_out[idx] = test_value
 
         # Verify in-memory
-        assert temp_sword.reaches.dist_out[idx] == test_value
+        assert sword_writable.reaches.dist_out[idx] == test_value
 
         # Restore original
-        temp_sword.reaches.dist_out[idx] = original
+        sword_writable.reaches.dist_out[idx] = original
 
-    def test_multiple_value_write(self, temp_sword):
+    def test_multiple_value_write(self, sword_writable):
         """Test writing multiple values persists to database."""
         indices = [0, 1, 2]
-        originals = [float(temp_sword.reaches.dist_out[i]) for i in indices]
+        originals = [float(sword_writable.reaches.dist_out[i]) for i in indices]
         test_values = [11111.0, 22222.0, 33333.0]
 
         # Write new values
-        temp_sword.reaches.dist_out[indices] = test_values
+        sword_writable.reaches.dist_out[indices] = test_values
 
         # Verify in-memory
         for i, val in zip(indices, test_values):
-            assert temp_sword.reaches.dist_out[i] == val
+            assert sword_writable.reaches.dist_out[i] == val
 
         # Restore originals
         for i, val in zip(indices, originals):
-            temp_sword.reaches.dist_out[i] = val
+            sword_writable.reaches.dist_out[i] = val
 
 
 class TestDimensionConsistency:

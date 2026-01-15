@@ -28,11 +28,14 @@ Example Usage:
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set, Tuple
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     from geopy import distance as geodesic_distance
@@ -113,11 +116,11 @@ class DependencyGraph:
     - Topology changes → counts → dist_out → end_rch/main_side
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.nodes: Dict[str, DependencyNode] = {}
         self._build_graph()
 
-    def _build_graph(self):
+    def _build_graph(self) -> None:
         """Build the dependency graph based on SWORD attribute relationships."""
 
         # === CENTERLINE ATTRIBUTES ===
@@ -234,7 +237,7 @@ class DependencyGraph:
             change_types=[ChangeType.GEOMETRY]
         ))
 
-    def add_node(self, node: DependencyNode):
+    def add_node(self, node: DependencyNode) -> None:
         """Add a node to the dependency graph."""
         self.nodes[node.name] = node
 
@@ -300,7 +303,7 @@ class SWORDReactive:
     Tracks changes and automatically recalculates dependent attributes.
     """
 
-    def __init__(self, sword: 'SWORD'):
+    def __init__(self, sword: 'SWORD') -> None:
         self.sword = sword
         self.graph = DependencyGraph()
         self.dirty = DirtySet()
@@ -311,11 +314,11 @@ class SWORDReactive:
         self,
         attr_name: str,
         change_type: ChangeType = ChangeType.ATTRIBUTE,
-        reach_ids: List[int] = None,
-        node_ids: List[int] = None,
-        cl_ids: List[int] = None,
+        reach_ids: Optional[List[int]] = None,
+        node_ids: Optional[List[int]] = None,
+        cl_ids: Optional[List[int]] = None,
         all_entities: bool = False
-    ):
+    ) -> None:
         """
         Mark an attribute as dirty (needing recalculation of dependents).
 
@@ -399,13 +402,13 @@ class SWORDReactive:
             return [attr for attr, _ in plan]
 
         for attr_name, func_name in plan:
-            print(f"Recalculating: {attr_name}")
+            logger.info(f"Recalculating: {attr_name}")
             func = getattr(self, func_name, None)
             if func:
                 func()
                 recalculated.append(attr_name)
             else:
-                print(f"  Warning: No implementation for {func_name}")
+                logger.warning(f"No implementation for {func_name}")
 
         # Clear dirty state
         self._dirty_attrs.clear()
@@ -416,7 +419,7 @@ class SWORDReactive:
 
     # === RECALCULATION IMPLEMENTATIONS ===
 
-    def _recalc_reach_lengths(self):
+    def _recalc_reach_lengths(self) -> None:
         """
         Recalculate reach lengths from centerline geometry.
 
@@ -424,7 +427,7 @@ class SWORDReactive:
         calculate geodesic distances between consecutive points,
         and set reach.len to the total distance.
         """
-        print("  -> Recalculating reach.len from centerline x,y")
+        logger.debug("Recalculating reach.len from centerline x,y")
 
         sword = self.sword
         reaches = sword.reaches
@@ -460,13 +463,13 @@ class SWORDReactive:
             if len(reach_idx) > 0:
                 reaches.len[reach_idx[0]] = total_length
 
-    def _recalc_reach_bounds(self):
+    def _recalc_reach_bounds(self) -> None:
         """
         Recalculate reach bounding box from centerlines.
 
         Updates: x, y (centroid), x_min, x_max, y_min, y_max
         """
-        print("  -> Recalculating reach x, y, x_min, x_max, y_min, y_max")
+        logger.debug("Recalculating reach x, y, x_min, x_max, y_min, y_max")
 
         sword = self.sword
         reaches = sword.reaches
@@ -497,7 +500,7 @@ class SWORDReactive:
                 reaches.y_min[idx] = np.min(y_coords)
                 reaches.y_max[idx] = np.max(y_coords)
 
-    def _recalc_reach_dist_out(self):
+    def _recalc_reach_dist_out(self) -> None:
         """
         Recalculate reach dist_out from topology and lengths.
 
@@ -505,7 +508,7 @@ class SWORDReactive:
         Outlet dist_out = reach.len
         Upstream dist_out = reach.len + max(downstream dist_out values)
         """
-        print("  -> Recalculating reach.dist_out (outlet-to-headwater order)")
+        logger.debug("Recalculating reach.dist_out (outlet-to-headwater order)")
 
         sword = self.sword
         reaches = sword.reaches
@@ -574,7 +577,7 @@ class SWORDReactive:
             if not np.isnan(dist_out[i]):
                 reaches.dist_out[i] = dist_out[i]
 
-    def _recalc_reach_end_rch(self):
+    def _recalc_reach_end_rch(self) -> None:
         """
         Recalculate reach end_rch flag from topology.
 
@@ -584,7 +587,7 @@ class SWORDReactive:
         - 2: Outlet (n_rch_down == 0)
         - 3: Junction (n_rch_up > 1 or n_rch_down > 1)
         """
-        print("  -> Recalculating reach.end_rch from n_rch_up, n_rch_down")
+        logger.debug("Recalculating reach.end_rch from n_rch_up, n_rch_down")
 
         sword = self.sword
         reaches = sword.reaches
@@ -609,7 +612,7 @@ class SWORDReactive:
         for i in range(n_reaches):
             reaches.end_rch[i] = end_rch[i]
 
-    def _recalc_reach_main_side(self):
+    def _recalc_reach_main_side(self) -> None:
         """
         Recalculate reach main_side from topology.
 
@@ -621,18 +624,18 @@ class SWORDReactive:
         # 1. External GeoPackage with flow accumulation values
         # 2. Trace main channels using accumulated upstream reach counts
         # 3. Classify reaches as main (1) vs side (2) channel
-        # See MIGRATION_STATUS.md "Immediate TODOs" section.
-        print("  -> Recalculating reach.main_side (preserving existing values)")
+        # See DEVELOPMENT_STATUS.md for tracking.
+        logger.debug("Recalculating reach.main_side (preserving existing values)")
         pass
 
-    def _recalc_node_lengths(self):
+    def _recalc_node_lengths(self) -> None:
         """
         Recalculate node lengths from centerline geometry.
 
         For each node, calculate the cumulative distance of all
         centerlines belonging to that node.
         """
-        print("  -> Recalculating node.len from centerline x,y")
+        logger.debug("Recalculating node.len from centerline x,y")
 
         sword = self.sword
         nodes = sword.nodes
@@ -677,11 +680,11 @@ class SWORDReactive:
                 if len(node_idx) > 0:
                     nodes.len[node_idx[0]] = node_length
 
-    def _recalc_node_xy(self):
+    def _recalc_node_xy(self) -> None:
         """
         Recalculate node x,y as centroid of associated centerlines.
         """
-        print("  -> Recalculating node x, y (centroid of centerlines)")
+        logger.debug("Recalculating node x, y (centroid of centerlines)")
 
         sword = self.sword
         nodes = sword.nodes
@@ -707,14 +710,14 @@ class SWORDReactive:
                 nodes.x[node_idx[0]] = np.mean(x_coords)
                 nodes.y[node_idx[0]] = np.mean(y_coords)
 
-    def _recalc_node_dist_out(self):
+    def _recalc_node_dist_out(self) -> None:
         """
         Recalculate node dist_out from reach dist_out and node lengths.
 
         node.dist_out = reach_base_dist + cumulative_node_length
         where reach_base_dist = reach.dist_out - reach.len
         """
-        print("  -> Recalculating node.dist_out from reach base + cumulative node.len")
+        logger.debug("Recalculating node.dist_out from reach base + cumulative node.len")
 
         sword = self.sword
         nodes = sword.nodes
@@ -743,13 +746,13 @@ class SWORDReactive:
             for i, idx in enumerate(sorted_indices):
                 nodes.dist_out[idx] = base_dist + cumsum[i]
 
-    def _recalc_node_end_rch(self):
+    def _recalc_node_end_rch(self) -> None:
         """
         Propagate reach end_rch to nodes.
 
         Each node inherits the end_rch value from its parent reach.
         """
-        print("  -> Propagating reach.end_rch to node.end_rch")
+        logger.debug("Propagating reach.end_rch to node.end_rch")
 
         sword = self.sword
         nodes = sword.nodes
@@ -765,13 +768,13 @@ class SWORDReactive:
             for idx in node_indices:
                 nodes.end_rch[idx] = end_rch_val
 
-    def _recalc_node_main_side(self):
+    def _recalc_node_main_side(self) -> None:
         """
         Propagate reach main_side to nodes.
 
         Each node inherits the main_side value from its parent reach.
         """
-        print("  -> Propagating reach.main_side to node.main_side")
+        logger.debug("Propagating reach.main_side to node.main_side")
 
         sword = self.sword
         nodes = sword.nodes
@@ -787,13 +790,13 @@ class SWORDReactive:
             for idx in node_indices:
                 nodes.main_side[idx] = main_side_val
 
-    def _recalc_node_cl_id_bounds(self):
+    def _recalc_node_cl_id_bounds(self) -> None:
         """
         Recalculate node cl_id min/max from centerlines.
 
         Updates nodes.cl_id[0] (min) and nodes.cl_id[1] (max)
         """
-        print("  -> Recalculating node.cl_id_min, node.cl_id_max")
+        logger.debug("Recalculating node.cl_id_min, node.cl_id_max")
 
         sword = self.sword
         nodes = sword.nodes
@@ -813,7 +816,7 @@ class SWORDReactive:
             # This requires special handling since cl_id may not be writable
             # For now, we skip this as it requires 2D WritableArray support
 
-    def _recalc_centerline_neighbors(self):
+    def _recalc_centerline_neighbors(self) -> None:
         """
         Recalculate centerline node_id neighbors using KDTree.
 
@@ -824,8 +827,8 @@ class SWORDReactive:
         # 1. scipy.spatial.KDTree for spatial queries
         # 2. 2D WritableArray support for centerlines.node_id[1:4]
         # 3. Query k=4 nearest node centroids for each centerline
-        # See MIGRATION_STATUS.md "Immediate TODOs" and "Technical Debt" sections.
-        print("  -> Recalculating centerline.node_id[1:4] via spatial query")
+        # See DEVELOPMENT_STATUS.md for tracking.
+        logger.debug("Recalculating centerline.node_id[1:4] via spatial query")
         pass
 
 
@@ -833,9 +836,9 @@ class SWORDReactive:
 
 def mark_geometry_changed(
     reactive: SWORDReactive,
-    reach_ids: List[int] = None,
+    reach_ids: Optional[List[int]] = None,
     all_reaches: bool = False
-):
+) -> None:
     """Mark geometry as changed, triggering full recalculation cascade."""
     reactive.mark_dirty(
         'centerline.geometry',
@@ -847,9 +850,9 @@ def mark_geometry_changed(
 
 def mark_topology_changed(
     reactive: SWORDReactive,
-    reach_ids: List[int] = None,
+    reach_ids: Optional[List[int]] = None,
     all_reaches: bool = False
-):
+) -> None:
     """Mark topology as changed, triggering topology recalculation cascade."""
     reactive.mark_dirty(
         'reach.topology',
@@ -859,7 +862,7 @@ def mark_topology_changed(
     )
 
 
-def full_recalculate(reactive: SWORDReactive):
+def full_recalculate(reactive: SWORDReactive) -> None:
     """Trigger full recalculation of all derived attributes."""
     reactive.mark_dirty('centerline.geometry', ChangeType.GEOMETRY, all_entities=True)
     reactive.mark_dirty('reach.topology', ChangeType.TOPOLOGY, all_entities=True)

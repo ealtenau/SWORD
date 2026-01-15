@@ -16,13 +16,14 @@ WritableArray enables in-place array modifications to persist to the database.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Any, Callable
+from typing import TYPE_CHECKING, Optional, Any, Callable, Union
 import numpy as np
 import gc
 
 if TYPE_CHECKING:
     import pandas as pd
     from .reactive import SWORDReactive
+    from .provenance import ProvenanceLogger
 
 
 class WritableArray:
@@ -50,7 +51,9 @@ class WritableArray:
         ids: np.ndarray,
         region: str,
         reactive: Optional['SWORDReactive'] = None,
-        attr_name: Optional[str] = None
+        attr_name: Optional[str] = None,
+        provenance_logger: Optional['ProvenanceLogger'] = None,
+        operation_id: Optional[int] = None
     ):
         """
         Initialize WritableArray.
@@ -79,6 +82,12 @@ class WritableArray:
         attr_name : str, optional
             Attribute name for the reactive system (e.g., 'reach.dist_out').
             Required if reactive is provided.
+        provenance_logger : ProvenanceLogger, optional
+            Provenance logger for tracking value changes.
+            When provided, modifications are logged for rollback capability.
+        operation_id : int, optional
+            Active operation ID for provenance logging.
+            Required if provenance_logger is provided.
         """
         self._data = data
         self._db = db
@@ -90,13 +99,18 @@ class WritableArray:
         self._region = region
         self._reactive = reactive
         self._attr_name = attr_name
+        self._provenance_logger = provenance_logger
+        self._operation_id = operation_id
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> Any:
         """Get items from underlying array."""
         return self._data[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key, value) -> None:
         """Set items and sync to database."""
+        # Capture old values for provenance logging
+        old_values = self._data[key].copy() if hasattr(self._data[key], 'copy') else self._data[key]
+
         # Update local array
         self._data[key] = value
 
@@ -114,11 +128,24 @@ class WritableArray:
                 # Single value update
                 id_val = int(affected_ids) if hasattr(affected_ids, 'item') else int(affected_ids)
                 val = value.item() if hasattr(value, 'item') else value
+                old_val = old_values.item() if hasattr(old_values, 'item') else old_values
+
                 conn.execute(f"""
                     UPDATE {self._table}
                     SET {self._db_col_name} = ?
                     WHERE {self._id_col} = ? AND region = ?
                 """, [val, id_val, self._region])
+
+                # Log to provenance system if configured
+                if self._provenance_logger and self._operation_id:
+                    self._provenance_logger.log_value_change(
+                        self._operation_id,
+                        self._table,
+                        id_val,
+                        self._db_col_name,
+                        old_val,
+                        val
+                    )
 
                 # Hook into reactive system if configured
                 if self._reactive and self._attr_name:
@@ -127,6 +154,7 @@ class WritableArray:
                 # Multiple value update
                 affected_ids = np.atleast_1d(affected_ids)
                 values = np.atleast_1d(value)
+                old_vals = np.atleast_1d(old_values)
 
                 # Handle broadcasting if single value assigned to multiple indices
                 if len(values) == 1 and len(affected_ids) > 1:
@@ -135,11 +163,24 @@ class WritableArray:
                 for i, (id_val, val) in enumerate(zip(affected_ids, values)):
                     id_val = int(id_val) if hasattr(id_val, 'item') else int(id_val)
                     val = val.item() if hasattr(val, 'item') else val
+                    old_val = old_vals[i].item() if hasattr(old_vals[i], 'item') else old_vals[i]
+
                     conn.execute(f"""
                         UPDATE {self._table}
                         SET {self._db_col_name} = ?
                         WHERE {self._id_col} = ? AND region = ?
                     """, [val, id_val, self._region])
+
+                    # Log to provenance system if configured
+                    if self._provenance_logger and self._operation_id:
+                        self._provenance_logger.log_value_change(
+                            self._operation_id,
+                            self._table,
+                            id_val,
+                            self._db_col_name,
+                            old_val,
+                            val
+                        )
 
                 # Hook into reactive system if configured
                 if self._reactive and self._attr_name:
@@ -148,7 +189,7 @@ class WritableArray:
             if gc_was_enabled:
                 gc.enable()
 
-    def _mark_dirty_for_ids(self, entity_ids: list):
+    def _mark_dirty_for_ids(self, entity_ids: list) -> None:
         """
         Mark the reactive system as dirty for the given entity IDs.
 
@@ -188,13 +229,13 @@ class WritableArray:
                 cl_ids=entity_ids
             )
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._data)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"WritableArray({self._col_name}, shape={self._data.shape})"
 
-    def __array__(self, dtype=None):
+    def __array__(self, dtype=None) -> np.ndarray:
         """Support numpy array conversion."""
         if dtype:
             return self._data.astype(dtype)
@@ -202,66 +243,66 @@ class WritableArray:
 
     # Forward common numpy array attributes/methods
     @property
-    def shape(self):
+    def shape(self) -> tuple:
         return self._data.shape
 
     @property
-    def dtype(self):
+    def dtype(self) -> np.dtype:
         return self._data.dtype
 
     @property
-    def ndim(self):
+    def ndim(self) -> int:
         return self._data.ndim
 
     def __iter__(self):
         return iter(self._data)
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> np.ndarray:
         return self._data == other
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> np.ndarray:
         return self._data != other
 
-    def __lt__(self, other):
+    def __lt__(self, other) -> np.ndarray:
         return self._data < other
 
-    def __le__(self, other):
+    def __le__(self, other) -> np.ndarray:
         return self._data <= other
 
-    def __gt__(self, other):
+    def __gt__(self, other) -> np.ndarray:
         return self._data > other
 
-    def __ge__(self, other):
+    def __ge__(self, other) -> np.ndarray:
         return self._data >= other
 
-    def __add__(self, other):
+    def __add__(self, other) -> np.ndarray:
         return self._data + other
 
-    def __radd__(self, other):
+    def __radd__(self, other) -> np.ndarray:
         return other + self._data
 
-    def __sub__(self, other):
+    def __sub__(self, other) -> np.ndarray:
         return self._data - other
 
-    def __rsub__(self, other):
+    def __rsub__(self, other) -> np.ndarray:
         return other - self._data
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> np.ndarray:
         return self._data * other
 
-    def __rmul__(self, other):
+    def __rmul__(self, other) -> np.ndarray:
         return other * self._data
 
-    def __truediv__(self, other):
+    def __truediv__(self, other) -> np.ndarray:
         return self._data / other
 
-    def __floordiv__(self, other):
+    def __floordiv__(self, other) -> np.ndarray:
         return self._data // other
 
-    def copy(self):
+    def copy(self) -> np.ndarray:
         return self._data.copy()
 
-    def astype(self, dtype):
+    def astype(self, dtype) -> np.ndarray:
         return self._data.astype(dtype)
 
 
@@ -358,7 +399,7 @@ class CenterlinesView:
         return self._reach_id
 
     @reach_id.setter
-    def reach_id(self, value: np.ndarray):
+    def reach_id(self, value: np.ndarray) -> None:
         """Set reach_id array."""
         self._reach_id = value
 
@@ -368,7 +409,7 @@ class CenterlinesView:
         return self._node_id
 
     @node_id.setter
-    def node_id(self, value: np.ndarray):
+    def node_id(self, value: np.ndarray) -> None:
         """Set node_id array."""
         self._node_id = value
 
@@ -620,7 +661,7 @@ class NodesView:
         return self._cl_id
 
     @cl_id.setter
-    def cl_id(self, value: np.ndarray):
+    def cl_id(self, value: np.ndarray) -> None:
         """Set cl_id array."""
         self._cl_id = value
 
@@ -915,7 +956,7 @@ class ReachesView:
         return self._cl_id
 
     @cl_id.setter
-    def cl_id(self, value: np.ndarray):
+    def cl_id(self, value: np.ndarray) -> None:
         """Set cl_id array."""
         self._cl_id = value
 
@@ -925,7 +966,7 @@ class ReachesView:
         return self._rch_id_up
 
     @rch_id_up.setter
-    def rch_id_up(self, value: np.ndarray):
+    def rch_id_up(self, value: np.ndarray) -> None:
         """Set upstream reach IDs array."""
         self._rch_id_up = value
 
@@ -935,7 +976,7 @@ class ReachesView:
         return self._rch_id_down
 
     @rch_id_down.setter
-    def rch_id_down(self, value: np.ndarray):
+    def rch_id_down(self, value: np.ndarray) -> None:
         """Set downstream reach IDs array."""
         self._rch_id_down = value
 
@@ -945,7 +986,7 @@ class ReachesView:
         return self._orbits
 
     @orbits.setter
-    def orbits(self, value: np.ndarray):
+    def orbits(self, value: np.ndarray) -> None:
         """Set orbits array."""
         self._orbits = value
 
@@ -955,7 +996,7 @@ class ReachesView:
         return self._iceflag
 
     @iceflag.setter
-    def iceflag(self, value: np.ndarray):
+    def iceflag(self, value: np.ndarray) -> None:
         """Set iceflag array."""
         self._iceflag = value
 

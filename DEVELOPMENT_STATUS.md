@@ -353,6 +353,7 @@ workflow.close()
 | 6 | `path_segs` recalculation | COMPLETE | Based on stream_order.py |
 | 7 | `sinuosity` recalculation | COMPLETE | Ported from MATLAB SinuosityMinAreaVarMinReach.m |
 | 8 | `trib_flag` recalculation | COMPLETE | Using MHV_SWORD data with KD-tree spatial matching |
+| 9 | `facc` recalculation | COMPLETE | Extracts from MERIT Hydro upa rasters with monotonic filtering |
 
 ### Key Legacy File References
 
@@ -365,6 +366,7 @@ workflow.close()
 | Topology validation | `check_topo_consistency.py` | 202 |
 | Delta handling | `2_add_deltas_to_sword.py` | 201 |
 | Sinuosity calculation | `SWORD-Sinuosity/Code/SinuosityMinAreaVarMinReach.m` | 191 |
+| facc filtering | `Merge_Tools_v06.py:filter_facc()` | 975-1034 |
 
 ---
 
@@ -406,7 +408,7 @@ tests/
 |------|--------|---------|
 | `sinuosity` recalculation | **COMPLETE** | `recalculate_sinuosity()` ported from MATLAB |
 | `trib_flag` reconstruction | **COMPLETE** | `recalculate_trib_flag()` using MHV_SWORD data |
-| `facc` filtering reconstruction | Pending | Needs raw FACC raster values |
+| `facc` filtering reconstruction | **COMPLETE** | `recalculate_facc()` extracts from MERIT Hydro upa rasters |
 | `stream_order` recalculation | **COMPLETE** | `recalculate_stream_order()` implemented |
 | `path_segs` recalculation | **COMPLETE** | `recalculate_path_segs()` implemented |
 
