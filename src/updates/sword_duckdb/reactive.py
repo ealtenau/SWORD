@@ -614,19 +614,84 @@ class SWORDReactive:
 
     def _recalc_reach_main_side(self) -> None:
         """
-        Recalculate reach main_side from topology.
+        Recalculate reach main_side from topology and path_freq.
 
-        Note: This is a complex calculation that typically requires
-        external data (GPKG with accumulation values). For now, we
-        preserve existing values and only recalculate if topology changed.
+        Classification:
+        - main_side = 1: main channel (highest path_freq at junction)
+        - main_side = 2: side channel
+
+        At junctions, the upstream branch with higher path_freq is considered
+        the main channel. Linear reaches (single upstream/downstream) are main.
         """
-        # TODO(MED): Implement main_side recalculation. Requires:
-        # 1. External GeoPackage with flow accumulation values
-        # 2. Trace main channels using accumulated upstream reach counts
-        # 3. Classify reaches as main (1) vs side (2) channel
-        # See DEVELOPMENT_STATUS.md for tracking.
-        logger.debug("Recalculating reach.main_side (preserving existing values)")
-        pass
+        logger.debug("Recalculating reach.main_side from path_freq")
+
+        sword = self.sword
+        reaches = sword.reaches
+        n_reaches = len(reaches.id)
+
+        # Build lookup tables
+        reach_ids = reaches.id[:]
+        path_freq = reaches.path_freq[:]
+        n_rch_up = reaches.n_rch_up[:]
+        n_rch_down = reaches.n_rch_down[:]
+        rch_id_up = reaches.rch_id_up[:]  # Shape: (4, n_reaches)
+        rch_id_dn = reaches.rch_id_dn[:]  # Shape: (4, n_reaches)
+
+        # Create reach_id to index mapping
+        id_to_idx = {rid: i for i, rid in enumerate(reach_ids)}
+
+        # Initialize all as main channel
+        main_side = np.ones(n_reaches, dtype=np.int32)
+
+        for i in range(n_reaches):
+            # Linear reach - always main
+            if n_rch_up[i] <= 1 and n_rch_down[i] <= 1:
+                main_side[i] = 1
+                continue
+
+            # Junction: check if this reach is the main upstream branch
+            # by comparing path_freq with siblings
+            if n_rch_down[i] >= 1:
+                # Get downstream reach(es)
+                for d in range(min(n_rch_down[i], 4)):
+                    dn_id = rch_id_dn[d, i]
+                    if dn_id <= 0:
+                        continue
+
+                    dn_idx = id_to_idx.get(dn_id)
+                    if dn_idx is None:
+                        continue
+
+                    # Get all upstream reaches of the downstream reach
+                    n_up_of_dn = n_rch_up[dn_idx]
+                    if n_up_of_dn <= 1:
+                        # Single upstream = main
+                        main_side[i] = 1
+                        continue
+
+                    # Multiple upstream branches - compare path_freq
+                    my_path_freq = path_freq[i]
+                    is_main = True
+
+                    for u in range(min(n_up_of_dn, 4)):
+                        up_id = rch_id_up[u, dn_idx]
+                        if up_id <= 0 or up_id == reach_ids[i]:
+                            continue
+
+                        up_idx = id_to_idx.get(up_id)
+                        if up_idx is not None:
+                            # If sibling has higher path_freq, we're not main
+                            if path_freq[up_idx] > my_path_freq:
+                                is_main = False
+                                break
+
+                    main_side[i] = 1 if is_main else 2
+
+        # Apply updates
+        for i in range(n_reaches):
+            reaches.main_side[i] = main_side[i]
+
+        logger.info(f"Recalculated main_side: {np.sum(main_side == 1)} main, {np.sum(main_side == 2)} side")
 
     def _recalc_node_lengths(self) -> None:
         """
