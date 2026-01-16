@@ -2765,7 +2765,9 @@ class SWORDWorkflow:
             kdt = sp.cKDTree(mhv_pts)
 
             # Query: find closest MHV point to each SWORD node in this basin
-            distances, _ = kdt.query(node_pts, k=1)
+            # Note: k=10 matches legacy Add_Trib_Flag.py algorithm for consistency
+            distances, _ = kdt.query(node_pts, k=10)
+            distances = distances[:, 0]  # Use first (closest) neighbor
 
             # Flag nodes within threshold
             matches = distances <= distance_threshold

@@ -1230,20 +1230,25 @@ def filter_us_reaches(sword, up_rchs, cl_keep, pt_dist):
 
 ###############################################################################
 
-def find_delta_tribs(delta_cls, sword, delete_ids=None, tributary_ids=None):
+def find_delta_tribs(delta_cls, sword, delete_ids=None, tributary_ids=None,
+                     overlap_threshold=5.0):
     """
     Finds SWORD reaches that need to be removed within
-    the delta or are tributaries entering the delta. 
+    the delta or are tributaries entering the delta.
 
     Parameters
     ----------
     sword: obj
-        Class object containing SWORD dimensions and 
-        attributes. 
+        Class object containing SWORD dimensions and
+        attributes.
     delete_ids: list, optional
         Manual list of reach IDs to force delete
     tributary_ids: list, optional
         Manual list of reach IDs to force mark as tributaries
+    overlap_threshold: float, optional
+        Percentage overlap threshold for reach deletion. Reaches with
+        overlap > this are deleted; <= this are marked as tributaries.
+        Default is 5.0 (was originally 2%, increased to reduce deletion).
 
     Returns
     -------
@@ -1316,12 +1321,8 @@ def find_delta_tribs(delta_cls, sword, delete_ids=None, tributary_ids=None):
                     up_rchs = find_all_us_rchs(sword, seg_rchs) 
                     rmv_rchs.append(up_rchs)
                     
-            # TODO(MED): This 5% threshold is still being tuned. Higher values
-            # preserve more reaches as tributaries rather than removing them.
-            # Original value was 2%, increased to reduce aggressive deletion.
-            # Consider making this a configurable parameter.
-            # Remove reaches if there is more than 5% overlap.
-            elif perc > 5:
+            # Remove reaches if overlap exceeds threshold
+            elif perc > overlap_threshold:
                 #condition for short 'junction' reaches that may have 
                 #larger percentage. If perc > 0 flag as tributary. 
                 if len(pts) < 20:

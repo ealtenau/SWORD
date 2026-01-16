@@ -418,7 +418,7 @@ tests/
 
 | Issue | Details |
 |-------|---------|
-| `trib_flag` 2.2% discrepancy | Recalculation matches 97.8% of legacy values (9,761 of 9,983 nodes). 222 nodes flagged in legacy but not in recalc. MHV_SWORD v18 data at `/Volumes/SWORD_DATA/data/MHV_SWORD` should be same version - investigate why small difference exists. |
+| `trib_flag` 2.2% discrepancy | **FIXED** - Root cause was k=1 vs k=10 in KDTree query. Legacy `Add_Trib_Flag.py` used k=10, new `workflow.py` used k=1. Fixed by changing to k=10 in `workflow.py:2768-2770`. |
 
 ### Code Quality Tasks (Low Priority)
 
