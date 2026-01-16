@@ -14,8 +14,11 @@ Modules:
     migrations: NetCDF to DuckDB migration utilities
     views: View wrapper classes for numpy-array-style access
     reactive: Automatic recalculation of derived attributes
-    queries: Common SQL query patterns (TODO)
-    export: GeoParquet, Shapefile, and GeoPackage export functions (TODO)
+    workflow: High-level workflow orchestration with provenance
+    provenance: Operation logging and audit trail
+    triggers: Change tracking for reactive updates
+    export: PostgreSQL, GeoParquet, and GeoPackage export functions
+    reconstruction: Attribute reconstruction from source data
 
 Example Usage:
     from sword_duckdb import SWORD
@@ -52,6 +55,9 @@ from .export import (
     export_to_geoparquet,
     export_to_geopackage,
     sync_from_postgres,
+    PostgresExportError,
+    AuthenticationError,
+    NetworkError,
 )
 from .triggers import (
     install_triggers,
@@ -117,6 +123,9 @@ __all__ = [
     'export_to_geoparquet',
     'export_to_geopackage',
     'sync_from_postgres',
+    'PostgresExportError',
+    'AuthenticationError',
+    'NetworkError',
     # Trigger functions
     'install_triggers',
     'remove_triggers',

@@ -22,13 +22,12 @@ Example Usage:
     # Export to GeoParquet
     export_to_geoparquet(sword, "/data/exports/na_reaches.parquet", table="reaches")
 
-TODO(LOW): Add error handling for network failures during PostgreSQL operations.
-Current implementation assumes stable connection. Should add:
-1. Connection retry logic with exponential backoff
-2. Transaction rollback on partial failure
-3. Progress checkpointing for large exports
-4. Informative error messages for common failures (auth, network, disk)
-See DEVELOPMENT_STATUS.md for tracking.
+Network failure handling includes:
+1. Connection retry logic with exponential backoff (_retry_with_backoff)
+2. Transaction rollback on partial failure (try/except in export functions)
+3. Informative error messages for common failures (AuthenticationError, ConnectionError, NetworkError)
+
+Custom exceptions: PostgresExportError, ConnectionError, AuthenticationError, NetworkError
 """
 
 from __future__ import annotations
@@ -36,8 +35,9 @@ from __future__ import annotations
 import gc
 import logging
 import os
+import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -47,6 +47,97 @@ if TYPE_CHECKING:
     from .sword_class import SWORD
 
 logger = logging.getLogger(__name__)
+
+# Type var for retry decorator
+T = TypeVar('T')
+
+
+class PostgresExportError(Exception):
+    """Base exception for PostgreSQL export errors."""
+    pass
+
+
+class ConnectionError(PostgresExportError):
+    """Failed to connect to PostgreSQL."""
+    pass
+
+
+class AuthenticationError(PostgresExportError):
+    """Authentication failed."""
+    pass
+
+
+class NetworkError(PostgresExportError):
+    """Network-related error during export."""
+    pass
+
+
+def _retry_with_backoff(
+    func: Callable[..., T],
+    max_retries: int = 3,
+    base_delay: float = 1.0,
+    max_delay: float = 30.0,
+    retryable_exceptions: tuple = None
+) -> T:
+    """
+    Execute a function with exponential backoff retry.
+
+    Parameters
+    ----------
+    func : callable
+        Function to execute (should be a lambda or partial)
+    max_retries : int
+        Maximum number of retry attempts
+    base_delay : float
+        Initial delay in seconds
+    max_delay : float
+        Maximum delay between retries
+    retryable_exceptions : tuple
+        Exception types that should trigger a retry
+
+    Returns
+    -------
+    T
+        Result of the function call
+
+    Raises
+    ------
+    Exception
+        The last exception if all retries fail
+    """
+    if retryable_exceptions is None:
+        # Default retryable exceptions for psycopg2
+        try:
+            import psycopg2
+            retryable_exceptions = (
+                psycopg2.OperationalError,
+                psycopg2.InterfaceError,
+                OSError,
+                ConnectionResetError,
+            )
+        except ImportError:
+            retryable_exceptions = (OSError, ConnectionResetError)
+
+    last_exception = None
+    for attempt in range(max_retries + 1):
+        try:
+            return func()
+        except retryable_exceptions as e:
+            last_exception = e
+            if attempt == max_retries:
+                break
+            delay = min(base_delay * (2 ** attempt), max_delay)
+            logger.warning(
+                f"Attempt {attempt + 1}/{max_retries + 1} failed: {e}. "
+                f"Retrying in {delay:.1f}s..."
+            )
+            time.sleep(delay)
+
+    # All retries exhausted
+    raise NetworkError(
+        f"Operation failed after {max_retries + 1} attempts. "
+        f"Last error: {last_exception}"
+    ) from last_exception
 
 
 # PostgreSQL/PostGIS schema definitions
@@ -173,29 +264,73 @@ CREATE TABLE IF NOT EXISTS {table_name} (
 """
 
 
-def _get_pg_connection(connection_string: str) -> 'psycopg2.extensions.connection':
+def _get_pg_connection(
+    connection_string: str,
+    max_retries: int = 3
+) -> 'psycopg2.extensions.connection':
     """
-    Get a PostgreSQL connection using psycopg2.
+    Get a PostgreSQL connection using psycopg2 with retry logic.
 
     Parameters
     ----------
     connection_string : str
         PostgreSQL connection string (e.g., "postgresql://user:pass@localhost/db")
+    max_retries : int
+        Maximum connection attempts (default 3)
 
     Returns
     -------
     psycopg2.connection
         Active database connection
+
+    Raises
+    ------
+    ImportError
+        If psycopg2 is not installed
+    AuthenticationError
+        If authentication fails
+    ConnectionError
+        If connection cannot be established
+    NetworkError
+        If network issues persist after retries
     """
     try:
         import psycopg2
+        from psycopg2 import OperationalError as PgOperationalError
     except ImportError:
         raise ImportError(
             "psycopg2 is required for PostgreSQL export. "
             "Install with: pip install psycopg2-binary"
         )
 
-    return psycopg2.connect(connection_string)
+    def connect():
+        try:
+            return psycopg2.connect(connection_string)
+        except PgOperationalError as e:
+            error_msg = str(e).lower()
+            # Provide helpful error messages for common failures
+            if 'authentication failed' in error_msg or 'password' in error_msg:
+                raise AuthenticationError(
+                    f"PostgreSQL authentication failed. Check username/password. "
+                    f"Original error: {e}"
+                ) from e
+            elif 'could not connect' in error_msg or 'connection refused' in error_msg:
+                raise ConnectionError(
+                    f"Cannot connect to PostgreSQL server. Verify host/port and that "
+                    f"the server is running. Original error: {e}"
+                ) from e
+            elif 'does not exist' in error_msg:
+                raise ConnectionError(
+                    f"Database does not exist. Create it first with: "
+                    f"createdb <dbname>. Original error: {e}"
+                ) from e
+            elif 'timeout' in error_msg or 'timed out' in error_msg:
+                # This is retryable
+                raise
+            else:
+                raise
+
+    return _retry_with_backoff(connect, max_retries=max_retries)
 
 
 def _ensure_postgis(conn: 'psycopg2.extensions.connection') -> bool:
@@ -262,6 +397,14 @@ def export_to_postgres(
     ------
     ImportError
         If psycopg2 is not installed
+    AuthenticationError
+        If PostgreSQL authentication fails
+    ConnectionError
+        If cannot connect to PostgreSQL server
+    NetworkError
+        If network issues persist after retries
+    PostgresExportError
+        If export fails for other reasons
 
     Example
     -------
@@ -340,6 +483,15 @@ def export_to_postgres(
 
         conn.commit()
 
+    except (AuthenticationError, ConnectionError, NetworkError):
+        # Re-raise our custom exceptions as-is
+        conn.rollback()
+        raise
+    except Exception as e:
+        # Rollback on any other error
+        conn.rollback()
+        logger.error(f"Export failed, transaction rolled back: {e}")
+        raise PostgresExportError(f"Export failed: {e}") from e
     finally:
         cursor.close()
         conn.close()
