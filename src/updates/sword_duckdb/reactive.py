@@ -885,16 +885,102 @@ class SWORDReactive:
         """
         Recalculate centerline node_id neighbors using KDTree.
 
-        Note: This requires scipy.spatial.KDTree and modifies
-        the node_id[1:4] array which is currently read-only.
+        For each centerline, finds the 4 nearest node centroids:
+        - node_id[0] = primary node (already set)
+        - node_id[1:4] = 3 nearest neighbor nodes
+
+        Updates the centerline_neighbors table with ranks 1, 2, 3.
         """
-        # TODO(MED): Implement centerline neighbor recalculation. Requires:
-        # 1. scipy.spatial.KDTree for spatial queries
-        # 2. 2D WritableArray support for centerlines.node_id[1:4]
-        # 3. Query k=4 nearest node centroids for each centerline
-        # See DEVELOPMENT_STATUS.md for tracking.
-        logger.debug("Recalculating centerline.node_id[1:4] via spatial query")
-        pass
+        try:
+            from scipy.spatial import KDTree
+        except ImportError:
+            logger.warning("scipy not available - skipping centerline neighbor recalculation")
+            return
+
+        logger.info("Recalculating centerline.node_id[1:4] via KDTree spatial query")
+
+        sword = self.sword
+        nodes = sword.nodes
+        centerlines = sword.centerlines
+        db = sword.db
+        region = sword._region
+
+        # Get node centroids
+        node_ids = nodes.id[:]
+        node_x = nodes.x[:]
+        node_y = nodes.y[:]
+
+        # Filter out nodes with invalid coordinates
+        valid_mask = np.isfinite(node_x) & np.isfinite(node_y)
+        valid_node_ids = node_ids[valid_mask]
+        valid_coords = np.column_stack([node_x[valid_mask], node_y[valid_mask]])
+
+        if len(valid_coords) < 4:
+            logger.warning("Not enough valid nodes for neighbor calculation")
+            return
+
+        # Build KDTree from node centroids
+        logger.debug(f"Building KDTree with {len(valid_coords)} node centroids")
+        tree = KDTree(valid_coords)
+
+        # Get centerline coordinates
+        cl_ids = centerlines.cl_id[:]
+        cl_x = centerlines.x[:]
+        cl_y = centerlines.y[:]
+
+        # Determine which centerlines to process
+        if self.dirty.all_reaches:
+            cl_indices = np.arange(len(cl_ids))
+        else:
+            # Get centerlines for dirty reaches
+            reach_ids = list(self.dirty.reach_ids)
+            reach_id_arr = centerlines.reach_id[0, :]  # Primary reach_id
+            cl_indices = np.where(np.isin(reach_id_arr, reach_ids))[0]
+
+        if len(cl_indices) == 0:
+            logger.debug("No centerlines to update")
+            return
+
+        logger.info(f"Updating neighbors for {len(cl_indices)} centerlines")
+
+        # Query k=4 nearest nodes for each centerline
+        cl_coords = np.column_stack([cl_x[cl_indices], cl_y[cl_indices]])
+        distances, indices = tree.query(cl_coords, k=min(4, len(valid_coords)))
+
+        # Prepare batch update data
+        # Format: [(cl_id, region, rank, node_id), ...]
+        neighbor_updates = []
+
+        for i, cl_idx in enumerate(cl_indices):
+            cl_id = cl_ids[cl_idx]
+            # indices[i] contains the 4 nearest node indices
+            # Skip the first (primary node), take next 3 as neighbors
+            for rank in range(1, min(4, len(indices[i]))):
+                neighbor_node_id = valid_node_ids[indices[i][rank]]
+                neighbor_updates.append((int(cl_id), region, rank, int(neighbor_node_id)))
+
+        if not neighbor_updates:
+            return
+
+        # Delete existing neighbors for these centerlines
+        cl_ids_to_update = [int(cl_ids[i]) for i in cl_indices]
+        placeholders = ', '.join(['?'] * len(cl_ids_to_update))
+
+        db.execute(
+            f"DELETE FROM centerline_neighbors WHERE cl_id IN ({placeholders}) AND region = ?",
+            cl_ids_to_update + [region]
+        )
+
+        # Insert new neighbors in batches
+        batch_size = 10000
+        for batch_start in range(0, len(neighbor_updates), batch_size):
+            batch = neighbor_updates[batch_start:batch_start + batch_size]
+            db.execute(
+                "INSERT INTO centerline_neighbors (cl_id, region, neighbor_rank, node_id) VALUES (?, ?, ?, ?)",
+                batch
+            )
+
+        logger.info(f"Updated {len(neighbor_updates)} centerline neighbor records")
 
 
 # === CONVENIENCE FUNCTIONS ===
