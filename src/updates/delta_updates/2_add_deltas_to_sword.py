@@ -32,9 +32,12 @@ import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import time
+import logging
 import numpy as np
 import shutil
 import argparse
+
+logger = logging.getLogger(__name__)
 import src.updates.delta_updates.delta_utils as dlt
 from src.updates.sword_duckdb import SWORD
 
@@ -128,16 +131,15 @@ elif 'Amazon' in delta_dir or 'amazon' in delta_dir.lower():
                     62304000596,62210000616,62100900416]
 
 rmv_rchs, delta_tribs = dlt.find_delta_tribs(delta_cls, sword, delete_ids=manual_delete, tributary_ids=manual_tributaries)
-# DEBUG: print what's in each list
-print(f"DEBUG: rmv_rchs contains {len(rmv_rchs)} reaches")
-print(f"DEBUG: delta_tribs contains {len(delta_tribs)} reaches")
+logger.debug(f"rmv_rchs contains {len(rmv_rchs)} reaches")
+logger.debug(f"delta_tribs contains {len(delta_tribs)} reaches")
 if len(manual_tributaries) > 0:
-    print(f"DEBUG: manual_tributaries: {manual_tributaries}")
+    logger.debug(f"manual_tributaries: {manual_tributaries}")
     for trib_id in manual_tributaries:
         if trib_id in rmv_rchs:
-            print(f"DEBUG: WARNING - {trib_id} is in rmv_rchs (will be deleted)")
+            logger.warning(f"{trib_id} is in rmv_rchs (will be deleted)")
         if trib_id in delta_tribs:
-            print(f"DEBUG: {trib_id} is in delta_tribs (will be tributary)")
+            logger.debug(f"{trib_id} is in delta_tribs (will be tributary)")
 #save plot of what was deleted for future checks. 
 dlt.plot_sword_deletions(sword, 
                          delta_cls, 

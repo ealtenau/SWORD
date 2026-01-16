@@ -25,9 +25,9 @@ Example Usage:
 Network failure handling includes:
 1. Connection retry logic with exponential backoff (_retry_with_backoff)
 2. Transaction rollback on partial failure (try/except in export functions)
-3. Informative error messages for common failures (AuthenticationError, ConnectionError, NetworkError)
+3. Informative error messages for common failures (AuthenticationError, PgConnectionError, NetworkError)
 
-Custom exceptions: PostgresExportError, ConnectionError, AuthenticationError, NetworkError
+Custom exceptions: PostgresExportError, PgConnectionError, AuthenticationError, NetworkError
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ class PostgresExportError(Exception):
     pass
 
 
-class ConnectionError(PostgresExportError):
+class PgConnectionError(PostgresExportError):
     """Failed to connect to PostgreSQL."""
     pass
 
@@ -289,7 +289,7 @@ def _get_pg_connection(
         If psycopg2 is not installed
     AuthenticationError
         If authentication fails
-    ConnectionError
+    PgConnectionError
         If connection cannot be established
     NetworkError
         If network issues persist after retries
@@ -315,12 +315,12 @@ def _get_pg_connection(
                     f"Original error: {e}"
                 ) from e
             elif 'could not connect' in error_msg or 'connection refused' in error_msg:
-                raise ConnectionError(
+                raise PgConnectionError(
                     f"Cannot connect to PostgreSQL server. Verify host/port and that "
                     f"the server is running. Original error: {e}"
                 ) from e
             elif 'does not exist' in error_msg:
-                raise ConnectionError(
+                raise PgConnectionError(
                     f"Database does not exist. Create it first with: "
                     f"createdb <dbname>. Original error: {e}"
                 ) from e
@@ -399,7 +399,7 @@ def export_to_postgres(
         If psycopg2 is not installed
     AuthenticationError
         If PostgreSQL authentication fails
-    ConnectionError
+    PgConnectionError
         If cannot connect to PostgreSQL server
     NetworkError
         If network issues persist after retries
@@ -483,7 +483,7 @@ def export_to_postgres(
 
         conn.commit()
 
-    except (AuthenticationError, ConnectionError, NetworkError):
+    except (AuthenticationError, PgConnectionError, NetworkError):
         # Re-raise our custom exceptions as-is
         conn.rollback()
         raise

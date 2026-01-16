@@ -56,6 +56,7 @@ from .export import (
     export_to_geopackage,
     sync_from_postgres,
     PostgresExportError,
+    PgConnectionError,
     AuthenticationError,
     NetworkError,
 )
@@ -124,6 +125,7 @@ __all__ = [
     'export_to_geopackage',
     'sync_from_postgres',
     'PostgresExportError',
+    'PgConnectionError',
     'AuthenticationError',
     'NetworkError',
     # Trigger functions
