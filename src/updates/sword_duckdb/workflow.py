@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from .reactive import SWORDReactive
     from .provenance import ProvenanceLogger
     from .reconstruction import ReconstructionEngine
+    from .imagery import ImageryPipeline
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +101,7 @@ class SWORDWorkflow:
         self._reactive: Optional['SWORDReactive'] = None
         self._provenance: Optional['ProvenanceLogger'] = None
         self._reconstruction: Optional['ReconstructionEngine'] = None
+        self._imagery: Optional['ImageryPipeline'] = None
         self._user_id = user_id
         self._enable_provenance = enable_provenance
         self._in_batch: bool = False
@@ -128,6 +130,26 @@ class SWORDWorkflow:
     def reconstruction(self) -> Optional['ReconstructionEngine']:
         """Get the reconstruction engine instance."""
         return self._reconstruction
+
+    @property
+    def imagery(self) -> Optional['ImageryPipeline']:
+        """
+        Get the imagery pipeline instance (lazy-loaded).
+
+        Returns None if no SWORD database is loaded.
+        """
+        if self._sword is None:
+            return None
+
+        if self._imagery is None:
+            from .imagery import ImageryPipeline
+
+            self._imagery = ImageryPipeline(
+                sword=self._sword,
+                db_conn=self._sword.db.conn if hasattr(self._sword, 'db') else None,
+            )
+
+        return self._imagery
 
     @property
     def is_loaded(self) -> bool:
@@ -273,6 +295,7 @@ class SWORDWorkflow:
             self._reactive = None
             self._provenance = None
             self._reconstruction = None
+            self._imagery = None
             self._db_path = None
             self._region = None
             logger.info("SWORD database closed")
@@ -3408,6 +3431,66 @@ class SWORDWorkflow:
         )
 
         return result
+
+    # =========================================================================
+    # IMAGERY METHODS
+    # =========================================================================
+
+    def get_imagery_for_reach(
+        self,
+        reach_id: int,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        max_cloud_cover: float = 20.0,
+        use_otsu: bool = False,
+    ) -> 'Any':
+        """
+        Get satellite imagery and water index for a reach.
+
+        Parameters
+        ----------
+        reach_id : int
+            SWORD reach ID
+        start_date : str, optional
+            Start date for imagery search (YYYY-MM-DD)
+        end_date : str, optional
+            End date for imagery search (YYYY-MM-DD)
+        max_cloud_cover : float, optional
+            Maximum cloud cover percentage (default: 20)
+        use_otsu : bool, optional
+            Use Otsu's method for automatic water threshold
+
+        Returns
+        -------
+        ImageryResult
+            Result containing NDWI, water mask, and statistics
+
+        Example
+        -------
+        >>> result = workflow.get_imagery_for_reach(12345678901)
+        >>> print(f"Water fraction: {result.stats['water_fraction']:.2%}")
+        """
+        if not self.is_loaded:
+            raise ValueError("No SWORD database loaded. Call load() first.")
+
+        return self.imagery.get_imagery_for_reach(
+            reach_id=reach_id,
+            start_date=start_date,
+            end_date=end_date,
+            max_cloud_cover=max_cloud_cover,
+            use_otsu=use_otsu,
+        )
+
+    def get_imagery_cache_stats(self) -> Dict[str, Any]:
+        """Get statistics about the imagery cache."""
+        if self.imagery is None:
+            return {"cache_enabled": False, "error": "No database loaded"}
+        return self.imagery.get_cache_stats()
+
+    def clear_imagery_cache(self) -> None:
+        """Clear the imagery cache."""
+        if self.imagery is not None:
+            self.imagery.clear_cache()
 
     def __repr__(self) -> str:
         if self.is_loaded:
