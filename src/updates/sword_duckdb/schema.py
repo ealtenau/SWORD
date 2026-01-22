@@ -19,7 +19,35 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.3.0"  # Updated for snapshot versioning
+SCHEMA_VERSION = "1.4.0"  # Updated for v17c columns
+
+# Valid region codes (uppercase)
+VALID_REGIONS = frozenset(['NA', 'SA', 'EU', 'AF', 'AS', 'OC'])
+
+
+def normalize_region(region: str) -> str:
+    """
+    Normalize region code to uppercase and validate.
+
+    Parameters
+    ----------
+    region : str
+        Region code (case-insensitive)
+
+    Returns
+    -------
+    str
+        Uppercase region code
+
+    Raises
+    ------
+    ValueError
+        If region is not valid
+    """
+    r = region.upper()
+    if r not in VALID_REGIONS:
+        raise ValueError(f"Invalid region '{region}'. Must be one of: {sorted(VALID_REGIONS)}")
+    return r
 
 # Core table definitions
 # NOTE: cl_id and node_id are only unique within a region, so we use composite keys
@@ -129,6 +157,12 @@ CREATE TABLE IF NOT EXISTS nodes (
     end_reach INTEGER,           -- end_rch: 0=main, 1=headwater, 2=outlet, 3=junction
     network INTEGER,             -- connected network ID
 
+    -- v17c columns
+    best_headwater BIGINT,       -- best upstream headwater node
+    best_outlet BIGINT,          -- best downstream outlet node
+    pathlen_hw DOUBLE,           -- cumulative path length to headwater
+    pathlen_out DOUBLE,          -- cumulative path length to outlet
+
     -- Addition flag (optional, may not exist in older versions)
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
 
@@ -212,6 +246,19 @@ CREATE TABLE IF NOT EXISTS reaches (
     main_side INTEGER,           -- 0=main, 1=side, 2=secondary outlet
     end_reach INTEGER,           -- end_rch: 0=main, 1=headwater, 2=outlet, 3=junction
     network INTEGER,             -- connected network ID
+
+    -- v17c columns
+    best_headwater BIGINT,           -- best upstream headwater node
+    best_outlet BIGINT,              -- best downstream outlet node
+    pathlen_hw DOUBLE,               -- cumulative path length to headwater
+    pathlen_out DOUBLE,              -- cumulative path length to outlet
+    main_path_id BIGINT,             -- unique ID for headwater-outlet path
+    is_mainstem_edge BOOLEAN DEFAULT FALSE,  -- whether edge is on mainstem
+    dist_out_short DOUBLE,           -- shortest-path distance to outlet
+    hydro_dist_out DOUBLE,           -- hydrologic distance to outlet (via main channel)
+    hydro_dist_hw DOUBLE,            -- hydrologic distance to headwater (via main channel)
+    rch_id_up_main BIGINT,           -- main upstream reach ID
+    rch_id_dn_main BIGINT,           -- main downstream reach ID
 
     -- Addition flag (optional)
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
@@ -724,3 +771,79 @@ def create_provenance_tables(conn) -> None:
 
     for index_sql in provenance_indexes:
         conn.execute(index_sql)
+
+
+def add_v17c_columns(conn) -> bool:
+    """
+    Add v17c columns to existing nodes and reaches tables.
+
+    This migration helper adds the new columns required for v17c topology
+    without recreating the tables. Safe to call multiple times - checks
+    if columns already exist.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active DuckDB connection.
+
+    Returns
+    -------
+    bool
+        True if any columns were added, False if all already existed.
+    """
+    added = False
+
+    # v17c columns for nodes table
+    nodes_v17c_columns = [
+        ("best_headwater", "BIGINT"),
+        ("best_outlet", "BIGINT"),
+        ("pathlen_hw", "DOUBLE"),
+        ("pathlen_out", "DOUBLE"),
+    ]
+
+    # v17c columns for reaches table
+    reaches_v17c_columns = [
+        ("best_headwater", "BIGINT"),
+        ("best_outlet", "BIGINT"),
+        ("pathlen_hw", "DOUBLE"),
+        ("pathlen_out", "DOUBLE"),
+        ("main_path_id", "BIGINT"),
+        ("is_mainstem_edge", "BOOLEAN DEFAULT FALSE"),
+        ("dist_out_short", "DOUBLE"),
+        ("hydro_dist_out", "DOUBLE"),
+        ("hydro_dist_hw", "DOUBLE"),
+        ("rch_id_up_main", "BIGINT"),
+        ("rch_id_dn_main", "BIGINT"),
+    ]
+
+    def _add_columns_to_table(table_name: str, columns: list) -> bool:
+        """Add columns to a table if they don't exist."""
+        nonlocal added
+        # Get existing columns
+        result = conn.execute(
+            f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"
+        ).fetchall()
+        existing = {row[0].lower() for row in result}
+
+        for col_name, col_type in columns:
+            if col_name.lower() not in existing:
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+                added = True
+
+        return added
+
+    # Add columns to nodes table
+    try:
+        _add_columns_to_table("nodes", nodes_v17c_columns)
+    except Exception as e:
+        # Table may not exist yet
+        pass
+
+    # Add columns to reaches table
+    try:
+        _add_columns_to_table("reaches", reaches_v17c_columns)
+    except Exception as e:
+        # Table may not exist yet
+        pass
+
+    return added

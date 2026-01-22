@@ -221,8 +221,11 @@ class SWORDWorkflow:
         from .sword_class import SWORD
         from .reactive import SWORDReactive
         from .provenance import ProvenanceLogger
-        from .schema import create_provenance_tables
+        from .schema import create_provenance_tables, add_v17c_columns, normalize_region
         from .reconstruction import ReconstructionEngine
+
+        # Normalize region code to uppercase
+        region = normalize_region(region)
 
         logger.info(f"Loading SWORD database: {db_path}, region: {region}")
 
@@ -234,6 +237,13 @@ class SWORDWorkflow:
         # Initialize reactive system
         self._reactive = SWORDReactive(self._sword)
         self._sword.set_reactive(self._reactive)
+
+        # Migrate schema: add v17c columns if needed
+        try:
+            if add_v17c_columns(self._sword.db.conn):
+                logger.info("Added v17c columns to database schema")
+        except Exception as e:
+            logger.debug(f"v17c columns migration: {e}")
 
         # Initialize provenance system
         if self._enable_provenance:
@@ -1481,6 +1491,124 @@ class SWORDWorkflow:
             return []
 
         return self._reconstruction.list_reconstructable_attributes()
+
+    # =========================================================================
+    # V17C IMPORT METHODS
+    # =========================================================================
+
+    def import_v17c_attributes(
+        self,
+        gpkg_path: Union[str, Path],
+        reason: str = "Import v17c attributes from pipeline GPKG",
+    ) -> Dict[str, int]:
+        """
+        Import v17c topology attributes from pipeline output GPKG.
+
+        Reads the network edges GPKG produced by assign_attribute.py and
+        updates the reaches table with v17c attributes.
+
+        Parameters
+        ----------
+        gpkg_path : str or Path
+            Path to {continent}_network_edges.gpkg from assign_attribute.py
+        reason : str, optional
+            Reason for import (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Statistics: {'reaches_updated': int, 'attributes_set': list}
+
+        Example
+        -------
+        >>> workflow.import_v17c_attributes('/path/to/na_network_edges.gpkg')
+        {'reaches_updated': 40000, 'attributes_set': ['best_headwater', ...]}
+        """
+        import geopandas as gpd
+
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        gpkg_path = Path(gpkg_path)
+        if not gpkg_path.exists():
+            raise FileNotFoundError(f"GPKG not found: {gpkg_path}")
+
+        logger.info(f"Importing v17c attributes from: {gpkg_path}")
+
+        # Read GPKG
+        gdf = gpd.read_file(gpkg_path)
+
+        # v17c attributes to import
+        v17c_attrs = [
+            'best_headwater', 'best_outlet', 'pathlen_hw', 'pathlen_out',
+            'main_path_id', 'is_mainstem_edge', 'dist_out_short',
+            'hydro_dist_out', 'hydro_dist_hw', 'rch_id_up_main', 'rch_id_dn_main'
+        ]
+
+        # Filter to only columns that exist in GPKG
+        available_attrs = [a for a in v17c_attrs if a in gdf.columns]
+        if not available_attrs:
+            raise ValueError(
+                f"No v17c attributes found in GPKG. Expected: {v17c_attrs}"
+            )
+
+        logger.info(f"Found v17c attributes: {available_attrs}")
+
+        # Build update data
+        if 'reach_id' not in gdf.columns:
+            raise ValueError("GPKG missing 'reach_id' column")
+
+        # Create temp table and update reaches
+        conn = self._sword.db.conn
+
+        # Prepare data for update
+        update_df = gdf[['reach_id'] + available_attrs].drop_duplicates('reach_id')
+
+        # Register as temp table
+        conn.register('v17c_import_temp', update_df)
+
+        # Build update SQL for each attribute
+        reaches_updated = 0
+
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'IMPORT',
+                table_name='reaches',
+                entity_ids=None,
+                region=self._region,
+                reason=reason,
+                details={'source': str(gpkg_path), 'attributes': available_attrs},
+            ):
+                reaches_updated = self._do_v17c_import(conn, available_attrs)
+        else:
+            reaches_updated = self._do_v17c_import(conn, available_attrs)
+
+        # Unregister temp table
+        conn.unregister('v17c_import_temp')
+
+        logger.info(f"Updated {reaches_updated} reaches with v17c attributes")
+
+        return {
+            'reaches_updated': reaches_updated,
+            'attributes_set': available_attrs,
+        }
+
+    def _do_v17c_import(self, conn, available_attrs: List[str]) -> int:
+        """Execute the v17c attribute import."""
+        # Build SET clause
+        set_clauses = [f"{attr} = v17c_import_temp.{attr}" for attr in available_attrs]
+        set_sql = ", ".join(set_clauses)
+
+        update_sql = f"""
+            UPDATE reaches
+            SET {set_sql}
+            FROM v17c_import_temp
+            WHERE reaches.reach_id = v17c_import_temp.reach_id
+              AND reaches.region = '{self._region}'
+        """
+
+        result = conn.execute(update_sql)
+        return result.fetchone()[0] if result else 0
 
     # =========================================================================
     # EXPORT METHODS
