@@ -204,3 +204,12 @@ src/updates/delta_updates/testing.py
 .history/
 .venv/
 .whisper/
+
+# Project-specific ignores
+*.png
+outputs/
+test_*.py
+cookies.txt
+ml4floods_models/
+deepwatermap/
+*.npy
