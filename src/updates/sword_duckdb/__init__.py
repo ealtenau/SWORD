@@ -70,7 +70,7 @@ from .triggers import (
 )
 from .workflow import SWORDWorkflow
 from .provenance import ProvenanceLogger, OperationType, OperationStatus
-from .schema import create_provenance_tables
+from .schema import create_provenance_tables, add_v17c_columns, add_swot_obs_columns
 from .reconstruction import (
     ReconstructionEngine,
     SourceDataset,
@@ -112,6 +112,8 @@ __all__ = [
     # Schema
     'create_schema',
     'create_provenance_tables',
+    'add_v17c_columns',
+    'add_swot_obs_columns',
     'get_schema_sql',
     'SCHEMA_VERSION',
     # Migration

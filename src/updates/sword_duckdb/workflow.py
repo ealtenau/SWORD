@@ -1611,6 +1611,274 @@ class SWORDWorkflow:
         return result.fetchone()[0] if result else 0
 
     # =========================================================================
+    # SWOT OBSERVATION AGGREGATION
+    # =========================================================================
+
+    def aggregate_swot_observations(
+        self,
+        parquet_lake_path: Union[str, Path],
+        all_regions: bool = False,
+        reason: str = "Aggregate SWOT L2 RiverSP observations",
+    ) -> Dict[str, Any]:
+        """
+        Aggregate SWOT L2 RiverSP observations into summary statistics.
+
+        Reads all parquet files from the SWOT data lake and computes mean, median,
+        std, and range for WSE and width (nodes) and slope (reaches).
+
+        Parameters
+        ----------
+        parquet_lake_path : str or Path
+            Path to SWOT parquet lake (e.g., '/Volumes/SWORD_DATA/data/swot/parquet_lake_D')
+            Expected structure: {path}/nodes/*.parquet, {path}/reaches/*.parquet
+        all_regions : bool, optional
+            If True, update all regions in database (not just loaded region).
+            More efficient as parquet files are only read once.
+        reason : str, optional
+            Reason for aggregation (logged to provenance)
+
+        Returns
+        -------
+        dict
+            Statistics: {'nodes_updated': int, 'reaches_updated': int, 'total_obs': int}
+
+        Example
+        -------
+        >>> workflow.aggregate_swot_observations('/Volumes/SWORD_DATA/data/swot/parquet_lake_D', all_regions=True)
+        {'nodes_updated': 500000, 'reaches_updated': 40000, 'total_obs': 12000000}
+        """
+        from .schema import add_swot_obs_columns
+
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        parquet_lake_path = Path(parquet_lake_path)
+        if not parquet_lake_path.exists():
+            raise FileNotFoundError(f"Parquet lake not found: {parquet_lake_path}")
+
+        nodes_path = parquet_lake_path / "nodes"
+        reaches_path = parquet_lake_path / "reaches"
+
+        if not nodes_path.exists():
+            raise FileNotFoundError(f"Nodes directory not found: {nodes_path}")
+        if not reaches_path.exists():
+            raise FileNotFoundError(f"Reaches directory not found: {reaches_path}")
+
+        logger.info(f"Aggregating SWOT observations from: {parquet_lake_path}")
+
+        conn = self._sword.db.conn
+
+        # Ensure SWOT observation columns exist
+        if add_swot_obs_columns(conn):
+            logger.info("Added SWOT observation columns to schema")
+
+        results = {
+            'nodes_updated': 0,
+            'reaches_updated': 0,
+            'node_total_obs': 0,
+            'reach_total_obs': 0,
+        }
+
+        region_filter = None if all_regions else self._region
+
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'IMPORT',
+                table_name='nodes',
+                entity_ids=None,
+                region=self._region if not all_regions else 'ALL',
+                reason=reason,
+                details={'source': str(parquet_lake_path), 'type': 'swot_obs_aggregation', 'all_regions': all_regions},
+            ):
+                node_results = self._aggregate_node_observations(conn, nodes_path, region_filter)
+                results.update(node_results)
+
+            with self._provenance.operation(
+                'IMPORT',
+                table_name='reaches',
+                entity_ids=None,
+                region=self._region if not all_regions else 'ALL',
+                reason=reason,
+                details={'source': str(parquet_lake_path), 'type': 'swot_obs_aggregation', 'all_regions': all_regions},
+            ):
+                reach_results = self._aggregate_reach_observations(conn, reaches_path, region_filter)
+                results.update(reach_results)
+        else:
+            node_results = self._aggregate_node_observations(conn, nodes_path, region_filter)
+            results.update(node_results)
+            reach_results = self._aggregate_reach_observations(conn, reaches_path, region_filter)
+            results.update(reach_results)
+
+        logger.info(
+            f"SWOT aggregation complete: {results['nodes_updated']} nodes, "
+            f"{results['reaches_updated']} reaches updated"
+        )
+
+        return results
+
+    def _aggregate_node_observations(
+        self, conn, nodes_path: Path, region_filter: Optional[str] = None
+    ) -> Dict[str, int]:
+        """Aggregate node-level SWOT observations.
+
+        Parameters
+        ----------
+        conn : DuckDB connection
+        nodes_path : Path to nodes parquet directory
+        region_filter : Optional region to filter updates (None = all regions)
+        """
+        glob_pattern = str(nodes_path / "SWOT*.parquet")
+
+        logger.info(f"Aggregating node observations from: {glob_pattern}")
+
+        # Aggregate all observations per node
+        # Use CASE WHEN for STDDEV to handle single-observation cases (stddev undefined)
+        # Filter to valid ranges to avoid overflow in STDDEV calculation
+        agg_sql = f"""
+            CREATE OR REPLACE TEMP TABLE node_obs_agg AS
+            SELECT
+                CAST(node_id AS BIGINT) as node_id,
+                AVG(wse) as wse_obs_mean,
+                MEDIAN(wse) as wse_obs_median,
+                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(wse) ELSE NULL END as wse_obs_std,
+                MAX(wse) - MIN(wse) as wse_obs_range,
+                AVG(width) as width_obs_mean,
+                MEDIAN(width) as width_obs_median,
+                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
+                MAX(width) - MIN(width) as width_obs_range,
+                COUNT(*) as n_obs
+            FROM read_parquet('{glob_pattern}')
+            WHERE wse IS NOT NULL
+              AND wse > -1000 AND wse < 10000
+              AND width IS NOT NULL
+              AND width > 0 AND width < 100000
+              AND isfinite(wse) AND isfinite(width)
+            GROUP BY node_id
+        """
+
+        conn.execute(agg_sql)
+
+        # Count total observations
+        total_obs = conn.execute("SELECT SUM(n_obs) FROM node_obs_agg").fetchone()[0] or 0
+
+        # Update nodes table (optionally filter by region)
+        region_clause = f"AND nodes.region = '{region_filter}'" if region_filter else ""
+        update_sql = f"""
+            UPDATE nodes
+            SET
+                wse_obs_mean = node_obs_agg.wse_obs_mean,
+                wse_obs_median = node_obs_agg.wse_obs_median,
+                wse_obs_std = node_obs_agg.wse_obs_std,
+                wse_obs_range = node_obs_agg.wse_obs_range,
+                width_obs_mean = node_obs_agg.width_obs_mean,
+                width_obs_median = node_obs_agg.width_obs_median,
+                width_obs_std = node_obs_agg.width_obs_std,
+                width_obs_range = node_obs_agg.width_obs_range,
+                n_obs = node_obs_agg.n_obs
+            FROM node_obs_agg
+            WHERE nodes.node_id = node_obs_agg.node_id
+              {region_clause}
+        """
+
+        result = conn.execute(update_sql)
+        nodes_updated = result.fetchone()[0] if result else 0
+
+        # Clean up temp table
+        conn.execute("DROP TABLE IF EXISTS node_obs_agg")
+
+        logger.info(f"Updated {nodes_updated} nodes with {total_obs} total observations")
+
+        return {
+            'nodes_updated': nodes_updated,
+            'node_total_obs': int(total_obs),
+        }
+
+    def _aggregate_reach_observations(
+        self, conn, reaches_path: Path, region_filter: Optional[str] = None
+    ) -> Dict[str, int]:
+        """Aggregate reach-level SWOT observations.
+
+        Parameters
+        ----------
+        conn : DuckDB connection
+        reaches_path : Path to reaches parquet directory
+        region_filter : Optional region to filter updates (None = all regions)
+        """
+        glob_pattern = str(reaches_path / "SWOT*.parquet")
+
+        logger.info(f"Aggregating reach observations from: {glob_pattern}")
+
+        # Aggregate all observations per reach
+        # Use CASE WHEN for STDDEV to handle single-observation cases (stddev undefined)
+        # Filter to valid ranges to avoid overflow in STDDEV calculation
+        agg_sql = f"""
+            CREATE OR REPLACE TEMP TABLE reach_obs_agg AS
+            SELECT
+                CAST(reach_id AS BIGINT) as reach_id,
+                AVG(wse) as wse_obs_mean,
+                MEDIAN(wse) as wse_obs_median,
+                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(wse) ELSE NULL END as wse_obs_std,
+                MAX(wse) - MIN(wse) as wse_obs_range,
+                AVG(width) as width_obs_mean,
+                MEDIAN(width) as width_obs_median,
+                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
+                MAX(width) - MIN(width) as width_obs_range,
+                AVG(slope) as slope_obs_mean,
+                MEDIAN(slope) as slope_obs_median,
+                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(slope) ELSE NULL END as slope_obs_std,
+                MAX(slope) - MIN(slope) as slope_obs_range,
+                COUNT(*) as n_obs
+            FROM read_parquet('{glob_pattern}')
+            WHERE wse IS NOT NULL
+              AND wse > -1000 AND wse < 10000
+              AND width IS NOT NULL
+              AND width > 0 AND width < 100000
+              AND isfinite(wse) AND isfinite(width)
+            GROUP BY reach_id
+        """
+
+        conn.execute(agg_sql)
+
+        # Count total observations
+        total_obs = conn.execute("SELECT SUM(n_obs) FROM reach_obs_agg").fetchone()[0] or 0
+
+        # Update reaches table (optionally filter by region)
+        region_clause = f"AND reaches.region = '{region_filter}'" if region_filter else ""
+        update_sql = f"""
+            UPDATE reaches
+            SET
+                wse_obs_mean = reach_obs_agg.wse_obs_mean,
+                wse_obs_median = reach_obs_agg.wse_obs_median,
+                wse_obs_std = reach_obs_agg.wse_obs_std,
+                wse_obs_range = reach_obs_agg.wse_obs_range,
+                width_obs_mean = reach_obs_agg.width_obs_mean,
+                width_obs_median = reach_obs_agg.width_obs_median,
+                width_obs_std = reach_obs_agg.width_obs_std,
+                width_obs_range = reach_obs_agg.width_obs_range,
+                slope_obs_mean = reach_obs_agg.slope_obs_mean,
+                slope_obs_median = reach_obs_agg.slope_obs_median,
+                slope_obs_std = reach_obs_agg.slope_obs_std,
+                slope_obs_range = reach_obs_agg.slope_obs_range,
+                n_obs = reach_obs_agg.n_obs
+            FROM reach_obs_agg
+            WHERE reaches.reach_id = reach_obs_agg.reach_id
+              {region_clause}
+        """
+
+        result = conn.execute(update_sql)
+        reaches_updated = result.fetchone()[0] if result else 0
+
+        # Clean up temp table
+        conn.execute("DROP TABLE IF EXISTS reach_obs_agg")
+
+        logger.info(f"Updated {reaches_updated} reaches with {total_obs} total observations")
+
+        return {
+            'reaches_updated': reaches_updated,
+            'reach_total_obs': int(total_obs),
+        }
+
+    # =========================================================================
     # EXPORT METHODS
     # =========================================================================
 

@@ -63,7 +63,7 @@ class TestProvenanceSchema:
 
     def test_schema_version_updated(self):
         from src.updates.sword_duckdb.schema import SCHEMA_VERSION
-        assert SCHEMA_VERSION == "1.4.0"  # Updated for v17c columns
+        assert SCHEMA_VERSION == "1.5.0"  # Updated for SWOT observation statistics
 
 
 class TestWorkflowProvenance:

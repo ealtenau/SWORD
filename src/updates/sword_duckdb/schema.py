@@ -19,7 +19,7 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.4.0"  # Updated for v17c columns
+SCHEMA_VERSION = "1.5.0"  # Updated for SWOT observation statistics
 
 # Valid region codes (uppercase)
 VALID_REGIONS = frozenset(['NA', 'SA', 'EU', 'AF', 'AS', 'OC'])
@@ -163,6 +163,17 @@ CREATE TABLE IF NOT EXISTS nodes (
     pathlen_hw DOUBLE,           -- cumulative path length to headwater
     pathlen_out DOUBLE,          -- cumulative path length to outlet
 
+    -- SWOT observation statistics (computed from L2 RiverSP data)
+    wse_obs_mean DOUBLE,         -- mean observed WSE
+    wse_obs_median DOUBLE,       -- median observed WSE
+    wse_obs_std DOUBLE,          -- std dev of observed WSE
+    wse_obs_range DOUBLE,        -- range (max-min) of observed WSE
+    width_obs_mean DOUBLE,       -- mean observed width
+    width_obs_median DOUBLE,     -- median observed width
+    width_obs_std DOUBLE,        -- std dev of observed width
+    width_obs_range DOUBLE,      -- range (max-min) of observed width
+    n_obs INTEGER,               -- count of SWOT observations
+
     -- Addition flag (optional, may not exist in older versions)
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
 
@@ -259,6 +270,21 @@ CREATE TABLE IF NOT EXISTS reaches (
     hydro_dist_hw DOUBLE,            -- hydrologic distance to headwater (via main channel)
     rch_id_up_main BIGINT,           -- main upstream reach ID
     rch_id_dn_main BIGINT,           -- main downstream reach ID
+
+    -- SWOT observation statistics (computed from L2 RiverSP data)
+    wse_obs_mean DOUBLE,             -- mean observed WSE
+    wse_obs_median DOUBLE,           -- median observed WSE
+    wse_obs_std DOUBLE,              -- std dev of observed WSE
+    wse_obs_range DOUBLE,            -- range (max-min) of observed WSE
+    width_obs_mean DOUBLE,           -- mean observed width
+    width_obs_median DOUBLE,         -- median observed width
+    width_obs_std DOUBLE,            -- std dev of observed width
+    width_obs_range DOUBLE,          -- range (max-min) of observed width
+    slope_obs_mean DOUBLE,           -- mean observed slope
+    slope_obs_median DOUBLE,         -- median observed slope
+    slope_obs_std DOUBLE,            -- std dev of observed slope
+    slope_obs_range DOUBLE,          -- range (max-min) of observed slope
+    n_obs INTEGER,                   -- count of SWOT observations
 
     -- Addition flag (optional)
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
@@ -835,14 +861,97 @@ def add_v17c_columns(conn) -> bool:
     # Add columns to nodes table
     try:
         _add_columns_to_table("nodes", nodes_v17c_columns)
-    except Exception as e:
+    except Exception:
         # Table may not exist yet
         pass
 
     # Add columns to reaches table
     try:
         _add_columns_to_table("reaches", reaches_v17c_columns)
-    except Exception as e:
+    except Exception:
+        # Table may not exist yet
+        pass
+
+    return added
+
+
+def add_swot_obs_columns(conn) -> bool:
+    """
+    Add SWOT observation statistics columns to existing nodes and reaches tables.
+
+    This migration helper adds columns for aggregated SWOT L2 RiverSP statistics
+    (mean, median, std, range) for WSE, width, and slope observations.
+    Safe to call multiple times - checks if columns already exist.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active DuckDB connection.
+
+    Returns
+    -------
+    bool
+        True if any columns were added, False if all already existed.
+    """
+    added = False
+
+    # SWOT observation columns for nodes table
+    nodes_swot_columns = [
+        ("wse_obs_mean", "DOUBLE"),
+        ("wse_obs_median", "DOUBLE"),
+        ("wse_obs_std", "DOUBLE"),
+        ("wse_obs_range", "DOUBLE"),
+        ("width_obs_mean", "DOUBLE"),
+        ("width_obs_median", "DOUBLE"),
+        ("width_obs_std", "DOUBLE"),
+        ("width_obs_range", "DOUBLE"),
+        ("n_obs", "INTEGER"),
+    ]
+
+    # SWOT observation columns for reaches table (includes slope)
+    reaches_swot_columns = [
+        ("wse_obs_mean", "DOUBLE"),
+        ("wse_obs_median", "DOUBLE"),
+        ("wse_obs_std", "DOUBLE"),
+        ("wse_obs_range", "DOUBLE"),
+        ("width_obs_mean", "DOUBLE"),
+        ("width_obs_median", "DOUBLE"),
+        ("width_obs_std", "DOUBLE"),
+        ("width_obs_range", "DOUBLE"),
+        ("slope_obs_mean", "DOUBLE"),
+        ("slope_obs_median", "DOUBLE"),
+        ("slope_obs_std", "DOUBLE"),
+        ("slope_obs_range", "DOUBLE"),
+        ("n_obs", "INTEGER"),
+    ]
+
+    def _add_columns_to_table(table_name: str, columns: list) -> bool:
+        """Add columns to a table if they don't exist."""
+        nonlocal added
+        # Get existing columns
+        result = conn.execute(
+            f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"
+        ).fetchall()
+        existing = {row[0].lower() for row in result}
+
+        for col_name, col_type in columns:
+            if col_name.lower() not in existing:
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+                added = True
+
+        return added
+
+    # Add columns to nodes table
+    try:
+        _add_columns_to_table("nodes", nodes_swot_columns)
+    except Exception:
+        # Table may not exist yet
+        pass
+
+    # Add columns to reaches table
+    try:
+        _add_columns_to_table("reaches", reaches_swot_columns)
+    except Exception:
         # Table may not exist yet
         pass
 
