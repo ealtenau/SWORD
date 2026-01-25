@@ -3314,6 +3314,259 @@ class SWORDWorkflow:
     # Original SWORD facc values are correct (match MERIT channel pixels).
     # See commit history for removed code if needed for reference.
 
+    def fix_facc_violations(
+        self,
+        dry_run: bool = True,
+        update_nodes: bool = True,
+        width_facc_ratio_threshold: float = 5000.0,
+        max_upstream_hops: int = 10,
+        downstream_increment: float = 10.0,
+        reason: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Fix flow accumulation (facc) violations by tracing upstream to find good values.
+
+        Corrupted reaches (small channels with mainstem facc values) are fixed by:
+        1. Tracing upstream until a "good" facc value is found
+        2. Using that value + small increment per hop downstream
+        3. Flagging reaches where no good upstream exists
+
+        Parameters
+        ----------
+        dry_run : bool, optional
+            If True (default), only report violations without making changes.
+        update_nodes : bool, optional
+            If True (default), also update node facc values.
+        width_facc_ratio_threshold : float, optional
+            Ratio above which a reach is considered corrupted. Default 5000.
+        max_upstream_hops : int, optional
+            Maximum hops to trace upstream looking for good value. Default 10.
+        downstream_increment : float, optional
+            facc increment (km²) per hop downstream from good source. Default 10.
+        reason : str, optional
+            Reason for the fix (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Results including counts by fix method and quality flags.
+
+        Notes
+        -----
+        Fix methods:
+        - 'traced': Good upstream found, value propagated downstream
+        - 'unfixable': No good upstream within max_hops, flagged only
+
+        Adds/updates 'facc_quality' column: 'original', 'traced', 'suspect'
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        import numpy as np
+
+        logger.info(f"Fixing facc violations ({'dry run' if dry_run else 'applying fixes'})")
+
+        # Get reach data
+        reach_ids = self._sword.reaches.id.copy()
+        facc = self._sword.reaches.facc.copy()
+        width = self._sword.reaches.wth.copy()
+
+        # Build reach_id -> index mapping
+        id_to_idx = {int(rid): i for i, rid in enumerate(reach_ids)}
+        rch_id_up = self._sword.reaches.rch_id_up
+
+        # =====================================================================
+        # PHASE 1: Identify corrupted reaches
+        # =====================================================================
+        logger.info("Phase 1: Identifying corrupted reaches...")
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            facc_width_ratio = np.where(width > 0, facc / width, 0)
+
+        corrupted_mask = (facc_width_ratio > width_facc_ratio_threshold) & (facc > 50000)
+        corrupted_indices = np.where(corrupted_mask)[0]
+        corrupted_ids = set(int(reach_ids[i]) for i in corrupted_indices)
+
+        logger.info(f"Found {len(corrupted_ids)} corrupted reaches")
+
+        # =====================================================================
+        # PHASE 2: Trace upstream to find good values
+        # =====================================================================
+        logger.info("Phase 2: Tracing upstream for good facc values...")
+
+        def is_good_source(idx, start_facc):
+            """
+            Check if reach is a valid source for fixing corrupted facc.
+
+            Must satisfy:
+            1. Has reasonable facc/width ratio (< 1000)
+            2. Has significantly LOWER facc than the corrupted reach (< 50%)
+               This prevents using the mainstem source of corruption as the fix.
+            """
+            if width[idx] <= 0:
+                return False
+            ratio_ok = facc[idx] / width[idx] < 1000
+            # Must be significantly lower - if similar, it's the source of corruption
+            facc_lower = facc[idx] < (start_facc * 0.5)
+            return ratio_ok and facc_lower
+
+        def trace_upstream(start_idx, max_hops):
+            """Trace upstream until good value found. Returns (good_facc, hops) or (None, 0)."""
+            start_facc = facc[start_idx]
+            current_idx = start_idx
+            for hop in range(1, max_hops + 1):
+                # Get primary upstream neighbor
+                up_neighbors = rch_id_up[:, current_idx]
+                up_neighbors = up_neighbors[up_neighbors > 0]
+
+                if len(up_neighbors) == 0:
+                    return None, 0  # Hit headwater, no good value found
+
+                up_id = int(up_neighbors[0])
+                if up_id not in id_to_idx:
+                    return None, 0  # Upstream in different region
+
+                up_idx = id_to_idx[up_id]
+
+                if is_good_source(up_idx, start_facc):
+                    return facc[up_idx], hop
+
+                current_idx = up_idx
+
+            return None, 0  # Exceeded max hops
+
+        # Track corrections and quality
+        corrections = {}  # reach_id -> (old_facc, new_facc, method)
+        quality_flags = {}  # reach_id -> quality string
+
+        traced_count = 0
+        unfixable_count = 0
+
+        for idx in corrupted_indices:
+            rid = int(reach_ids[idx])
+            old_facc = facc[idx]
+
+            good_facc, hops = trace_upstream(idx, max_upstream_hops)
+
+            if good_facc is not None:
+                # Found good upstream - use it with small increment
+                new_facc = good_facc + (hops * downstream_increment)
+                corrections[rid] = (old_facc, new_facc, 'traced')
+                quality_flags[rid] = 'traced'
+                traced_count += 1
+            else:
+                # No good upstream found - flag as suspect
+                quality_flags[rid] = 'suspect'
+                unfixable_count += 1
+
+        logger.info(f"Traced (fixable): {traced_count}")
+        logger.info(f"Unfixable (flagged only): {unfixable_count}")
+
+        # =====================================================================
+        # Calculate statistics
+        # =====================================================================
+        total_corrupted = len(corrupted_ids)
+        reductions = [old - new for old, new, _ in corrections.values()]
+        avg_reduction = np.mean(reductions) if reductions else 0.0
+        max_reduction = np.max(reductions) if reductions else 0.0
+
+        # Sample for reporting
+        sample_fixes = []
+        for rid, (old, new, method) in list(corrections.items())[:20]:
+            idx = id_to_idx[rid]
+            sample_fixes.append({
+                'reach_id': rid,
+                'old_facc': old,
+                'new_facc': new,
+                'width': width[idx],
+                'method': method,
+            })
+
+        result = {
+            'total_corrupted': total_corrupted,
+            'traced_fixes': traced_count,
+            'unfixable': unfixable_count,
+            'avg_reduction': float(avg_reduction),
+            'max_reduction': float(max_reduction),
+            'sample_fixes': sample_fixes,
+            'dry_run': dry_run,
+        }
+
+        if dry_run:
+            return result
+
+        # =====================================================================
+        # Apply fixes
+        # =====================================================================
+        logger.info("Applying facc fixes...")
+
+        conn = self._sword.db
+
+        # Ensure facc_quality column exists
+        try:
+            conn.execute(f"""
+                ALTER TABLE reaches ADD COLUMN IF NOT EXISTS facc_quality VARCHAR
+            """)
+        except Exception:
+            pass  # Column might already exist
+
+        updated_reaches = 0
+        updated_nodes = 0
+
+        # Update corrected reaches (traced)
+        for rid, (old_facc, new_facc, method) in corrections.items():
+            idx = id_to_idx[rid]
+            facc[idx] = new_facc
+
+            conn.execute("""
+                UPDATE reaches SET facc = ?, facc_quality = ?
+                WHERE reach_id = ? AND region = ?
+            """, [new_facc, 'traced', rid, self._region])
+            updated_reaches += 1
+
+        # Flag unfixable reaches (no facc change, just quality flag)
+        for rid, quality in quality_flags.items():
+            if quality == 'suspect':
+                conn.execute("""
+                    UPDATE reaches SET facc_quality = ?
+                    WHERE reach_id = ? AND region = ?
+                """, ['suspect', rid, self._region])
+
+        logger.info(f"Updated {updated_reaches} reaches")
+
+        # Update nodes if requested
+        if update_nodes and updated_reaches > 0:
+            logger.info("Updating node facc values...")
+            for rid, (old_facc, new_facc, _) in corrections.items():
+                node_count = conn.execute("""
+                    UPDATE nodes SET facc = ?
+                    WHERE reach_id = ? AND region = ?
+                """, [new_facc, rid, self._region]).rowcount
+                updated_nodes += node_count
+
+            logger.info(f"Updated {updated_nodes} nodes")
+
+        result['reaches_updated'] = updated_reaches
+        result['nodes_updated'] = updated_nodes
+
+        # Log to provenance
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'FIX_FACC_VIOLATIONS',
+                table_name='reaches',
+                entity_ids=list(corrections.keys()),
+                region=self._region,
+                reason=reason or "Fix facc via upstream trace",
+                details={
+                    'total_corrupted': total_corrupted,
+                    'traced_fixes': traced_count,
+                    'unfixable': unfixable_count,
+                },
+            ):
+                pass  # Already applied above
+
+        return result
+
     # =========================================================================
     # STATUS AND UTILITY METHODS
     # =========================================================================
