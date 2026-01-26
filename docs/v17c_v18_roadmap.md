@@ -151,4 +151,21 @@ NOW ─────────────────────────�
 
 1. **Estuary/tidal approach** - How to fix rivers extending too far into estuaries?
 2. **facc threshold** - What defines "suspect" facc needing correction?
-3. **Legacy reach code** - Need to locate in repo for v18 reuse
+
+## Resolved: Legacy Reach Code Location
+
+**Found in `src/development/reach_definition/`**
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| `Reach_Definition_Tools_v11.py` | 6,368 | Core reach generation functions |
+| `Reach_Node_Definition_v11.py` | - | Master orchestration script |
+| `Write_Database_Files.py` | - | NetCDF output writer |
+
+**Key functions for v18 reuse:**
+- `find_swot_bounds()` - SWOT orbit-based reach breaking
+- `cut_reaches()` - Split reaches >20km
+- `aggregate_rivers()` - Merge reaches <10km
+- `reach_topology()` - Final ID assignment with Pfafstetter codes
+
+**Modern equivalent:** `SWORD.break_reaches()` in `src/updates/sword_duckdb/sword_class.py:1496`
