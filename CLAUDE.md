@@ -115,17 +115,31 @@ workflow.close()
 **Location:** `src/updates/sword_v17c_pipeline/`
 
 **Steps:**
-1. SWORD_graph.py → NetworkX graph
-2. SWOT_slopes.py → slope calculation
-3. phi_only_global.py → flow direction
-4. phi_r_global_refine.py → refinement
-5. assign_attribute.py → new attributes
+1. Load v17b topology from DuckDB
+2. Build reach-level directed graph
+3. Compute v17c attributes (hydro_dist_out, best_headwater, is_mainstem)
+4. Save sections + validation to DuckDB
+5. (Optional) Apply SWOT-derived slopes
 
-**New columns:** best_headwater, best_outlet, is_mainstem_edge, rch_id_up_main, rch_id_dn_main, pathlen_hw, pathlen_out, hydro_dist_out, hydro_dist_hw, subnetwork_id, main_path_id
+**New columns:** hydro_dist_out, hydro_dist_hw, best_headwater, best_outlet, pathlen_hw, pathlen_out, is_mainstem_edge, swot_slope, swot_slope_se, swot_slope_confidence
 
-**Input:** v17b GPKG from `/Users/jakegearon/projects/sword_v17c/data/`
+**New tables:** v17c_sections, v17c_section_slope_validation
 
-**Run:** `CONT=na WORKDIR=/path ./run_pipeline.sh`
+**Input:** sword_v17c.duckdb (reads topology, writes attributes)
+
+**Run:**
+```bash
+# All regions
+python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all
+
+# Single region
+python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --region NA
+
+# Skip SWOT (faster)
+python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all --skip-swot
+```
+
+**Note:** MILP optimization files archived in `_archived/` - v17c uses original v17b topology.
 
 ## Known Issues
 

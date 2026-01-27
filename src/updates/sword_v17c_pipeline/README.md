@@ -1,108 +1,171 @@
 # SWORD v17c Pipeline
 
-Pipeline for generating SWORD v17c from v17b with topology enhancements.
+Simplified pipeline for generating SWORD v17c from v17b with topology attributes.
+
+## Overview
+
+The v17c pipeline:
+1. **Uses original v17b topology** - No MILP optimization (archived in `_archived/`)
+2. **Computes hydrologic attributes** - Distance metrics, headwater/outlet assignments
+3. **Validates with SWOT data** - Junction-level slope validation
+4. **Writes to DuckDB** - Direct output via SWORDWorkflow with provenance
 
 ## Pipeline Steps
 
-1. **SWORD_graph.py** - Convert SWORD GPKG to NetworkX graph
-2. **SWOT_slopes.py** - Calculate slopes from SWOT data
-3. **phi_only_global.py** - Run phi algorithm for flow direction
-4. **phi_r_global_refine.py** - Refine phi with additional constraints
-5. **assign_attribute.py** - Assign new attributes
+```
+v17c_pipeline.py
+    ├── Load v17b topology from DuckDB
+    ├── Build reach-level directed graph (NetworkX)
+    ├── Identify junctions (confluences, bifurcations, HW, outlets)
+    ├── Compute:
+    │   ├── hydro_dist_out / hydro_dist_hw
+    │   ├── best_headwater / best_outlet
+    │   ├── pathlen_hw / pathlen_out
+    │   └── is_mainstem_edge
+    ├── Build section graph (junction-to-junction)
+    ├── Validate slopes at junctions (if WSE data available)
+    └── Write to sword_v17c.duckdb
+```
 
 ## New Columns Added
 
-Core topology:
-- `best_headwater`: Chosen headwater reach ID upstream
-- `best_outlet`: Chosen outlet reach ID downstream
-- `is_mainstem_edge`: Boolean flag for mainstem edges
-- `rch_id_up_main`: Main upstream reach ID
-- `rch_id_dn_main`: Main downstream reach ID
+| Column | Type | Description |
+|--------|------|-------------|
+| hydro_dist_out | DOUBLE | Hydrologic distance to outlet (m) |
+| hydro_dist_hw | DOUBLE | Hydrologic distance from headwater (m) |
+| best_headwater | BIGINT | Upstream headwater reach ID |
+| best_outlet | BIGINT | Downstream outlet reach ID |
+| pathlen_hw | DOUBLE | Path length to headwater (m) |
+| pathlen_out | DOUBLE | Path length to outlet (m) |
+| is_mainstem_edge | BOOLEAN | True if on mainstem path |
+| swot_slope | DOUBLE | SWOT-derived slope (m/km) |
+| swot_slope_se | DOUBLE | Standard error of SWOT slope |
+| swot_slope_confidence | VARCHAR | R=reliable, U=unreliable |
 
-Distance metrics:
-- `pathlen_hw`: Path length to headwater (m)
-- `pathlen_out`: Path length to outlet (m)
-- `dist_out_short`: Shorter distance to outlet
-- `hydro_dist_out`: Hydrological distance to outlet
-- `hydro_dist_hw`: Hydrological distance to headwater
+## New Tables
 
-Network structure:
-- `subnetwork_id`: Subnetwork identifier
-- `outlet_count`: Number of outlets downstream
-- `main_path_id`: Main path identifier
+### v17c_sections
+Junction-to-junction sections with reach lists.
 
-Path segments:
-- `path_seg`: Path segment ID
-- `path_seg_pos`: Position within path segment
-- `path_start_node`: Start node of path
-- `path_end_node`: End node of path
+| Column | Type | Description |
+|--------|------|-------------|
+| section_id | INTEGER | Section identifier |
+| region | VARCHAR(2) | Region code |
+| upstream_junction | BIGINT | Upstream junction reach ID |
+| downstream_junction | BIGINT | Downstream junction reach ID |
+| reach_ids | VARCHAR | JSON array of reach IDs |
+| distance | DOUBLE | Section length (m) |
+| n_reaches | INTEGER | Number of reaches |
 
-Quality flags:
-- `only_lake_section`: Section is lake-only
-- `phi_direction_change`: Direction changed by phi
-- `swot_direction_change`: Direction changed by SWOT
-- `path_seg_slope`: Slope of path segment
-- `path_seg_reliable`: Slope reliability flag
+### v17c_section_slope_validation
+SWOT slope validation results per section.
 
-## Data Requirements
-
-Input GPKG files (v17b) must be in `data/` directory:
-```
-data/
-  {cont}_sword_nodes_v17b.gpkg
-  {cont}_sword_reaches_v17b.gpkg
-```
-
-Where `{cont}` is: af, as, eu, na, oc, sa
-
-Source location: `/Users/jakegearon/projects/sword_v17c/data/`
+| Column | Type | Description |
+|--------|------|-------------|
+| section_id | INTEGER | Section identifier |
+| region | VARCHAR(2) | Region code |
+| slope_from_upstream | DOUBLE | Slope from upstream junction |
+| slope_from_downstream | DOUBLE | Slope from downstream junction |
+| direction_valid | BOOLEAN | True if slopes match expected |
+| likely_cause | VARCHAR | lake_section, extreme_slope_data_error, potential_topology_error |
 
 ## Usage
 
-### All continents:
+### Command Line
+
+```bash
+# Process all regions
+python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+    --db data/duckdb/sword_v17c.duckdb --all
+
+# Process single region
+python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+    --db data/duckdb/sword_v17c.duckdb --region NA
+
+# Skip SWOT integration (faster)
+python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+    --db data/duckdb/sword_v17c.duckdb --all --skip-swot
+
+# Custom SWOT path
+python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+    --db data/duckdb/sword_v17c.duckdb --region NA \
+    --swot-path /path/to/swot/data
+```
+
+### Shell Script
+
 ```bash
 cd src/updates/sword_v17c_pipeline
-WORKDIR=/path/to/workdir ./run_all_continents.sh
+
+# All regions
+./run_pipeline.sh
+
+# Single region
+REGION=NA ./run_pipeline.sh
+
+# Skip SWOT
+SKIP_SWOT=1 ./run_pipeline.sh
+
+# Custom database
+DB=/path/to/sword_v17c.duckdb ./run_pipeline.sh
 ```
 
-### Single continent:
+### Python API
+
+```python
+from src.updates.sword_v17c_pipeline import run_pipeline, process_region
+
+# Process all regions
+stats = run_pipeline(
+    db_path="data/duckdb/sword_v17c.duckdb",
+    regions=["NA", "SA", "EU", "AF", "AS", "OC"],
+    skip_swot=True,
+)
+
+# Process single region
+stats = process_region(
+    db_path="data/duckdb/sword_v17c.duckdb",
+    region="NA",
+    user_id="my_user",
+    skip_swot=False,
+    swot_path="/Volumes/SWORD_DATA/data/swot/RiverSP_D_parq/node",
+)
+```
+
+## Verification
+
 ```bash
-CONT=na WORKDIR=/path/to/workdir ./run_pipeline.sh
+# Query results
+duckdb data/duckdb/sword_v17c.duckdb -c "
+SELECT reach_id, hydro_dist_out, best_headwater, is_mainstem_edge
+FROM reaches WHERE region='NA' AND hydro_dist_out IS NOT NULL LIMIT 10"
+
+# Check provenance
+duckdb data/duckdb/sword_v17c.duckdb -c "
+SELECT * FROM sword_operations ORDER BY started_at DESC LIMIT 5"
+
+# Run lint
+python -m src.updates.sword_duckdb.lint.cli --db data/duckdb/sword_v17c.duckdb --region NA
 ```
 
-### Pipeline Parameters (in run_pipeline.sh):
+## Archived Files
 
-```bash
-# Slope fractions
-FRACTION_LOW=-0.8
-FRACTION_HIGH=0.8
+The original MILP-based phi optimization has been archived in `_archived/`:
+- `phi_only_global.py` - MILP flow direction optimization
+- `phi_r_global_refine.py` - Phi refinement pass
+- `ocn.py` - Optimal Channel Network research
+- `orient_global_edges.py` - Edge orientation utilities
 
-# Phi refinement weights
-WRCONSTANT=1000
-WUCONSTANT=1
-WUPCONSTANT=0.001
+These were archived because v17c now uses the original v17b topology.
 
-# Main head/outlet weights
-WIDTHWEIGHT=0.6
-FREQHWWEIGHT=0.2
-FREQOUTWEIGHT=0.4
-DISTHWWEIGHT=0.2
-DISTOUTWEIGHT=0.0
-```
+## Supporting Files
 
-## Output
-
-Results are written to `output/` directory:
-- `{cont}_slope_single.pkl` - Slope graph
-- `{cont}/river_directed.pkl` - Directed river graph
-- `{cont}_MultiDirected_refined.pkl` - Refined multi-directed graph
-- Final attributed GPKG files
-
-## Supporting Scripts
-
-- `validate_edges.py` - Validate edge orientations
-- `check_dag.py` - Check for DAG properties
-- `combine_global_networks.py` - Combine continental networks
-- `orient_global_edges.py` - Orient edges globally
-- `ocn.py` - Optimal Channel Network algorithms
-- `visualize_sections.py` - Visualization utilities
+| File | Purpose |
+|------|---------|
+| `v17c_pipeline.py` | Main pipeline script |
+| `run_pipeline.sh` | Shell wrapper |
+| `SWOT_slopes.py` | SWOT slope computation (standalone) |
+| `SWORD_graph.py` | Graph utilities |
+| `validate_topology.py` | Topology validation |
+| `validate_edges.py` | Edge validation |
+| `check_dag.py` | DAG property checks |

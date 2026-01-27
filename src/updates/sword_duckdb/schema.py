@@ -840,6 +840,10 @@ def add_v17c_columns(conn) -> bool:
         ("hydro_dist_hw", "DOUBLE"),
         ("rch_id_up_main", "BIGINT"),
         ("rch_id_dn_main", "BIGINT"),
+        # SWOT-derived slope columns
+        ("swot_slope", "DOUBLE"),
+        ("swot_slope_se", "DOUBLE"),
+        ("swot_slope_confidence", "VARCHAR"),
     ]
 
     def _add_columns_to_table(table_name: str, columns: list) -> bool:
@@ -956,3 +960,68 @@ def add_swot_obs_columns(conn) -> bool:
         pass
 
     return added
+
+
+def create_v17c_tables(conn) -> None:
+    """
+    Create v17c-specific tables for section data and slope validation.
+
+    These tables store:
+    - v17c_sections: Junction-to-junction sections with reach lists
+    - v17c_section_slope_validation: SWOT slope validation per section
+
+    Safe to call multiple times - uses CREATE TABLE IF NOT EXISTS.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active DuckDB connection.
+    """
+    # Section table - stores junction-to-junction sections
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS v17c_sections (
+            section_id INTEGER NOT NULL,
+            region VARCHAR(2) NOT NULL,
+            upstream_junction BIGINT,
+            downstream_junction BIGINT,
+            reach_ids VARCHAR,
+            distance DOUBLE,
+            n_reaches INTEGER,
+            PRIMARY KEY (section_id, region)
+        )
+    """)
+
+    # Section slope validation table
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS v17c_section_slope_validation (
+            section_id INTEGER NOT NULL,
+            region VARCHAR(2) NOT NULL,
+            slope_from_upstream DOUBLE,
+            slope_from_downstream DOUBLE,
+            direction_valid BOOLEAN,
+            likely_cause VARCHAR,
+            PRIMARY KEY (section_id, region)
+        )
+    """)
+
+    # Create indexes for efficient queries
+    try:
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v17c_sections_region
+            ON v17c_sections(region)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v17c_sections_junctions
+            ON v17c_sections(upstream_junction, downstream_junction)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v17c_validation_region
+            ON v17c_section_slope_validation(region)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v17c_validation_valid
+            ON v17c_section_slope_validation(direction_valid)
+        """)
+    except Exception:
+        # Indexes may already exist
+        pass

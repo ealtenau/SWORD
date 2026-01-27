@@ -1,9 +1,13 @@
-# v17c Pipeline Output Inventory
+# v17c Pipeline Output Inventory (Legacy)
+
+> **Note:** This documents outputs from the **old** MILP-based pipeline.
+> The new v17c_pipeline.py writes directly to `sword_v17c.duckdb` instead of these files.
+> See `README.md` for current pipeline documentation.
 
 **Generated:** 2026-01-27
 **Location:** `/Users/jakegearon/projects/sword_v17c/output/`
 **Total Size:** ~12.5 GB
-**Pipeline Run Date:** 2025-11-20
+**Pipeline Run Date:** 2025-11-20 (old pipeline)
 
 ## Summary
 

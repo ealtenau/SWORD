@@ -1,109 +1,84 @@
 #!/bin/bash
 set -e  # stop if any command fails
 
-# Required foldering structure:
-# WORKDIR 
+# ==============================================================================
+# v17c Pipeline - Simplified SWORD v17c attribute computation
+# ==============================================================================
+# This script runs the v17c pipeline which:
+# 1. Uses original v17b topology (no MILP optimization)
+# 2. Computes hydrologic attributes (hydro_dist_out, best_headwater, is_mainstem)
+# 3. Optionally integrates SWOT-derived slopes
+# 4. Writes results directly to sword_v17c.duckdb
+#
+# Usage:
+#   # Process all regions
+#   ./run_pipeline.sh
+#
+#   # Process single region
+#   REGION=NA ./run_pipeline.sh
+#
+#   # Skip SWOT integration (faster)
+#   SKIP_SWOT=1 ./run_pipeline.sh
+#
+#   # Custom database path
+#   DB=/path/to/sword_v17c.duckdb ./run_pipeline.sh
+# ==============================================================================
 
+########## USER CONSTANTS (edit these or set via environment) ##########
+DB_PATH="${DB:-/Users/jakegearon/projects/SWORD/data/duckdb/sword_v17c.duckdb}"
+SWOT_PATH="${SWOT_PATH:-/Volumes/SWORD_DATA/data/swot/RiverSP_D_parq/node}"
+REGION="${REGION:-}"  # Empty = all regions
+SKIP_SWOT="${SKIP_SWOT:-0}"
 
+########## SCRIPT DIRECTORY ##########
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-########## USER CONSTANTS (edit these) ##########
-# WORKDIR: base directory for processing (defaults to current directory)
-WORKDIR="${WORKDIR:-$(pwd)}"
-# CONT can be set via environment variable or defaults to "as"
-CONT="${CONT:-as}"
-
-########## FOLDER PATHS ##########
-OUTDIR="$WORKDIR/output"
-
-########## LOG FILES ##########
-# Create a timestamped log file
-# Create log directory
-LOGDIR="$OUTDIR/logs"
+########## LOGGING ##########
+LOGDIR="$PROJECT_ROOT/output/logs"
 mkdir -p "$LOGDIR"
-
-# Logfile path
-LOGFILE="$LOGDIR/pipeline_$(date +'%Y-%m-%d_%H-%M-%S').log"
+LOGFILE="$LOGDIR/v17c_pipeline_$(date +'%Y-%m-%d_%H-%M-%S').log"
 exec &> >(tee -a "$LOGFILE")
-
 echo "Logging to: $LOGFILE"
 
+########## BANNER ##########
+echo "=============================================================="
+echo "v17c Pipeline"
+echo "=============================================================="
+echo "Database: $DB_PATH"
+echo "SWOT path: $SWOT_PATH"
+echo "Region: ${REGION:-ALL}"
+echo "Skip SWOT: $SKIP_SWOT"
+echo "=============================================================="
 
-########## CONSTANTS ##########
-FRACTION_LOW=-0.8
-FRACTION_HIGH=0.8
+########## BUILD COMMAND ##########
+CMD="python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db $DB_PATH"
 
-# phi_refined weights
-WRCONSTANT=1000
-WUCONSTANT=1
-WUPCONSTANT=0.001
+# Add region or --all flag
+if [ -n "$REGION" ]; then
+    CMD="$CMD --region $REGION"
+else
+    CMD="$CMD --all"
+fi
 
-#main head/outlet weights
-WIDTHWEIGHT=0.6
-FREQHWWEIGHT=0.2
-FREQOUTWEIGHT=0.4
-DISTHWWEIGHT=0.2
-DISTOUTWEIGHT=0.0
+# Add SWOT options
+if [ "$SKIP_SWOT" = "1" ]; then
+    CMD="$CMD --skip-swot"
+else
+    CMD="$CMD --swot-path $SWOT_PATH"
+fi
 
+########## RUN ##########
+echo "Running: $CMD"
+cd "$PROJECT_ROOT"
 
+# Use poetry if available, otherwise direct python
+if command -v poetry &> /dev/null; then
+    poetry run $CMD
+else
+    $CMD
+fi
 
-#################################################
-
-echo "=== Using poetry environment ==="
-
-######################################
-# 1. SWORD_graph
-######################################
-echo "=== Running SWORD_graph ==="
-poetry run python SWORD_graph.py \
-  --directory "$WORKDIR" \
-  --continent "$CONT"
-
-
-######################################
-# 2. SWOT_slopes
-######################################
-echo "=== Running SWOT_slopes ==="
-poetry run python SWOT_slopes.py \
-  --dir "$WORKDIR" \
-  --continent "$CONT" \
-  --fraction_low $FRACTION_LOW \
-  --fraction_high $FRACTION_HIGH
-
-######################################
-# 3. phi_only_global
-######################################
-echo "=== Running phi_only_global ==="
-poetry run python phi_only_global.py \
-  --input "$OUTDIR/${CONT}_slope_single.pkl" \
-  --outdir "$OUTDIR/${CONT}" \
-  --continent "$CONT" \
-  --workdir "$WORKDIR"
-
-######################################
-# 4. phi_r_global_refine
-######################################
-echo "=== Running phi_r_global_refine ==="
-poetry run python phi_r_global_refine.py \
-  --input_pkl "$OUTDIR/${CONT}/river_directed.pkl" \
-  --outdir    "$OUTDIR/${CONT}" \
-  --prefer_highs \
-  --wR $WRCONSTANT \
-  --wU $WUCONSTANT \
-  --wUp $WUPCONSTANT
-
-######################################
-# 5. assign_attribute
-######################################
-echo "=== Running assign_attribute ==="
-poetry run python assign_attribute.py \
-  --graph ${CONT}_MultiDirected_refined.pkl \
-  --continent "$CONT" \
-  --inputdir "$WORKDIR" \
-  --outdir "$WORKDIR" \
-  --width-weight $WIDTHWEIGHT \
-  --freq-hw-weight $FREQHWWEIGHT \
-  --dist-hw-weight $DISTHWWEIGHT \
-  --freq-out-weight $FREQOUTWEIGHT \
-  --dist-out-weight $DISTOUTWEIGHT
-
-echo "=== ALL SCRIPTS COMPLETED SUCCESSFULLY ==="
+echo "=============================================================="
+echo "Pipeline completed successfully"
+echo "=============================================================="
