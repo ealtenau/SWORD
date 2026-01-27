@@ -705,6 +705,9 @@ def validate_reach_length(G: nx.MultiDiGraph,
     """
     Check reach lengths are within reasonable bounds.
 
+    Excludes end reaches (end_reach=1) from "too short" check since
+    these are expected to be small terminal segments.
+
     Args:
         min_length: Minimum expected reach length (m) - default 100m
         max_length: Maximum expected reach length (m) - default 50km
@@ -712,15 +715,17 @@ def validate_reach_length(G: nx.MultiDiGraph,
     log("Checking reach length bounds...")
 
     too_short = []
+    too_short_end_reaches = 0  # Count but don't flag
     too_long = []
     lengths = []
 
     # Try multiple attribute names
-    attr_names = ['reach_length', 'length', 'reach_len', 'len']
+    length_attrs = ['reach_length', 'length', 'reach_len', 'len']
+    end_reach_attrs = ['end_reach', 'endreach', 'end_rch']
 
     for u, v, k, d in G.edges(keys=True, data=True):
         length = None
-        for attr in attr_names:
+        for attr in length_attrs:
             length = d.get(attr)
             if length is not None:
                 break
@@ -731,11 +736,22 @@ def validate_reach_length(G: nx.MultiDiGraph,
         if length is not None:
             lengths.append(length)
 
+            # Check for end_reach flag
+            is_end_reach = False
+            for attr in end_reach_attrs:
+                end_val = d.get(attr, G.nodes[u].get(attr))
+                if end_val == 1:
+                    is_end_reach = True
+                    break
+
             if length < min_length:
-                too_short.append({
-                    'edge': (u, v, k),
-                    'length': length,
-                })
+                if is_end_reach:
+                    too_short_end_reaches += 1
+                else:
+                    too_short.append({
+                        'edge': (u, v, k),
+                        'length': length,
+                    })
             elif length > max_length:
                 too_long.append({
                     'edge': (u, v, k),
@@ -751,6 +767,7 @@ def validate_reach_length(G: nx.MultiDiGraph,
     result = {
         'total_edges': len(lengths),
         'too_short': len(too_short),
+        'too_short_end_reaches': too_short_end_reaches,
         'too_long': len(too_long),
         'min_length': float(np.min(length_arr)),
         'max_length': float(np.max(length_arr)),
@@ -761,9 +778,12 @@ def validate_reach_length(G: nx.MultiDiGraph,
     }
 
     if len(too_short) == 0:
-        log(f"PASS: No reaches shorter than {min_length}m")
+        log(f"PASS: No non-end reaches shorter than {min_length}m")
     else:
-        log(f"INFO: {len(too_short):,} reaches shorter than {min_length}m")
+        log(f"INFO: {len(too_short):,} non-end reaches shorter than {min_length}m")
+
+    if too_short_end_reaches > 0:
+        log(f"INFO: {too_short_end_reaches:,} end reaches <{min_length}m (expected)")
 
     if len(too_long) == 0:
         log(f"PASS: No reaches longer than {max_length}m")
@@ -1115,6 +1135,8 @@ def print_summary(results: dict):
                 print(f"\n[✓ PASS] reach length: all within bounds")
             else:
                 print(f"\n[ℹ INFO] reach length: {rl.get('too_short', 0)} too short, {rl.get('too_long', 0)} too long")
+            if rl.get('too_short_end_reaches', 0) > 0:
+                print(f"    ({rl['too_short_end_reaches']} short end-reaches excluded)")
             print(f"    Range: {rl['min_length']:.1f}m to {rl['max_length']:.1f}m")
             print(f"    Median: {rl['median_length']:.1f}m")
 
