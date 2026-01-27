@@ -451,28 +451,25 @@ def validate_wse_monotonicity(G: nx.MultiDiGraph) -> dict:
 
 
 def validate_slope_reasonableness(G: nx.MultiDiGraph,
-                                   min_slope: float = -0.001,
-                                   max_slope_mpm: float = 0.01) -> dict:
+                                   min_slope: float = -0.1,
+                                   max_slope: float = 100.0) -> dict:
     """
     Check that slopes are within reasonable bounds.
 
-    Slope units in SWORD can vary:
-    - m/m: typical range 0.00001 to 0.01
-    - cm/km: typical range 1 to 1000
-
-    This function auto-detects units based on median value.
+    SWORD slopes are stored in m/km (meters drop per kilometer).
+    - Typical river slopes: 0.1 to 10 m/km
+    - Steep mountain streams: up to 50-100 m/km
+    - Negative slopes indicate measurement error or wrong flow direction
 
     Args:
-        min_slope: Minimum expected slope (allow small negative for measurement error)
-        max_slope_mpm: Maximum expected slope in m/m (0.01 = 1% grade)
+        min_slope: Minimum expected slope in m/km (small negative allowed for error)
+        max_slope: Maximum expected slope in m/km (100 m/km = 10% grade, very steep)
     """
     log("Checking slope reasonableness...")
 
     slope_values = []
-    total_edges = 0
 
     for u, v, k, d in G.edges(keys=True, data=True):
-        total_edges += 1
         slope = d.get('slope', G.nodes[u].get('slope'))
         if slope is not None:
             slope_values.append(slope)
@@ -484,29 +481,18 @@ def validate_slope_reasonableness(G: nx.MultiDiGraph,
     slope_arr = np.array(slope_values)
     median_slope = float(np.median(slope_arr))
 
-    # Auto-detect units: if median > 1, likely cm/km; if < 0.1, likely m/m
-    if median_slope > 1.0:
-        unit = "cm/km"
-        # Convert thresholds to cm/km
-        effective_min = min_slope * 100000  # m/m to cm/km
-        effective_max = max_slope_mpm * 100000
-    else:
-        unit = "m/m"
-        effective_min = min_slope
-        effective_max = max_slope_mpm
-
     negative_slopes = []
     extreme_slopes = []
 
     for u, v, k, d in G.edges(keys=True, data=True):
         slope = d.get('slope', G.nodes[u].get('slope'))
         if slope is not None:
-            if slope < effective_min:
+            if slope < min_slope:
                 negative_slopes.append({
                     'edge': (u, v, k),
                     'slope': slope,
                 })
-            elif slope > effective_max:
+            elif slope > max_slope:
                 extreme_slopes.append({
                     'edge': (u, v, k),
                     'slope': slope,
@@ -514,7 +500,7 @@ def validate_slope_reasonableness(G: nx.MultiDiGraph,
 
     result = {
         'total_edges': len(slope_values),
-        'detected_unit': unit,
+        'unit': 'm/km',
         'negative_count': len(negative_slopes),
         'extreme_count': len(extreme_slopes),
         'min_slope': float(np.min(slope_arr)),
@@ -529,14 +515,14 @@ def validate_slope_reasonableness(G: nx.MultiDiGraph,
     if len(negative_slopes) == 0:
         log(f"PASS: No negative slopes")
     else:
-        log(f"WARN: {len(negative_slopes):,} edges have negative slope")
+        log(f"WARN: {len(negative_slopes):,} edges have negative slope (<{min_slope} m/km)")
 
-    log(f"INFO: Detected slope unit: {unit} (median={median_slope:.4f})")
+    log(f"INFO: Slope stats (m/km): median={median_slope:.2f}, p95={result['p95_slope']:.2f}")
 
     if len(extreme_slopes) == 0:
-        log(f"PASS: No extreme slopes")
+        log(f"PASS: No extreme slopes (>{max_slope} m/km)")
     else:
-        log(f"INFO: {len(extreme_slopes):,} edges have extreme slope (>{effective_max:.4f} {unit})")
+        log(f"INFO: {len(extreme_slopes):,} edges have extreme slope (>{max_slope} m/km)")
 
     return result
 
@@ -714,14 +700,14 @@ def validate_neighbor_counts(G: nx.MultiDiGraph) -> dict:
 
 
 def validate_reach_length(G: nx.MultiDiGraph,
-                          min_length: float = 10.0,
-                          max_length: float = 100000.0) -> dict:
+                          min_length: float = 100.0,
+                          max_length: float = 50000.0) -> dict:
     """
     Check reach lengths are within reasonable bounds.
 
     Args:
-        min_length: Minimum expected reach length (m)
-        max_length: Maximum expected reach length (m)
+        min_length: Minimum expected reach length (m) - default 100m
+        max_length: Maximum expected reach length (m) - default 50km
     """
     log("Checking reach length bounds...")
 
@@ -1091,16 +1077,15 @@ def print_summary(results: dict):
         if slope.get('skipped'):
             print(f"\n[- SKIP] slope reasonableness (no data)")
         else:
-            unit = slope.get('detected_unit', 'm/m')
             if slope.get('negative_count', 0) == 0:
                 print(f"\n[✓ PASS] slope: no negative values")
             else:
                 print(f"\n[⚠ WARN] slope: {slope['negative_count']:,} negative values")
             if slope.get('extreme_count', 0) > 0:
-                print(f"[ℹ INFO] slope: {slope['extreme_count']:,} extreme values")
-            print(f"    Unit: {unit}")
-            print(f"    Range: {slope['min_slope']:.4f} to {slope['max_slope']:.4f}")
-            print(f"    Median: {slope['median_slope']:.4f}, P95: {slope.get('p95_slope', 0):.4f}")
+                print(f"[ℹ INFO] slope: {slope['extreme_count']:,} extreme values (>100 m/km)")
+            print(f"    Unit: m/km")
+            print(f"    Range: {slope['min_slope']:.2f} to {slope['max_slope']:.2f}")
+            print(f"    Median: {slope['median_slope']:.2f}, P95: {slope.get('p95_slope', 0):.2f}")
 
         # lake sandwich
         ls = results.get('lake_sandwich', {})
