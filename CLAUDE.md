@@ -150,6 +150,71 @@ Dependency graph auto-recalculates derived attributes:
 - lake sandwich detection
 - topology consistency
 
+## Lint Framework
+
+**Location:** `src/updates/sword_duckdb/lint/`
+
+Comprehensive linting framework with 20 checks across 4 categories.
+
+**CLI Usage:**
+```bash
+# Run all checks
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb
+
+# Filter by region
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
+
+# Specific checks or category
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T001 T002
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T  # all topology
+
+# Output formats
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format markdown -o report.md
+
+# CI mode (exit codes)
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-error   # exit 2 on errors
+python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-warning  # exit 1 on warnings
+
+# List all checks
+python -m src.updates.sword_duckdb.lint.cli --list-checks
+```
+
+**Python API:**
+```python
+from sword_duckdb.lint import LintRunner, Severity
+
+with LintRunner("sword_v17c.duckdb") as runner:
+    results = runner.run()  # all checks
+    results = runner.run(checks=["T"])  # topology only
+    results = runner.run(region="NA", severity=Severity.ERROR)
+```
+
+**Check IDs:**
+
+| ID | Name | Severity | Description |
+|----|------|----------|-------------|
+| T001 | dist_out_monotonicity | ERROR | dist_out decreases downstream |
+| T002 | path_freq_monotonicity | WARNING | path_freq increases to outlets |
+| T003 | facc_monotonicity | WARNING | facc increases downstream |
+| T004 | orphan_reaches | WARNING | No neighbors |
+| T005 | neighbor_count_consistency | ERROR | n_rch_up/down matches topology |
+| T006 | connected_components | INFO | Network connectivity |
+| T007 | topology_reciprocity | WARNING | A→B implies B→A |
+| A001 | wse_monotonicity | ERROR | WSE decreases downstream |
+| A002 | slope_reasonableness | WARNING | No negative, <100 m/km |
+| A003 | width_trend | INFO | Width increases downstream |
+| A004 | attribute_completeness | INFO | Required attrs present |
+| A005 | trib_flag_consistency | WARNING | Matches tributary count |
+| A006 | attribute_outliers | INFO | Extreme values |
+| G001 | reach_length_bounds | INFO | 100m-50km, excl end_reach |
+| G002 | node_length_consistency | WARNING | Node sum ≈ reach length |
+| G003 | zero_length_reaches | INFO | Zero/negative length |
+| C001 | lake_sandwich | WARNING | River between lakes |
+| C002 | lakeflag_distribution | INFO | Lakeflag values |
+| C003 | type_distribution | INFO | Type field values |
+| C004 | lakeflag_type_consistency | WARNING | Lakeflag/type match |
+
 ## Testing
 
 ```bash
@@ -168,6 +233,7 @@ Test DB: `tests/sword_duckdb/fixtures/sword_test_minimal.duckdb` (100 reaches, 5
 | `src/updates/sword_duckdb/schema.py` | Table definitions |
 | `src/updates/sword_duckdb/reactive.py` | Dependency graph |
 | `src/updates/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
+| `src/updates/sword_duckdb/lint/` | Lint framework (20 checks) |
 | `run_v17c_topology.py` | Topology recalculation script |
 | `rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
 | `topology_reviewer.py` | Streamlit GUI for facc/topology fixes |

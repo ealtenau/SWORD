@@ -78,6 +78,13 @@ from .reconstruction import (
     AttributeSpec,
     ATTRIBUTE_SOURCES,
 )
+from .lint import (
+    LintRunner,
+    Severity,
+    Category,
+    CheckResult,
+    get_registry as get_lint_registry,
+)
 
 __all__ = [
     # Main SWORD class (drop-in replacement)
@@ -137,4 +144,10 @@ __all__ = [
     'get_changed_entities',
     'mark_changes_synced',
     'get_trigger_sql',
+    # Lint framework
+    'LintRunner',
+    'Severity',
+    'Category',
+    'CheckResult',
+    'get_lint_registry',
 ]
