@@ -941,80 +941,46 @@ tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 # TAB 3: Headwater Issues
 # =============================================================================
 with tab3:
-    st.header("Headwater Issues")
-    st.caption("Headwater reaches (no upstream) with suspiciously high facc")
+    st.header("🏔️ Headwater Issues")
+    st.info("⚠️ **FACC review on hold** - Use Lake Sandwich and FACC Mono tabs instead for now.")
 
-    min_facc = st.slider("Minimum facc", 1000, 100000, 5000, key="hw_slider")
+    min_facc = st.slider("Minimum facc threshold", 1000, 100000, 5000, key="hw_slider")
     hw_issues = get_headwater_issues(conn, region, min_facc)
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total", len(hw_issues))
-    col2.metric("Rivers", len(hw_issues[hw_issues['lakeflag'] == 0]))
-    col3.metric("Lakes", len(hw_issues[hw_issues['lakeflag'] == 1]))
+    if len(hw_issues) == 0:
+        st.success(f"✅ No headwaters with facc > {min_facc:,} km²")
+    else:
+        col1, col2 = st.columns(2)
+        col1.metric("Headwater Issues", len(hw_issues))
+        col2.metric("Rivers / Lakes", f"{len(hw_issues[hw_issues['lakeflag'] == 0])} / {len(hw_issues[hw_issues['lakeflag'] == 1])}")
 
-    if len(hw_issues) > 0:
-        selected_idx = st.selectbox(
-            "Select issue",
-            range(len(hw_issues)),
-            format_func=lambda i: f"#{i+1}: {hw_issues.iloc[i]['reach_id']} (facc={hw_issues.iloc[i]['facc']:,.0f})",
-            key="hw_select"
+        # Show list
+        st.dataframe(
+            hw_issues[['reach_id', 'river_name', 'facc', 'width', 'lakeflag']].head(20),
+            use_container_width=True,
+            hide_index=True
         )
-
-        h = hw_issues.iloc[selected_idx]
-
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            render_reach_map(int(h['reach_id']), region)
-
-        with col2:
-            st.markdown(f"**Reach:** `{h['reach_id']}`")
-            st.markdown(f"**facc:** {h['facc']:,.0f} km²")
-            st.markdown(f"**width:** {h['width']:.0f}m")
-            st.markdown(f"**ratio:** {h['ratio']:,.0f}")
-            st.markdown(f"**River:** {h['river_name']}")
-            laketype = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}.get(h['lakeflag'], 'Unknown')
-            st.markdown(f"**Type:** {laketype}")
-
-            st.divider()
-            render_fix_panel(int(h['reach_id']), region, h['facc'], "headwater")
 
 # =============================================================================
 # TAB 4: Suspect Reaches
 # =============================================================================
 with tab4:
-    st.header("Suspect Reaches")
-    st.caption("Reaches flagged as facc_quality='suspect' (unfixable by automated methods)")
+    st.header("⚠️ Suspect Reaches")
+    st.info("⚠️ **FACC review on hold** - Use Lake Sandwich and FACC Mono tabs instead for now.")
 
     suspect = get_suspect_reaches(conn, region)
 
-    st.metric("Total Suspect", len(suspect))
+    if len(suspect) == 0:
+        st.success("✅ No suspect reaches in this region")
+    else:
+        st.metric("Suspect Reaches", len(suspect))
 
-    if len(suspect) > 0:
-        selected_idx = st.selectbox(
-            "Select reach",
-            range(len(suspect)),
-            format_func=lambda i: f"#{i+1}: {suspect.iloc[i]['reach_id']} (facc={suspect.iloc[i]['facc']:,.0f})",
-            key="suspect_select"
+        # Show list
+        st.dataframe(
+            suspect[['reach_id', 'river_name', 'facc', 'width', 'facc_quality']].head(20),
+            use_container_width=True,
+            hide_index=True
         )
-
-        s = suspect.iloc[selected_idx]
-
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            render_reach_map(int(s['reach_id']), region)
-
-        with col2:
-            st.markdown(f"**Reach:** `{s['reach_id']}`")
-            st.markdown(f"**facc:** {s['facc']:,.0f} km²")
-            st.markdown(f"**width:** {s['width']:.0f}m")
-            st.markdown(f"**ratio:** {s['ratio']:,.0f}")
-            st.markdown(f"**River:** {s['river_name']}")
-            st.markdown(f"**edit_flag:** {s['edit_flag']}")
-
-            st.divider()
-            render_fix_panel(int(s['reach_id']), region, s['facc'], "suspect")
 
 # =============================================================================
 # TAB 5: Fix History
@@ -1064,22 +1030,7 @@ with tab5:
 # TAB 6: Lake Sandwich (C001)
 # =============================================================================
 with tab6:
-    st.header("C001: Lake Sandwich Fixer")
-    st.caption("River reaches (lakeflag=0) sandwiched between lake reaches (lakeflag=1)")
-
-    # Help expander with tooltips
-    with st.expander("ℹ️ How to identify lake sandwiches"):
-        st.markdown("""
-        **What to look for:**
-        - **Width**: Lakes typically >500m wide. Narrow reaches are likely rivers.
-        - **Slope**: Lakes have slope ~0. Rivers have slope >0.001 m/km.
-        - **Neighbors**: If both upstream and downstream are lakes, this is probably a lake too.
-        - **Satellite**: Check the map - is it wide open water or a flowing channel?
-
-        **Actions:**
-        - **Convert to Lake**: Sets lakeflag=1 (use when it's clearly part of a lake)
-        - **Skip**: Mark as false positive with required explanation (stays lakeflag=0)
-        """)
+    st.header("🥪 Lake Sandwich Fixer")
 
     # Initialize session state
     if 'pending_fixes' not in st.session_state:
@@ -1094,286 +1045,154 @@ with tab6:
         with st.spinner("Running lake sandwich check..."):
             st.session_state.c001_results = run_c001_check(conn, region)
             st.session_state.c001_region = region
-            # Load pending from local session
             session = load_session_fixes(region, "C001")
             st.session_state.pending_fixes = session.get("pending", [])
 
-    # Manual refresh button
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("🔄 Refresh C001 Check", key="run_c001"):
-            with st.spinner("Running lake sandwich check..."):
-                st.session_state.c001_results = run_c001_check(conn, region)
-                st.session_state.pending_fixes = []
-            st.rerun()
-
-    # Display results
-    if st.session_state.c001_results is None:
-        st.info("Loading lake sandwich issues...")
-    else:
-        result = st.session_state.c001_results
+    # Progress bar at top
+    result = st.session_state.c001_results
+    if result:
         issues = result.details
+        total = len(issues)
+        done = len(st.session_state.pending_fixes)
+        remaining = len([r for r in issues['reach_id'].tolist() if r not in st.session_state.pending_fixes]) if total > 0 else 0
 
-        # Metrics row
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Lake Sandwiches Found", len(issues))
-        col2.metric("Pending Fixes", len(st.session_state.pending_fixes))
-        col3.metric("Total River Reaches", result.total_checked)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed", done)
+        col3.metric("Total", total)
+        if st.session_state.last_fix:
+            col4.button(f"↩️ Undo", key="undo_c001", on_click=lambda: None)  # Placeholder
 
-        if len(issues) == 0:
-            st.success("No lake sandwich issues found!")
+        if total > 0:
+            st.progress(done / total if total > 0 else 0, text=f"{done}/{total} reviewed")
+
+        if remaining == 0 and total > 0:
+            st.success("🎉 All lake sandwiches reviewed!")
+            if st.button("🔄 Re-run check to verify", key="rerun_c001"):
+                st.session_state.c001_results = None
+                st.session_state.pending_fixes = []
+                st.rerun()
+        elif total == 0:
+            st.success("✅ No lake sandwich issues in this region!")
         else:
-            # Issue selector
-            issue_options = issues['reach_id'].tolist()
-            # Filter out already-fixed reaches
-            available_options = [r for r in issue_options if r not in st.session_state.pending_fixes]
+            # Get next issue
+            available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.pending_fixes]
+            selected = available[0]  # Auto-select first available
+            issue = issues[issues['reach_id'] == selected].iloc[0]
 
-            if len(available_options) == 0:
-                st.success("All issues addressed! Click 'Re-validate Batch' to verify fixes.")
-            else:
-                selected = st.selectbox(
-                    "Select issue to review",
-                    available_options,
-                    format_func=lambda r: f"{r} - {issues[issues['reach_id']==r].iloc[0]['river_name'] or 'Unnamed'}",
-                    key="c001_select"
+            # Get decision data
+            up_flags, dn_flags = get_neighbor_lakeflags(conn, selected, region)
+            slope = get_reach_slope(conn, selected, region)
+            width = issue['width'] if pd.notna(issue['width']) else 0
+
+            # ===== PROBLEM BOX =====
+            st.markdown("---")
+            st.subheader(f"🔍 Issue #{done + 1}: Reach `{selected}`")
+
+            # Visual sandwich diagram
+            up_label = "🔵 LAKE" if up_flags and 1 in up_flags else "〰️ River" if up_flags else "?"
+            dn_label = "🔵 LAKE" if dn_flags and 1 in dn_flags else "〰️ River" if dn_flags else "?"
+            st.markdown(f"""
+            ```
+            Upstream:   {up_label}
+                          ↓
+            THIS REACH: 〰️ River (lakeflag=0)  ← Is this actually a lake?
+                          ↓
+            Downstream: {dn_label}
+            ```
+            """)
+
+            # ===== DECISION HELPER =====
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                render_reach_map_satellite(int(selected), region, conn)
+
+            with col2:
+                st.markdown("### 📊 Key Indicators")
+
+                # Width indicator
+                if width > 500:
+                    st.success(f"**Width:** {width:.0f}m → Wide (likely lake)")
+                elif width > 200:
+                    st.warning(f"**Width:** {width:.0f}m → Medium")
+                elif width > 0:
+                    st.error(f"**Width:** {width:.0f}m → Narrow (likely river)")
+                else:
+                    st.info("**Width:** N/A")
+
+                # Slope indicator
+                if slope is not None:
+                    if slope < 0.0001:
+                        st.success(f"**Slope:** {slope:.6f} → Flat (likely lake)")
+                    elif slope < 0.001:
+                        st.warning(f"**Slope:** {slope:.6f} → Low slope")
+                    else:
+                        st.error(f"**Slope:** {slope:.6f} → Steep (likely river)")
+                else:
+                    st.info("**Slope:** N/A")
+
+                # Neighbor indicator
+                both_lakes = (up_flags and 1 in up_flags) and (dn_flags and 1 in dn_flags)
+                if both_lakes:
+                    st.success("**Neighbors:** Both lakes → Likely lake")
+                else:
+                    st.warning("**Neighbors:** Mixed types")
+
+                st.markdown(f"**River name:** {issue['river_name'] or 'Unnamed'}")
+                st.markdown(f"**Length:** {issue['reach_length']:.0f}m" if pd.notna(issue['reach_length']) else "")
+
+            # ===== BIG DECISION BUTTONS =====
+            st.markdown("---")
+            st.markdown("### 🎯 Your Decision")
+
+            btn_col1, btn_col2 = st.columns(2)
+
+            with btn_col1:
+                st.markdown("**It's a LAKE** (convert lakeflag to 1)")
+                if st.button("✅ YES, IT'S A LAKE", key=f"fix_{selected}", type="primary", use_container_width=True):
+                    apply_lakeflag_fix(conn, selected, region, 1)
+                    st.session_state.pending_fixes.append(selected)
+                    st.session_state.last_fix = selected
+                    st.cache_data.clear()
+                    st.rerun()
+
+            with btn_col2:
+                st.markdown("**Keep as RIVER** (no change)")
+                skip_reason = st.selectbox(
+                    "Why is it a river?",
+                    ["Flowing water visible", "Narrow channel", "Dam/weir", "Canal", "Tidal", "Other"],
+                    key=f"skip_reason_{selected}",
+                    label_visibility="collapsed"
                 )
+                if st.button("❌ NO, IT'S A RIVER", key=f"skip_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'C001', skip_reason)
+                    st.session_state.pending_fixes.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
 
-                issue = issues[issues['reach_id'] == selected].iloc[0]
-
-                # Main content: Map and info side by side
-                col1, col2 = st.columns([2, 1])
-
-                with col1:
-                    st.subheader("Location")
-                    render_reach_map_satellite(int(selected), region, conn)
-
-                with col2:
-                    st.subheader("Reach Info")
-
-                    # Get additional info
-                    up_flags, dn_flags = get_neighbor_lakeflags(conn, selected, region)
-                    slope = get_reach_slope(conn, selected, region)
-                    facc = get_reach_facc(conn, selected, region)
-
-                    # Format lakeflag display
-                    def lakeflag_str(flags):
-                        if not flags:
-                            return "None"
-                        labels = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}
-                        return ', '.join([f"{labels.get(f, '?')}({f})" for f in flags])
-
-                    # Display 6 key attributes
-                    st.markdown(f"**Reach ID:** `{selected}`")
-                    st.markdown(f"**Width:** {issue['width']:.0f}m" if pd.notna(issue['width']) else "**Width:** N/A")
-                    st.markdown(f"**Length:** {issue['reach_length']:.0f}m" if pd.notna(issue['reach_length']) else "**Length:** N/A")
-                    st.markdown(f"**Upstream lakeflags:** {lakeflag_str(up_flags)}")
-                    st.markdown(f"**Downstream lakeflags:** {lakeflag_str(dn_flags)}")
-                    st.markdown(f"**FACC:** {facc:,.0f} km²" if facc else "**FACC:** N/A")
-                    st.markdown(f"**Slope:** {slope:.6f} m/km" if slope is not None else "**Slope:** N/A")
-
-                    st.divider()
-
-                    # Action buttons
-                    st.subheader("Actions")
-
-                    if st.button("🔵 Convert to Lake (lakeflag=1)", key=f"fix_{selected}", type="primary"):
-                        old_val = apply_lakeflag_fix(conn, selected, region, 1)
-                        st.session_state.pending_fixes.append(selected)
-                        st.session_state.last_fix = selected
-                        st.success(f"Fixed! lakeflag: {old_val} → 1")
+            # Undo option (small, at bottom)
+            if st.session_state.last_fix:
+                if st.button(f"↩️ Undo last ({st.session_state.last_fix})", key="undo_last"):
+                    undone_id = undo_last_fix(conn, region)
+                    if undone_id:
+                        st.session_state.pending_fixes = [p for p in st.session_state.pending_fixes if p != undone_id]
+                        st.session_state.last_fix = None
                         st.cache_data.clear()
                         st.rerun()
 
-                    # Skip with note (false positives)
-                    with st.expander("⏭️ Skip (not a lake sandwich)"):
-                        # Preset skip reasons
-                        skip_reasons = [
-                            "Select reason...",
-                            "River - clearly flowing water",
-                            "Canal - artificial channel",
-                            "Tidal - tidal influence",
-                            "Narrow channel between lakes",
-                            "Dam/weir structure",
-                            "Imagery shows river",
-                            "Other (specify below)"
-                        ]
-                        skip_choice = st.selectbox(
-                            "Reason",
-                            skip_reasons,
-                            key=f"skip_reason_{selected}"
-                        )
-                        # Custom reason if "Other" selected
-                        custom_reason = ""
-                        if skip_choice == "Other (specify below)":
-                            custom_reason = st.text_input(
-                                "Specify reason",
-                                key=f"skip_custom_{selected}"
-                            )
-
-                        # Determine final skip note
-                        skip_note = ""
-                        if skip_choice and skip_choice != "Select reason...":
-                            if skip_choice == "Other (specify below)":
-                                skip_note = custom_reason
-                            else:
-                                skip_note = skip_choice
-
-                        if st.button("Skip this issue", key=f"skip_{selected}", disabled=not skip_note):
-                            log_skip(conn, selected, region, 'C001', skip_note)
-                            st.session_state.pending_fixes.append(selected)  # Remove from list
-                            st.info(f"Skipped: {skip_note}")
-                            st.cache_data.clear()
-                            st.rerun()
-
-                    # Undo last fix
-                    if st.session_state.last_fix:
-                        st.divider()
-                        if st.button(f"↩️ Undo last fix ({st.session_state.last_fix})", key="undo_last"):
-                            undone_id = undo_last_fix(conn, region)
-                            if undone_id:
-                                st.session_state.pending_fixes = [p for p in st.session_state.pending_fixes if p != undone_id]
-                                st.session_state.last_fix = None
-                                st.warning(f"Undone fix for reach {undone_id}")
-                                st.cache_data.clear()
-                                st.rerun()
-                            else:
-                                st.error("No fix to undo")
-
-        # Batch validation section
-        st.divider()
-        st.subheader("Batch Validation")
-
-        pending = st.session_state.pending_fixes
-        st.write(f"**Pending fixes/skips:** {len(pending)}")
-
-        if len(pending) > 0:
-            st.write(f"Reaches: {pending[:10]}{'...' if len(pending) > 10 else ''}")
-
-        if st.button("🔄 Re-validate Batch", key="revalidate", disabled=len(pending) == 0, type="primary"):
-            with st.spinner("Re-validating..."):
-                before_count = len(issues) if st.session_state.c001_results else 0
-
-                # Run C001 on fixed reaches + neighbors
-                new_results = run_c001_check(conn, region, reach_ids=pending)
-                full_results = run_c001_check(conn, region)  # Also get full count
-
-                # Analyze results
-                still_failing = [r for r in pending if r in new_results.details['reach_id'].values]
-                new_total = len(full_results.details)
-                # New issues = issues that weren't in original set AND weren't in pending
-                original_ids = set(issues['reach_id'].values) if len(issues) > 0 else set()
-                new_issues = [r for r in full_results.details['reach_id'].values
-                              if r not in original_ids and r not in pending]
-
-            # Display results
-            col1, col2, col3 = st.columns(3)
-            fixed_count = len(pending) - len(still_failing)
-            col1.metric("✅ Fixed", fixed_count)
-            col2.metric("❌ Still Failing", len(still_failing), delta_color="inverse")
-            col3.metric("⚠️ New Issues", len(new_issues), delta_color="inverse")
-
-            if len(still_failing) == 0 and len(new_issues) == 0:
-                st.success("All fixes validated successfully!")
-            elif len(still_failing) > 0:
-                st.warning(f"Still failing: {still_failing}")
-            if len(new_issues) > 0:
-                st.warning(f"New issues created: {new_issues[:5]}{'...' if len(new_issues) > 5 else ''}")
-
-            # Clear pending and update results
-            st.session_state.pending_fixes = []
-            st.session_state.c001_results = full_results
-            st.session_state.last_fix = None
-
-        # Local session file (persistent across refreshes)
-        st.divider()
-        st.subheader("📁 Local Session File")
-        st.caption("Fixes are saved locally and persist across refreshes")
-
-        session_file = get_session_file(region, "C001")
-        session_data = load_session_fixes(region, "C001")
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Fixes Saved", len(session_data.get("fixes", [])))
-        col2.metric("Skips Saved", len(session_data.get("skips", [])))
-        if session_data.get("last_updated"):
-            col3.write(f"**Last update:** {session_data['last_updated'][:19]}")
-
-        # Show session file path
-        st.code(str(session_file), language=None)
-
-        # Export local session as CSV
-        col1, col2 = st.columns(2)
-        with col1:
-            local_csv = export_session_csv(region, "C001")
-            if local_csv:
-                st.download_button(
-                    "📥 Export Local Session (CSV)",
-                    local_csv,
-                    f"c001_session_{region}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    "text/csv",
-                    key="export_local_csv"
-                )
-            else:
-                st.info("No local fixes to export")
-
-        with col2:
-            # Export as JSON
-            if session_data.get("fixes") or session_data.get("skips"):
-                json_str = json.dumps(session_data, indent=2, default=str)
-                st.download_button(
-                    "📥 Export Local Session (JSON)",
-                    json_str,
-                    f"c001_session_{region}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    "application/json",
-                    key="export_local_json"
-                )
-
-        # Clear session button
-        if st.button("🗑️ Clear Local Session", key="clear_session"):
-            save_session_fixes(region, [], [], [], check_id="C001")
-            st.success("Local session cleared!")
-            st.rerun()
-
-        # Fix history for C001 (from database)
-        st.divider()
-        st.subheader("C001 Fix History (Database)")
-        lint_history = get_lint_fix_history(conn, region, 50)
-        if len(lint_history) > 0:
-            st.dataframe(lint_history[['timestamp', 'reach_id', 'action', 'old_value', 'new_value', 'notes', 'undone']], height=200)
-
-            # Export
-            csv = lint_history.to_csv(index=False)
-            st.download_button(
-                "📥 Download DB Fix History",
-                csv,
-                f"c001_fixes_db_{region}_{datetime.now().strftime('%Y%m%d')}.csv",
-                "text/csv",
-                key="export_db_csv"
-            )
-        else:
-            st.info("No C001 fixes in database yet")
+    # Refresh button at bottom
+    st.markdown("---")
+    if st.button("🔄 Refresh Check", key="refresh_c001"):
+        st.session_state.c001_results = None
+        st.session_state.pending_fixes = []
+        st.rerun()
 
 # =============================================================================
 # TAB 7: Lakeflag/Type Consistency (C004)
 # =============================================================================
 with tab7:
-    st.header("C004: Lakeflag/Type Consistency")
-    st.caption("Reaches where lakeflag and type fields don't match expected mappings")
-
-    with st.expander("ℹ️ Expected mappings"):
-        st.markdown("""
-        | Lakeflag | Expected Type |
-        |----------|---------------|
-        | 0 (river) | 1 (river) or 3 (tidal_river) |
-        | 1 (lake) | 2 (lake) |
-        | 2 (canal) | 4 (artificial) |
-        | 3 (tidal) | 3 (tidal_river) |
-
-        **Actions:**
-        - **Fix lakeflag**: Change lakeflag to match type
-        - **Fix type**: Change type to match lakeflag
-        - **Skip**: Mark as reviewed (no change needed)
-        """)
+    st.header("🏷️ Lakeflag/Type Mismatch")
 
     # Initialize session state for C004
     if 'c004_results' not in st.session_state:
@@ -1387,165 +1206,104 @@ with tab7:
             st.session_state.c004_results = check_lakeflag_type_consistency(conn, region)
             st.session_state.c004_region = region
 
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("🔄 Refresh C004", key="refresh_c004"):
-            with st.spinner("Running C004 check..."):
-                st.session_state.c004_results = check_lakeflag_type_consistency(conn, region)
-            st.rerun()
-
     result = st.session_state.c004_results
-    if result is None or len(result.details) == 0:
-        if result and result.total_checked == 0:
-            st.warning("⚠️ Type column not present in database - cannot check consistency. This check requires adding the 'type' column first.")
-        else:
-            st.success("No lakeflag/type mismatches found!")
+
+    # Check if type column exists
+    if result and result.total_checked == 0:
+        st.warning("⚠️ **Type column not in database** - this check requires adding the 'type' column first.")
+        st.info("Once the type column is added, this tab will show reaches where lakeflag and type don't match.")
+    elif result is None or len(result.details) == 0:
+        st.success("✅ No lakeflag/type mismatches in this region!")
     else:
         issues = result.details
+        total = len(issues)
+        done = len(st.session_state.c004_pending)
+        remaining = len([r for r in issues['reach_id'].tolist() if r not in st.session_state.c004_pending])
 
+        # Progress
         col1, col2, col3 = st.columns(3)
-        col1.metric("Mismatches Found", len(issues))
-        col2.metric("Total Checked", result.total_checked)
-        col3.metric("Issue %", f"{result.issue_pct:.2f}%")
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed", done)
+        col3.metric("Total", total)
+        st.progress(done / total if total > 0 else 0)
 
-        # Group by issue type
-        if 'issue_type' in issues.columns:
-            st.subheader("By Issue Type")
-            issue_counts = issues['issue_type'].value_counts()
-            st.dataframe(issue_counts)
-
-        # Issue selector
-        available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.c004_pending]
-
-        if len(available) == 0:
-            st.success("All issues reviewed!")
+        if remaining == 0:
+            st.success("🎉 All mismatches reviewed!")
         else:
-            selected = st.selectbox(
-                "Select issue",
-                available,
-                format_func=lambda r: f"{r} - {issues[issues['reach_id']==r].iloc[0]['issue_type']}",
-                key="c004_select"
-            )
-
+            available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.c004_pending]
+            selected = available[0]
             issue = issues[issues['reach_id'] == selected].iloc[0]
 
-            col1, col2 = st.columns([2, 1])
+            lakeflag_map = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}
+            type_map = {1: 'river', 2: 'lake', 3: 'tidal_river', 4: 'artificial', 5: 'unassigned', 6: 'unreliable'}
+            lf = issue['lakeflag']
+            tp = issue['type']
 
+            # Problem box
+            st.markdown("---")
+            st.subheader(f"🔍 Issue #{done + 1}: Reach `{selected}`")
+            st.error(f"""
+            **Mismatch detected:**
+            - **Lakeflag:** {lf} ({lakeflag_map.get(lf, '?')})
+            - **Type:** {tp} ({type_map.get(tp, '?')})
+            - **Issue:** {issue['issue_type']}
+            """)
+
+            col1, col2 = st.columns([2, 1])
             with col1:
                 render_reach_map_satellite(int(selected), region, conn)
 
             with col2:
-                st.subheader("Issue Details")
-                st.markdown(f"**Reach ID:** `{selected}`")
-
-                lakeflag_map = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}
-                type_map = {1: 'river', 2: 'lake', 3: 'tidal_river', 4: 'artificial', 5: 'unassigned', 6: 'unreliable'}
-
-                lf = issue['lakeflag']
-                tp = issue['type']
-                st.markdown(f"**Lakeflag:** {lf} ({lakeflag_map.get(lf, '?')})")
-                st.markdown(f"**Type:** {tp} ({type_map.get(tp, '?')})")
-                st.markdown(f"**Issue:** {issue['issue_type']}")
                 st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
 
-                st.divider()
-                st.subheader("Actions")
+                st.markdown("---")
+                st.markdown("### 🎯 Fix the mismatch")
 
-                # Fix options based on issue type
-                if issue['issue_type'] == 'lake_type_mismatch':
-                    # lakeflag=1 (lake) but type != 2
-                    if st.button("Set type=2 (lake)", key=f"c004_fix_type_{selected}", type="primary"):
+                # Determine fix options based on issue type
+                if 'lake' in issue['issue_type']:
+                    if st.button("✅ Set type=2 (lake)", key=f"c004_fix_{selected}", type="primary", use_container_width=True):
                         conn.execute("UPDATE reaches SET type = 2 WHERE reach_id = ? AND region = ?", [selected, region])
                         conn.commit()
-                        log_skip(conn, selected, region, 'C004', f'Fixed: set type=2 (was {tp})')
+                        log_skip(conn, selected, region, 'C004', f'Fixed: type→2')
                         st.session_state.c004_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
-                    if st.button("Set lakeflag=0 (river)", key=f"c004_fix_lf_{selected}"):
-                        conn.execute("UPDATE reaches SET lakeflag = 0 WHERE reach_id = ? AND region = ?", [selected, region])
-                        conn.commit()
-                        log_skip(conn, selected, region, 'C004', f'Fixed: set lakeflag=0 (was {lf})')
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
-
-                elif issue['issue_type'] == 'river_type_mismatch':
-                    # lakeflag=0 (river) but type not in (1, 3)
-                    if st.button("Set type=1 (river)", key=f"c004_fix_type_{selected}", type="primary"):
+                elif 'river' in issue['issue_type']:
+                    if st.button("✅ Set type=1 (river)", key=f"c004_fix_{selected}", type="primary", use_container_width=True):
                         conn.execute("UPDATE reaches SET type = 1 WHERE reach_id = ? AND region = ?", [selected, region])
                         conn.commit()
-                        log_skip(conn, selected, region, 'C004', f'Fixed: set type=1 (was {tp})')
+                        log_skip(conn, selected, region, 'C004', f'Fixed: type→1')
                         st.session_state.c004_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
-                    if st.button("Set lakeflag=1 (lake)", key=f"c004_fix_lf_{selected}"):
-                        conn.execute("UPDATE reaches SET lakeflag = 1 WHERE reach_id = ? AND region = ?", [selected, region])
-                        conn.commit()
-                        log_skip(conn, selected, region, 'C004', f'Fixed: set lakeflag=1 (was {lf})')
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
-
-                elif issue['issue_type'] == 'canal_type_mismatch':
-                    if st.button("Set type=4 (artificial)", key=f"c004_fix_type_{selected}", type="primary"):
+                elif 'canal' in issue['issue_type']:
+                    if st.button("✅ Set type=4 (artificial)", key=f"c004_fix_{selected}", type="primary", use_container_width=True):
                         conn.execute("UPDATE reaches SET type = 4 WHERE reach_id = ? AND region = ?", [selected, region])
                         conn.commit()
-                        log_skip(conn, selected, region, 'C004', f'Fixed: set type=4 (was {tp})')
+                        log_skip(conn, selected, region, 'C004', f'Fixed: type→4')
                         st.session_state.c004_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
-
-                elif issue['issue_type'] == 'tidal_type_mismatch':
-                    if st.button("Set type=3 (tidal_river)", key=f"c004_fix_type_{selected}", type="primary"):
+                elif 'tidal' in issue['issue_type']:
+                    if st.button("✅ Set type=3 (tidal)", key=f"c004_fix_{selected}", type="primary", use_container_width=True):
                         conn.execute("UPDATE reaches SET type = 3 WHERE reach_id = ? AND region = ?", [selected, region])
                         conn.commit()
-                        log_skip(conn, selected, region, 'C004', f'Fixed: set type=3 (was {tp})')
+                        log_skip(conn, selected, region, 'C004', f'Fixed: type→3')
                         st.session_state.c004_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
 
-                # Skip option
-                with st.expander("⏭️ Skip (leave as-is)"):
-                    skip_reasons = [
-                        "Select reason...",
-                        "Correct as-is",
-                        "Needs manual review",
-                        "Data quality issue",
-                        "Other (specify below)"
-                    ]
-                    skip_choice = st.selectbox("Reason", skip_reasons, key=f"c004_skip_reason_{selected}")
-                    custom_reason = ""
-                    if skip_choice == "Other (specify below)":
-                        custom_reason = st.text_input("Specify", key=f"c004_skip_custom_{selected}")
-
-                    skip_note = custom_reason if skip_choice == "Other (specify below)" else skip_choice
-                    if st.button("Skip", key=f"c004_skip_{selected}", disabled=skip_choice == "Select reason..."):
-                        log_skip(conn, selected, region, 'C004', f'Skipped: {skip_note}')
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
+                if st.button("⏭️ Skip (correct as-is)", key=f"c004_skip_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'C004', 'Skipped: correct as-is')
+                    st.session_state.c004_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
 
 # =============================================================================
 # TAB 8: FACC Monotonicity (T003)
 # =============================================================================
 with tab8:
-    st.header("T003: FACC Monotonicity")
-    st.caption("Reaches where flow accumulation decreases downstream (should increase)")
-
-    with st.expander("ℹ️ Understanding FACC issues"):
-        st.markdown("""
-        **Why facc decreases downstream:**
-        - **D8 routing artifact**: D8 picks ONE downstream cell, so distributaries get wrong values
-        - **Delta/bifurcation**: Flow splits but D8 only tracks one branch
-        - **Braided rivers**: Multiple channels, D8 picks one
-        - **Data error**: Actual mistake in source data
-
-        **Most T003 issues are D8 artifacts and can't be "fixed" without changing the routing algorithm.**
-
-        **Actions:**
-        - **Skip (D8 artifact)**: Mark as known limitation
-        - **Fix facc**: Only if you're sure it's a real error
-        """)
+    st.header("📈 FACC Monotonicity Issues")
 
     # Initialize session state for T003
     if 't003_results' not in st.session_state:
@@ -1559,113 +1317,96 @@ with tab8:
             st.session_state.t003_results = check_facc_monotonicity(conn, region)
             st.session_state.t003_region = region
 
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("🔄 Refresh T003", key="refresh_t003"):
-            with st.spinner("Running T003 check..."):
-                st.session_state.t003_results = check_facc_monotonicity(conn, region)
-            st.rerun()
-
     result = st.session_state.t003_results
     if result is None or len(result.details) == 0:
-        st.success("No FACC monotonicity issues found!")
+        st.success("✅ No FACC monotonicity issues in this region!")
     else:
         issues = result.details
+        total = len(issues)
+        done = len(st.session_state.t003_pending)
+        remaining = len([r for r in issues['reach_id'].tolist() if r not in st.session_state.t003_pending])
 
+        # Progress
         col1, col2, col3 = st.columns(3)
-        col1.metric("Issues Found", len(issues))
-        col2.metric("Total Checked", result.total_checked)
-        col3.metric("Issue %", f"{result.issue_pct:.2f}%")
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed", done)
+        col3.metric("Total", total)
+        st.progress(done / total if total > 0 else 0)
 
-        # Issue selector
-        available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.t003_pending]
+        # Important note about D8
+        st.info("💡 **Most T003 issues are D8 routing artifacts** (distributaries, deltas, braided rivers). These are NOT errors - just mark as 'D8 artifact'.")
 
-        if len(available) == 0:
-            st.success("All issues reviewed!")
+        if remaining == 0:
+            st.success("🎉 All FACC issues reviewed!")
         else:
-            selected = st.selectbox(
-                "Select issue",
-                available,
-                format_func=lambda r: f"{r} - decrease: {issues[issues['reach_id']==r].iloc[0]['facc_decrease']:,.0f} km²",
-                key="t003_select"
-            )
-
+            available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.t003_pending]
+            selected = available[0]
             issue = issues[issues['reach_id'] == selected].iloc[0]
 
-            col1, col2 = st.columns([2, 1])
+            # Problem box
+            st.markdown("---")
+            st.subheader(f"🔍 Issue #{done + 1}: Reach `{selected}`")
 
+            # Visual showing the problem
+            st.warning(f"""
+            **FACC decreases downstream** (should increase):
+            - **This reach facc:** {issue['facc_up']:,.0f} km²
+            - **Downstream facc:** {issue['facc_down']:,.0f} km²
+            - **Decrease:** {issue['facc_decrease']:,.0f} km²
+            """)
+
+            col1, col2 = st.columns([2, 1])
             with col1:
                 render_reach_map_satellite(int(selected), region, conn)
 
             with col2:
-                st.subheader("Issue Details")
-                st.markdown(f"**Reach ID:** `{selected}`")
-                st.markdown(f"**Upstream facc:** {issue['facc_up']:,.0f} km²")
-                st.markdown(f"**Downstream facc:** {issue['facc_down']:,.0f} km²")
-                st.markdown(f"**Decrease:** {issue['facc_decrease']:,.0f} km²")
                 st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
 
-                st.divider()
-                st.subheader("Actions")
+                # Decision helper
+                decrease_pct = (issue['facc_decrease'] / issue['facc_up'] * 100) if issue['facc_up'] > 0 else 0
+                if decrease_pct > 50:
+                    st.error(f"**{decrease_pct:.0f}% decrease** → Likely distributary/delta")
+                elif decrease_pct > 20:
+                    st.warning(f"**{decrease_pct:.0f}% decrease** → Could be bifurcation")
+                else:
+                    st.info(f"**{decrease_pct:.0f}% decrease** → Minor, likely D8 artifact")
 
-                # Skip options (most common for T003)
-                skip_reasons = [
-                    "Select reason...",
-                    "D8 distributary artifact",
-                    "Delta/bifurcation - expected",
-                    "Braided river section",
-                    "Anastomosing channel",
-                    "Lake outlet artifact",
-                    "Real error - needs fix",
-                    "Other (specify below)"
-                ]
-                skip_choice = st.selectbox("Classification", skip_reasons, key=f"t003_reason_{selected}")
+                st.markdown("---")
+                st.markdown("### 🎯 Classification")
 
-                custom_reason = ""
-                if skip_choice == "Other (specify below)":
-                    custom_reason = st.text_input("Specify", key=f"t003_custom_{selected}")
-
-                skip_note = custom_reason if skip_choice == "Other (specify below)" else skip_choice
-
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    if st.button("✅ Mark Reviewed", key=f"t003_skip_{selected}",
-                                 disabled=skip_choice == "Select reason...", type="primary"):
-                        log_skip(conn, selected, region, 'T003', skip_note)
+                # Main decision: D8 artifact or needs review
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    if st.button("✅ D8 Artifact", key=f"t003_d8_{selected}", type="primary", use_container_width=True):
+                        log_skip(conn, selected, region, 'T003', 'D8 routing artifact')
                         st.session_state.t003_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
 
-                # Fix option (rare)
-                with st.expander("🔧 Fix facc (use sparingly)"):
-                    st.warning("Only fix if you're certain this is a real data error, not a D8 artifact")
-                    new_facc = st.number_input("New facc value", min_value=0.0,
-                                               value=float(issue['facc_down']), key=f"t003_facc_{selected}")
-                    if st.button("Apply fix", key=f"t003_fix_{selected}"):
-                        apply_facc_fix(conn, selected, region, new_facc, "T003_manual", skip_note)
+                with btn_col2:
+                    if st.button("🔍 Needs Review", key=f"t003_review_{selected}", use_container_width=True):
+                        log_skip(conn, selected, region, 'T003', 'Needs manual review')
                         st.session_state.t003_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
+
+                # Other options
+                other_reason = st.selectbox(
+                    "Or classify as:",
+                    ["", "Delta/bifurcation", "Braided river", "Lake outlet", "Other"],
+                    key=f"t003_other_{selected}"
+                )
+                if other_reason and st.button("Mark with this reason", key=f"t003_other_btn_{selected}"):
+                    log_skip(conn, selected, region, 'T003', other_reason)
+                    st.session_state.t003_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
 
 # =============================================================================
 # TAB 9: Orphan Reaches (T004)
 # =============================================================================
 with tab9:
-    st.header("T004: Orphan Reaches")
-    st.caption("Reaches with no upstream AND no downstream neighbors (disconnected)")
-
-    with st.expander("ℹ️ Understanding orphan reaches"):
-        st.markdown("""
-        **Why reaches become orphans:**
-        - **Small isolated water body**: Pond, small lake not connected to network
-        - **Data processing artifact**: Topology wasn't built correctly
-        - **Island in lake**: Water body that should be connected
-        - **Coastal feature**: Tidal inlet or lagoon
-
-        **Actions:**
-        - **Skip (valid orphan)**: Small pond, isolated feature - correct as-is
-        - **Flag for topology fix**: Should be connected but isn't
-        """)
+    st.header("🏝️ Orphan Reaches")
 
     # Initialize session state for T004
     if 't004_results' not in st.session_state:
@@ -1679,85 +1420,75 @@ with tab9:
             st.session_state.t004_results = check_orphan_reaches(conn, region)
             st.session_state.t004_region = region
 
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("🔄 Refresh T004", key="refresh_t004"):
-            with st.spinner("Running T004 check..."):
-                st.session_state.t004_results = check_orphan_reaches(conn, region)
-            st.rerun()
-
     result = st.session_state.t004_results
     if result is None or len(result.details) == 0:
-        st.success("No orphan reaches found!")
+        st.success("✅ No orphan reaches in this region! Topology is fully connected.")
     else:
         issues = result.details
+        total = len(issues)
+        done = len(st.session_state.t004_pending)
+        remaining = len([r for r in issues['reach_id'].tolist() if r not in st.session_state.t004_pending])
 
+        # Progress
         col1, col2, col3 = st.columns(3)
-        col1.metric("Orphans Found", len(issues))
-        col2.metric("Total Reaches", result.total_checked)
-        col3.metric("Orphan %", f"{result.issue_pct:.2f}%")
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed", done)
+        col3.metric("Total Orphans", total)
+        st.progress(done / total if total > 0 else 0)
 
-        # Summary stats
-        if 'width' in issues.columns:
-            col1, col2 = st.columns(2)
-            col1.metric("Avg Width", f"{issues['width'].mean():.0f}m")
-            col2.metric("Avg Length", f"{issues['reach_length'].mean():.0f}m")
+        st.info("💡 **Orphans** are reaches with no upstream AND no downstream neighbors. Most are valid isolated water bodies (ponds, small lakes).")
 
-        # Issue selector
-        available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.t004_pending]
-
-        if len(available) == 0:
-            st.success("All orphans reviewed!")
+        if remaining == 0:
+            st.success("🎉 All orphans reviewed!")
         else:
-            selected = st.selectbox(
-                "Select orphan",
-                available,
-                format_func=lambda r: f"{r} - {issues[issues['reach_id']==r].iloc[0]['river_name'] or 'Unnamed'} ({issues[issues['reach_id']==r].iloc[0]['reach_length']:.0f}m)",
-                key="t004_select"
-            )
-
+            available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.t004_pending]
+            selected = available[0]
             issue = issues[issues['reach_id'] == selected].iloc[0]
 
-            col1, col2 = st.columns([2, 1])
+            # Problem box
+            st.markdown("---")
+            st.subheader(f"🔍 Orphan #{done + 1}: Reach `{selected}`")
 
+            width = issue['width'] if pd.notna(issue['width']) else 0
+            length = issue['reach_length'] if pd.notna(issue['reach_length']) else 0
+
+            st.warning(f"""
+            **Disconnected reach** (no neighbors):
+            - **Length:** {length:.0f}m
+            - **Width:** {width:.0f}m
+            - **Network ID:** {issue['network']}
+            """)
+
+            col1, col2 = st.columns([2, 1])
             with col1:
                 render_reach_map_satellite(int(selected), region, conn)
 
             with col2:
-                st.subheader("Reach Details")
-                st.markdown(f"**Reach ID:** `{selected}`")
                 st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
-                st.markdown(f"**Length:** {issue['reach_length']:.0f}m")
-                st.markdown(f"**Width:** {issue['width']:.0f}m" if pd.notna(issue['width']) else "**Width:** N/A")
-                st.markdown(f"**Network ID:** {issue['network']}")
-                st.markdown(f"**n_rch_up:** {issue['n_rch_up']} | **n_rch_down:** {issue['n_rch_down']}")
 
-                st.divider()
-                st.subheader("Classification")
+                # Size-based hint
+                if width > 100 or length > 1000:
+                    st.warning("Large feature → May need topology connection")
+                else:
+                    st.success("Small feature → Likely valid isolated pond")
 
-                skip_reasons = [
-                    "Select reason...",
-                    "Valid orphan - small pond",
-                    "Valid orphan - isolated lake",
-                    "Valid orphan - coastal feature",
-                    "Needs topology connection",
-                    "Should be deleted",
-                    "Other (specify below)"
-                ]
-                skip_choice = st.selectbox("Classification", skip_reasons, key=f"t004_reason_{selected}")
+                st.markdown("---")
+                st.markdown("### 🎯 Classification")
 
-                custom_reason = ""
-                if skip_choice == "Other (specify below)":
-                    custom_reason = st.text_input("Specify", key=f"t004_custom_{selected}")
+                btn_col1, btn_col2 = st.columns(2)
+                with btn_col1:
+                    if st.button("✅ Valid Orphan", key=f"t004_valid_{selected}", type="primary", use_container_width=True):
+                        log_skip(conn, selected, region, 'T004', 'Valid orphan - isolated water body')
+                        st.session_state.t004_pending.append(selected)
+                        st.cache_data.clear()
+                        st.rerun()
 
-                skip_note = custom_reason if skip_choice == "Other (specify below)" else skip_choice
-
-                if st.button("✅ Mark Reviewed", key=f"t004_mark_{selected}",
-                             disabled=skip_choice == "Select reason...", type="primary"):
-                    log_skip(conn, selected, region, 'T004', skip_note)
-                    st.session_state.t004_pending.append(selected)
-                    st.cache_data.clear()
-                    st.rerun()
+                with btn_col2:
+                    if st.button("🔗 Needs Connection", key=f"t004_connect_{selected}", use_container_width=True):
+                        log_skip(conn, selected, region, 'T004', 'Needs topology connection')
+                        st.session_state.t004_pending.append(selected)
+                        st.cache_data.clear()
+                        st.rerun()
 
 # Footer
 st.divider()
