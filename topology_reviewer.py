@@ -846,9 +846,9 @@ st.sidebar.header("Settings")
 region = st.sidebar.selectbox("Region", ["NA", "SA", "EU", "AF", "AS", "OC"], index=0)
 
 # Tabs for different issue types
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-    "📊 Ratio Violations",
-    "📉 Monotonicity",
+# NOTE: Tabs 1-2 (Ratio Violations, Monotonicity) hidden until facc strategy decided
+# To restore, uncomment those tabs and their implementations below
+tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "🏔️ Headwaters",
     "⚠️ Suspect",
     "📜 Fix History",
@@ -859,83 +859,83 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 ])
 
 # =============================================================================
-# TAB 1: Ratio Violations (original functionality)
+# TAB 1: Ratio Violations (HIDDEN - uncomment when facc strategy decided)
 # =============================================================================
-with tab1:
-    st.header("Topology Ratio Violations")
-    st.caption("Reaches where upstream facc >> downstream facc")
-
-    min_ratio = st.slider("Minimum ratio", 2, 100, 10, key="ratio_slider")
-    violations = get_ratio_violations(conn, region, min_ratio)
-
-    st.metric("Total", len(violations))
-
-    if len(violations) > 0:
-        selected_idx = st.selectbox(
-            "Select violation",
-            range(len(violations)),
-            format_func=lambda i: f"#{i+1}: {violations.iloc[i]['upstream_name']} ({violations.iloc[i]['ratio']:.0f}x)",
-            key="ratio_select"
-        )
-
-        v = violations.iloc[selected_idx]
-
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            render_reach_map(int(v['upstream_reach']), region, "Upstream Reach")
-
-        with col2:
-            st.markdown(f"**Upstream:** `{v['upstream_reach']}`")
-            st.markdown(f"facc: **{v['upstream_facc']:,.0f}** | width: {v['up_width']:.0f}m")
-            st.markdown(f"**Downstream:** `{v['downstream_reach']}`")
-            st.markdown(f"facc: **{v['downstream_facc']:,.0f}** | width: {v['dn_width']:.0f}m")
-            st.markdown(f"**Ratio: {v['ratio']:.0f}x**")
-
-            st.divider()
-            render_fix_panel(int(v['upstream_reach']), region, v['upstream_facc'], "ratio_violation")
+# with tab1:
+#     st.header("Topology Ratio Violations")
+#     st.caption("Reaches where upstream facc >> downstream facc")
+#
+#     min_ratio = st.slider("Minimum ratio", 2, 100, 10, key="ratio_slider")
+#     violations = get_ratio_violations(conn, region, min_ratio)
+#
+#     st.metric("Total", len(violations))
+#
+#     if len(violations) > 0:
+#         selected_idx = st.selectbox(
+#             "Select violation",
+#             range(len(violations)),
+#             format_func=lambda i: f"#{i+1}: {violations.iloc[i]['upstream_name']} ({violations.iloc[i]['ratio']:.0f}x)",
+#             key="ratio_select"
+#         )
+#
+#         v = violations.iloc[selected_idx]
+#
+#         col1, col2 = st.columns([2, 1])
+#
+#         with col1:
+#             render_reach_map(int(v['upstream_reach']), region, "Upstream Reach")
+#
+#         with col2:
+#             st.markdown(f"**Upstream:** `{v['upstream_reach']}`")
+#             st.markdown(f"facc: **{v['upstream_facc']:,.0f}** | width: {v['up_width']:.0f}m")
+#             st.markdown(f"**Downstream:** `{v['downstream_reach']}`")
+#             st.markdown(f"facc: **{v['downstream_facc']:,.0f}** | width: {v['dn_width']:.0f}m")
+#             st.markdown(f"**Ratio: {v['ratio']:.0f}x**")
+#
+#             st.divider()
+#             render_fix_panel(int(v['upstream_reach']), region, v['upstream_facc'], "ratio_violation")
 
 # =============================================================================
-# TAB 2: Monotonicity Violations
+# TAB 2: Monotonicity Violations (HIDDEN - uncomment when facc strategy decided)
 # =============================================================================
-with tab2:
-    st.header("Monotonicity Violations")
-    st.caption("Reaches where facc > downstream facc (should decrease downstream)")
-
-    mono_issues = get_monotonicity_issues(conn, region)
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total", len(mono_issues))
-    col2.metric("Severe (>100k diff)", len(mono_issues[mono_issues['diff'] > 100000]))
-    col3.metric("Minor (<1k diff)", len(mono_issues[mono_issues['diff'] < 1000]))
-
-    if len(mono_issues) > 0:
-        selected_idx = st.selectbox(
-            "Select issue",
-            range(len(mono_issues)),
-            format_func=lambda i: f"#{i+1}: {mono_issues.iloc[i]['reach_id']} (diff={mono_issues.iloc[i]['diff']:,.0f})",
-            key="mono_select"
-        )
-
-        m = mono_issues.iloc[selected_idx]
-
-        col1, col2 = st.columns([2, 1])
-
-        with col1:
-            render_reach_map(int(m['reach_id']), region)
-
-        with col2:
-            st.markdown(f"**Reach:** `{m['reach_id']}`")
-            st.markdown(f"**facc:** {m['facc']:,.0f} km²")
-            st.markdown(f"**width:** {m['width']:.0f}m")
-            st.markdown(f"**River:** {m['river_name']}")
-            st.divider()
-            st.markdown(f"**Downstream:** `{m['dn_reach_id']}`")
-            st.markdown(f"**dn_facc:** {m['dn_facc']:,.0f} km²")
-            st.markdown(f"**Difference:** {m['diff']:,.0f} km²")
-
-            st.divider()
-            render_fix_panel(int(m['reach_id']), region, m['facc'], "monotonicity")
+# with tab2:
+#     st.header("Monotonicity Violations")
+#     st.caption("Reaches where facc > downstream facc (should decrease downstream)")
+#
+#     mono_issues = get_monotonicity_issues(conn, region)
+#
+#     col1, col2, col3 = st.columns(3)
+#     col1.metric("Total", len(mono_issues))
+#     col2.metric("Severe (>100k diff)", len(mono_issues[mono_issues['diff'] > 100000]))
+#     col3.metric("Minor (<1k diff)", len(mono_issues[mono_issues['diff'] < 1000]))
+#
+#     if len(mono_issues) > 0:
+#         selected_idx = st.selectbox(
+#             "Select issue",
+#             range(len(mono_issues)),
+#             format_func=lambda i: f"#{i+1}: {mono_issues.iloc[i]['reach_id']} (diff={mono_issues.iloc[i]['diff']:,.0f})",
+#             key="mono_select"
+#         )
+#
+#         m = mono_issues.iloc[selected_idx]
+#
+#         col1, col2 = st.columns([2, 1])
+#
+#         with col1:
+#             render_reach_map(int(m['reach_id']), region)
+#
+#         with col2:
+#             st.markdown(f"**Reach:** `{m['reach_id']}`")
+#             st.markdown(f"**facc:** {m['facc']:,.0f} km²")
+#             st.markdown(f"**width:** {m['width']:.0f}m")
+#             st.markdown(f"**River:** {m['river_name']}")
+#             st.divider()
+#             st.markdown(f"**Downstream:** `{m['dn_reach_id']}`")
+#             st.markdown(f"**dn_facc:** {m['dn_facc']:,.0f} km²")
+#             st.markdown(f"**Difference:** {m['diff']:,.0f} km²")
+#
+#             st.divider()
+#             render_fix_panel(int(m['reach_id']), region, m['facc'], "monotonicity")
 
 # =============================================================================
 # TAB 3: Headwater Issues
