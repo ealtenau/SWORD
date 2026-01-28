@@ -1396,7 +1396,10 @@ with tab7:
 
     result = st.session_state.c004_results
     if result is None or len(result.details) == 0:
-        st.success("No lakeflag/type mismatches found!")
+        if result and result.total_checked == 0:
+            st.warning("⚠️ Type column not present in database - cannot check consistency. This check requires adding the 'type' column first.")
+        else:
+            st.success("No lakeflag/type mismatches found!")
     else:
         issues = result.details
 
