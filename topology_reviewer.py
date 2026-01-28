@@ -481,6 +481,27 @@ def undo_last_fix(conn, region):
     return reach_id
 
 
+def get_nearby_reaches(conn, center_lon, center_lat, radius_deg, region, exclude_ids=None):
+    """Get all reaches within a bounding box (for showing unconnected reaches)."""
+    exclude_ids = exclude_ids or []
+    exclude_str = ','.join([str(int(r)) for r in exclude_ids]) if exclude_ids else '0'
+
+    query = f"""
+        SELECT reach_id, x, y
+        FROM reaches
+        WHERE region = ?
+          AND x BETWEEN ? AND ?
+          AND y BETWEEN ? AND ?
+          AND reach_id NOT IN ({exclude_str})
+        LIMIT 200
+    """
+    return conn.execute(query, [
+        region,
+        center_lon - radius_deg, center_lon + radius_deg,
+        center_lat - radius_deg, center_lat + radius_deg
+    ]).fetchdf()
+
+
 def render_reach_map_satellite(reach_id, region, conn, hops=None):
     """Render a map centered on a reach with Esri satellite basemap using folium."""
     geom = get_reach_geometry(conn, reach_id)
@@ -488,24 +509,27 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
         st.warning("No geometry available")
         return
 
-    # Use sidebar setting for hops if not specified
+    # Use sidebar settings
     if hops is None:
         hops = st.session_state.get('map_hops', 5)
+    show_all = st.session_state.get('show_all_reaches', True)
 
     # Get upstream and downstream geometries
     up_chain = get_upstream_chain(conn, reach_id, region, hops)
     dn_chain = get_downstream_chain(conn, reach_id, region, hops)
 
     all_coords = list(geom)
+    connected_ids = {reach_id}
 
     # Collect upstream geometries
     up_geoms = []
     for i, row in up_chain.iterrows():
         if row['reach_id'] == reach_id:
             continue
+        connected_ids.add(row['reach_id'])
         up_geom = get_reach_geometry(conn, int(row['reach_id']))
         if up_geom:
-            up_geoms.append((up_geom, i))
+            up_geoms.append((up_geom, i, row['reach_id']))
             all_coords.extend(up_geom)
 
     # Collect downstream geometries
@@ -513,9 +537,10 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
     for i, row in dn_chain.iterrows():
         if row['reach_id'] == reach_id:
             continue
+        connected_ids.add(row['reach_id'])
         dn_geom = get_reach_geometry(conn, int(row['reach_id']))
         if dn_geom:
-            dn_geoms.append((dn_geom, i))
+            dn_geoms.append((dn_geom, i, row['reach_id']))
             all_coords.extend(dn_geom)
 
     # Calculate bounds and center
@@ -524,6 +549,10 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
     center_lat = (min(lats) + max(lats)) / 2
     center_lon = (min(lons) + max(lons)) / 2
     extent = max(max(lons) - min(lons), max(lats) - min(lats))
+
+    # Expand extent to show more area
+    view_radius = max(extent * 0.75, 0.02)  # At least 0.02 degrees
+
     zoom = 15 if extent < 0.02 else 14 if extent < 0.05 else 12 if extent < 0.1 else 10
 
     # Create folium map with Esri satellite tiles
@@ -554,8 +583,28 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
     # Add layer control to toggle between basemaps
     folium.LayerControl().add_to(m)
 
+    # Get and display ALL nearby reaches (unconnected ones in gray)
+    nearby_unconnected = []
+    if show_all:
+        nearby = get_nearby_reaches(conn, center_lon, center_lat, view_radius, region, list(connected_ids))
+        for _, row in nearby.iterrows():
+            nearby_geom = get_reach_geometry(conn, int(row['reach_id']))
+            if nearby_geom:
+                nearby_unconnected.append((nearby_geom, row['reach_id']))
+
+        # Draw unconnected reaches first (gray, thin) so they're behind
+        for nearby_geom, rid in nearby_unconnected:
+            coords = [[c[1], c[0]] for c in nearby_geom]
+            folium.PolyLine(
+                coords,
+                color='#ffffff',
+                weight=2,
+                opacity=0.6,
+                tooltip=f"Unconnected: {rid}"
+            ).add_to(m)
+
     # Add upstream reaches (orange, fading based on distance)
-    for up_geom, i in up_geoms:
+    for up_geom, i, rid in up_geoms:
         # Convert [lon, lat] to [lat, lon] for folium
         coords = [[c[1], c[0]] for c in up_geom]
         # Scale opacity based on total hops
@@ -565,11 +614,11 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
             color='orange',
             weight=3,
             opacity=opacity,
-            tooltip=f"Upstream {i+1}"
+            tooltip=f"Upstream {i+1}: {rid}"
         ).add_to(m)
 
     # Add downstream reaches (blue, fading based on distance)
-    for dn_geom, i in dn_geoms:
+    for dn_geom, i, rid in dn_geoms:
         coords = [[c[1], c[0]] for c in dn_geom]
         opacity = max(0.2, 1.0 - (i / max(hops, 1)) * 0.8)
         folium.PolyLine(
@@ -577,7 +626,7 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
             color='#0066ff',
             weight=3,
             opacity=opacity,
-            tooltip=f"Downstream {i+1}"
+            tooltip=f"Downstream {i+1}: {rid}"
         ).add_to(m)
 
     # Add main reach (red, thicker)
@@ -590,12 +639,19 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
         tooltip=f"Selected: {reach_id}"
     ).add_to(m)
 
-    # Fit bounds
-    m.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
+    # Fit bounds (expand slightly to show context)
+    padding = view_radius * 0.2
+    m.fit_bounds([
+        [min(lats) - padding, min(lons) - padding],
+        [max(lats) + padding, max(lons) + padding]
+    ])
 
     # Render in streamlit
     st_folium(m, width=None, height=500, returned_objects=[])
-    st.caption(f"🔴 Selected | 🟠 Upstream ({len(up_geoms)}) | 🔵 Downstream ({len(dn_geoms)})")
+    if show_all and nearby_unconnected:
+        st.caption(f"🔴 Selected | 🟠 Upstream ({len(up_geoms)}) | 🔵 Downstream ({len(dn_geoms)}) | ⚪ Unconnected ({len(nearby_unconnected)})")
+    else:
+        st.caption(f"🔴 Selected | 🟠 Upstream ({len(up_geoms)}) | 🔵 Downstream ({len(dn_geoms)})")
 
 
 def get_lint_fix_history(conn, region=None, limit=100):
@@ -858,6 +914,11 @@ st.session_state.map_hops = st.sidebar.slider(
     max_value=15,
     value=st.session_state.get('map_hops', 5),
     help="How many reaches to show upstream/downstream"
+)
+st.session_state.show_all_reaches = st.sidebar.checkbox(
+    "Show ALL reaches in area",
+    value=st.session_state.get('show_all_reaches', True),
+    help="Show unconnected reaches (white) to spot missing topology"
 )
 
 # Tabs for different issue types
