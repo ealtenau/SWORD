@@ -941,71 +941,169 @@ tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 # TAB 3: Headwater Issues
 # =============================================================================
 with tab3:
-    st.header("🏔️ Headwater Issues")
-    st.info("⚠️ **FACC review on hold** - Headwaters with high facc may indicate flow routing issues.")
+    st.header("🏔️ Suspicious Headwaters")
+
+    # Initialize session state
+    if 'hw_pending' not in st.session_state:
+        st.session_state.hw_pending = []
 
     min_facc = st.slider("Minimum facc threshold", 1000, 100000, 5000, key="hw_slider")
     hw_issues = get_headwater_issues(conn, region, min_facc)
 
     if len(hw_issues) == 0:
-        st.success(f"✅ No headwaters with facc > {min_facc:,} km²")
+        st.success(f"✅ No suspicious headwaters (facc > {min_facc:,} km²)")
     else:
-        col1, col2 = st.columns(2)
-        col1.metric("Headwater Issues", len(hw_issues))
-        col2.metric("Rivers / Lakes", f"{len(hw_issues[hw_issues['lakeflag'] == 0])} / {len(hw_issues[hw_issues['lakeflag'] == 1])}")
+        total = len(hw_issues)
+        done = len(st.session_state.hw_pending)
+        remaining = len([r for r in hw_issues['reach_id'].tolist() if r not in st.session_state.hw_pending])
 
-        # Select and view
-        selected = st.selectbox(
-            "Select headwater to view",
-            hw_issues['reach_id'].tolist(),
-            format_func=lambda r: f"{r} - facc: {hw_issues[hw_issues['reach_id']==r].iloc[0]['facc']:,.0f} km²",
-            key="hw_select"
-        )
+        # Progress
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed", done)
+        col3.metric("Total", total)
+        st.progress(done / total if total > 0 else 0)
 
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            render_reach_map_satellite(int(selected), region, conn)
-        with col2:
+        if remaining == 0:
+            st.success("🎉 All suspicious headwaters reviewed!")
+            if st.button("🔄 Reset reviews", key="reset_hw"):
+                st.session_state.hw_pending = []
+                st.rerun()
+        else:
+            available = [r for r in hw_issues['reach_id'].tolist() if r not in st.session_state.hw_pending]
+            selected = available[0]
             h = hw_issues[hw_issues['reach_id'] == selected].iloc[0]
-            st.markdown(f"**Reach:** `{selected}`")
-            st.markdown(f"**FACC:** {h['facc']:,.0f} km²")
-            st.markdown(f"**Width:** {h['width']:.0f}m")
-            st.markdown(f"**River:** {h['river_name'] or 'Unnamed'}")
-            laketype = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}.get(h['lakeflag'], '?')
-            st.markdown(f"**Type:** {laketype}")
+
+            # ===== PROBLEM BOX =====
+            st.markdown("---")
+            st.subheader(f"🔍 Issue #{done + 1}: Reach `{selected}`")
+
+            # Clear problem statement
+            st.error(f"""
+            **PROBLEM:** This reach has **NO upstream neighbors** but has **HIGH facc ({h['facc']:,.0f} km²)**
+
+            True headwaters should have LOW facc (small catchment). High facc suggests:
+            - Lake outlet (facc inherited from lake)
+            - Missing upstream topology
+            - Wrong flow direction
+            """)
+
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                render_reach_map_satellite(int(selected), region, conn)
+
+            with col2:
+                st.markdown("### 📊 Details")
+                st.markdown(f"**FACC:** {h['facc']:,.0f} km²")
+                st.markdown(f"**Width:** {h['width']:.0f}m")
+                st.markdown(f"**River:** {h['river_name'] or 'Unnamed'}")
+                laketype = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}.get(h['lakeflag'], '?')
+
+                # Hint based on type
+                if h['lakeflag'] == 1:
+                    st.success(f"**Type:** {laketype} → Likely valid lake outlet")
+                else:
+                    st.warning(f"**Type:** {laketype} → Check if topology is correct")
+
+                st.markdown("---")
+                st.markdown("### 🎯 Classification")
+
+                # Action buttons
+                if st.button("✅ Lake Outlet (valid)", key=f"hw_lake_{selected}", type="primary", use_container_width=True):
+                    log_skip(conn, selected, region, 'HW', 'Lake outlet - valid high facc')
+                    st.session_state.hw_pending.append(selected)
+                    st.rerun()
+
+                if st.button("🔗 Missing Upstream", key=f"hw_missing_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'HW', 'Missing upstream topology')
+                    st.session_state.hw_pending.append(selected)
+                    st.rerun()
+
+                if st.button("↩️ Wrong Flow Direction", key=f"hw_flow_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'HW', 'Wrong flow direction')
+                    st.session_state.hw_pending.append(selected)
+                    st.rerun()
+
+                if st.button("✓ Valid Headwater", key=f"hw_valid_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'HW', 'Valid headwater')
+                    st.session_state.hw_pending.append(selected)
+                    st.rerun()
 
 # =============================================================================
 # TAB 4: Suspect Reaches
 # =============================================================================
 with tab4:
     st.header("⚠️ Suspect Reaches")
-    st.info("⚠️ **FACC review on hold** - These reaches were flagged as unfixable by automated methods.")
+
+    # Initialize session state
+    if 'suspect_pending' not in st.session_state:
+        st.session_state.suspect_pending = []
 
     suspect = get_suspect_reaches(conn, region)
 
     if len(suspect) == 0:
         st.success("✅ No suspect reaches in this region")
     else:
-        st.metric("Suspect Reaches", len(suspect))
+        total = len(suspect)
+        done = len(st.session_state.suspect_pending)
+        remaining = len([r for r in suspect['reach_id'].tolist() if r not in st.session_state.suspect_pending])
 
-        # Select and view
-        selected = st.selectbox(
-            "Select suspect reach to view",
-            suspect['reach_id'].tolist(),
-            format_func=lambda r: f"{r} - facc: {suspect[suspect['reach_id']==r].iloc[0]['facc']:,.0f} km²",
-            key="suspect_select"
-        )
+        # Progress
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed", done)
+        col3.metric("Total", total)
+        st.progress(done / total if total > 0 else 0)
 
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            render_reach_map_satellite(int(selected), region, conn)
-        with col2:
+        if remaining == 0:
+            st.success("🎉 All suspect reaches reviewed!")
+            if st.button("🔄 Reset reviews", key="reset_suspect"):
+                st.session_state.suspect_pending = []
+                st.rerun()
+        else:
+            available = [r for r in suspect['reach_id'].tolist() if r not in st.session_state.suspect_pending]
+            selected = available[0]
             s = suspect[suspect['reach_id'] == selected].iloc[0]
-            st.markdown(f"**Reach:** `{selected}`")
-            st.markdown(f"**FACC:** {s['facc']:,.0f} km²")
-            st.markdown(f"**Width:** {s['width']:.0f}m")
-            st.markdown(f"**River:** {s['river_name'] or 'Unnamed'}")
-            st.markdown(f"**Quality:** {s['facc_quality']}")
+
+            # ===== PROBLEM BOX =====
+            st.markdown("---")
+            st.subheader(f"🔍 Issue #{done + 1}: Reach `{selected}`")
+
+            st.warning(f"""
+            **PROBLEM:** This reach was flagged as `facc_quality='suspect'`
+
+            Automated methods couldn't determine the correct facc value. Manual review needed.
+            - **Current FACC:** {s['facc']:,.0f} km²
+            - **Width:** {s['width']:.0f}m
+            """)
+
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                render_reach_map_satellite(int(selected), region, conn)
+
+            with col2:
+                st.markdown(f"**River:** {s['river_name'] or 'Unnamed'}")
+                st.markdown(f"**Edit flag:** {s['edit_flag']}")
+
+                st.markdown("---")
+                st.markdown("### 🎯 Classification")
+
+                if st.button("✅ FACC looks correct", key=f"suspect_ok_{selected}", type="primary", use_container_width=True):
+                    log_skip(conn, selected, region, 'SUSPECT', 'FACC value looks correct')
+                    st.session_state.suspect_pending.append(selected)
+                    st.rerun()
+
+                if st.button("❌ FACC is wrong", key=f"suspect_wrong_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'SUSPECT', 'FACC value is incorrect')
+                    st.session_state.suspect_pending.append(selected)
+                    st.rerun()
+
+                if st.button("🔍 Needs more investigation", key=f"suspect_inv_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'SUSPECT', 'Needs more investigation')
+                    st.session_state.suspect_pending.append(selected)
+                    st.rerun()
 
 # =============================================================================
 # TAB 5: Fix History
