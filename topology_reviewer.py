@@ -481,16 +481,20 @@ def undo_last_fix(conn, region):
     return reach_id
 
 
-def render_reach_map_satellite(reach_id, region, conn):
+def render_reach_map_satellite(reach_id, region, conn, hops=None):
     """Render a map centered on a reach with Esri satellite basemap using folium."""
     geom = get_reach_geometry(conn, reach_id)
     if not geom:
         st.warning("No geometry available")
         return
 
+    # Use sidebar setting for hops if not specified
+    if hops is None:
+        hops = st.session_state.get('map_hops', 5)
+
     # Get upstream and downstream geometries
-    up_chain = get_upstream_chain(conn, reach_id, region, 3)
-    dn_chain = get_downstream_chain(conn, reach_id, region, 3)
+    up_chain = get_upstream_chain(conn, reach_id, region, hops)
+    dn_chain = get_downstream_chain(conn, reach_id, region, hops)
 
     all_coords = list(geom)
 
@@ -550,29 +554,30 @@ def render_reach_map_satellite(reach_id, region, conn):
     # Add layer control to toggle between basemaps
     folium.LayerControl().add_to(m)
 
-    # Add upstream reaches (orange, fading)
+    # Add upstream reaches (orange, fading based on distance)
     for up_geom, i in up_geoms:
         # Convert [lon, lat] to [lat, lon] for folium
         coords = [[c[1], c[0]] for c in up_geom]
-        opacity = 1.0 - (i * 0.2)
+        # Scale opacity based on total hops
+        opacity = max(0.2, 1.0 - (i / max(hops, 1)) * 0.8)
         folium.PolyLine(
             coords,
             color='orange',
-            weight=4,
-            opacity=max(0.3, opacity),
-            tooltip=f"Upstream {i}"
+            weight=3,
+            opacity=opacity,
+            tooltip=f"Upstream {i+1}"
         ).add_to(m)
 
-    # Add downstream reaches (blue, fading)
+    # Add downstream reaches (blue, fading based on distance)
     for dn_geom, i in dn_geoms:
         coords = [[c[1], c[0]] for c in dn_geom]
-        opacity = 1.0 - (i * 0.2)
+        opacity = max(0.2, 1.0 - (i / max(hops, 1)) * 0.8)
         folium.PolyLine(
             coords,
             color='#0066ff',
-            weight=4,
-            opacity=max(0.3, opacity),
-            tooltip=f"Downstream {i}"
+            weight=3,
+            opacity=opacity,
+            tooltip=f"Downstream {i+1}"
         ).add_to(m)
 
     # Add main reach (red, thicker)
@@ -589,8 +594,8 @@ def render_reach_map_satellite(reach_id, region, conn):
     m.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
 
     # Render in streamlit
-    st_folium(m, width=None, height=400, returned_objects=[])
-    st.caption("🔴 Selected | 🟠 Upstream | 🔵 Downstream")
+    st_folium(m, width=None, height=500, returned_objects=[])
+    st.caption(f"🔴 Selected | 🟠 Upstream ({len(up_geoms)}) | 🔵 Downstream ({len(dn_geoms)})")
 
 
 def get_lint_fix_history(conn, region=None, limit=100):
@@ -844,6 +849,16 @@ st.title("🌊 SWORD Topology & FACC Reviewer")
 # Sidebar
 st.sidebar.header("Settings")
 region = st.sidebar.selectbox("Region", ["NA", "SA", "EU", "AF", "AS", "OC"], index=0)
+
+# Network display settings
+st.sidebar.subheader("Map Settings")
+st.session_state.map_hops = st.sidebar.slider(
+    "Network depth (reaches)",
+    min_value=1,
+    max_value=15,
+    value=st.session_state.get('map_hops', 5),
+    help="How many reaches to show upstream/downstream"
+)
 
 # Tabs for different issue types
 # NOTE: Tabs 1-2 (Ratio Violations, Monotonicity) hidden until facc strategy decided
