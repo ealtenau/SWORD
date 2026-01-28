@@ -942,7 +942,7 @@ tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 # =============================================================================
 with tab3:
     st.header("🏔️ Headwater Issues")
-    st.info("⚠️ **FACC review on hold** - Use Lake Sandwich and FACC Mono tabs instead for now.")
+    st.info("⚠️ **FACC review on hold** - Headwaters with high facc may indicate flow routing issues.")
 
     min_facc = st.slider("Minimum facc threshold", 1000, 100000, 5000, key="hw_slider")
     hw_issues = get_headwater_issues(conn, region, min_facc)
@@ -954,19 +954,32 @@ with tab3:
         col1.metric("Headwater Issues", len(hw_issues))
         col2.metric("Rivers / Lakes", f"{len(hw_issues[hw_issues['lakeflag'] == 0])} / {len(hw_issues[hw_issues['lakeflag'] == 1])}")
 
-        # Show list
-        st.dataframe(
-            hw_issues[['reach_id', 'river_name', 'facc', 'width', 'lakeflag']].head(20),
-            use_container_width=True,
-            hide_index=True
+        # Select and view
+        selected = st.selectbox(
+            "Select headwater to view",
+            hw_issues['reach_id'].tolist(),
+            format_func=lambda r: f"{r} - facc: {hw_issues[hw_issues['reach_id']==r].iloc[0]['facc']:,.0f} km²",
+            key="hw_select"
         )
+
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            render_reach_map_satellite(int(selected), region, conn)
+        with col2:
+            h = hw_issues[hw_issues['reach_id'] == selected].iloc[0]
+            st.markdown(f"**Reach:** `{selected}`")
+            st.markdown(f"**FACC:** {h['facc']:,.0f} km²")
+            st.markdown(f"**Width:** {h['width']:.0f}m")
+            st.markdown(f"**River:** {h['river_name'] or 'Unnamed'}")
+            laketype = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}.get(h['lakeflag'], '?')
+            st.markdown(f"**Type:** {laketype}")
 
 # =============================================================================
 # TAB 4: Suspect Reaches
 # =============================================================================
 with tab4:
     st.header("⚠️ Suspect Reaches")
-    st.info("⚠️ **FACC review on hold** - Use Lake Sandwich and FACC Mono tabs instead for now.")
+    st.info("⚠️ **FACC review on hold** - These reaches were flagged as unfixable by automated methods.")
 
     suspect = get_suspect_reaches(conn, region)
 
@@ -975,12 +988,24 @@ with tab4:
     else:
         st.metric("Suspect Reaches", len(suspect))
 
-        # Show list
-        st.dataframe(
-            suspect[['reach_id', 'river_name', 'facc', 'width', 'facc_quality']].head(20),
-            use_container_width=True,
-            hide_index=True
+        # Select and view
+        selected = st.selectbox(
+            "Select suspect reach to view",
+            suspect['reach_id'].tolist(),
+            format_func=lambda r: f"{r} - facc: {suspect[suspect['reach_id']==r].iloc[0]['facc']:,.0f} km²",
+            key="suspect_select"
         )
+
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            render_reach_map_satellite(int(selected), region, conn)
+        with col2:
+            s = suspect[suspect['reach_id'] == selected].iloc[0]
+            st.markdown(f"**Reach:** `{selected}`")
+            st.markdown(f"**FACC:** {s['facc']:,.0f} km²")
+            st.markdown(f"**Width:** {s['width']:.0f}m")
+            st.markdown(f"**River:** {s['river_name'] or 'Unnamed'}")
+            st.markdown(f"**Quality:** {s['facc_quality']}")
 
 # =============================================================================
 # TAB 5: Fix History
