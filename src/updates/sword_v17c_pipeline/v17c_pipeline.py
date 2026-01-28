@@ -62,11 +62,29 @@ def load_topology(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
 def load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     """Load reaches with attributes."""
     log(f"Loading reaches for {region}...")
-    df = conn.execute("""
-        SELECT
-            reach_id, region, reach_length, width, slope, facc,
-            n_rch_up, n_rch_down, dist_out, path_freq, stream_order,
-            lakeflag, trib_flag, wse_obs_mean, wse_obs_std
+
+    # Get available columns (handles older DBs without v17c columns)
+    cols_result = conn.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'reaches'"
+    ).fetchall()
+    available_cols = {row[0].lower() for row in cols_result}
+
+    # Core columns (required)
+    core_cols = [
+        'reach_id', 'region', 'reach_length', 'width', 'slope', 'facc',
+        'n_rch_up', 'n_rch_down', 'dist_out', 'path_freq', 'stream_order',
+        'lakeflag', 'trib_flag'
+    ]
+
+    # Optional columns (v17c additions)
+    optional_cols = ['wse_obs_mean', 'wse_obs_std']
+
+    # Build column list
+    select_cols = [c for c in core_cols if c.lower() in available_cols]
+    select_cols += [c for c in optional_cols if c.lower() in available_cols]
+
+    df = conn.execute(f"""
+        SELECT {', '.join(select_cols)}
         FROM reaches
         WHERE region = ?
     """, [region.upper()]).fetchdf()
@@ -243,6 +261,11 @@ def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
     """
     log("Computing hydrologic distances...")
 
+    # Handle empty graph
+    if G.number_of_nodes() == 0:
+        log("Empty graph, returning empty results")
+        return {}
+
     # Identify outlets (no outgoing edges)
     outlets = [n for n in G.nodes() if G.out_degree(n) == 0]
     log(f"Found {len(outlets):,} outlets")
@@ -257,12 +280,13 @@ def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
     for outlet in outlets:
         dist_out[outlet] = 0
 
-    # Multi-source Dijkstra
-    lengths = nx.multi_source_dijkstra_path_length(
-        R, outlets,
-        weight=lambda u, v, d: G.nodes[v].get('reach_length', 0)
-    )
-    dist_out.update(lengths)
+    # Multi-source Dijkstra (only if we have outlets)
+    if outlets:
+        lengths = nx.multi_source_dijkstra_path_length(
+            R, outlets,
+            weight=lambda u, v, d: G.nodes[v].get('reach_length', 0)
+        )
+        dist_out.update(lengths)
 
     # Compute dist_hw (distance from furthest headwater)
     headwaters = [n for n in G.nodes() if G.in_degree(n) == 0]
@@ -415,7 +439,9 @@ def compute_mainstem(G: nx.DiGraph, hw_out_attrs: Dict[int, Dict]) -> Dict[int, 
             continue
 
     n_mainstem = sum(is_mainstem.values())
-    log(f"Mainstem reaches: {n_mainstem:,} ({100*n_mainstem/len(G.nodes()):.1f}%)")
+    n_total = len(G.nodes())
+    pct = 100 * n_mainstem / n_total if n_total > 0 else 0
+    log(f"Mainstem reaches: {n_mainstem:,} ({pct:.1f}%)")
 
     return is_mainstem
 
@@ -590,6 +616,12 @@ def save_to_duckdb(
 
     # Register DataFrame and update
     conn.register('v17c_updates', update_df)
+
+    # Load spatial extension (needed for RTREE index compatibility)
+    try:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+    except Exception:
+        pass  # Extension may already be loaded or not needed
 
     # Update reaches table
     conn.execute(f"""
