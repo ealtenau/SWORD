@@ -539,7 +539,7 @@ def _export_reaches_to_pg(
         'cl_id_min': reaches.cl_id[0],
         'cl_id_max': reaches.cl_id[1],
         'reach_length': reaches.len,
-        'n_nodes': reaches.n_nodes,
+        'n_nodes': reaches.rch_n_nodes,
         'wse': reaches.wse,
         'wse_var': reaches.wse_var,
         'width': reaches.wth,
@@ -550,38 +550,60 @@ def _export_reaches_to_pg(
         'dist_out': reaches.dist_out,
         'lakeflag': reaches.lakeflag,
         'obstr_type': reaches.grod,
-        'grod_id': reaches.grod_id,
-        'hfalls_id': reaches.hfalls_id,
-        'n_chan_max': reaches.n_chan_max,
-        'n_chan_mod': reaches.n_chan_mod,
+        'grod_id': reaches.grod_fid,
+        'hfalls_id': reaches.hfalls_fid,
+        'n_chan_max': reaches.nchan_max,
+        'n_chan_mod': reaches.nchan_mod,
         'n_rch_up': reaches.n_rch_up,
         'n_rch_down': reaches.n_rch_down,
-        'swot_obs': reaches.swot_obs,
-        'iceflag': reaches.iceflag,
+        'swot_obs': reaches.max_obs,
+        'iceflag': reaches._df['iceflag'].values,  # Use scalar column, not 2D array
         'low_slope_flag': reaches.low_slope,
         'river_name': reaches.river_name,
         'edit_flag': reaches.edit_flag,
         'trib_flag': reaches.trib_flag,
-        'path_freq': reaches.p_freq,
-        'path_order': reaches.p_ord,
-        'path_segs': reaches.p_seg,
+        'path_freq': reaches.path_freq,
+        'path_order': reaches.path_order,
+        'path_segs': reaches.path_segs,
         'stream_order': reaches.strm_order,
         'main_side': reaches.main_side,
         'end_reach': reaches.end_rch,
         'network': reaches.network,
-        'add_flag': getattr(reaches, 'add_flag', np.zeros(n_reaches, dtype=np.int32)),
-        'version': sword.version
+        'add_flag': reaches._df['add_flag'].values if 'add_flag' in reaches._df.columns else np.zeros(n_reaches, dtype=np.int32),
+        'version': sword.version,
     })
+
+    # Get geometry as WKT from database (DuckDB WKB isn't compatible with PostGIS)
+    if has_postgis and 'geom' in reaches._df.columns:
+        geom_wkt = sword.db.query(f"""
+            SELECT reach_id, ST_AsText(geom) as wkt
+            FROM reaches
+            WHERE region = '{sword.region}'
+            ORDER BY reach_id
+        """)
+        # Create a mapping from reach_id to WKT
+        wkt_map = dict(zip(geom_wkt['reach_id'], geom_wkt['wkt']))
+        df['geom'] = df['reach_id'].map(wkt_map)
+    else:
+        df['geom'] = None
 
     # Replace NaN with None for PostgreSQL
     df = df.replace({np.nan: None})
 
     # Insert in batches
     columns = df.columns.tolist()
-    placeholders = ', '.join(['%s'] * len(columns))
+
+    # Build placeholders - special handling for geom column (WKT -> PostGIS)
+    placeholders = []
+    for col in columns:
+        if col == 'geom' and has_postgis:
+            placeholders.append('ST_GeomFromText(%s, 4326)')
+        else:
+            placeholders.append('%s')
+
     insert_sql = f"""
         INSERT INTO {table_name} ({', '.join(columns)})
-        VALUES ({placeholders})
+        VALUES ({', '.join(placeholders)})
         ON CONFLICT (reach_id, region) DO UPDATE SET
             {', '.join(f'{c} = EXCLUDED.{c}' for c in columns if c not in ['reach_id', 'region'])}
     """
@@ -596,15 +618,6 @@ def _export_reaches_to_pg(
             logger.debug(f"Inserted {count}/{n_reaches} reaches...")
 
     conn.commit()
-
-    # Update geometry from x,y if PostGIS available
-    if has_postgis:
-        cursor.execute(f"""
-            UPDATE {table_name}
-            SET geom = ST_SetSRID(ST_MakePoint(x, y), 4326)
-            WHERE geom IS NULL
-        """)
-        conn.commit()
 
     return count
 
@@ -652,10 +665,10 @@ def _export_nodes_to_pg(
         'dist_out': nodes.dist_out,
         'lakeflag': nodes.lakeflag,
         'obstr_type': nodes.grod,
-        'grod_id': nodes.grod_id,
-        'hfalls_id': nodes.hfalls_id,
-        'n_chan_max': nodes.n_chan_max,
-        'n_chan_mod': nodes.n_chan_mod,
+        'grod_id': nodes.grod_fid,
+        'hfalls_id': nodes.hfalls_fid,
+        'n_chan_max': nodes.nchan_max,
+        'n_chan_mod': nodes.nchan_mod,
         'wth_coef': nodes.wth_coef,
         'ext_dist_coef': nodes.ext_dist_coef,
         'meander_length': nodes.meand_len,
@@ -664,19 +677,22 @@ def _export_nodes_to_pg(
         'manual_add': nodes.manual_add,
         'edit_flag': nodes.edit_flag,
         'trib_flag': nodes.trib_flag,
-        'path_freq': nodes.p_freq,
-        'path_order': nodes.p_ord,
-        'path_segs': nodes.p_seg,
+        'path_freq': nodes.path_freq,
+        'path_order': nodes.path_order,
+        'path_segs': nodes.path_segs,
         'stream_order': nodes.strm_order,
         'main_side': nodes.main_side,
         'end_reach': nodes.end_rch,
         'network': nodes.network,
-        'add_flag': getattr(nodes, 'add_flag', np.zeros(n_nodes, dtype=np.int32)),
+        'add_flag': nodes._df['add_flag'].values if 'add_flag' in nodes._df.columns else np.zeros(n_nodes, dtype=np.int32),
         'version': sword.version
     })
 
     # Replace NaN with None for PostgreSQL
     df = df.replace({np.nan: None})
+
+    # Replace pandas NA with None
+    df = df.where(pd.notna(df), None)
 
     # Insert in batches
     columns = df.columns.tolist()
@@ -821,17 +837,17 @@ def _export_topology_to_pg(
     # Build topology records
     records = []
     for i in range(n_reaches):
-        reach_id = reaches.id[i]
+        reach_id = int(reaches.id[i])  # Convert numpy.int64 to Python int
 
         # Upstream neighbors (from rch_id_up[4,N])
         for rank in range(4):
-            neighbor_id = reaches.rch_id_up[rank, i]
+            neighbor_id = int(reaches.rch_id_up[rank, i])
             if neighbor_id != 0:  # 0 means no neighbor
                 records.append((reach_id, sword.region, 'up', rank, neighbor_id))
 
-        # Downstream neighbors (from rch_id_dn[4,N])
+        # Downstream neighbors (from rch_id_down[4,N])
         for rank in range(4):
-            neighbor_id = reaches.rch_id_dn[rank, i]
+            neighbor_id = int(reaches.rch_id_down[rank, i])
             if neighbor_id != 0:
                 records.append((reach_id, sword.region, 'down', rank, neighbor_id))
 
