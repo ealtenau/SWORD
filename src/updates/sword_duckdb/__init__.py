@@ -70,7 +70,12 @@ from .triggers import (
 )
 from .workflow import SWORDWorkflow
 from .provenance import ProvenanceLogger, OperationType, OperationStatus
-from .schema import create_provenance_tables, add_v17c_columns, add_swot_obs_columns
+from .schema import (
+    create_provenance_tables,
+    add_v17c_columns,
+    add_swot_obs_columns,
+    add_sync_tracking_column,
+)
 from .reconstruction import (
     ReconstructionEngine,
     SourceDataset,
@@ -85,6 +90,15 @@ from .lint import (
     CheckResult,
     get_registry as get_lint_registry,
 )
+from .backends import (
+    DatabaseBackend,
+    BackendType,
+    DuckDBBackend,
+    PostgresBackend,
+    get_backend,
+    detect_backend_type,
+)
+from .backends.base import IsolationLevel, TransactionContext
 
 __all__ = [
     # Main SWORD class (drop-in replacement)
@@ -121,6 +135,7 @@ __all__ = [
     'create_provenance_tables',
     'add_v17c_columns',
     'add_swot_obs_columns',
+    'add_sync_tracking_column',
     'get_schema_sql',
     'SCHEMA_VERSION',
     # Migration
@@ -150,4 +165,13 @@ __all__ = [
     'Category',
     'CheckResult',
     'get_lint_registry',
+    # Database backends
+    'DatabaseBackend',
+    'BackendType',
+    'DuckDBBackend',
+    'PostgresBackend',
+    'get_backend',
+    'detect_backend_type',
+    'IsolationLevel',
+    'TransactionContext',
 ]

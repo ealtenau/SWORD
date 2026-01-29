@@ -2005,6 +2005,201 @@ class SWORDWorkflow:
         return results
 
     # =========================================================================
+    # SYNC METHODS (PostgreSQL <-> DuckDB)
+    # =========================================================================
+
+    def sync_to_duckdb(
+        self,
+        duckdb_path: Union[str, Path],
+        tables: Optional[List[str]] = None,
+        incremental: bool = False,
+        reason: str = None,
+    ) -> Dict[str, int]:
+        """
+        Sync data from PostgreSQL to a DuckDB file.
+
+        When using PostgreSQL as the primary database, this method syncs
+        changes to a DuckDB backup/cache file for offline use.
+
+        Parameters
+        ----------
+        duckdb_path : str or Path
+            Path to the DuckDB file to sync to.
+        tables : list of str, optional
+            Tables to sync. Default: ['reaches', 'nodes', 'centerlines'].
+        incremental : bool, optional
+            If True, only sync unsynced operations. If False, full sync.
+        reason : str, optional
+            Reason for sync (logged to provenance).
+
+        Returns
+        -------
+        dict
+            Statistics about the sync operation.
+
+        Raises
+        ------
+        RuntimeError
+            If no database is loaded.
+
+        Example
+        -------
+        >>> # Full sync
+        >>> workflow.sync_to_duckdb('data/duckdb/sword_backup.duckdb')
+
+        >>> # Incremental sync (only new changes)
+        >>> workflow.sync_to_duckdb('data/duckdb/sword_backup.duckdb', incremental=True)
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        from .backends import BackendType
+
+        # Check if we're using PostgreSQL
+        if self._sword.db.backend_type != BackendType.POSTGRES:
+            logger.warning(
+                "sync_to_duckdb() is intended for PostgreSQL primary databases. "
+                "Current backend is DuckDB."
+            )
+            return {'status': 'skipped', 'reason': 'not_postgres'}
+
+        if tables is None:
+            tables = ['reaches', 'nodes', 'centerlines']
+
+        duckdb_path = Path(duckdb_path)
+        duckdb_path.parent.mkdir(parents=True, exist_ok=True)
+
+        from .sword_db import SWORDDatabase
+        from .backends import DuckDBBackend
+        import pandas as pd
+
+        results = {
+            'tables_synced': [],
+            'rows_synced': {},
+            'operations_marked': 0,
+        }
+
+        # Open or create the DuckDB target
+        target_db = SWORDDatabase(duckdb_path)
+        target_conn = target_db.connect()
+
+        # Log sync operation
+        if self._provenance and self._enable_provenance:
+            with self._provenance.operation(
+                'EXPORT',
+                table_name=None,
+                entity_ids=None,
+                region=self._region,
+                reason=reason or f"Sync to DuckDB: {duckdb_path}",
+                details={'incremental': incremental, 'tables': tables},
+            ):
+                results = self._do_sync_to_duckdb(
+                    target_conn, tables, incremental, results
+                )
+        else:
+            results = self._do_sync_to_duckdb(
+                target_conn, tables, incremental, results
+            )
+
+        target_db.close()
+
+        logger.info(f"Sync to DuckDB complete: {results}")
+        return results
+
+    def _do_sync_to_duckdb(
+        self,
+        target_conn,
+        tables: List[str],
+        incremental: bool,
+        results: dict,
+    ) -> dict:
+        """Perform the actual sync to DuckDB."""
+        import pandas as pd
+
+        for table in tables:
+            # Query data from PostgreSQL
+            region_filter = f"WHERE region = '{self._region}'"
+
+            if incremental:
+                # Get unsynced operations for this table
+                unsynced = self._sword.db.query(f"""
+                    SELECT DISTINCT unnest(entity_ids) as entity_id
+                    FROM sword_operations
+                    WHERE table_name = '{table}'
+                      AND region = '{self._region}'
+                      AND synced_to_duckdb = FALSE
+                      AND status = 'COMPLETED'
+                """)
+
+                if len(unsynced) == 0:
+                    logger.debug(f"No unsynced changes for {table}")
+                    continue
+
+                entity_ids = unsynced['entity_id'].tolist()
+                id_col = 'reach_id' if table == 'reaches' else 'node_id' if table == 'nodes' else 'cl_id'
+                id_list = ', '.join(str(i) for i in entity_ids)
+                region_filter = f"WHERE region = '{self._region}' AND {id_col} IN ({id_list})"
+
+            # Fetch data from PostgreSQL
+            df = self._sword.db.query(f"SELECT * FROM {table} {region_filter}")
+
+            if len(df) == 0:
+                logger.debug(f"No data to sync for {table}")
+                continue
+
+            # Write to DuckDB (truncate + insert for full sync, upsert for incremental)
+            if not incremental:
+                # Full sync: truncate region data first
+                target_conn.execute(f"""
+                    DELETE FROM {table} WHERE region = ?
+                """, [self._region])
+
+            # Insert data
+            df.to_sql(table, target_conn, if_exists='append', index=False)
+
+            results['tables_synced'].append(table)
+            results['rows_synced'][table] = len(df)
+
+        # Mark operations as synced in PostgreSQL
+        if incremental:
+            marked = self._sword.db.execute(f"""
+                UPDATE sword_operations
+                SET synced_to_duckdb = TRUE
+                WHERE region = '{self._region}'
+                  AND synced_to_duckdb = FALSE
+                  AND status = 'COMPLETED'
+            """)
+            if hasattr(marked, 'rowcount'):
+                results['operations_marked'] = marked.rowcount
+
+        return results
+
+    def get_unsynced_operations(self) -> 'pd.DataFrame':
+        """
+        Get list of operations that haven't been synced to DuckDB.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with unsynced operations.
+
+        Example
+        -------
+        >>> unsynced = workflow.get_unsynced_operations()
+        >>> print(f"{len(unsynced)} operations pending sync")
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        return self._sword.db.query("""
+            SELECT operation_id, operation_type, table_name, region, started_at
+            FROM sword_operations
+            WHERE synced_to_duckdb = FALSE
+              AND status = 'COMPLETED'
+            ORDER BY operation_id
+        """)
+
+    # =========================================================================
     # REACH OPERATIONS (Priority 1 - QGIS Workflow)
     # =========================================================================
 

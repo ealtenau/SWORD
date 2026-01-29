@@ -1,18 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-SWORD DuckDB Connection Manager
-===============================
+SWORD Database Connection Manager
+=================================
 
-This module provides connection management for the SWORD DuckDB database.
-It handles connection pooling, spatial extension loading, and context management.
+This module provides connection management for SWORD databases.
+It supports both DuckDB (local file) and PostgreSQL (remote/concurrent) backends
+through a unified interface.
 
 Example Usage:
     from sword_db import SWORDDatabase
 
-    # Basic usage
+    # DuckDB (file path - default)
     db = SWORDDatabase('/path/to/sword.duckdb')
     conn = db.connect()
     result = conn.execute("SELECT * FROM reaches LIMIT 10").fetchdf()
+    db.close()
+
+    # PostgreSQL (connection URL)
+    db = SWORDDatabase('postgresql://user:pass@localhost/sword')
+    with db.transaction() as ctx:
+        db.execute("UPDATE reaches SET facc = %s WHERE reach_id = %s", [100, 123])
     db.close()
 
     # Context manager usage
@@ -23,13 +30,21 @@ Example Usage:
 from __future__ import annotations
 
 import logging
-import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Union, Any
+from typing import Any, Generator, List, Optional, Tuple, Union
 
-import duckdb
 import pandas as pd
 
+from .backends import (
+    BackendType,
+    DatabaseBackend,
+    DuckDBBackend,
+    PostgresBackend,
+    detect_backend_type,
+    get_backend,
+)
+from .backends.base import IsolationLevel, TransactionContext
 from .schema import create_schema, SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
@@ -37,34 +52,47 @@ logger = logging.getLogger(__name__)
 
 class SWORDDatabase:
     """
-    DuckDB connection manager for SWORD database.
+    Database connection manager for SWORD.
 
-    Provides connection pooling, spatial extension loading, and
-    convenience methods for common database operations.
+    Supports both DuckDB (local file) and PostgreSQL (remote/concurrent) backends
+    through a unified interface. Auto-detects backend type from connection string.
 
     Parameters
     ----------
     db_path : str or Path
-        Path to the DuckDB database file. Use ':memory:' for in-memory database.
+        Database connection string or file path.
+        - File path (*.duckdb): Uses DuckDB backend
+        - postgresql://...: Uses PostgreSQL backend
+        - ':memory:': In-memory DuckDB
     read_only : bool, optional
         If True, opens database in read-only mode. Default is False.
+        (Only applies to DuckDB backend)
     spatial : bool, optional
-        If True, loads the DuckDB spatial extension. Default is True.
+        If True, loads spatial extension (DuckDB: spatial, PG: PostGIS).
+        Default is True.
+    backend_type : BackendType, optional
+        Force a specific backend type. If None, auto-detects from db_path.
 
     Attributes
     ----------
-    db_path : Path
-        Path to the database file.
-    read_only : bool
-        Whether the connection is read-only.
-    spatial : bool
-        Whether the spatial extension is loaded.
+    db_path : Path or str
+        Original database path/connection string.
+    backend : DatabaseBackend
+        The underlying backend instance.
+    backend_type : BackendType
+        Type of backend (DUCKDB or POSTGRES).
 
     Examples
     --------
-    >>> db = SWORDDatabase('sword_v18.duckdb')
-    >>> conn = db.connect()
-    >>> df = conn.execute("SELECT * FROM reaches LIMIT 5").fetchdf()
+    >>> # DuckDB (file path)
+    >>> db = SWORDDatabase('sword_v17c.duckdb')
+    >>> df = db.query("SELECT COUNT(*) FROM reaches")
+    >>> db.close()
+
+    >>> # PostgreSQL (connection URL)
+    >>> db = SWORDDatabase('postgresql://user:pass@localhost/sword')
+    >>> with db.acquire_region_lock('NA'):
+    ...     df = db.query("SELECT * FROM reaches WHERE region = 'NA'")
     >>> db.close()
 
     >>> # Using context manager
@@ -76,70 +104,109 @@ class SWORDDatabase:
         self,
         db_path: Union[str, Path],
         read_only: bool = False,
-        spatial: bool = True
+        spatial: bool = True,
+        backend_type: Optional[BackendType] = None,
     ):
-        self.db_path = Path(db_path) if db_path != ':memory:' else db_path
-        self.read_only = read_only
-        self.spatial = spatial
-        self._conn: Optional[duckdb.DuckDBPyConnection] = None
-        self._spatial_loaded = False
+        self.db_path = db_path
+        self._read_only = read_only
+        self._spatial = spatial
 
-    def connect(self) -> duckdb.DuckDBPyConnection:
+        # Detect or use specified backend type
+        if backend_type is None:
+            backend_type = detect_backend_type(db_path)
+
+        self._backend_type = backend_type
+
+        # Create the appropriate backend
+        if backend_type == BackendType.DUCKDB:
+            self._backend = DuckDBBackend(
+                db_path=db_path,
+                read_only=read_only,
+                spatial=spatial,
+            )
+        elif backend_type == BackendType.POSTGRES:
+            self._backend = PostgresBackend(
+                connection_string=str(db_path),
+                enable_postgis=spatial,
+            )
+        else:
+            raise ValueError(f"Unknown backend type: {backend_type}")
+
+        # Track current connection for DuckDB compatibility
+        self._conn = None
+
+    @property
+    def backend(self) -> DatabaseBackend:
+        """Get the underlying backend instance."""
+        return self._backend
+
+    # Backward-compatible properties
+    @property
+    def read_only(self) -> bool:
+        """Whether the connection is read-only (DuckDB only)."""
+        return self._read_only
+
+    @property
+    def spatial(self) -> bool:
+        """Whether spatial extension is requested."""
+        return self._spatial
+
+    @property
+    def _spatial_loaded(self) -> bool:
+        """Whether spatial extension is loaded (DuckDB only, for backward compat)."""
+        if hasattr(self._backend, '_spatial_loaded'):
+            return self._backend._spatial_loaded
+        if hasattr(self._backend, '_postgis_enabled'):
+            return self._backend._postgis_enabled
+        return False
+
+    @property
+    def backend_type(self) -> BackendType:
+        """Get the backend type."""
+        return self._backend_type
+
+    @property
+    def placeholder(self) -> str:
+        """Get the SQL placeholder for this backend ('?' or '%s')."""
+        return self._backend.placeholder
+
+    @property
+    def is_postgres(self) -> bool:
+        """Check if using PostgreSQL backend."""
+        return self._backend_type == BackendType.POSTGRES
+
+    @property
+    def is_duckdb(self) -> bool:
+        """Check if using DuckDB backend."""
+        return self._backend_type == BackendType.DUCKDB
+
+    def connect(self):
         """
         Get or create a database connection.
 
         Returns
         -------
-        duckdb.DuckDBPyConnection
-            Active database connection.
+        connection
+            Active database connection (type depends on backend).
 
         Notes
         -----
-        The connection is created lazily and reused for subsequent calls.
-        The spatial extension is loaded automatically if `spatial=True`.
+        For DuckDB: Returns duckdb.DuckDBPyConnection
+        For PostgreSQL: Returns psycopg2.connection from pool
         """
         if self._conn is None:
-            # Ensure parent directory exists for file-based databases
-            if self.db_path != ':memory:':
-                self.db_path.parent.mkdir(parents=True, exist_ok=True)
-
-            self._conn = duckdb.connect(
-                str(self.db_path),
-                read_only=self.read_only
-            )
-
-            # Load spatial extension if requested
-            if self.spatial and not self._spatial_loaded:
-                self._load_spatial()
-
+            self._conn = self._backend.connect()
         return self._conn
 
-    def _load_spatial(self) -> None:
-        """Load the DuckDB spatial extension."""
-        try:
-            self._conn.execute("INSTALL spatial;")
-            self._conn.execute("LOAD spatial;")
-            self._spatial_loaded = True
-        except Exception as e:
-            # Spatial extension might already be installed
-            if "already installed" in str(e).lower():
-                self._conn.execute("LOAD spatial;")
-                self._spatial_loaded = True
-            else:
-                logger.warning(f"Could not load spatial extension: {e}")
-                self._spatial_loaded = False
-
     @property
-    def conn(self) -> duckdb.DuckDBPyConnection:
+    def conn(self):
         """Get the database connection (alias for connect())."""
         return self.connect()
 
     def close(self) -> None:
-        """Close the database connection."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-            self._spatial_loaded = False
+        """Close the database connection(s)."""
+        self._backend.close()
+        self._conn = None
 
     def __enter__(self) -> 'SWORDDatabase':
         """Context manager entry."""
@@ -150,7 +217,7 @@ class SWORDDatabase:
         """Context manager exit."""
         self.close()
 
-    def query(self, sql: str, params: list = None) -> pd.DataFrame:
+    def query(self, sql: str, params: Optional[List[Any]] = None) -> pd.DataFrame:
         """
         Execute a SQL query and return results as a DataFrame.
 
@@ -166,17 +233,21 @@ class SWORDDatabase:
         pd.DataFrame
             Query results.
 
+        Notes
+        -----
+        SQL is automatically converted to use the correct placeholder
+        for the backend ('?' for DuckDB, '%s' for PostgreSQL).
+
         Examples
         --------
         >>> db = SWORDDatabase('sword.duckdb')
         >>> df = db.query("SELECT * FROM reaches WHERE facc > ?", [10000])
         """
-        conn = self.connect()
-        if params:
-            return conn.execute(sql, params).fetchdf()
-        return conn.execute(sql).fetchdf()
+        # Convert placeholders if needed
+        converted_sql = self._backend.convert_placeholders(sql)
+        return self._backend.query(converted_sql, params)
 
-    def execute(self, sql: str, params: list = None) -> Any:
+    def execute(self, sql: str, params: Optional[List[Any]] = None) -> Any:
         """
         Execute a SQL statement.
 
@@ -189,13 +260,64 @@ class SWORDDatabase:
 
         Returns
         -------
-        duckdb.DuckDBPyResult
-            Query result object.
+        Any
+            Backend-specific result object.
         """
-        conn = self.connect()
-        if params:
-            return conn.execute(sql, params)
-        return conn.execute(sql)
+        converted_sql = self._backend.convert_placeholders(sql)
+        return self._backend.execute(converted_sql, params)
+
+    def executemany(
+        self,
+        sql: str,
+        params_list: List[Tuple[Any, ...]],
+    ) -> None:
+        """
+        Execute a SQL statement with multiple parameter sets.
+
+        Parameters
+        ----------
+        sql : str
+            SQL statement to execute.
+        params_list : list of tuples
+            List of parameter tuples.
+        """
+        converted_sql = self._backend.convert_placeholders(sql)
+        self._backend.executemany(converted_sql, params_list)
+
+    @contextmanager
+    def transaction(
+        self,
+        isolation_level: IsolationLevel = IsolationLevel.READ_COMMITTED,
+    ) -> Generator[TransactionContext, None, None]:
+        """
+        Context manager for database transactions.
+
+        Parameters
+        ----------
+        isolation_level : IsolationLevel
+            Transaction isolation level.
+
+        Yields
+        ------
+        TransactionContext
+            Context object with transaction details.
+
+        Example
+        -------
+        >>> with db.transaction() as ctx:
+        ...     db.execute("UPDATE reaches SET facc = ? WHERE reach_id = ?", [100, 123])
+        ...     # Automatically committed on success, rolled back on error
+        """
+        with self._backend.transaction(isolation_level) as ctx:
+            yield ctx
+
+    def commit(self) -> None:
+        """Commit the current transaction."""
+        self._backend.commit()
+
+    def rollback(self) -> None:
+        """Rollback the current transaction."""
+        self._backend.rollback()
 
     def init_schema(self) -> None:
         """
@@ -211,18 +333,16 @@ class SWORDDatabase:
         conn = self.connect()
         create_schema(conn)
 
-    def get_regions(self) -> list[str]:
+    def get_regions(self) -> List[str]:
         """
         Get list of regions present in the database.
 
         Returns
         -------
-        list[str]
+        list of str
             List of 2-letter region codes.
         """
-        result = self.query("""
-            SELECT DISTINCT region FROM reaches ORDER BY region
-        """)
+        result = self.query("SELECT DISTINCT region FROM reaches ORDER BY region")
         return result['region'].tolist()
 
     def get_versions(self) -> pd.DataFrame:
@@ -236,7 +356,7 @@ class SWORDDatabase:
         """
         return self.query("SELECT * FROM sword_versions ORDER BY version")
 
-    def count_records(self, region: str = None) -> dict:
+    def count_records(self, region: Optional[str] = None) -> dict:
         """
         Count records in each table.
 
@@ -250,12 +370,12 @@ class SWORDDatabase:
         dict
             Dictionary with table names as keys and record counts as values.
         """
-        conn = self.connect()
+        placeholder = self.placeholder
 
         where_clause = ""
         params = []
         if region:
-            where_clause = "WHERE region = ?"
+            where_clause = f"WHERE region = {placeholder}"
             params = [region]
 
         counts = {}
@@ -263,46 +383,50 @@ class SWORDDatabase:
         # Tables with region column
         for table in ['centerlines', 'nodes', 'reaches']:
             sql = f"SELECT COUNT(*) as cnt FROM {table} {where_clause}"
-            result = conn.execute(sql, params).fetchone()
-            counts[table] = result[0]
+            result = self.query(sql, params if params else None)
+            counts[table] = result.iloc[0]['cnt']
 
         # Derived tables (no region column, need to join)
         if region:
-            counts['reach_topology'] = conn.execute("""
-                SELECT COUNT(*) FROM reach_topology t
+            counts['reach_topology'] = self.query(f"""
+                SELECT COUNT(*) as cnt FROM reach_topology t
                 JOIN reaches r ON t.reach_id = r.reach_id
-                WHERE r.region = ?
-            """, [region]).fetchone()[0]
+                WHERE r.region = {placeholder}
+            """, [region]).iloc[0]['cnt']
 
-            counts['reach_swot_orbits'] = conn.execute("""
-                SELECT COUNT(*) FROM reach_swot_orbits o
+            counts['reach_swot_orbits'] = self.query(f"""
+                SELECT COUNT(*) as cnt FROM reach_swot_orbits o
                 JOIN reaches r ON o.reach_id = r.reach_id
-                WHERE r.region = ?
-            """, [region]).fetchone()[0]
+                WHERE r.region = {placeholder}
+            """, [region]).iloc[0]['cnt']
         else:
-            counts['reach_topology'] = conn.execute(
-                "SELECT COUNT(*) FROM reach_topology"
-            ).fetchone()[0]
+            counts['reach_topology'] = self.query(
+                "SELECT COUNT(*) as cnt FROM reach_topology"
+            ).iloc[0]['cnt']
 
-            counts['reach_swot_orbits'] = conn.execute(
-                "SELECT COUNT(*) FROM reach_swot_orbits"
-            ).fetchone()[0]
+            counts['reach_swot_orbits'] = self.query(
+                "SELECT COUNT(*) as cnt FROM reach_swot_orbits"
+            ).iloc[0]['cnt']
 
         return counts
 
     def spatial_available(self) -> bool:
         """
-        Check if the spatial extension is available and loaded.
+        Check if spatial extension is available and loaded.
 
         Returns
         -------
         bool
             True if spatial queries are supported.
         """
-        return self._spatial_loaded
+        if hasattr(self._backend, 'spatial_available'):
+            return self._backend.spatial_available
+        if hasattr(self._backend, '_postgis_enabled'):
+            return self._backend._postgis_enabled
+        return False
 
     @property
-    def schema_version(self) -> str:
+    def schema_version(self) -> Optional[str]:
         """Get the schema version from the database."""
         try:
             result = self.query("""
@@ -315,10 +439,122 @@ class SWORDDatabase:
             pass
         return None
 
+    # =========================================================================
+    # PostgreSQL-specific methods
+    # =========================================================================
+
+    @contextmanager
+    def acquire_region_lock(
+        self,
+        region: str,
+        timeout_ms: int = 30000,
+    ) -> Generator[Any, None, None]:
+        """
+        Acquire an advisory lock for a region (PostgreSQL only).
+
+        This provides exclusive access to a region, preventing concurrent
+        edits to the same region by different users.
+
+        Parameters
+        ----------
+        region : str
+            Region code (e.g., 'NA', 'EU').
+        timeout_ms : int
+            Lock acquisition timeout in milliseconds. Default is 30s.
+
+        Yields
+        ------
+        connection
+            The connection holding the lock.
+
+        Raises
+        ------
+        NotImplementedError
+            If called on DuckDB backend (single-user, no locking needed).
+        TimeoutError
+            If lock cannot be acquired within timeout (PostgreSQL).
+
+        Example
+        -------
+        >>> with db.acquire_region_lock('NA'):
+        ...     # Exclusive access to NA region
+        ...     db.execute("UPDATE reaches SET facc = 100 WHERE region = 'NA'")
+        """
+        if self._backend_type == BackendType.DUCKDB:
+            # DuckDB is single-user, no locking needed
+            yield self.connect()
+        elif self._backend_type == BackendType.POSTGRES:
+            with self._backend.acquire_region_lock(region, timeout_ms) as conn:
+                yield conn
+        else:
+            raise NotImplementedError(f"Region locking not supported for {self._backend_type}")
+
+    def has_region_lock(self, region: str) -> bool:
+        """
+        Check if we hold the lock for a region (PostgreSQL only).
+
+        Parameters
+        ----------
+        region : str
+            Region code.
+
+        Returns
+        -------
+        bool
+            True if we hold the lock, False otherwise.
+            Always returns True for DuckDB (single-user).
+        """
+        if self._backend_type == BackendType.DUCKDB:
+            return True  # Single-user, always "locked"
+        elif self._backend_type == BackendType.POSTGRES:
+            return self._backend.has_region_lock(region)
+        return False
+
+    def format_upsert(
+        self,
+        table: str,
+        columns: List[str],
+        key_columns: List[str],
+    ) -> str:
+        """
+        Generate backend-specific UPSERT SQL.
+
+        Parameters
+        ----------
+        table : str
+            Table name.
+        columns : list of str
+            All columns to insert/update.
+        key_columns : list of str
+            Primary key columns for conflict detection.
+
+        Returns
+        -------
+        str
+            UPSERT SQL template with appropriate placeholders.
+        """
+        return self._backend.format_upsert(table, columns, key_columns)
+
+    def format_array_literal(self, values: List[Any]) -> str:
+        """
+        Format a list as a SQL array literal.
+
+        Parameters
+        ----------
+        values : list
+            Values to format as array.
+
+        Returns
+        -------
+        str
+            Backend-specific array literal.
+        """
+        return self._backend.format_array_literal(values)
+
 
 def create_database(
     db_path: Union[str, Path],
-    overwrite: bool = False
+    overwrite: bool = False,
 ) -> SWORDDatabase:
     """
     Create a new SWORD database with initialized schema.

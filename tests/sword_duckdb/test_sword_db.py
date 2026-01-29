@@ -22,7 +22,8 @@ class TestSWORDDatabaseInit:
         db_path = str(tmp_path / "test.duckdb")
         db = SWORDDatabase(db_path)
 
-        assert db.db_path == Path(db_path)
+        # db_path may be stored as string or Path, compare as string
+        assert str(db.db_path) == db_path
         assert db.read_only == False
         assert db.spatial == True
         db.close()

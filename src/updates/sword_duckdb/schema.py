@@ -397,7 +397,10 @@ CREATE TABLE IF NOT EXISTS sword_operations (
 
     -- Checksums for verification (optional, for auditing)
     before_checksum VARCHAR(64),          -- SHA256 of affected data before
-    after_checksum VARCHAR(64)            -- SHA256 of affected data after
+    after_checksum VARCHAR(64),           -- SHA256 of affected data after
+
+    -- Sync tracking (for PostgreSQL -> DuckDB sync)
+    synced_to_duckdb BOOLEAN DEFAULT FALSE  -- Whether this operation has been synced to DuckDB backup
 );
 """
 
@@ -1025,3 +1028,41 @@ def create_v17c_tables(conn) -> None:
     except Exception:
         # Indexes may already exist
         pass
+
+
+def add_sync_tracking_column(conn) -> bool:
+    """
+    Add synced_to_duckdb column to sword_operations table.
+
+    This column tracks which operations have been synced from PostgreSQL
+    to the DuckDB backup/cache. Safe to call multiple times.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection or psycopg2.connection
+        Active database connection.
+
+    Returns
+    -------
+    bool
+        True if column was added, False if it already existed.
+    """
+    try:
+        # Check if column exists (works for both DuckDB and PostgreSQL)
+        result = conn.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'sword_operations'
+              AND column_name = 'synced_to_duckdb'
+        """).fetchone()
+
+        if result is None:
+            conn.execute("""
+                ALTER TABLE sword_operations
+                ADD COLUMN synced_to_duckdb BOOLEAN DEFAULT FALSE
+            """)
+            return True
+        return False
+
+    except Exception:
+        # Table may not exist yet
+        return False

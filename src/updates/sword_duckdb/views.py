@@ -122,15 +122,15 @@ class WritableArray:
         gc.disable()
 
         try:
-            conn = self._db.connect()
-
+            # Use db.execute() for backend-agnostic SQL execution
+            # Placeholders (?) are automatically converted for PostgreSQL
             if np.isscalar(affected_ids) or (isinstance(affected_ids, np.ndarray) and affected_ids.ndim == 0):
                 # Single value update
                 id_val = int(affected_ids) if hasattr(affected_ids, 'item') else int(affected_ids)
                 val = value.item() if hasattr(value, 'item') else value
                 old_val = old_values.item() if hasattr(old_values, 'item') else old_values
 
-                conn.execute(f"""
+                self._db.execute(f"""
                     UPDATE {self._table}
                     SET {self._db_col_name} = ?
                     WHERE {self._id_col} = ? AND region = ?
@@ -165,7 +165,7 @@ class WritableArray:
                     val = val.item() if hasattr(val, 'item') else val
                     old_val = old_vals[i].item() if hasattr(old_vals[i], 'item') else old_vals[i]
 
-                    conn.execute(f"""
+                    self._db.execute(f"""
                         UPDATE {self._table}
                         SET {self._db_col_name} = ?
                         WHERE {self._id_col} = ? AND region = ?
