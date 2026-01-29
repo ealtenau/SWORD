@@ -552,13 +552,13 @@ def _export_reaches_to_pg(
         'obstr_type': reaches.grod,
         'grod_id': reaches.grod_fid,
         'hfalls_id': reaches.hfalls_fid,
-        'n_chan_max': reaches.nchan_max,
-        'n_chan_mod': reaches.nchan_mod,
-        'n_rch_up': reaches.n_rch_up,
-        'n_rch_down': reaches.n_rch_down,
-        'swot_obs': reaches.max_obs,
-        'iceflag': reaches._df['iceflag'].values,  # Use scalar column, not 2D array
-        'low_slope_flag': reaches.low_slope,
+        'n_chan_max': reaches._df['n_chan_max'].values,
+        'n_chan_mod': reaches._df['n_chan_mod'].values,
+        'n_rch_up': reaches._df['n_rch_up'].values,
+        'n_rch_down': reaches._df['n_rch_down'].values,
+        'swot_obs': reaches._df['swot_obs'].values,
+        'iceflag': reaches._df['iceflag'].values,
+        'low_slope_flag': reaches._df['low_slope_flag'].values,
         'river_name': reaches.river_name,
         'edit_flag': reaches.edit_flag,
         'trib_flag': reaches.trib_flag,
@@ -587,8 +587,9 @@ def _export_reaches_to_pg(
     else:
         df['geom'] = None
 
-    # Replace NaN with None for PostgreSQL
+    # Replace NaN and pandas NA with None for PostgreSQL
     df = df.replace({np.nan: None})
+    df = df.where(pd.notna(df), None)
 
     # Insert in batches
     columns = df.columns.tolist()
