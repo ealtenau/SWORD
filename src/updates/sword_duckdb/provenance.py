@@ -38,7 +38,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    import duckdb
+    from .sword_db import SWORDDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +78,9 @@ class ProvenanceLogger:
 
     Parameters
     ----------
-    conn : duckdb.DuckDBPyConnection
-        Active DuckDB connection to the SWORD database.
+    db : SWORDDatabase
+        Database object with execute() and query() methods.
+        Works with both DuckDB and PostgreSQL backends.
     user_id : str, optional
         User identifier. Defaults to system username.
     session_id : str, optional
@@ -106,12 +107,12 @@ class ProvenanceLogger:
 
     def __init__(
         self,
-        conn: 'duckdb.DuckDBPyConnection',
+        db: 'SWORDDatabase',
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         enabled: bool = True,
     ):
-        self._conn = conn
+        self._db = db
         self.user_id = user_id or getpass.getuser()
         self.session_id = session_id or str(uuid.uuid4())[:8]
         self.enabled = enabled
@@ -125,7 +126,7 @@ class ProvenanceLogger:
     def _init_id_counters(self) -> None:
         """Initialize operation and snapshot ID counters from database."""
         try:
-            result = self._conn.execute(
+            result = self._db.execute(
                 "SELECT COALESCE(MAX(operation_id), 0) FROM sword_operations"
             ).fetchone()
             self._next_operation_id = (result[0] or 0) + 1
@@ -134,7 +135,7 @@ class ProvenanceLogger:
             self._next_operation_id = 1
 
         try:
-            result = self._conn.execute(
+            result = self._db.execute(
                 "SELECT COALESCE(MAX(snapshot_id), 0) FROM sword_value_snapshots"
             ).fetchone()
             self._next_snapshot_id = (result[0] or 0) + 1
@@ -249,39 +250,35 @@ class ProvenanceLogger:
         # Get parent operation if nested
         parent_op_id = self._operation_stack[-1] if self._operation_stack else None
 
-        # Serialize entity_ids as DuckDB array literal
-        entity_ids_sql = None
-        if entity_ids:
-            entity_ids_sql = f"[{', '.join(str(e) for e in entity_ids)}]"
+        # Convert to lists for array parameters (works with both DuckDB and PostgreSQL)
+        entity_ids_list = list(entity_ids) if entity_ids else None
+        affected_cols_list = list(affected_columns) if affected_columns else None
 
-        # Serialize affected_columns as DuckDB array literal
-        affected_cols_sql = None
-        if affected_columns:
-            affected_cols_sql = f"[{', '.join(repr(c) for c in affected_columns)}]"
-
-        # Insert operation record
-        sql = f"""
+        # Insert operation record (use parameterized arrays)
+        sql = """
             INSERT INTO sword_operations (
                 operation_id, operation_type, table_name, entity_ids, region,
                 user_id, session_id, started_at,
                 operation_details, affected_columns,
                 reason, source_operation_id, status
             ) VALUES (
-                ?, ?, ?, {entity_ids_sql or 'NULL'}, ?,
+                ?, ?, ?, ?, ?,
                 ?, ?, CURRENT_TIMESTAMP,
-                ?, {affected_cols_sql or 'NULL'},
+                ?, ?,
                 ?, ?, 'IN_PROGRESS'
             )
         """
 
-        self._conn.execute(sql, [
+        self._db.execute(sql, [
             op_id,
             op_type,
             table_name,
+            entity_ids_list,
             region,
             self.user_id,
             self.session_id,
             json.dumps(details) if details else None,
+            affected_cols_list,
             reason,
             parent_op_id,
         ])
@@ -291,7 +288,7 @@ class ProvenanceLogger:
 
     def _complete_operation(self, operation_id: int) -> None:
         """Mark an operation as completed."""
-        self._conn.execute("""
+        self._db.execute("""
             UPDATE sword_operations
             SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP
             WHERE operation_id = ?
@@ -300,7 +297,7 @@ class ProvenanceLogger:
 
     def _fail_operation(self, operation_id: int, error_message: str) -> None:
         """Mark an operation as failed."""
-        self._conn.execute("""
+        self._db.execute("""
             UPDATE sword_operations
             SET status = 'FAILED', completed_at = CURRENT_TIMESTAMP, error_message = ?
             WHERE operation_id = ?
@@ -358,7 +355,7 @@ class ProvenanceLogger:
             else:
                 data_type = "json"
 
-        self._conn.execute("""
+        self._db.execute("""
             INSERT INTO sword_value_snapshots (
                 snapshot_id, operation_id, table_name, entity_id, column_name,
                 old_value, new_value, data_type
@@ -475,7 +472,7 @@ class ProvenanceLogger:
             LIMIT ?
         """
 
-        results = self._conn.execute(sql, [table_name, entity_id, limit]).fetchall()
+        results = self._db.execute(sql, [table_name, entity_id, limit]).fetchall()
 
         history = []
         for row in results:
@@ -488,7 +485,7 @@ class ProvenanceLogger:
                 WHERE operation_id = ? AND table_name = ? AND entity_id = ?
                 ORDER BY snapshot_id
             """
-            changes = self._conn.execute(
+            changes = self._db.execute(
                 changes_sql, [op_id, table_name, entity_id]
             ).fetchall()
 
@@ -576,7 +573,7 @@ class ProvenanceLogger:
         """
         params.append(limit)
 
-        results = self._conn.execute(sql, params).fetchall()
+        results = self._db.execute(sql, params).fetchall()
 
         return [
             {
@@ -619,7 +616,7 @@ class ProvenanceLogger:
             If the operation cannot be rolled back
         """
         # Check operation status
-        result = self._conn.execute("""
+        result = self._db.execute("""
             SELECT status, table_name FROM sword_operations WHERE operation_id = ?
         """, [operation_id]).fetchone()
 
@@ -631,7 +628,7 @@ class ProvenanceLogger:
             raise ValueError(f"Operation {operation_id} already rolled back")
 
         # Get all snapshots for this operation
-        snapshots = self._conn.execute("""
+        snapshots = self._db.execute("""
             SELECT snapshot_id, table_name, entity_id, column_name, old_value, data_type
             FROM sword_value_snapshots
             WHERE operation_id = ?
@@ -662,7 +659,7 @@ class ProvenanceLogger:
 
             # Update the value
             try:
-                self._conn.execute(f"""
+                self._db.execute(f"""
                     UPDATE {tbl} SET {column} = ? WHERE {id_col} = ?
                 """, [old_value, entity_id])
                 restored += 1
@@ -670,7 +667,7 @@ class ProvenanceLogger:
                 logger.error(f"Failed to restore {tbl}.{column} for {entity_id}: {e}")
 
         # Mark operation as rolled back
-        self._conn.execute("""
+        self._db.execute("""
             UPDATE sword_operations
             SET status = 'ROLLED_BACK'
             WHERE operation_id = ?
@@ -705,7 +702,7 @@ class ProvenanceLogger:
         list of dict
             Lineage records showing source attribution
         """
-        results = self._conn.execute("""
+        results = self._db.execute("""
             SELECT
                 lineage_id, source_dataset, source_id, source_version,
                 attribute_name, derivation_method, created_at
@@ -766,12 +763,12 @@ class ProvenanceLogger:
             The lineage ID
         """
         # Get next lineage ID
-        result = self._conn.execute(
+        result = self._db.execute(
             "SELECT COALESCE(MAX(lineage_id), 0) + 1 FROM sword_source_lineage"
         ).fetchone()
         lineage_id = result[0]
 
-        self._conn.execute("""
+        self._db.execute("""
             INSERT INTO sword_source_lineage (
                 lineage_id, entity_type, entity_id, region,
                 source_dataset, source_id, source_version,
@@ -796,7 +793,7 @@ class ProvenanceLogger:
         int
             The maximum operation_id with status='COMPLETED', or 0 if none exist.
         """
-        result = self._conn.execute("""
+        result = self._db.execute("""
             SELECT COALESCE(MAX(operation_id), 0)
             FROM sword_operations
             WHERE status = 'COMPLETED'
@@ -842,7 +839,7 @@ class ProvenanceLogger:
             type_exclusion = f" AND operation_type NOT IN ({placeholders})"
             query_params.extend(exclude_types)
 
-        results = self._conn.execute(f"""
+        results = self._db.execute(f"""
             SELECT
                 operation_id, operation_type, table_name, entity_ids, region,
                 user_id, session_id, started_at, completed_at,

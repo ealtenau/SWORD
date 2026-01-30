@@ -260,7 +260,7 @@ class SWORDWorkflow:
                 logger.debug(f"Provenance tables check: {e}")
 
             self._provenance = ProvenanceLogger(
-                self._sword.db.conn,
+                self._sword.db,
                 user_id=self._user_id,
                 enabled=self._enable_provenance,
             )
