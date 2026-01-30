@@ -213,9 +213,14 @@ class SWORDWorkflow:
                 "A database is already loaded. Call close() before loading another."
             )
 
-        db_path = Path(db_path)
-        if not db_path.exists():
-            raise FileNotFoundError(f"Database not found: {db_path}")
+        # Handle PostgreSQL URLs vs file paths
+        db_path_str = str(db_path)
+        is_postgres = db_path_str.startswith("postgresql://")
+
+        if not is_postgres:
+            db_path = Path(db_path)
+            if not db_path.exists():
+                raise FileNotFoundError(f"Database not found: {db_path}")
 
         # Import here to avoid circular imports
         from .sword_class import SWORD
@@ -227,11 +232,11 @@ class SWORDWorkflow:
         # Normalize region code to uppercase
         region = normalize_region(region)
 
-        logger.info(f"Loading SWORD database: {db_path}, region: {region}")
+        logger.info(f"Loading SWORD database: {db_path_str}, region: {region}")
 
         # Load the SWORD database
-        self._sword = SWORD(str(db_path), region)
-        self._db_path = db_path
+        self._sword = SWORD(db_path_str, region)
+        self._db_path = db_path_str if is_postgres else db_path
         self._region = region
 
         # Initialize reactive system
