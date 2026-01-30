@@ -758,7 +758,7 @@ def drop_schema(conn) -> None:
         conn.execute(f"DROP TABLE IF EXISTS {table};")
 
 
-def create_provenance_tables(conn) -> None:
+def create_provenance_tables(db) -> None:
     """
     Creates only the provenance tables in an existing database.
 
@@ -766,8 +766,8 @@ def create_provenance_tables(conn) -> None:
 
     Parameters
     ----------
-    conn : duckdb.DuckDBPyConnection
-        Active DuckDB connection.
+    db : SWORDDatabase or duckdb.DuckDBPyConnection
+        Database object with execute() method, or raw DuckDB connection.
     """
     provenance_tables = [
         SWORD_OPERATIONS_TABLE,
@@ -778,7 +778,7 @@ def create_provenance_tables(conn) -> None:
     ]
 
     for table_sql in provenance_tables:
-        conn.execute(table_sql)
+        db.execute(table_sql)
 
     # Create provenance indexes
     provenance_indexes = [
@@ -799,10 +799,10 @@ def create_provenance_tables(conn) -> None:
     ]
 
     for index_sql in provenance_indexes:
-        conn.execute(index_sql)
+        db.execute(index_sql)
 
 
-def add_v17c_columns(conn) -> bool:
+def add_v17c_columns(db) -> bool:
     """
     Add v17c columns to existing nodes and reaches tables.
 
@@ -812,8 +812,8 @@ def add_v17c_columns(conn) -> bool:
 
     Parameters
     ----------
-    conn : duckdb.DuckDBPyConnection
-        Active DuckDB connection.
+    db : SWORDDatabase or duckdb.DuckDBPyConnection
+        Database object with execute() method, or raw DuckDB connection.
 
     Returns
     -------
@@ -853,14 +853,14 @@ def add_v17c_columns(conn) -> bool:
         """Add columns to a table if they don't exist."""
         nonlocal added
         # Get existing columns
-        result = conn.execute(
+        result = db.execute(
             f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"
         ).fetchall()
         existing = {row[0].lower() for row in result}
 
         for col_name, col_type in columns:
             if col_name.lower() not in existing:
-                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+                db.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
                 added = True
 
         return added

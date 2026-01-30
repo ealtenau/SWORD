@@ -245,7 +245,7 @@ class SWORDWorkflow:
 
         # Migrate schema: add v17c columns if needed
         try:
-            if add_v17c_columns(self._sword.db.conn):
+            if add_v17c_columns(self._sword.db):
                 logger.info("Added v17c columns to database schema")
         except Exception as e:
             logger.debug(f"v17c columns migration: {e}")
@@ -254,7 +254,7 @@ class SWORDWorkflow:
         if self._enable_provenance:
             # Ensure provenance tables exist
             try:
-                create_provenance_tables(self._sword.db.conn)
+                create_provenance_tables(self._sword.db)
             except Exception as e:
                 # Tables may already exist
                 logger.debug(f"Provenance tables check: {e}")
