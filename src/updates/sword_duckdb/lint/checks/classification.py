@@ -295,10 +295,11 @@ def check_lakeflag_type_consistency(
         SELECT COUNT(*) FROM reaches
         WHERE lakeflag IS NOT NULL AND type IS NOT NULL
             AND NOT (
-                (lakeflag = 0 AND type IN (1, 4))  -- rivers can be type=1 or type=4 (dam)
-                OR (lakeflag = 1 AND type = 3)     -- lakes should be type=3
-                OR type IN (5, 6)                   -- unreliable/ghost can have any lakeflag
-            )
+                    (lakeflag = 0 AND type IN (1, 4))   -- river: type=river or dam
+                    OR (lakeflag = 1 AND type IN (3, 4)) -- lake: type=lake_on_river or dam
+                    OR (lakeflag = 2 AND type IN (1, 4)) -- canal: type=river or artificial
+                    OR type IN (5, 6)                    -- unreliable/ghost (covers most tidal)
+                )
             {where_clause}
         """
         mismatch_count = conn.execute(mismatch_query).fetchone()[0]

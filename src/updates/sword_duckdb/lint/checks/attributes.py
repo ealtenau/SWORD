@@ -325,10 +325,11 @@ def check_attribute_outliers(
             WHEN r.facc > 10000000 THEN 'extreme_facc'
         END as issue_type
     FROM reaches r
-    WHERE (r.width > 50000
-           OR r.wse > 8000
-           OR r.facc > 10000000)
-        AND r.width != -9999 AND r.wse != -9999 AND r.facc != -9999
+    WHERE (
+            (r.width > 50000 AND r.width IS NOT NULL AND r.width != -9999)
+            OR (r.wse > 8000 AND r.wse IS NOT NULL AND r.wse != -9999)
+            OR (r.facc > 10000000 AND r.facc IS NOT NULL AND r.facc != -9999)
+        )
         {where_clause}
     ORDER BY r.reach_id
     """

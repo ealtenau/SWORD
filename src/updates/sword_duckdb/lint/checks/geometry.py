@@ -179,8 +179,8 @@ def check_zero_length_reaches(
         r.reach_id, r.region, r.river_name, r.x, r.y,
         r.reach_length, r.lakeflag, r.end_reach
     FROM reaches r
-    WHERE (r.reach_length <= 0 OR r.reach_length IS NULL)
-        AND r.reach_length != -9999
+    WHERE (r.reach_length <= 0 AND r.reach_length != -9999)
+       OR r.reach_length IS NULL
         {where_clause}
     ORDER BY r.reach_id
     """
