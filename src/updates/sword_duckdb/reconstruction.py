@@ -3618,45 +3618,39 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
-        Reconstruct reach main_side (main vs side channel classification).
+        STUB: Preserve existing main_side values.
 
-        Based on stream_order and path_freq analysis:
-        - main_side = 1: main channel (highest path_freq at junction)
-        - main_side = 2: side channel
+        main_side indicates channel classification:
+        - 0 = Main network (94.96% of reaches)
+        - 1 = Side network / anabranch (2.73%)
+        - 2 = Secondary outlet on main network (2.30%)
+
+        CRITICAL: The previous implementation was WRONG:
+        - It output only 1 and 2, NEVER 0
+        - It incorrectly labeled 1="main" and 2="side"
+        - But PDD defines: 0=main, 1=side, 2=secondary outlet
+
+        Original algorithm (from path construction):
+        1. Start at outlets, traverse upstream
+        2. At bifurcations, higher facc/path_freq branch = main (main_side=0)
+        3. Lower branch = side channel (main_side=1)
+        4. Secondary outlets (multiple paths to ocean) = main_side=2
+
+        This stub preserves existing values since reconstruction requires
+        full path traversal algorithm not currently implemented.
         """
-        logger.info("Reconstructing reach.main_side from path_freq comparison")
+        logger.warning(
+            "reach.main_side reconstruction requires path traversal algorithm. "
+            "Preserving existing values."
+        )
 
-        where_clause = ""
-        params = [self._region]
-        if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
-            where_clause = f"AND reach_id IN ({placeholders})"
-            params.extend(reach_ids)
-
-        # Simplified: Use path_freq as proxy - higher path_freq = main channel
-        # At junctions, the branch with higher path_freq is main
-        # For now, default to 1 (main) if path_freq is highest in its group
-        result_df = self._conn.execute(f"""
-            WITH reach_groups AS (
-                SELECT
-                    r.reach_id,
-                    r.path_freq,
-                    r.n_rch_up,
-                    r.n_rch_down
-                FROM reaches r
-                WHERE r.region = ? {where_clause}
-            )
-            SELECT
-                reach_id,
-                CASE
-                    WHEN n_rch_up <= 1 AND n_rch_down <= 1 THEN 1  -- Linear reach = main
-                    WHEN path_freq >= 1 THEN 1  -- High path_freq = main
-                    ELSE 2  -- Side channel
-                END as main_side
-            FROM reach_groups
-        """, params).fetchdf()
-
-        return self._update_reach_attribute('main_side', result_df, dry_run)
+        # Return empty result to preserve existing values
+        return {
+            "status": "skipped",
+            "reason": "main_side requires path traversal - preserving existing values",
+            "updated": 0,
+            "dry_run": dry_run,
+        }
 
     def _reconstruct_reach_obstr_type(
         self,
