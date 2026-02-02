@@ -367,3 +367,75 @@ From README.md:
 | `src/updates/sword_duckdb/lint/checks/topology.py` | Add T008-T011 checks |
 | `src/updates/sword_duckdb/lint/checks/v17c.py` | NEW: Add V001-V008 checks |
 | `src/updates/sword_duckdb/lint/checks/__init__.py` | Import new v17c module |
+
+## Deep Audit Results (2026-02-02)
+
+### Coverage Statistics
+
+| Region | Total | hydro_dist_out | is_mainstem | hydro% | mainstem% |
+|--------|-------|----------------|-------------|--------|-----------|
+| AF | 21,441 | 21,441 | 20,746 | 100.0% | 96.8% |
+| AS | 100,185 | 100,185 | 96,671 | 100.0% | 96.5% |
+| EU | 31,103 | 31,103 | 30,240 | 100.0% | 97.2% |
+| NA | 38,696 | 38,696 | 38,057 | 100.0% | 98.3% |
+| OC | 15,090 | 15,090 | 14,899 | 100.0% | 98.7% |
+| SA | 42,159 | 42,159 | 41,342 | 100.0% | 98.1% |
+
+**✓ 100% coverage** - All reaches have `hydro_dist_out` values.
+
+### hydro_dist_out Distribution
+
+| Region | Min | Median | Max | Mean |
+|--------|-----|--------|-----|------|
+| AF | 0 | 876 km | 6,747 km | 1,310 km |
+| AS | 0 | 877 km | 6,083 km | 1,223 km |
+| EU | 0 | 420 km | 3,513 km | 726 km |
+| NA | 0 | 510 km | 5,537 km | 974 km |
+| OC | 0 | 112 km | 3,374 km | 318 km |
+| SA | 0 | 1,756 km | 5,988 km | 1,890 km |
+
+### Issues Found
+
+#### Issue 1: Monotonicity Violations (1,210 total)
+
+| Region | Violations |
+|--------|------------|
+| AF | 101 |
+| AS | 617 |
+| EU | 147 |
+| NA | 121 |
+| OC | 98 |
+| SA | 126 |
+
+**Cause:** `hydro_dist_out` increases downstream (should decrease). These are topology anomalies where the Dijkstra algorithm finds a shorter path through a different outlet.
+
+**Recommended action:** Create issue to investigate; may indicate topology problems or delta complexity.
+
+#### Issue 2: Invalid best_headwater (123 in NA)
+
+123 reaches in NA have `best_headwater` pointing to a reach with `n_rch_up > 0` (not actually a headwater).
+
+**Cause:** Width-prioritized selection may select a non-headwater if graph has issues.
+
+**Recommended action:** Investigate NA topology; these may be legitimate (e.g., bifurcations) or bugs.
+
+#### Issue 3: Mainstem Continuity (1 violation in NA)
+
+1 reach in NA is marked as `is_mainstem_edge=TRUE` but has no upstream mainstem neighbor despite having `n_rch_up > 0`.
+
+**Cause:** Shortest path computation selected a different route.
+
+**Recommended action:** Minor issue; investigate specific reach.
+
+### Summary
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| Coverage | ✅ PASS | 100% of reaches have hydro_dist_out |
+| best_outlet validity | ✅ PASS | 100% valid |
+| NULL coverage | ✅ PASS | No NULL for connected reaches |
+| Monotonicity | ⚠️ WARNING | 1,210 violations (0.49%) |
+| best_headwater validity | ⚠️ WARNING | 123 invalid in NA (0.32%) |
+| Continuity | ⚠️ WARNING | 1 violation in NA |
+
+**Overall:** Variables are well-computed with minor edge cases. Monotonicity violations warrant investigation but may be expected in complex delta topologies
