@@ -110,6 +110,32 @@ workflow.close()
 | trib_flag | 0=no tributary, 1=has tributary |
 | n_rch_up/down | Count of upstream/downstream neighbors |
 
+## ⚠️ CRITICAL: Reconstruction Rules
+
+**NEVER assume variable semantics from names.** Past bugs from guessing:
+
+| Variable | Wrong assumption | Actual meaning |
+|----------|------------------|----------------|
+| trib_flag | "1 if n_rch_up > 1" (junction) | External MHV tributary enters (spatial proximity) |
+| main_side | "1=main, 2=side" | **0**=main (95%), 1=side (3%), 2=secondary outlet (2%) |
+
+**Before implementing ANY reconstruction:**
+
+1. **Query v17b first** - see actual value distribution:
+   ```sql
+   SELECT variable, COUNT(*) FROM reaches GROUP BY 1 ORDER BY 2 DESC;
+   ```
+
+2. **Check if your logic matches** - if 95% have value X, your code better produce X mostly
+
+3. **Find original source code** - check `src/development/` for original algorithms
+
+4. **Check validation specs** - `docs/validation_specs/` has deep documentation
+
+5. **When in doubt, make it a STUB** - preserve existing values rather than corrupt data
+
+**Validation specs exist for:** dist_out, facc, path_freq, wse, width, slope, stream_order, path_segs, end_reach, trib_flag, lakeflag, type, main_side, network, n_rch_up/down, reach_length, obstructions, channel counts, flags, SWOT observations
+
 ## v17c Pipeline
 
 **Location:** `src/updates/sword_v17c_pipeline/`
