@@ -233,60 +233,38 @@ trib_flag = 1  # tributary junction
 ),
 ```
 
-### 2.6 Current Implementation (Simplified)
+### 2.6 Current Implementation (Stub - FIXED 2026-02-02)
 
-**Note:** The full implementation requires external MERIT Hydro-Vector data. The current reconstruction uses a simplified approximation.
+**Status:** The reconstruction is now a **stub that preserves existing values**.
+
+The wrong implementation (`n_rch_up > 1`) was removed. Full reconstruction requires external MERIT Hydro-Vector (MHV) data files that are not included in the repository.
 
 **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
 
-**Function (reach):** `_reconstruct_reach_trib_flag` (lines 3784-3815)
+**Function (reach/node):** `_reconstruct_reach_trib_flag` and `_reconstruct_node_trib_flag`
 
 ```python
 def _reconstruct_reach_trib_flag(self, ...):
     """
-    Reconstruct reach trib_flag (tributary junction flag).
-    trib_flag = 1 if reach has >1 upstream reaches (is at a junction)
+    STUB: Preserve existing trib_flag values.
+
+    trib_flag indicates EXTERNAL tributaries from MERIT Hydro-Vector (MHV)
+    that are NOT represented in SWORD but contribute flow to a reach.
+
+    IMPORTANT: trib_flag != (n_rch_up > 1)
+    - n_rch_up > 1 = SWORD junction (multiple SWORD reaches converge)
+    - trib_flag = 1 = External tributary from MHV enters here
     """
-    # NOTE: This is a simplified approximation
-    # Full implementation requires external MERIT Hydro-Vector data
-    result_df = self._conn.execute("""
-        SELECT
-            reach_id,
-            CASE
-                WHEN n_rch_up > 1 THEN 1
-                ELSE 0
-            END as trib_flag
-        FROM reaches
-        WHERE region = ?
-    """, [self._region]).fetchdf()
+    logger.warning("trib_flag requires external MHV data - preserving existing values")
+    return {"status": "skipped", "reason": "requires MHV data", "updated": 0}
 ```
 
-**Function (node):** `_reconstruct_node_trib_flag` (lines 3029-3071)
+**Evidence the old approach was wrong (from v17b data):**
+- 15,133 reaches have `trib_flag=1` but `n_rch_up <= 1` (true external tribs, NOT junctions)
+- 17,482 reaches have `n_rch_up > 1` but `trib_flag=0` (junctions WITHOUT external trib)
+- Only 836 reaches have BOTH
 
-```python
-def _reconstruct_node_trib_flag(self, ...):
-    """
-    Note: This is a stub - full implementation requires external MHV data.
-    Current logic: set trib_flag based on n_rch_up (if reach has >1 upstream = junction)
-    """
-    result_df = self._conn.execute("""
-        SELECT
-            n.node_id,
-            CASE
-                WHEN r.n_rch_up > 1 THEN 1
-                ELSE 0
-            END as trib_flag
-        FROM nodes n
-        JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
-        WHERE n.region = ?
-    """, [self._region]).fetchdf()
-```
-
-**IMPORTANT:** The current reconstruction logic conflates two different concepts:
-1. Original trib_flag: External tributaries from MERIT Hydro-Vector not in SWORD
-2. Current approximation: SWORD junction reaches (n_rch_up > 1)
-
-This approximation is documented but incorrect for the original intent.
+**Future:** To properly reconstruct trib_flag, obtain MHV data files from `data/inputs/MHV_SWORD/` and implement the spatial proximity algorithm from `Add_Trib_Flag.py`.
 
 ### 2.7 Schema Definition
 

@@ -434,7 +434,7 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.SPATIAL_PROXIMITY,
         source_columns=["stream_order"],
         dependencies=["reach.geom"],
-        description="Tributary flag: cKDTree proximity (k=10, ≤0.003°) to MERIT stream_order≥3 with sword_flag=0"
+        description="STUB: External tributary from MHV (NOT n_rch_up>1). Requires MHV data files."
     ),
 
     # --- Network Analysis (Path Variables) ---
@@ -727,7 +727,7 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.SPATIAL_PROXIMITY,
         source_columns=["stream_order"],
         dependencies=["node.geom"],
-        description="Node tributary flag via MERIT Hydro proximity"
+        description="STUB: External tributary from MHV (NOT n_rch_up>1). Requires MHV data files."
     ),
 
     # --- Network Analysis (inherited from reach) ---
@@ -3033,42 +3033,36 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
-        Reconstruct node trib_flag (tributary junction flag).
+        STUB: Preserve existing trib_flag values.
 
-        Based on Add_Trib_Flag.py:
-        - Requires external MERIT Hydro Vectors (MHV) data
-        - Uses cKDTree proximity search:
-            - k=10 nearest neighbors
-            - threshold <= 0.003 degrees (~333m at equator)
-        - Flag nodes that are near MHV tributaries
+        trib_flag indicates EXTERNAL tributaries from MERIT Hydro-Vector (MHV)
+        that are NOT represented in SWORD but contribute flow to a node.
 
-        Note: This is a stub - full implementation requires external MHV data.
-        Current logic: set trib_flag based on n_rch_up (if reach has >1 upstream = junction)
+        IMPORTANT: trib_flag != (n_rch_up > 1)
+        - n_rch_up > 1 = SWORD junction (multiple SWORD reaches converge)
+        - trib_flag = 1 = External tributary from MHV enters at this node
+
+        Original algorithm (Add_Trib_Flag.py):
+        1. Load MHV points where sword_flag=0 AND strmorder >= 3
+        2. Build cKDTree from MHV points
+        3. Query SWORD nodes with k=10 neighbors
+        4. Flag node if nearest MHV point <= 0.003 degrees (~333m at equator)
+
+        This stub preserves existing values since full reconstruction requires
+        external MHV data files (data/inputs/MHV_SWORD/).
         """
-        logger.info("Reconstructing node.trib_flag (simplified: from upstream count)")
+        logger.warning(
+            "node.trib_flag reconstruction requires external MERIT Hydro-Vector data. "
+            "Preserving existing values."
+        )
 
-        where_clause = ""
-        params = [self._region]
-        if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
-            where_clause = f"AND n.node_id IN ({placeholders})"
-            params.extend(node_ids)
-
-        # Simplified: mark nodes in reaches with >1 upstream reach
-        # Actual algorithm uses MHV external data
-        result_df = self._conn.execute(f"""
-            SELECT
-                n.node_id,
-                CASE
-                    WHEN r.n_rch_up > 1 THEN 1  -- At a junction
-                    ELSE 0
-                END as trib_flag
-            FROM nodes n
-            JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
-            WHERE n.region = ? {where_clause}
-        """, params).fetchdf()
-
-        return self._update_node_attribute('trib_flag', result_df, dry_run)
+        # Return empty result to preserve existing values
+        return {
+            "status": "skipped",
+            "reason": "trib_flag requires external MHV data - preserving existing values",
+            "updated": 0,
+            "dry_run": dry_run,
+        }
 
     def _reconstruct_node_obstr_type(
         self,
@@ -3788,31 +3782,39 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
-        Reconstruct reach trib_flag (tributary junction flag).
+        STUB: Preserve existing trib_flag values.
 
-        trib_flag = 1 if reach has >1 upstream reaches (is at a junction)
+        trib_flag indicates EXTERNAL tributaries from MERIT Hydro-Vector (MHV)
+        that are NOT represented in SWORD but contribute flow to a reach.
+
+        IMPORTANT: trib_flag != (n_rch_up > 1)
+        - n_rch_up > 1 = SWORD junction (multiple SWORD reaches converge)
+        - trib_flag = 1 = External tributary from MHV enters here
+
+        From v17b data:
+        - 15,133 reaches have trib_flag=1 but n_rch_up <= 1 (true external tribs)
+        - 17,482 reaches have n_rch_up > 1 but trib_flag=0 (junctions w/o external trib)
+
+        Original algorithm (Add_Trib_Flag.py):
+        1. Load MHV points where sword_flag=0 AND strmorder >= 3
+        2. For each SWORD node, find MHV points within 0.003 degrees (~333m)
+        3. Flag reach if any node has nearby MHV tributary
+
+        This stub preserves existing values since full reconstruction requires
+        external MHV data files (data/inputs/MHV_SWORD/).
         """
-        logger.info("Reconstructing reach.trib_flag from upstream count")
+        logger.warning(
+            "reach.trib_flag reconstruction requires external MERIT Hydro-Vector data. "
+            "Preserving existing values."
+        )
 
-        where_clause = ""
-        params = [self._region]
-        if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
-            where_clause = f"AND reach_id IN ({placeholders})"
-            params.extend(reach_ids)
-
-        result_df = self._conn.execute(f"""
-            SELECT
-                reach_id,
-                CASE
-                    WHEN n_rch_up > 1 THEN 1
-                    ELSE 0
-                END as trib_flag
-            FROM reaches
-            WHERE region = ? {where_clause}
-        """, params).fetchdf()
-
-        return self._update_reach_attribute('trib_flag', result_df, dry_run)
+        # Return empty result to preserve existing values
+        return {
+            "status": "skipped",
+            "reason": "trib_flag requires external MHV data - preserving existing values",
+            "updated": 0,
+            "dry_run": dry_run,
+        }
 
     # =========================================================================
     # STUB RECONSTRUCTORS (require external data)
