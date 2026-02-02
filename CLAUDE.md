@@ -168,7 +168,7 @@ Dependency graph auto-recalculates derived attributes:
 
 **Location:** `src/updates/sword_duckdb/lint/`
 
-Comprehensive linting framework with 20 checks across 4 categories.
+Comprehensive linting framework with 35 checks across 5 categories (T=Topology, A=Attributes, G=Geometry, C=Classification, V=v17c).
 
 **CLI Usage:**
 ```bash
@@ -243,6 +243,13 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | V006 | mainstem_coverage | INFO | is_mainstem_edge coverage stats |
 | V007 | best_headwater_validity | WARNING | best_headwater is actual headwater |
 | V008 | best_outlet_validity | WARNING | best_outlet is actual outlet |
+
+**Validation Specs:** Deep documentation for key variables in `docs/validation_specs/`:
+- `dist_out` - algorithm, failure modes, proposed checks
+- `facc` - MERIT Hydro source, D8 routing limitations
+- `path_freq` - traversal algorithm, edge cases
+- `wse` - elevation data, slope derivation
+- `v17c mainstem` - hydro_dist_out, is_mainstem_edge, best_headwater/outlet
 
 ## Testing
 
