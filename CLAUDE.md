@@ -204,7 +204,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
     results = runner.run(region="NA", severity=Severity.ERROR)
 ```
 
-**Check IDs:**
+**Check IDs (35 total):**
 
 | ID | Name | Severity | Description |
 |----|------|----------|-------------|
@@ -215,19 +215,34 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | T005 | neighbor_count_consistency | ERROR | n_rch_up/down matches topology |
 | T006 | connected_components | INFO | Network connectivity |
 | T007 | topology_reciprocity | WARNING | A→B implies B→A |
-| A001 | wse_monotonicity | ERROR | WSE decreases downstream |
+| T008 | dist_out_negative | ERROR | No negative dist_out |
+| T009 | dist_out_zero_at_nonoutlet | ERROR | dist_out=0 only at outlets |
+| T010 | headwater_path_freq | ERROR | Headwaters have path_freq >= 1 |
+| T011 | path_freq_zero | WARNING | path_freq=0 only for disconnected |
 | A002 | slope_reasonableness | WARNING | No negative, <100 m/km |
 | A003 | width_trend | INFO | Width increases downstream |
 | A004 | attribute_completeness | INFO | Required attrs present |
-| A005 | trib_flag_consistency | WARNING | Matches tributary count |
+| A005 | trib_flag_distribution | INFO | Unmapped tributary stats |
 | A006 | attribute_outliers | INFO | Extreme values |
+| A007 | headwater_facc | WARNING | Headwaters have low facc |
+| A008 | headwater_width | WARNING | Headwaters have narrow width |
+| A009 | outlet_facc | INFO | Outlets have high facc |
+| A010 | end_reach_consistency | WARNING | end_reach matches topology |
 | G001 | reach_length_bounds | INFO | 100m-50km, excl end_reach |
 | G002 | node_length_consistency | WARNING | Node sum ≈ reach length |
 | G003 | zero_length_reaches | INFO | Zero/negative length |
 | C001 | lake_sandwich | WARNING | River between lakes |
 | C002 | lakeflag_distribution | INFO | Lakeflag values |
 | C003 | type_distribution | INFO | Type field values |
-| C004 | lakeflag_type_consistency | WARNING | Lakeflag/type match |
+| C004 | lakeflag_type_consistency | INFO | Lakeflag/type cross-tab (needs investigation) |
+| V001 | hydro_dist_out_monotonicity | ERROR | hydro_dist_out decreases downstream |
+| V002 | hydro_dist_vs_pathlen | INFO | hydro_dist_out vs pathlen_out diff |
+| V003 | pathlen_consistency | WARNING | pathlen_hw + pathlen_out consistency |
+| V004 | mainstem_continuity | WARNING | is_mainstem_edge forms continuous path |
+| V005 | hydro_dist_out_coverage | ERROR | All connected reaches have hydro_dist_out |
+| V006 | mainstem_coverage | INFO | is_mainstem_edge coverage stats |
+| V007 | best_headwater_validity | WARNING | best_headwater is actual headwater |
+| V008 | best_outlet_validity | WARNING | best_outlet is actual outlet |
 
 ## Testing
 
@@ -247,7 +262,7 @@ Test DB: `tests/sword_duckdb/fixtures/sword_test_minimal.duckdb` (100 reaches, 5
 | `src/updates/sword_duckdb/schema.py` | Table definitions |
 | `src/updates/sword_duckdb/reactive.py` | Dependency graph |
 | `src/updates/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
-| `src/updates/sword_duckdb/lint/` | Lint framework (20 checks) |
+| `src/updates/sword_duckdb/lint/` | Lint framework (35 checks) |
 | `run_v17c_topology.py` | Topology recalculation script |
 | `rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
 | `topology_reviewer.py` | Streamlit GUI for facc/topology fixes |

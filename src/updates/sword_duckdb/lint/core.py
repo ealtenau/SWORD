@@ -28,6 +28,7 @@ class Category(Enum):
     ATTRIBUTES = "attributes"
     GEOMETRY = "geometry"
     CLASSIFICATION = "classification"
+    V17C = "v17c"  # v17c-specific checks for new attributes
 
 
 @dataclass

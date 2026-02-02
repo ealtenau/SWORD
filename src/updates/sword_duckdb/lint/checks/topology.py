@@ -477,3 +477,209 @@ def check_topology_reciprocity(
         details=issues,
         description="Missing reciprocal topology edges (A→B without B←A)",
     )
+
+
+@register_check(
+    "T008",
+    Category.TOPOLOGY,
+    Severity.ERROR,
+    "dist_out must be non-negative (except fill value -9999)",
+)
+def check_dist_out_negative(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that dist_out values are non-negative.
+
+    Negative values (other than -9999 fill) indicate data corruption.
+    """
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.dist_out, r.n_rch_up, r.n_rch_down
+    FROM reaches r
+    WHERE r.dist_out < 0 AND r.dist_out != -9999
+        {where_clause}
+    ORDER BY r.dist_out ASC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE dist_out IS NOT NULL AND dist_out != -9999
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T008",
+        name="dist_out_negative",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reaches with negative dist_out (data corruption)",
+    )
+
+
+@register_check(
+    "T009",
+    Category.TOPOLOGY,
+    Severity.ERROR,
+    "dist_out=0 only valid for outlets (end_reach=2)",
+)
+def check_dist_out_zero_at_nonoutlet(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that dist_out=0 only occurs at outlet reaches.
+
+    Outlets are marked with end_reach=2 or n_rch_down=0.
+    """
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.dist_out, r.end_reach, r.n_rch_down
+    FROM reaches r
+    WHERE r.dist_out = 0
+        AND r.end_reach != 2  -- Not marked as outlet
+        AND r.n_rch_down > 0  -- Has downstream neighbors (not actually outlet)
+        {where_clause}
+    ORDER BY r.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE dist_out = 0
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T009",
+        name="dist_out_zero_at_nonoutlet",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reaches with dist_out=0 but not outlets (topology error)",
+    )
+
+
+@register_check(
+    "T010",
+    Category.TOPOLOGY,
+    Severity.ERROR,
+    "Headwaters must have path_freq >= 1",
+)
+def check_headwater_path_freq(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that headwater reaches (n_rch_up=0) have path_freq >= 1.
+
+    Headwaters should be visited at least once in any outlet-to-headwater traversal.
+    """
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.path_freq, r.n_rch_up, r.n_rch_down, r.type
+    FROM reaches r
+    WHERE r.n_rch_up = 0  -- Headwater
+        AND (r.path_freq IS NULL OR r.path_freq < 1 OR r.path_freq = -9999)
+        AND r.type NOT IN (5, 6)  -- Exclude unreliable/ghost
+        {where_clause}
+    ORDER BY r.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE n_rch_up = 0 AND type NOT IN (5, 6)
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T010",
+        name="headwater_path_freq",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Headwater reaches with path_freq < 1 (traversal error)",
+    )
+
+
+@register_check(
+    "T011",
+    Category.TOPOLOGY,
+    Severity.WARNING,
+    "Zero path_freq only valid for disconnected reaches",
+)
+def check_path_freq_zero(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that path_freq=0 only occurs for disconnected reaches.
+
+    Connected reaches (n_rch_up > 0 OR n_rch_down > 0) should have path_freq > 0.
+    """
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.path_freq, r.n_rch_up, r.n_rch_down, r.type
+    FROM reaches r
+    WHERE r.path_freq = 0
+        AND (r.n_rch_up > 0 OR r.n_rch_down > 0)  -- Connected
+        AND r.type NOT IN (5, 6)  -- Exclude unreliable/ghost
+        {where_clause}
+    ORDER BY r.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE (n_rch_up > 0 OR n_rch_down > 0) AND type NOT IN (5, 6)
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T011",
+        name="path_freq_zero",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Connected reaches with path_freq=0 (traversal bug)",
+    )

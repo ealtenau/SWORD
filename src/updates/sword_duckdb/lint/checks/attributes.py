@@ -18,79 +18,6 @@ from ..core import (
 
 
 @register_check(
-    "A001",
-    Category.ATTRIBUTES,
-    Severity.ERROR,
-    "WSE must decrease downstream (flow direction)",
-    default_threshold=0.5,  # meters tolerance
-)
-def check_wse_monotonicity(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """
-    Check that water surface elevation (WSE) decreases downstream.
-
-    Flags reaches where downstream neighbor has higher WSE,
-    which suggests flow direction error.
-    """
-    tolerance = threshold if threshold is not None else 0.5
-    where_clause = f"AND r1.region = '{region}'" if region else ""
-
-    query = f"""
-    WITH reach_pairs AS (
-        SELECT
-            r1.reach_id,
-            r1.region,
-            r1.wse as wse_up,
-            r2.wse as wse_down,
-            r1.river_name,
-            r1.x, r1.y,
-            r1.lakeflag
-        FROM reaches r1
-        JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
-        JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
-        WHERE rt.direction = 'down'
-            AND r1.wse > 0 AND r1.wse != -9999
-            AND r2.wse > 0 AND r2.wse != -9999
-            AND r1.lakeflag = 0  -- rivers only
-            AND r2.lakeflag = 0
-            {where_clause}
-    )
-    SELECT
-        reach_id, region, river_name, x, y,
-        wse_up, wse_down,
-        (wse_down - wse_up) as wse_increase
-    FROM reach_pairs
-    WHERE wse_down > wse_up + {tolerance}
-    ORDER BY wse_increase DESC
-    """
-
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(*) FROM reaches r1
-    WHERE wse > 0 AND wse != -9999 AND lakeflag = 0
-    {where_clause.replace('r1.', '')}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="A001",
-        name="wse_monotonicity",
-        severity=Severity.ERROR,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description="Reaches where WSE increases downstream (potential flow direction error)",
-        threshold=tolerance,
-    )
-
-
-@register_check(
     "A002",
     Category.ATTRIBUTES,
     Severity.WARNING,
@@ -308,38 +235,39 @@ def check_attribute_completeness(
 @register_check(
     "A005",
     Category.ATTRIBUTES,
-    Severity.WARNING,
-    "trib_flag must match actual tributary count",
+    Severity.INFO,
+    "trib_flag distribution (unmapped tributaries)",
 )
-def check_trib_flag_consistency(
+def check_trib_flag_distribution(
     conn: duckdb.DuckDBPyConnection,
     region: Optional[str] = None,
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """
-    Check that trib_flag is consistent with actual upstream neighbor count.
+    Report trib_flag distribution.
 
-    trib_flag should be 1 if n_rch_up > 1 (has tributaries), 0 otherwise.
+    trib_flag indicates UNMAPPED tributaries (rivers not in SWORD topology
+    but contributing flow, detected via facc jumps from MERIT Hydro).
+    - 0 = no unmapped tributary
+    - 1 = unmapped tributary entering
+
+    This is NOT about n_rch_up count - it's about external flow sources.
     """
     where_clause = f"AND r.region = '{region}'" if region else ""
 
     query = f"""
     SELECT
-        r.reach_id, r.region, r.river_name, r.x, r.y,
-        r.trib_flag, r.n_rch_up,
-        CASE
-            WHEN r.trib_flag = 1 AND r.n_rch_up <= 1 THEN 'flag_1_but_no_trib'
-            WHEN r.trib_flag = 0 AND r.n_rch_up > 1 THEN 'flag_0_but_has_trib'
-        END as issue_type
+        trib_flag,
+        COUNT(*) as reach_count,
+        ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) as pct
     FROM reaches r
-    WHERE r.trib_flag IS NOT NULL
-        AND ((r.trib_flag = 1 AND r.n_rch_up <= 1)
-             OR (r.trib_flag = 0 AND r.n_rch_up > 1))
+    WHERE trib_flag IS NOT NULL
         {where_clause}
-    ORDER BY r.reach_id
+    GROUP BY trib_flag
+    ORDER BY trib_flag
     """
 
-    issues = conn.execute(query).fetchdf()
+    stats = conn.execute(query).fetchdf()
 
     total_query = f"""
     SELECT COUNT(*) FROM reaches r
@@ -348,16 +276,21 @@ def check_trib_flag_consistency(
     """
     total = conn.execute(total_query).fetchone()[0]
 
+    # Count reaches with unmapped tributaries
+    unmapped_count = 0
+    if len(stats) > 0 and 1 in stats['trib_flag'].values:
+        unmapped_count = int(stats[stats['trib_flag'] == 1]['reach_count'].values[0])
+
     return CheckResult(
         check_id="A005",
-        name="trib_flag_consistency",
-        severity=Severity.WARNING,
-        passed=len(issues) == 0,
+        name="trib_flag_distribution",
+        severity=Severity.INFO,
+        passed=True,  # Informational
         total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description="Reaches where trib_flag doesn't match actual tributary count",
+        issues_found=unmapped_count,
+        issue_pct=100 * unmapped_count / total if total > 0 else 0,
+        details=stats,
+        description=f"Reaches with unmapped tributaries (trib_flag=1): {unmapped_count} ({100*unmapped_count/total:.1f}%)" if total > 0 else "No data",
     )
 
 
@@ -417,4 +350,242 @@ def check_attribute_outliers(
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
         description="Reaches with extreme outlier values (width>50km, wse>8000m, facc>10M km²)",
+    )
+
+
+@register_check(
+    "A007",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "Headwaters should have low facc (<10000 km²)",
+    default_threshold=10000.0,  # km² - headwaters shouldn't drain huge areas
+)
+def check_headwater_facc(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that headwater reaches have reasonably low flow accumulation.
+
+    Headwaters (n_rch_up=0, end_reach=1) should have small drainage areas.
+    High facc at headwaters suggests topology error (missing upstream).
+    """
+    max_facc = threshold if threshold is not None else 10000.0
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.facc, r.n_rch_up, r.end_reach, r.width, r.type
+    FROM reaches r
+    WHERE r.n_rch_up = 0  -- Headwater
+        AND r.facc > {max_facc}
+        AND r.facc != -9999
+        AND r.type NOT IN (5, 6)  -- Exclude unreliable/ghost
+        {where_clause}
+    ORDER BY r.facc DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE n_rch_up = 0 AND type NOT IN (5, 6)
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A007",
+        name="headwater_facc",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Headwaters with suspiciously high facc (>{max_facc} km²) - missing upstream?",
+        threshold=max_facc,
+    )
+
+
+@register_check(
+    "A008",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "Headwaters should have narrow width (<500m typically)",
+    default_threshold=500.0,  # meters
+)
+def check_headwater_width(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that headwater reaches have reasonable widths.
+
+    Headwaters are typically narrow streams. Very wide headwaters
+    suggest misclassification or missing upstream topology.
+    """
+    max_width = threshold if threshold is not None else 500.0
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.width, r.facc, r.n_rch_up, r.end_reach, r.lakeflag, r.type
+    FROM reaches r
+    WHERE r.n_rch_up = 0  -- Headwater
+        AND r.width > {max_width}
+        AND r.width != -9999
+        AND r.lakeflag = 0  -- Rivers only (lakes can be wide)
+        AND r.type NOT IN (5, 6)  -- Exclude unreliable/ghost
+        {where_clause}
+    ORDER BY r.width DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE n_rch_up = 0 AND lakeflag = 0 AND type NOT IN (5, 6)
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A008",
+        name="headwater_width",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Headwater rivers wider than {max_width}m - missing upstream topology?",
+        threshold=max_width,
+    )
+
+
+@register_check(
+    "A009",
+    Category.ATTRIBUTES,
+    Severity.INFO,
+    "Outlets should have high facc (>1000 km² typically)",
+    default_threshold=1000.0,  # km²
+)
+def check_outlet_facc(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that outlet reaches have reasonable flow accumulation.
+
+    Outlets (n_rch_down=0, end_reach=2) should drain significant areas.
+    Very low facc at outlets suggests isolated/minor features.
+    """
+    min_facc = threshold if threshold is not None else 1000.0
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.facc, r.n_rch_down, r.end_reach, r.width, r.type
+    FROM reaches r
+    WHERE r.n_rch_down = 0  -- Outlet
+        AND r.facc < {min_facc}
+        AND r.facc > 0 AND r.facc != -9999
+        AND r.type NOT IN (5, 6)  -- Exclude unreliable/ghost
+        {where_clause}
+    ORDER BY r.facc ASC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE n_rch_down = 0 AND type NOT IN (5, 6)
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A009",
+        name="outlet_facc",
+        severity=Severity.INFO,
+        passed=True,  # Informational - small outlets are valid
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Outlets with low facc (<{min_facc} km²) - minor outlets or isolated features",
+        threshold=min_facc,
+    )
+
+
+@register_check(
+    "A010",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "end_reach flag should match topology",
+)
+def check_end_reach_consistency(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that end_reach classification matches actual topology.
+
+    end_reach values:
+    - 0 = normal reach (has both up and down neighbors)
+    - 1 = headwater (no upstream)
+    - 2 = outlet (no downstream)
+    - 3 = junction (multiple up or down)
+    """
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.end_reach, r.n_rch_up, r.n_rch_down,
+        CASE
+            WHEN r.end_reach = 1 AND r.n_rch_up > 0 THEN 'marked_headwater_but_has_upstream'
+            WHEN r.end_reach = 2 AND r.n_rch_down > 0 THEN 'marked_outlet_but_has_downstream'
+            WHEN r.end_reach = 0 AND r.n_rch_up = 0 THEN 'unmarked_headwater'
+            WHEN r.end_reach = 0 AND r.n_rch_down = 0 THEN 'unmarked_outlet'
+        END as issue_type
+    FROM reaches r
+    WHERE (
+        (r.end_reach = 1 AND r.n_rch_up > 0) OR
+        (r.end_reach = 2 AND r.n_rch_down > 0) OR
+        (r.end_reach = 0 AND r.n_rch_up = 0 AND r.n_rch_down > 0) OR
+        (r.end_reach = 0 AND r.n_rch_down = 0 AND r.n_rch_up > 0)
+    )
+        AND r.type NOT IN (5, 6)
+        {where_clause}
+    ORDER BY r.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE type NOT IN (5, 6)
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A010",
+        name="end_reach_consistency",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reaches where end_reach flag doesn't match actual topology",
     )

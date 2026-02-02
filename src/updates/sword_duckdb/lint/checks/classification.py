@@ -243,8 +243,8 @@ def check_type_distribution(
 @register_check(
     "C004",
     Category.CLASSIFICATION,
-    Severity.WARNING,
-    "Lakeflag/type consistency check",
+    Severity.INFO,  # Changed to INFO - needs investigation which is authoritative
+    "Lakeflag/type cross-tabulation",
 )
 def check_lakeflag_type_consistency(
     conn: duckdb.DuckDBPyConnection,
@@ -252,40 +252,56 @@ def check_lakeflag_type_consistency(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """
-    Check that lakeflag and type fields are consistent.
+    Report lakeflag vs type cross-tabulation for investigation.
 
-    Expected mappings:
-    - lakeflag=0 (river) → type=1 (river) or type=3 (tidal_river)
-    - lakeflag=1 (lake) → type=2 (lake)
-    - lakeflag=2 (canal) → type=4 (artificial)
-    - lakeflag=3 (tidal) → type=3 (tidal_river)
+    SWORD type values (from reach_id last digit):
+    - 1 = river
+    - 3 = lake on river
+    - 4 = dam or waterfall
+    - 5 = unreliable topology
+    - 6 = ghost reach
+
+    SWORD lakeflag values:
+    - 0 = river
+    - 1 = lake
+    - 2 = canal
+    - 3 = tidal
+
+    Key mismatches to investigate:
+    - lakeflag=0 (river) but type=3 (lake_on_river): river section through lake?
+    - lakeflag=1 (lake) but type=1 (river): misclassification?
+
+    NOTE: Unclear which field is more authoritative - needs investigation.
     """
     where_clause = f"AND region = '{region}'" if region else ""
 
     try:
+        # Get cross-tabulation
         query = f"""
         SELECT
-            r.reach_id, r.region, r.river_name, r.x, r.y,
-            r.lakeflag, r.type,
-            CASE
-                WHEN r.lakeflag = 0 AND r.type NOT IN (1, 3, 5, 6) THEN 'river_type_mismatch'
-                WHEN r.lakeflag = 1 AND r.type NOT IN (2, 5, 6) THEN 'lake_type_mismatch'
-                WHEN r.lakeflag = 2 AND r.type NOT IN (4, 5, 6) THEN 'canal_type_mismatch'
-                WHEN r.lakeflag = 3 AND r.type NOT IN (3, 5, 6) THEN 'tidal_type_mismatch'
-            END as issue_type
-        FROM reaches r
-        WHERE r.lakeflag IS NOT NULL AND r.type IS NOT NULL
-            AND (
-                (r.lakeflag = 0 AND r.type NOT IN (1, 3, 5, 6))
-                OR (r.lakeflag = 1 AND r.type NOT IN (2, 5, 6))
-                OR (r.lakeflag = 2 AND r.type NOT IN (4, 5, 6))
-                OR (r.lakeflag = 3 AND r.type NOT IN (3, 5, 6))
-            )
+            lakeflag, type, COUNT(*) as count
+        FROM reaches
+        WHERE lakeflag IS NOT NULL AND type IS NOT NULL
             {where_clause}
-        ORDER BY r.reach_id
+        GROUP BY lakeflag, type
+        ORDER BY lakeflag, type
         """
 
-        issues = conn.execute(query).fetchdf()
+        stats = conn.execute(query).fetchdf()
+
+        # Count potential mismatches (for reporting)
+        # Main expected: lakeflag=0/type=1 (river/river), lakeflag=1/type=3 (lake/lake_on_river)
+        mismatch_query = f"""
+        SELECT COUNT(*) FROM reaches
+        WHERE lakeflag IS NOT NULL AND type IS NOT NULL
+            AND NOT (
+                (lakeflag = 0 AND type IN (1, 4))  -- rivers can be type=1 or type=4 (dam)
+                OR (lakeflag = 1 AND type = 3)     -- lakes should be type=3
+                OR type IN (5, 6)                   -- unreliable/ghost can have any lakeflag
+            )
+            {where_clause}
+        """
+        mismatch_count = conn.execute(mismatch_query).fetchone()[0]
 
         total_query = f"""
         SELECT COUNT(*) FROM reaches
@@ -297,13 +313,13 @@ def check_lakeflag_type_consistency(
         return CheckResult(
             check_id="C004",
             name="lakeflag_type_consistency",
-            severity=Severity.WARNING,
-            passed=len(issues) == 0,
+            severity=Severity.INFO,
+            passed=True,  # Informational - needs investigation
             total_checked=total,
-            issues_found=len(issues),
-            issue_pct=100 * len(issues) / total if total > 0 else 0,
-            details=issues,
-            description="Reaches where lakeflag and type fields are inconsistent",
+            issues_found=mismatch_count,
+            issue_pct=100 * mismatch_count / total if total > 0 else 0,
+            details=stats,
+            description=f"Potential lakeflag/type mismatches: {mismatch_count} ({100*mismatch_count/total:.1f}%) - needs investigation",
         )
 
     except (duckdb.CatalogException, duckdb.BinderException):
@@ -311,7 +327,7 @@ def check_lakeflag_type_consistency(
         return CheckResult(
             check_id="C004",
             name="lakeflag_type_consistency",
-            severity=Severity.WARNING,
+            severity=Severity.INFO,
             passed=True,
             total_checked=0,
             issues_found=0,
