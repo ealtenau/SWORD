@@ -11,7 +11,8 @@
 | P2 | Lake/facc | 4 | Important |
 | P3 | Exports | 3 | Required |
 | P4 | Documentation | 2 | Required |
-| Deferred | Testing/GUI | 4 | Post-April |
+| P5 | PostgreSQL/GUI | 2 | Should have |
+| Deferred | Testing | 1 | Post-April |
 
 ---
 
@@ -60,10 +61,11 @@
 - 393 medium-confidence: run topology_reviewer
 - 1,142 low-confidence: batch review or defer
 
-### facc exploration (if time)
-- Implement regression baseline
-- Evaluate: does it improve on T003 violations?
-- Decision point: continue to random forest or defer to v18
+### facc ML model
+- Phase 1: Implement regression baseline
+- Phase 2: Random Forest classifier
+- Features: facc, width, slope, reach_length, n_rch_up, stream_order, facc/width ratio
+- Validate: does it reduce T003 violations after fixing?
 
 ---
 
@@ -96,14 +98,24 @@
 
 ---
 
+## P5: PostgreSQL/GUI (Weeks 6-7)
+
+### PostgreSQL deployment
+- Deploy to production server
+- Test multi-user QGIS editing workflow
+
+### Undergrad QGIS GUI
+- Set up editing interface
+- Train on topology_reviewer workflow
+- Begin lake sandwich fixes
+
+---
+
 ## Deferred to Post-April
 
 | Item | Reason |
 |------|--------|
-| PostgreSQL production testing | Code complete, needs real-world testing |
-| Undergrad QGIS GUI | Depends on PostgreSQL stability |
-| facc ML (full implementation) | Nice-to-have, regression baseline sufficient |
-| SWOT section slope integration | Complex, reach_slope_obs.py adequate for v17c |
+| PostgreSQL production testing | Code complete, needs extended real-world testing |
 
 ---
 
@@ -115,9 +127,9 @@
 | 2 (Feb 10-14) | P1 topology | #87 reviewed, violations documented |
 | 3 (Feb 17-21) | P1/P2 validation | Lint baseline, lake inventory |
 | 4 (Feb 24-28) | P2 lake fixes | Topology_reviewer sessions |
-| 5 (Mar 3-7) | P2/P3 facc + export | Regression baseline, DuckDB export |
-| 6 (Mar 10-14) | P3/P4 export + docs | GeoPackage, release notes |
-| 7 (Mar 17-21) | Buffer | Catch-up, final review |
+| 5 (Mar 3-7) | P2/P3 facc + export | Regression + RF model, DuckDB export |
+| 6 (Mar 10-14) | P3/P4/P5 export + docs | GeoPackage, release notes, PostgreSQL deploy |
+| 7 (Mar 17-21) | P5 + buffer | Undergrad GUI setup, catch-up |
 | 8 (Mar 24-28) | Release prep | Final lint, stakeholder review |
 
 ---
@@ -134,11 +146,12 @@
 - [ ] GeoPackage export
 - [ ] Lake sandwich count < 500 (down from 3,167)
 - [ ] Lint baseline documented by region
+- [ ] facc ML model (regression + RF)
+- [ ] PostgreSQL production deployment
+- [ ] Undergrad QGIS GUI operational
 
 ### Nice to Have
-- [ ] facc regression model
 - [ ] NetCDF export
-- [ ] PostgreSQL production deployment
 
 ---
 

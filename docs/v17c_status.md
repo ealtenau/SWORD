@@ -121,14 +121,9 @@ These reaches are tributaries but have mainstem-level facc (D8 routes Amazon/Par
 - **WSE/width obs**: Working, excellent agreement with v17b
 
 ### Slopes
-- **reach_slope_obs.py**: Provides reach-level slopes via OLS
+- **reach_slope_obs.py**: Provides reach-level slopes via OLS ✅
 - **Negative slopes**: 24,129 reaches (documented, physically plausible in some cases)
-- **SWOT_slopes.py**: Produces LME section slopes, NOT integrated to DB
-
-**Question for meeting**: Section→reach slope mapping decision?
-- Average section slopes?
-- Weighted by coverage?
-- Skip and use reach_slope_obs.py only?
+- **Decision**: Using reach-level slopes only (reach_slope_obs.py), section-level slopes not needed
 
 ---
 
@@ -230,8 +225,6 @@ These reaches are tributaries but have mainstem-level facc (D8 routes Amazon/Par
 
 ## Meeting Discussion Points
 
-1. **facc ML priority**: Start now (regression baseline) or defer to v18?
-2. **Lake routing**: How many cases like 62270000143? Systematic approach?
-3. **SWOT slopes**: Section→reach mapping decision
-4. **PostgreSQL**: Ready for undergrad QGIS editing? Timeline?
-5. **April deadline**: What's must-have vs nice-to-have?
+1. **Lake routing**: How many cases like 62270000143? Systematic approach?
+2. **PostgreSQL timeline**: When to deploy for undergrad QGIS editing?
+3. **April deadline**: What's must-have vs nice-to-have?
