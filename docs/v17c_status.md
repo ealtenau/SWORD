@@ -22,16 +22,17 @@
 - **C004 lakeflag/type**: 240 questionable cases (semi-independent fields)
 - **Island detection**: Architecture exists (type=3), no dedicated lint check
 
-### Critical Issue: Type Column Missing
+### Type Column Status ✅ RESOLVED
 
-| Database | type column | Source |
+| Database | type column | Status |
 |----------|-------------|--------|
-| v17b GPKG | ✅ Present | Original UNC release |
-| v17c DuckDB | ❌ Missing | Never copied |
+| v17b DuckDB | ✅ Present | 248,673 reaches (copied from GPKGs 2026-02-03) |
+| v17c DuckDB | ✅ Present | 248,674 reaches |
+| PostgreSQL v17c | ✅ Present | 248,674 reaches (synced 2026-02-03) |
 
-**Action Required**: Copy `type` from v17b GPKG → v17c DuckDB
+**Distribution:** type=1 (river): 65.8%, type=3 (lake): 10.3%, type=4 (canal): 8.6%, type=5 (tidal): 6.0%, type=6 (reservoir): 9.3%
 
-This blocks the lake sandwich GUI from fixing type/lakeflag mismatches.
+**TODO (later):** Add type to validation pipeline lint checks.
 
 ### Routing Issue Example
 

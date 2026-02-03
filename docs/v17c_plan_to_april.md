@@ -18,10 +18,10 @@
 
 ## P0: Blockers (Week 1)
 
-### Copy type column from v17b GPKG → v17c DuckDB
-- **Why**: Lake sandwich GUI cannot fix type/lakeflag mismatches without it
-- **Effort**: Low (SQL copy)
-- **Blocks**: All lake classification fixes
+### ~~Copy type column from v17b GPKG → v17c DuckDB~~ ✅ DONE (2026-02-03)
+- Copied to v17b DuckDB, v17c DuckDB, PostgreSQL v17c
+- All 248,674 reaches have type populated
+- **TODO later**: Add type to validation pipeline
 
 ### Error-level lint fixes (#101, #87)
 - **T008**: dist_out negative values

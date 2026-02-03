@@ -20,6 +20,42 @@ SWORDWorkflow (ALWAYS use this - main entry point)
     └── ImageryPipeline (satellite water mask integration)
 ```
 
+## PostgreSQL Backend
+
+**Prerequisites:** PostgreSQL 12+, PostGIS extension
+
+**Connection String Format:**
+```
+postgresql://user:password@host:port/database
+```
+
+**Environment Variables (set in `.env`, never commit):**
+| Variable | Description |
+|----------|-------------|
+| `SWORD_PRIMARY_BACKEND` | `duckdb` or `postgres` |
+| `SWORD_POSTGRES_URL` | Full connection string |
+| `SWORD_DUCKDB_PATH` | Path to DuckDB file (when using duckdb) |
+
+**Quick Start - Load DuckDB to PostgreSQL:**
+```bash
+# Copy .env.example to .env and set SWORD_POSTGRES_URL
+cp .env.example .env
+
+# Load all regions from DuckDB to PostgreSQL
+python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --all
+
+# Load single region
+python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --region NA
+
+# Verify load
+python load_from_duckdb.py --verify
+```
+
+**Notes:**
+- PostgreSQL enables multi-user access, web APIs, and spatial indexing via PostGIS
+- DuckDB remains the primary development backend (faster local queries)
+- Keep connection strings in `.env` - never commit credentials
+
 ## ⚠️ CRITICAL: Database Handling Rules
 
 | Database | Purpose | Editable? |
@@ -89,26 +125,79 @@ workflow.close()
 - **reaches** - PK: reach_id - river segments between junctions
 
 **Topology:**
-- **reach_topology** - upstream/downstream neighbors (direction: 'up'/'down', neighbor_rank: 0-3)
+- **reach_topology** - upstream/downstream neighbors, normalized from NetCDF [4,N] arrays
+  - `direction`: 'up' or 'down'
+  - `neighbor_rank`: 0-3 (up to 4 neighbors per direction)
+  - `neighbor_reach_id`: the neighboring reach
+  - `topology_suspect`, `topology_approved`: manual review workflow flags
 - **reach_swot_orbits** - SWOT satellite coverage
 - **reach_ice_flags** - daily ice presence (366 days)
+
+**Note:** In NetCDF, `rch_id_up`/`rch_id_dn` are [4, num_reaches] arrays. In DuckDB, these are normalized into the `reach_topology` table. The `rch_id_up_1-4` columns seen in some contexts are reconstructed on-demand, not stored.
 
 **Provenance:**
 - **sword_operations** - audit trail
 - **sword_value_snapshots** - old/new values for rollback
 
+## Version History
+
+### v17 (October 2024) - UNC Official Release
+**New topology variables added:**
+- `path_freq`, `path_order`, `path_segs` - traversal-based path analysis
+- `main_side` - 0=main, 1=side channel, 2=secondary outlet
+- `stream_order` - log scale of path_freq
+- `end_reach` - 0=middle, 1=headwater, 2=outlet, 3=junction
+- `network` - connected component ID
+- `rch_id_up`, `rch_id_dn` - [4,N] arrays in NetCDF → normalized to `reach_topology` table
+
+### v17b (March 2025) - Bug Fixes
+- Type changes for 1662 reaches
+- Node length corrections (<2% globally)
+
+### v17c (Our Additions) - Computed by Us
+**New variables we compute via `v17c_pipeline.py`:**
+- `hydro_dist_out`, `hydro_dist_hw` - Dijkstra-based distances
+- `best_headwater`, `best_outlet` - width-prioritized endpoints
+- `pathlen_hw`, `pathlen_out` - cumulative path lengths
+- `is_mainstem_edge`, `main_path_id` - mainstem identification
+- `dist_out_short` - shortest-path distance to any outlet
+- `rch_id_up_main`, `rch_id_dn_main` - main neighbor selection
+- `subnetwork_id` - connected component (matches `network`)
+- `*_obs_mean/median/std/range`, `n_obs` - SWOT observation aggregations
+
+**New tables:**
+- `v17c_sections` - junction-to-junction segments
+- `v17c_section_slope_validation` - slope direction validation
+
 ## Key Attributes
+
+### v17b Attributes (from UNC)
 
 | Attribute | Description |
 |-----------|-------------|
 | dist_out | Distance to outlet (m) - decreases downstream |
-| facc | Flow accumulation (km²) |
-| stream_order | Log scale of path_freq |
+| facc | Flow accumulation (km²) from MERIT Hydro |
+| stream_order | Log scale of path_freq: `round(log(path_freq)) + 1` |
 | path_freq | Traversal count - increases toward outlets |
 | path_segs | Unique ID for (path_order, path_freq) combo |
 | lakeflag | 0=river, 1=lake, 2=canal, 3=tidal |
-| trib_flag | 0=no tributary, 1=has tributary |
+| trib_flag | 0=no tributary, 1=MHV tributary enters (spatial proximity) |
 | n_rch_up/down | Count of upstream/downstream neighbors |
+| main_side | 0=main (95%), 1=side (3%), 2=secondary outlet (2%) |
+| end_reach | 0=middle, 1=headwater, 2=outlet, 3=junction |
+| network | Connected component ID |
+
+### v17c Attributes (computed by us)
+
+| Attribute | Description |
+|-----------|-------------|
+| hydro_dist_out | Dijkstra distance to nearest outlet (m) |
+| hydro_dist_hw | Max distance from any headwater (m) |
+| best_headwater | Width-prioritized upstream headwater reach_id |
+| best_outlet | Width-prioritized downstream outlet reach_id |
+| is_mainstem_edge | TRUE if on mainstem path |
+| rch_id_up_main | Main upstream neighbor (mainstem-preferred) |
+| rch_id_dn_main | Main downstream neighbor (mainstem-preferred) |
 
 ## ⚠️ CRITICAL: Reconstruction Rules
 
@@ -134,7 +223,38 @@ workflow.close()
 
 5. **When in doubt, make it a STUB** - preserve existing values rather than corrupt data
 
-**Validation specs exist for:** dist_out, facc, path_freq, wse, width, slope, stream_order, path_segs, end_reach, trib_flag, lakeflag, type, main_side, network, n_rch_up/down, reach_length, obstructions, channel counts, flags, SWOT observations
+**Validation specs (28 total in `docs/validation_specs/`):**
+
+| Spec | Variables Covered |
+|------|-------------------|
+| dist_out | dist_out algorithm, failure modes |
+| facc | facc, MERIT Hydro source, D8 limitations |
+| wse | wse, wse_var, elevation data |
+| width_slope | width, width_var, slope, max_width |
+| path_freq | path_freq, path_order algorithm |
+| stream_order_path_segs | stream_order, path_segs derivation |
+| end_reach_trib_flag | end_reach, trib_flag (MHV-based) |
+| main_side_network | main_side, network |
+| lakeflag_type | lakeflag, type classification |
+| reach_length_neighbor_count | reach_length, n_rch_up, n_rch_down |
+| obstruction | obstr_type, grod_id, hfalls_id |
+| flags | iceflag, low_slope_flag, add_flag, edit_flag |
+| channel_count | n_chan_max, n_chan_mod |
+| swot_observations | swot_obs, *_obs_mean/median/std/range, n_obs |
+| grades_discharge | h_variance, w_variance |
+| v17c_mainstem | hydro_dist_out/hw, best_headwater/outlet, pathlen_*, is_mainstem_edge |
+| v17c_path_topology | main_path_id, dist_out_short, rch_id_up/dn_main |
+| v17c_sections | v17c_sections table, section_slope_validation |
+| reach_neighbor_ids | rch_id_up_1-4, rch_id_dn_1-4 (reconstructed from topology) |
+| topology_review_flags | topology_suspect, topology_approved |
+| facc_quality | facc_quality flag |
+| geometry_metadata | x, y, x_min/max, y_min/max, cl_id_min/max |
+| n_nodes | n_nodes (node count per reach) |
+| river_name | river_name (GRWL source) |
+| subnetwork_id | subnetwork_id (connected components) |
+| identifier_metadata | reach_id, region, version |
+| geom | geom (LINESTRING geometry) |
+| swot_slope | (REMOVED - documented for history) |
 
 ## v17c Pipeline
 
@@ -142,14 +262,20 @@ workflow.close()
 
 **Steps:**
 1. Load v17b topology from DuckDB
-2. Build reach-level directed graph
-3. Compute v17c attributes (hydro_dist_out, best_headwater, is_mainstem)
-4. Save sections + validation to DuckDB
-5. (Optional) Apply SWOT-derived slopes
+2. Build reach-level directed graph (NetworkX DiGraph)
+3. Compute v17c attributes (hydro_dist_out, best_headwater, is_mainstem_edge, etc.)
+4. Create junction-to-junction sections
+5. Save to DuckDB
 
-**New columns:** hydro_dist_out, hydro_dist_hw, best_headwater, best_outlet, pathlen_hw, pathlen_out, is_mainstem_edge, swot_slope, swot_slope_se, swot_slope_confidence
+**New columns added to reaches:**
+- `hydro_dist_out`, `hydro_dist_hw` - Dijkstra distances
+- `best_headwater`, `best_outlet` - endpoint selection
+- `pathlen_hw`, `pathlen_out` - cumulative path lengths
+- `is_mainstem_edge`, `main_path_id` - mainstem identification
+- `dist_out_short` - shortest-path distance
+- `rch_id_up_main`, `rch_id_dn_main` - main neighbor IDs
 
-**New tables:** v17c_sections, v17c_section_slope_validation
+**New tables:** `v17c_sections`, `v17c_section_slope_validation`
 
 **Input:** sword_v17c.duckdb (reads topology, writes attributes)
 
@@ -270,12 +396,13 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | V007 | best_headwater_validity | WARNING | best_headwater is actual headwater |
 | V008 | best_outlet_validity | WARNING | best_outlet is actual outlet |
 
-**Validation Specs:** Deep documentation for key variables in `docs/validation_specs/`:
-- `dist_out` - algorithm, failure modes, proposed checks
-- `facc` - MERIT Hydro source, D8 routing limitations
-- `path_freq` - traversal algorithm, edge cases
-- `wse` - elevation data, slope derivation
-- `v17c mainstem` - hydro_dist_out, is_mainstem_edge, best_headwater/outlet
+**Validation Specs:** 23 deep-dive documents in `docs/validation_specs/` covering every variable. Each spec includes:
+- Official definition (from PDD)
+- Algorithm/code path
+- Valid ranges and distributions
+- Failure modes
+- Proposed lint checks
+- Reconstruction rules
 
 ## Testing
 
