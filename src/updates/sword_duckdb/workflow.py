@@ -1736,28 +1736,44 @@ class SWORDWorkflow:
 
         logger.info(f"Aggregating node observations from: {glob_pattern}")
 
-        # Aggregate all observations per node
-        # Use CASE WHEN for STDDEV to handle single-observation cases (stddev undefined)
-        # Filter to valid ranges to avoid overflow in STDDEV calculation
+        # Quality filters matching SWOT_slopes.py / reach_slope_obs.py:
+        # - WSE sentinel removal
+        # - WSE quality <= 1 (good/suspect)
+        # - Dark water fraction <= 0.5
+        # - Cross-track distance 10-60km
+        # - Crossover calibration quality <= 1
+        # - Ice climatology = 0 (not ice covered)
+        # - Valid time_str
+        # Uses union_by_name for schema compatibility and COALESCE for old/new column names
+        SENTINEL = -999_999_999_999.0
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE node_obs_agg AS
             SELECT
                 CAST(node_id AS BIGINT) as node_id,
-                AVG(wse) as wse_obs_mean,
-                MEDIAN(wse) as wse_obs_median,
-                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(wse) ELSE NULL END as wse_obs_std,
-                MAX(wse) - MIN(wse) as wse_obs_range,
+                AVG(COALESCE(wse, wse_sm)) as wse_obs_mean,
+                MEDIAN(COALESCE(wse, wse_sm)) as wse_obs_median,
+                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(COALESCE(wse, wse_sm)) ELSE NULL END as wse_obs_std,
+                MAX(COALESCE(wse, wse_sm)) - MIN(COALESCE(wse, wse_sm)) as wse_obs_range,
                 AVG(width) as width_obs_mean,
                 MEDIAN(width) as width_obs_median,
                 CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
                 MAX(width) - MIN(width) as width_obs_range,
                 COUNT(*) as n_obs
-            FROM read_parquet('{glob_pattern}')
-            WHERE wse IS NOT NULL
-              AND wse > -1000 AND wse < 10000
+            FROM read_parquet('{glob_pattern}', union_by_name=true)
+            WHERE COALESCE(wse, wse_sm) IS NOT NULL
+              AND NULLIF(COALESCE(wse, wse_sm), {SENTINEL}) IS NOT NULL
+              AND COALESCE(wse, wse_sm) > -1000 AND COALESCE(wse, wse_sm) < 10000
               AND width IS NOT NULL
+              AND NULLIF(width, {SENTINEL}) IS NOT NULL
               AND width > 0 AND width < 100000
-              AND isfinite(wse) AND isfinite(width)
+              AND isfinite(COALESCE(wse, wse_sm)) AND isfinite(width)
+              -- Quality filters
+              AND COALESCE(wse_q, wse_sm_q, 3) <= 1
+              AND (COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))
+              AND (ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN 10000 AND 60000 OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))
+              AND (xovr_cal_q <= 1 OR xovr_cal_q IS NULL)
+              AND (ice_clim_f = 0 OR ice_clim_f IS NULL)
+              AND (time_str IS NOT NULL AND time_str != '')
             GROUP BY node_id
         """
 
@@ -1801,7 +1817,12 @@ class SWORDWorkflow:
     def _aggregate_reach_observations(
         self, conn, reaches_path: Path, region_filter: Optional[str] = None
     ) -> Dict[str, int]:
-        """Aggregate reach-level SWOT observations.
+        """Aggregate reach-level SWOT observations using weighted mean.
+
+        Uses n_good_nod (number of good nodes) as weight for slope aggregation,
+        similar to section-level slope calculation. Also computes slopeF
+        (weighted fraction of observations with same sign as mean) for
+        consistency assessment.
 
         Parameters
         ----------
@@ -1813,33 +1834,88 @@ class SWORDWorkflow:
 
         logger.info(f"Aggregating reach observations from: {glob_pattern}")
 
-        # Aggregate all observations per reach
-        # Use CASE WHEN for STDDEV to handle single-observation cases (stddev undefined)
-        # Filter to valid ranges to avoid overflow in STDDEV calculation
+        # Aggregate using weighted mean for slopes (weight by n_good_nod)
+        # Quality filters matching node-level where applicable:
+        # - reach_q <= 1 (reach quality flag)
+        # - dark_frac <= 0.5 (dark water fraction)
+        # - xovr_cal_q <= 1 (crossover calibration quality)
+        # - ice_clim_f = 0 (ice climatology)
+        # - Valid value ranges (sentinel removal)
+        # Uses union_by_name for schema compatibility
+        SENTINEL = -999_999_999_999.0
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE reach_obs_agg AS
+            WITH valid_obs AS (
+                SELECT
+                    CAST(reach_id AS BIGINT) as reach_id,
+                    wse, width, slope, slope_u,
+                    COALESCE(n_good_nod, 1) as weight
+                FROM read_parquet('{glob_pattern}', union_by_name=true)
+                WHERE wse IS NOT NULL
+                  AND NULLIF(wse, {SENTINEL}) IS NOT NULL
+                  AND wse > -1000 AND wse < 10000
+                  AND width IS NOT NULL
+                  AND NULLIF(width, {SENTINEL}) IS NOT NULL
+                  AND width > 0 AND width < 100000
+                  AND slope IS NOT NULL
+                  AND NULLIF(slope, {SENTINEL}) IS NOT NULL
+                  AND slope > -1e10 AND slope < 1e10
+                  AND isfinite(wse) AND isfinite(width) AND isfinite(slope)
+                  AND (reach_q IS NULL OR reach_q <= 1)
+                  AND (COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))
+                  AND (xovr_cal_q <= 1 OR xovr_cal_q IS NULL)
+                  AND (ice_clim_f = 0 OR ice_clim_f IS NULL)
+            ),
+            weighted_stats AS (
+                SELECT
+                    reach_id,
+                    -- WSE stats (unweighted)
+                    AVG(wse) as wse_obs_mean,
+                    MEDIAN(wse) as wse_obs_median,
+                    CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(wse) ELSE NULL END as wse_obs_std,
+                    MAX(wse) - MIN(wse) as wse_obs_range,
+                    -- Width stats (unweighted)
+                    AVG(width) as width_obs_mean,
+                    MEDIAN(width) as width_obs_median,
+                    CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
+                    MAX(width) - MIN(width) as width_obs_range,
+                    -- Slope stats (weighted by n_good_nod)
+                    SUM(weight) as sum_w,
+                    SUM(weight * slope) as sum_wx,
+                    SUM(weight * slope * slope) as sum_wx2,
+                    -- slopeF: weighted fraction of positive slopes
+                    SUM(weight * CASE WHEN slope > 0 THEN 1
+                                      WHEN slope < 0 THEN -1
+                                      ELSE 0 END) as signed_sum,
+                    MEDIAN(slope) as slope_obs_median,
+                    MAX(slope) - MIN(slope) as slope_obs_range,
+                    COUNT(*) as n_obs
+                FROM valid_obs
+                GROUP BY reach_id
+            )
             SELECT
-                CAST(reach_id AS BIGINT) as reach_id,
-                AVG(wse) as wse_obs_mean,
-                MEDIAN(wse) as wse_obs_median,
-                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(wse) ELSE NULL END as wse_obs_std,
-                MAX(wse) - MIN(wse) as wse_obs_range,
-                AVG(width) as width_obs_mean,
-                MEDIAN(width) as width_obs_median,
-                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
-                MAX(width) - MIN(width) as width_obs_range,
-                AVG(slope) as slope_obs_mean,
-                MEDIAN(slope) as slope_obs_median,
-                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(slope) ELSE NULL END as slope_obs_std,
-                MAX(slope) - MIN(slope) as slope_obs_range,
-                COUNT(*) as n_obs
-            FROM read_parquet('{glob_pattern}')
-            WHERE wse IS NOT NULL
-              AND wse > -1000 AND wse < 10000
-              AND width IS NOT NULL
-              AND width > 0 AND width < 100000
-              AND isfinite(wse) AND isfinite(width)
-            GROUP BY reach_id
+                reach_id,
+                wse_obs_mean, wse_obs_median, wse_obs_std, wse_obs_range,
+                width_obs_mean, width_obs_median, width_obs_std, width_obs_range,
+                -- Weighted mean slope
+                CASE WHEN sum_w > 0 THEN sum_wx / sum_w ELSE NULL END as slope_obs_mean,
+                slope_obs_median,
+                -- Weighted std: sqrt(E[X^2] - E[X]^2)
+                CASE WHEN sum_w > 0 AND n_obs > 1
+                     THEN SQRT(GREATEST(sum_wx2 / sum_w - POWER(sum_wx / sum_w, 2), 0))
+                     ELSE NULL END as slope_obs_std,
+                slope_obs_range,
+                -- Noise-adjusted slope: clip negatives to 0 (SWOT noise ~1.7 cm/km)
+                GREATEST(CASE WHEN sum_w > 0 THEN sum_wx / sum_w ELSE 0 END, 0.0) as slope_obs_adj,
+                -- slopeF: weighted sign fraction (-1 to +1), positive means consistent positive slopes
+                CASE WHEN sum_w > 0 THEN signed_sum / sum_w ELSE 0 END as slope_obs_slopeF,
+                -- Reliable if |slopeF| > 0.5 (majority agree on sign) AND mean > noise floor
+                CASE WHEN sum_w > 0
+                     AND ABS(signed_sum / sum_w) > 0.5
+                     AND ABS(sum_wx / sum_w) > 0.000017
+                     THEN TRUE ELSE FALSE END as slope_obs_reliable,
+                n_obs
+            FROM weighted_stats
         """
 
         conn.execute(agg_sql)
@@ -1864,6 +1940,9 @@ class SWORDWorkflow:
                 slope_obs_median = reach_obs_agg.slope_obs_median,
                 slope_obs_std = reach_obs_agg.slope_obs_std,
                 slope_obs_range = reach_obs_agg.slope_obs_range,
+                slope_obs_adj = reach_obs_agg.slope_obs_adj,
+                slope_obs_slopeF = reach_obs_agg.slope_obs_slopeF,
+                slope_obs_reliable = reach_obs_agg.slope_obs_reliable,
                 n_obs = reach_obs_agg.n_obs
             FROM reach_obs_agg
             WHERE reaches.reach_id = reach_obs_agg.reach_id

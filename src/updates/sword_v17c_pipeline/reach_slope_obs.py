@@ -145,10 +145,9 @@ def compute_reach_slope_obs(
     if "time_str" in colnames:
         conditions.append("time_str IS NOT NULL AND time_str != ''")
 
-    # Region filter
-    conditions.append(f"continent = '{region}'")
-
-    # Reach filter
+    # Reach filter (no continent filter - rely on reach_id matching to SWORD region)
+    # This handles SWOT continent codes (NA, SA, EU, AF, AS, AU, SI, AR, GR) mapping
+    # to SWORD regions (NA, SA, EU, AF, AS, OC) via reach_id
     conditions.append("CAST(reach_id AS BIGINT) IN (SELECT reach_id FROM sword_reaches)")
 
     where_clause = " AND ".join(conditions)
