@@ -1736,44 +1736,81 @@ class SWORDWorkflow:
 
         logger.info(f"Aggregating node observations from: {glob_pattern}")
 
-        # Quality filters matching SWOT_slopes.py / reach_slope_obs.py:
-        # - WSE sentinel removal
-        # - WSE quality <= 1 (good/suspect)
-        # - Dark water fraction <= 0.5
-        # - Cross-track distance 10-60km
-        # - Crossover calibration quality <= 1
-        # - Ice climatology = 0 (not ice covered)
-        # - Valid time_str
-        # Uses union_by_name for schema compatibility and COALESCE for old/new column names
+        # Detect available columns for dynamic filtering (matching reach_slope_obs.py)
+        try:
+            sample_df = conn.execute(f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1").df()
+            colnames = set(c.lower() for c in sample_df.columns.tolist())
+        except Exception:
+            colnames = set()
+
+        # Build dynamic quality filter conditions
         SENTINEL = -999_999_999_999.0
+        conditions = []
+
+        # WSE column (prefer new name, fallback to old)
+        wse_col = "wse" if "wse" in colnames else "wse_sm"
+        conditions.append(f"{wse_col} IS NOT NULL")
+        conditions.append(f"NULLIF({wse_col}, {SENTINEL}) IS NOT NULL")
+        conditions.append(f"{wse_col} > -1000 AND {wse_col} < 10000")
+        conditions.append(f"isfinite({wse_col})")
+
+        # Width filters
+        conditions.append("width IS NOT NULL")
+        conditions.append(f"NULLIF(width, {SENTINEL}) IS NOT NULL")
+        conditions.append("width > 0 AND width < 100000")
+        conditions.append("isfinite(width)")
+
+        # WSE quality filter
+        if "wse_q" in colnames:
+            conditions.append("COALESCE(wse_q, 3) <= 1")
+        elif "wse_sm_q" in colnames:
+            conditions.append("COALESCE(wse_sm_q, 3) <= 1")
+
+        # Dark water fraction filter
+        if "dark_frac" in colnames and "dark_water_frac" in colnames:
+            conditions.append("(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))")
+        elif "dark_frac" in colnames:
+            conditions.append("(dark_frac <= 0.5 OR dark_frac IS NULL)")
+        elif "dark_water_frac" in colnames:
+            conditions.append("(dark_water_frac <= 0.5 OR dark_water_frac IS NULL)")
+
+        # Cross-track distance filter
+        if "xtrk_dist" in colnames and "cross_track_dist" in colnames:
+            conditions.append("(ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN 10000 AND 60000 OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))")
+        elif "xtrk_dist" in colnames:
+            conditions.append("(ABS(xtrk_dist) BETWEEN 10000 AND 60000 OR xtrk_dist IS NULL)")
+        elif "cross_track_dist" in colnames:
+            conditions.append("(ABS(cross_track_dist) BETWEEN 10000 AND 60000 OR cross_track_dist IS NULL)")
+
+        # Crossover calibration quality filter
+        if "xovr_cal_q" in colnames:
+            conditions.append("(xovr_cal_q <= 1 OR xovr_cal_q IS NULL)")
+
+        # Ice climatology filter
+        if "ice_clim_f" in colnames:
+            conditions.append("ice_clim_f = 0")
+
+        # Valid time filter
+        if "time_str" in colnames:
+            conditions.append("time_str IS NOT NULL AND time_str != ''")
+
+        where_clause = " AND ".join(conditions)
+
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE node_obs_agg AS
             SELECT
                 CAST(node_id AS BIGINT) as node_id,
-                AVG(COALESCE(wse, wse_sm)) as wse_obs_mean,
-                MEDIAN(COALESCE(wse, wse_sm)) as wse_obs_median,
-                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(COALESCE(wse, wse_sm)) ELSE NULL END as wse_obs_std,
-                MAX(COALESCE(wse, wse_sm)) - MIN(COALESCE(wse, wse_sm)) as wse_obs_range,
+                AVG({wse_col}) as wse_obs_mean,
+                MEDIAN({wse_col}) as wse_obs_median,
+                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP({wse_col}) ELSE NULL END as wse_obs_std,
+                MAX({wse_col}) - MIN({wse_col}) as wse_obs_range,
                 AVG(width) as width_obs_mean,
                 MEDIAN(width) as width_obs_median,
                 CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
                 MAX(width) - MIN(width) as width_obs_range,
                 COUNT(*) as n_obs
             FROM read_parquet('{glob_pattern}', union_by_name=true)
-            WHERE COALESCE(wse, wse_sm) IS NOT NULL
-              AND NULLIF(COALESCE(wse, wse_sm), {SENTINEL}) IS NOT NULL
-              AND COALESCE(wse, wse_sm) > -1000 AND COALESCE(wse, wse_sm) < 10000
-              AND width IS NOT NULL
-              AND NULLIF(width, {SENTINEL}) IS NOT NULL
-              AND width > 0 AND width < 100000
-              AND isfinite(COALESCE(wse, wse_sm)) AND isfinite(width)
-              -- Quality filters
-              AND COALESCE(wse_q, wse_sm_q, 3) <= 1
-              AND (COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))
-              AND (ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN 10000 AND 60000 OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))
-              AND (xovr_cal_q <= 1 OR xovr_cal_q IS NULL)
-              AND (ice_clim_f = 0 OR ice_clim_f IS NULL)
-              AND (time_str IS NOT NULL AND time_str != '')
+            WHERE {where_clause}
             GROUP BY node_id
         """
 
@@ -1834,15 +1871,51 @@ class SWORDWorkflow:
 
         logger.info(f"Aggregating reach observations from: {glob_pattern}")
 
-        # Aggregate using weighted mean for slopes (weight by n_good_nod)
-        # Quality filters matching node-level where applicable:
-        # - reach_q <= 1 (reach quality flag)
-        # - dark_frac <= 0.5 (dark water fraction)
-        # - xovr_cal_q <= 1 (crossover calibration quality)
-        # - ice_clim_f = 0 (ice climatology)
-        # - Valid value ranges (sentinel removal)
-        # Uses union_by_name for schema compatibility
+        # Detect available columns for dynamic filtering
+        try:
+            sample_df = conn.execute(f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1").df()
+            colnames = set(c.lower() for c in sample_df.columns.tolist())
+        except Exception:
+            colnames = set()
+
+        # Build dynamic quality filter conditions
         SENTINEL = -999_999_999_999.0
+        conditions = []
+
+        # Basic value filters
+        conditions.append("wse IS NOT NULL")
+        conditions.append(f"NULLIF(wse, {SENTINEL}) IS NOT NULL")
+        conditions.append("wse > -1000 AND wse < 10000")
+        conditions.append("width IS NOT NULL")
+        conditions.append(f"NULLIF(width, {SENTINEL}) IS NOT NULL")
+        conditions.append("width > 0 AND width < 100000")
+        conditions.append("slope IS NOT NULL")
+        conditions.append(f"NULLIF(slope, {SENTINEL}) IS NOT NULL")
+        conditions.append("slope > -1e10 AND slope < 1e10")
+        conditions.append("isfinite(wse) AND isfinite(width) AND isfinite(slope)")
+
+        # Reach quality filter
+        if "reach_q" in colnames:
+            conditions.append("(reach_q IS NULL OR reach_q <= 1)")
+
+        # Dark water fraction filter
+        if "dark_frac" in colnames and "dark_water_frac" in colnames:
+            conditions.append("(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))")
+        elif "dark_frac" in colnames:
+            conditions.append("(dark_frac <= 0.5 OR dark_frac IS NULL)")
+        elif "dark_water_frac" in colnames:
+            conditions.append("(dark_water_frac <= 0.5 OR dark_water_frac IS NULL)")
+
+        # Crossover calibration quality filter
+        if "xovr_cal_q" in colnames:
+            conditions.append("(xovr_cal_q <= 1 OR xovr_cal_q IS NULL)")
+
+        # Ice climatology filter
+        if "ice_clim_f" in colnames:
+            conditions.append("ice_clim_f = 0")
+
+        where_clause = " AND ".join(conditions)
+
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE reach_obs_agg AS
             WITH valid_obs AS (
@@ -1851,20 +1924,7 @@ class SWORDWorkflow:
                     wse, width, slope, slope_u,
                     COALESCE(n_good_nod, 1) as weight
                 FROM read_parquet('{glob_pattern}', union_by_name=true)
-                WHERE wse IS NOT NULL
-                  AND NULLIF(wse, {SENTINEL}) IS NOT NULL
-                  AND wse > -1000 AND wse < 10000
-                  AND width IS NOT NULL
-                  AND NULLIF(width, {SENTINEL}) IS NOT NULL
-                  AND width > 0 AND width < 100000
-                  AND slope IS NOT NULL
-                  AND NULLIF(slope, {SENTINEL}) IS NOT NULL
-                  AND slope > -1e10 AND slope < 1e10
-                  AND isfinite(wse) AND isfinite(width) AND isfinite(slope)
-                  AND (reach_q IS NULL OR reach_q <= 1)
-                  AND (COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))
-                  AND (xovr_cal_q <= 1 OR xovr_cal_q IS NULL)
-                  AND (ice_clim_f = 0 OR ice_clim_f IS NULL)
+                WHERE {where_clause}
             ),
             weighted_stats AS (
                 SELECT
