@@ -83,6 +83,33 @@ flag if score > 2.0 (100% deviation)
 
 **Current code**: None. fix_facc_violations() uses single threshold (facc/width > 5000).
 
+### Concrete Examples: Tributary Misrouting
+
+These reaches are tributaries but have mainstem-level facc (D8 routes Amazon/Parana flow through them):
+
+| reach_id | facc (km²) | width (m) | facc/width | stream_order |
+|----------|------------|-----------|------------|--------------|
+| 64231000301 | 2.2M | 63 | **35,239** | 2 |
+| 62236100011 | 5.2M | 228 | **22,811** | 2 |
+| 62238000021 | 5.2M | 3,336 | 1,559 | 2 |
+| 64231000291 | 2.2M | 2,261 | 982 | 2 |
+| 62255000451 | 4.5M | 8,427 | 528 | 1 |
+
+**Two failure modes identified:**
+
+**1. Entry points** (where bad facc enters tributary):
+| reach_id | upstream_facc | actual_facc | facc_ratio |
+|----------|---------------|-------------|------------|
+| 62238000021 | 1,628 | 5,199,400 | **3194x** |
+| 62236100011 | 25,730 | 5,200,884 | **202x** |
+
+**2. Propagation** (inherited bad facc, ratio ≈ 1.0):
+- 64231000301, 62255000451, 64231000291
+
+**Detection strategy:**
+- Entry: `facc_jump / expected_local_contrib >> threshold`
+- Propagation: `facc/width >> regional_norm_for_stream_order`
+
 **Question for meeting**: Start ML now (regression baseline) or defer to v18?
 
 ---
