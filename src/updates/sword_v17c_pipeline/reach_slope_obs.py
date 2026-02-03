@@ -90,7 +90,8 @@ def compute_reach_slope_obs(
     SENTINEL = -999999999999.0
 
     # Detect available columns for dynamic filtering (matching SWOT_slopes.py)
-    sample_query = f"SELECT * FROM read_parquet({files_sql}) LIMIT 1"
+    # Use union_by_name to handle schema differences between old/new parquet files
+    sample_query = f"SELECT * FROM read_parquet({files_sql}, union_by_name=true) LIMIT 1"
     try:
         sample_df = con.execute(sample_query).df()
         colnames = set(c.lower() for c in sample_df.columns.tolist())
@@ -162,7 +163,7 @@ def compute_reach_slope_obs(
             p_dist_out,
             cycle,
             pass
-        FROM read_parquet({files_sql})
+        FROM read_parquet({files_sql}, union_by_name=true)
         WHERE {where_clause}
     ),
 
@@ -290,6 +291,9 @@ def update_sword_db(sword_db_path: str, stats_df, region: str):
     """
 
     con = duckdb.connect(sword_db_path)
+
+    # Load spatial extension for RTREE index support
+    con.execute("INSTALL spatial; LOAD spatial;")
 
     # Check if columns exist, add if not
     existing_cols = con.execute("SELECT * FROM reaches LIMIT 0").df().columns.tolist()
