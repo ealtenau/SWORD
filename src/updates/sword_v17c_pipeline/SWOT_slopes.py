@@ -147,11 +147,11 @@ def open_SWOT_files(node_ids, directory, continent, uncertainty_threshold = None
     # Crossover calibration quality (optional; nulls pass)
     if "xovr_cal_q" in colnames:
         conditions.append("(xovr_cal_q <= 1 OR xovr_cal_q IS NULL)")
-    
-    # WSE prior difference (optional; requires threshold and non-null p_wse)
-    if "p_wse" in colnames:
-        conditions.append(f"(p_wse IS NOT NULL AND ABS({wse_col} - p_wse) < 10)")
-    
+
+    # Ice climatology filter (= 0: likely not ice covered)
+    if "ice_clim_f" in colnames:
+        conditions.append("ice_clim_f = 0")
+
     # Node ID filter
     conditions.append("node_id IN (SELECT node_id FROM node_ids)")
     
@@ -1048,8 +1048,9 @@ def compute_clean_slopes(df):
                 -- use TRUE max distance before filtering
                 tmd.true_max_distance AS distance,
 
+                -- NEGATE slope: SWOT convention is negative=downhill, we want positive=downhill
                 CASE WHEN sum_w IS NULL OR sum_w = 0 THEN NULL
-                    ELSE (sum_wx / sum_w)
+                    ELSE -(sum_wx / sum_w)
                 END AS slope,
 
                 CASE WHEN sum_w IS NULL OR sum_w = 0 THEN NULL
@@ -1060,8 +1061,9 @@ def compute_clean_slopes(df):
                     ELSE (sum_wb0 / sum_w)
                 END AS intercept,
 
+                -- NEGATE slopeF to match negated slope convention
                 CASE WHEN total_w IS NULL OR total_w = 0 THEN 0
-                    ELSE signed_sum / total_w
+                    ELSE -(signed_sum / total_w)
                 END AS slopeF,
 
                 CASE WHEN EXISTS (
@@ -1135,7 +1137,8 @@ def duckdb_ols_slope(df):
             SUM(n_obs * slope) AS sum_wx,
             SUM(n_obs * slope * slope) AS sum_wx2,
             SUM(n_obs * intercept) AS sum_wb0,
-            SUM(n_obs * CASE WHEN slope > 0 THEN 1
+            -- NEGATE to match negated slope convention
+            -SUM(n_obs * CASE WHEN slope > 0 THEN 1
                             WHEN slope < 0 THEN -1
                             ELSE 0 END) / SUM(n_obs) AS weighted_signed_fraction
         FROM group_stats
@@ -1145,7 +1148,8 @@ def duckdb_ols_slope(df):
         junction_id,
         section_id,
         max_distance AS distance,
-        (sum_wx / sum_w) AS slope,
+        -- NEGATE slope: SWOT convention is negative=downhill, we want positive=downhill
+        -(sum_wx / sum_w) AS slope,
         sqrt(GREATEST(sum_wx2 / sum_w - (sum_wx / sum_w) * (sum_wx / sum_w), 0)) AS SE,
         (sum_wb0 / sum_w) AS intercept,
         weighted_signed_fraction AS slopeF,
