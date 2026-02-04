@@ -124,8 +124,8 @@ All 5 seeds successfully corrected.
 | Metric | Value |
 |--------|-------|
 | Corrections logged | 2,087 |
-| Actually applied to DB | 1,006 |
-| Not applied (bug) | 122 |
+| Actually applied to DB | 1,127 |
+| Not applied (intentional) | 2 |
 | Reduction >100x | 604 (60%) |
 | Reduction 10-100x | 361 (36%) |
 | Reduction <1.1x (minimal) | 134 (13%) |
@@ -203,14 +203,15 @@ python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --v
 | Metric | Before | After |
 |--------|--------|-------|
 | Corrections logged | - | 2,087 |
-| Corrections applied | - | 1,006 |
+| Corrections applied | - | 1,127 |
 | Reaches with FWR > 5000 (rivers, width>30) | ~1,800 | 745 |
 | Seed reaches fixed | 0/5 | 5/5 |
 | Known false positives | 0 | 1 (rolled back) |
 
 ### Remaining Work
-- **122 corrections** logged but not applied (need to investigate)
+- ~~122 corrections logged but not applied~~ **FIXED**: 121 were NA region with `region='nan'` bug in log. Applied 2026-02-04.
 - **745 high-FWR reaches** reviewed and confirmed as false positives - no action needed
+- **2 intentional overrides**: 14210000525 (rolled back), 62293900353 (manual fix)
 
 ## References
 
