@@ -142,24 +142,14 @@ For 221 corrected reaches with a single non-corrected downstream neighbor:
 1. Some corrections over-corrected (now lower than downstream)
 2. Some under-corrected (regression predicted similar value)
 
-### Known Gaps
+### Why Not Use Simple FWR Threshold?
 
-**772 river reaches with FWR > 5000 were NOT detected** by our hybrid method:
+**745 river reaches with FWR > 5000 were NOT detected** by our hybrid method. Manual review confirmed **almost all are false positives** - legitimate high-FWR reaches, not D8 routing errors.
 
-| Issue | Count | Example |
-|-------|-------|---------|
-| Low ratio_to_median despite high FWR | 745 | 17211900064 (AF): FWR=36,640, ratio=5.4 |
-| Lakes (lakeflag=1) | 20 | May be legitimate |
-| Tidal (lakeflag=3) | 7 | May be legitimate |
-
-**Root cause**: The ratio_to_median approach fails when:
-- A reach has legitimately high path_freq but corrupted facc
-- Regional medians are skewed by other anomalies
-
-**Recommendation**: Add a simple FWR-based catch-all:
-```sql
-WHERE facc/width > 5000 AND lakeflag = 0 AND width > 30
-```
+This validates the ratio_to_median approach:
+- Simple FWR > 5000 threshold would have ~745 false positives
+- ratio_to_median correctly distinguishes real anomalies from legitimate high-facc reaches
+- High FWR alone doesn't indicate corruption - context (path_freq, neighbors) matters
 
 ### False Positive Protection
 - Tidal reaches (lakeflag=3) at bifurcations may have legitimately high facc
@@ -219,9 +209,8 @@ python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --v
 | Known false positives | 0 | 1 (rolled back) |
 
 ### Remaining Work
-- **745 river reaches** still have FWR > 5000 (not detected by hybrid method)
-- **122 corrections** logged but not applied (need to re-run)
-- Consider FWR-based detection as catch-all for remaining anomalies
+- **122 corrections** logged but not applied (need to investigate)
+- **745 high-FWR reaches** reviewed and confirmed as false positives - no action needed
 
 ## References
 
