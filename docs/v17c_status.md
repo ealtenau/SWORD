@@ -50,68 +50,69 @@
 ## facc Fixes
 
 ### Current State
-- **T003 lint violations**: 7,355 reaches (2.96%), mostly in deltas
-- **Root cause**: D8 flow direction mismatch with actual hydrology
-- **fix_facc_violations()**: Implemented, uses upstream tracing
-- **facc_quality flag**: Schema ready, workflow exists
-- **Issue #14**: MERIT Hydro re-sampling NOT implemented
+- **Detection pipeline**: `src/updates/sword_duckdb/facc_detection/` ✅ Complete
+- **GeoJSON exports**: `output/facc_detection/` for QGIS review
+- **554 anomalies detected** globally (run on v17b pristine reference)
+- **Correction pipeline**: Exists, awaiting visual validation before applying to v17c
 
-### ML/Statistical Model Sketch
+### Detection Pipeline (2026-02-04)
 
-**Goal**: Identify erroneous facc values for imputation
-
-| Approach | Effort | Interpretability | Expected Perf |
-|----------|--------|------------------|---------------|
-| Regression (expected from upstream) | Low | High | P:85% R:60% |
-| Ratio by stream_order | Low | High | P:80% R:50% |
-| Random Forest classifier | Medium | High (SHAP) | P:88% R:75% |
-| Isolation Forest (unsupervised) | Medium | Low | P:70% R:85% |
-
-**Recommended: Regression baseline → Random Forest**
-
-**Phase 1 - Regression:**
-```
-expected_facc = sum(upstream_facc) + local_contrib(width, slope, length)
-anomaly_score = |actual - expected| / expected
-flag if score > 2.0 (100% deviation)
+**Run command:**
+```bash
+python -m src.updates.sword_duckdb.facc_detection.cli \
+    --db data/duckdb/sword_v17b.duckdb \
+    --all \
+    --export-geojson \
+    --output-dir output/facc_detection/
 ```
 
-**Phase 2 - Random Forest:**
-- Features: facc, width, slope, reach_length, n_rch_up, stream_order, path_freq, dist_out, facc/width ratio, upstream_facc_median/std
-- Target: Binary (corrupted/not)
-- Training: T003 violations as weak negatives, consistent reaches as positives
-- Validation: Does model reduce T003 violations after fixing?
+**Detection rules in `detect_hybrid()`:**
 
-**Current code**: None. fix_facc_violations() uses single threshold (facc/width > 5000).
+| Rule | Criteria | Count | Description |
+|------|----------|-------|-------------|
+| entry_point | facc_jump > 10 AND ratio_to_median > 50 | 424 | Bad facc enters network |
+| jump_entry | path_freq invalid AND facc_jump > 20 AND FWR > 500 | 102 | D8 error with missing metadata |
+| junction_extreme | FWR > 15000 AND end_reach = 3 AND facc_jump > 10 | 15 | Extreme at junctions |
+| headwater_extreme | n_rch_up = 0 AND facc > 500K AND FWR > 5000 | 13 | Impossible headwater facc |
 
-### Concrete Examples: Tributary Misrouting
+**Output files:**
+- `entry_point.geojson` (424 reaches)
+- `jump_entry.geojson` (102 reaches)
+- `junction_extreme.geojson` (15 reaches)
+- `headwater_extreme.geojson` (13 reaches)
+- `all_anomalies.geojson` (554 total)
+- `detection_summary.json`
 
-These reaches are tributaries but have mainstem-level facc (D8 routes Amazon/Parana flow through them):
+### Seed Reaches (17 confirmed bad)
 
-| reach_id | facc (km²) | width (m) | facc/width | stream_order |
-|----------|------------|-----------|------------|--------------|
-| 64231000301 | 2.2M | 63 | **35,239** | 2 |
-| 62236100011 | 5.2M | 228 | **22,811** | 2 |
-| 62238000021 | 5.2M | 3,336 | 1,559 | 2 |
-| 64231000291 | 2.2M | 2,261 | 982 | 2 |
-| 62255000451 | 4.5M | 8,427 | 528 | 1 |
+| reach_id | Region | Mode | Notes |
+|----------|--------|------|-------|
+| 64231000301 | SA | propagation | FWR=35,239 |
+| 62236100011 | SA | entry | FWR=22,811 |
+| 62238000021 | SA | entry | |
+| 64231000291 | SA | propagation | |
+| 62255000451 | SA | propagation | Amazon side channel |
+| 17211100181 | SA | entry | |
+| 13261100101 | SA | entry | |
+| 13214000011 | SA | entry | |
+| 13212000011 | SA | entry | |
+| 62210000705 | SA | misrouted | facc should be on 62210000055/45/35 |
+| 62233000095 | SA | entry | |
+| 28315000523 | EU | propagation | |
+| 28315000751 | EU | propagation | inherited from nearby lake |
+| 28315000783 | EU | entry | |
+| 31251000111 | AF | entry | |
+| 31248100141 | AF | jump_entry | side channel inherited downstream facc |
+| 32257000231 | AF | entry | |
 
-**Two failure modes identified:**
+**Seed detection:** 11/17 detected directly, 6 are propagation cases (inherit bad facc from upstream)
 
-**1. Entry points** (where bad facc enters tributary):
-| reach_id | upstream_facc | actual_facc | facc_ratio |
-|----------|---------------|-------------|------------|
-| 62238000021 | 1,628 | 5,199,400 | **3194x** |
-| 62236100011 | 25,730 | 5,200,884 | **202x** |
+### Next Steps
 
-**2. Propagation** (inherited bad facc, ratio ≈ 1.0):
-- 64231000301, 62255000451, 64231000291
-
-**Detection strategy:**
-- Entry: `facc_jump / expected_local_contrib >> threshold`
-- Propagation: `facc/width >> regional_norm_for_stream_order`
-
-**Question for meeting**: Start ML now (regression baseline) or defer to v18?
+1. **Visual review** in QGIS using exported GeoJSONs
+2. **Identify false positives** from visual review
+3. **Apply corrections** to v17c using correction pipeline
+4. **Re-run T003 lint** to verify monotonicity restored
 
 ---
 
@@ -122,9 +123,19 @@ These reaches are tributaries but have mainstem-level facc (D8 routes Amazon/Par
 - **WSE/width obs**: Working, excellent agreement with v17b
 
 ### Slopes
-- **reach_slope_obs.py**: Provides reach-level slopes via OLS ✅
+- **reach_swot_obs.py**: Provides reach-level slope/wse/width via OLS ✅ (renamed from reach_slope_obs.py)
 - **Negative slopes**: 24,129 reaches (documented, physically plausible in some cases)
-- **Decision**: Using reach-level slopes only (reach_slope_obs.py), section-level slopes not needed
+- **Decision**: Using reach-level observations only (reach_swot_obs.py), section-level not needed
+
+### Updated Coverage (2026-02-03)
+| Region | Slope | WSE/Width |
+|--------|-------|-----------|
+| NA | 82.4% | 67.8% |
+| SA | 86.2% | 82.8% |
+| EU | 76.2% | 78.4% |
+| AF | 87.0% | 84.6% |
+| AS | 79.6% | 83.1% |
+| OC | 77.3% | 78.6% |
 
 ---
 

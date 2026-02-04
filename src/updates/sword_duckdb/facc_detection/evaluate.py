@@ -28,14 +28,30 @@ from .features import get_seed_reach_features
 
 
 # Known corrupted reaches from v17c_status.md
+# All seeds are BAD in v17b (have corrupted facc values)
 SEED_REACHES = {
-    # Entry points (bad facc enters the network)
-    64231000301: {'mode': 'entry', 'facc_width_ratio': 35239},
-    62236100011: {'mode': 'entry', 'facc_width_ratio': 22811},
-    62238000021: {'mode': 'entry', 'facc_width_ratio': 1559},
-    # Propagation (inherited bad facc)
-    64231000291: {'mode': 'propagation', 'facc_width_ratio': 982},
-    62255000451: {'mode': 'propagation', 'facc_width_ratio': 528},
+    # Original 5 (SA region - Amazon basin)
+    64231000301: {'mode': 'propagation', 'region': 'SA', 'facc_width_ratio': 35239},
+    62236100011: {'mode': 'entry', 'region': 'SA', 'facc_width_ratio': 22811},
+    62238000021: {'mode': 'entry', 'region': 'SA', 'facc_width_ratio': 1559},
+    64231000291: {'mode': 'propagation', 'region': 'SA', 'facc_width_ratio': 982},
+    62255000451: {'mode': 'propagation', 'region': 'SA', 'facc_width_ratio': 528},
+    # Additional SA seeds
+    17211100181: {'mode': 'entry', 'region': 'SA'},
+    13261100101: {'mode': 'entry', 'region': 'SA'},
+    13214000011: {'mode': 'entry', 'region': 'SA'},
+    13212000011: {'mode': 'entry', 'region': 'SA'},
+    # Critical: facc should be on parallel channel (62210000055, 62210000045, 62210000035)
+    62210000705: {'mode': 'misrouted', 'region': 'SA'},
+    62233000095: {'mode': 'entry', 'region': 'SA'},
+    # EU seeds
+    28315000523: {'mode': 'propagation', 'region': 'EU'},
+    28315000751: {'mode': 'propagation', 'region': 'EU', 'note': 'inherited from nearby lake'},
+    28315000783: {'mode': 'entry', 'region': 'EU'},
+    # AF seeds
+    31251000111: {'mode': 'entry', 'region': 'AF'},
+    31248100141: {'mode': 'jump_entry', 'region': 'AF', 'note': 'side channel inherited downstream facc'},
+    32257000231: {'mode': 'entry', 'region': 'AF'},
 }
 
 

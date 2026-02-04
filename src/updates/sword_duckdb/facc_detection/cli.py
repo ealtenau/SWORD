@@ -26,7 +26,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .detect import FaccDetector, DetectionConfig
+from .detect import FaccDetector, DetectionConfig, detect_hybrid, export_categorized_geojsons
 from .evaluate import FaccEvaluator, SEED_REACHES
 from .correct import FaccCorrector, correct_facc_anomalies
 
@@ -186,9 +186,25 @@ Examples:
         help="Include lakes in correction (normally skipped, but some have bad facc)",
     )
     parser.add_argument(
+        "--merit-path",
+        help="Path to MERIT Hydro base directory (enables guided MERIT search for corrections)",
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Verbose output",
+    )
+
+    # GeoJSON export arguments
+    parser.add_argument(
+        "--export-geojson",
+        action="store_true",
+        help="Export detection results as categorized GeoJSON files for QGIS review",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="output/facc_detection",
+        help="Output directory for GeoJSON files (default: output/facc_detection)",
     )
 
     args = parser.parse_args()
@@ -196,7 +212,7 @@ Examples:
     # Validate arguments
     needs_region = not (
         args.evaluate or args.profile_seeds or args.rollback or
-        args.show_batches or args.fix or args.verify_seeds
+        args.show_batches or args.fix or args.verify_seeds or args.export_geojson
     )
     if needs_region and not args.all and not args.region:
         print("Error: Must specify --region, --all, or a specific mode")
@@ -226,6 +242,8 @@ Examples:
         run_fix(str(db_path), args, config)
     elif args.verify_seeds:
         run_verify_seeds(str(db_path), args, config)
+    elif args.export_geojson:
+        run_export_geojson(str(db_path), args)
     elif args.profile_seeds:
         run_profile_seeds(str(db_path), args)
     elif args.evaluate:
@@ -278,6 +296,75 @@ def run_detect(db_path: str, args, config: DetectionConfig):
         elif args.verbose:
             print("\nTop 20 anomalies:")
             print(combined.head(20).to_string())
+
+
+def run_export_geojson(db_path: str, args):
+    """Export detection results as categorized GeoJSON files for QGIS review."""
+    regions = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'] if args.all else ([args.region] if args.region else ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'])
+    output_dir = Path(args.output_dir)
+
+    print(f"\nRunning facc detection with GeoJSON export...")
+    print(f"  Database: {db_path}")
+    print(f"  Regions: {regions}")
+    print(f"  Output directory: {output_dir}")
+    print()
+
+    # Collect all anomalies from all regions
+    all_anomalies = []
+
+    for region in regions:
+        print(f"Detecting anomalies in {region}...")
+        result = detect_hybrid(db_path, region=region)
+
+        print(f"  {region}: {len(result.anomalies)} anomalies detected")
+
+        if len(result.anomalies) > 0:
+            all_anomalies.append(result.anomalies)
+
+    if not all_anomalies:
+        print("\nNo anomalies detected in any region.")
+        return
+
+    combined = pd.concat(all_anomalies, ignore_index=True)
+    print(f"\nTotal anomalies: {len(combined)}")
+
+    # Get seed reach IDs for verification
+    seed_reach_ids = list(SEED_REACHES.keys())
+
+    # Export to GeoJSON
+    print(f"\nExporting categorized GeoJSON files to {output_dir}...")
+    summary = export_categorized_geojsons(
+        db_path,
+        combined,
+        output_dir,
+        seed_reach_ids=seed_reach_ids,
+    )
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("Export Summary")
+    print("=" * 60)
+    print(f"Total anomalies: {summary['total_anomalies']}")
+    print("\nBy detection rule:")
+    for rule, count in summary['by_rule'].items():
+        print(f"  {rule}: {count}")
+
+    print("\nFiles created:")
+    for name, filepath in summary['files'].items():
+        print(f"  {name}: {filepath}")
+
+    # Seed verification
+    if seed_reach_ids:
+        print(f"\nSeed verification ({len(seed_reach_ids)} seeds):")
+        print(f"  Detected: {len(summary['seeds_detected'])}/{len(seed_reach_ids)}")
+        if summary['seeds_missed']:
+            print(f"  MISSED: {summary['seeds_missed']}")
+        else:
+            print("  All seeds detected!")
+
+    print("\n" + "=" * 60)
+    print("Open the GeoJSON files in QGIS for visual review.")
+    print("=" * 60)
 
 
 def run_entry_points(db_path: str, args, config: DetectionConfig):
@@ -498,8 +585,15 @@ def run_fix(db_path: str, args, config: DetectionConfig):
             if 'fallback' in models:
                 print(f"  {region} fallback: R²={models['fallback'].r_squared:.3f}")
 
-        print("\nStep 5: Estimating corrections...")
-        corrections = corrector.estimate_corrections(classified)
+        # Get MERIT path
+        merit_path = getattr(args, 'merit_path', None)
+        if merit_path:
+            print(f"\nStep 5: Estimating corrections with MERIT guided search...")
+            print(f"  MERIT path: {merit_path}")
+        else:
+            print("\nStep 5: Estimating corrections (regression only)...")
+
+        corrections = corrector.estimate_corrections(classified, merit_path=merit_path)
 
         if len(corrections) == 0:
             print("No corrections generated")
@@ -569,8 +663,13 @@ def run_show_batches(db_path: str, args):
 def run_verify_seeds(db_path: str, args, config: DetectionConfig):
     """Verify that seed reaches would be fixed correctly."""
     use_hybrid = not getattr(args, 'use_basic_detector', False)
+    merit_path = getattr(args, 'merit_path', None)
     detection_method = "HYBRID" if use_hybrid else "BASIC"
-    print(f"\nVerifying seed reach corrections using {detection_method} detection (dry run)...\n")
+
+    print(f"\nVerifying seed reach corrections using {detection_method} detection (dry run)...")
+    if merit_path:
+        print(f"  MERIT guided search enabled: {merit_path}")
+    print()
 
     with FaccCorrector(db_path, read_only=True) as corrector:
         # Get seed reach IDs
@@ -608,23 +707,24 @@ def run_verify_seeds(db_path: str, args, config: DetectionConfig):
 
         classified = corrector.classify_anomalies(fixable)
 
-        # Estimate corrections
-        corrections = corrector.estimate_corrections(classified)
+        # Estimate corrections with optional MERIT search
+        corrections = corrector.estimate_corrections(classified, merit_path=merit_path)
 
         # Show results
         print("\nSeed Reach Corrections Preview:")
-        print("=" * 100)
-        print(f"{'reach_id':<15} {'mode':<12} {'old_facc':>15} {'new_facc':>15} {'reduction':>10} {'fix_type':<15}")
-        print("-" * 100)
+        print("=" * 110)
+        print(f"{'reach_id':<15} {'mode':<12} {'old_facc':>15} {'new_facc':>15} {'reduction':>10} {'fix_type':<15} {'source':<15}")
+        print("-" * 110)
 
         for _, row in corrections.iterrows():
             seed_info = SEED_REACHES.get(row['reach_id'], {})
             mode = seed_info.get('mode', 'unknown')
             reduction = row['old_facc'] / row['facc_corrected'] if row['facc_corrected'] > 0 else 0
+            source = row.get('model_used', 'unknown')
 
             print(
                 f"{row['reach_id']:<15} {mode:<12} {row['old_facc']:>15,.0f} "
-                f"{row['facc_corrected']:>15,.0f} {reduction:>10.1f}x {row['fix_type']:<15}"
+                f"{row['facc_corrected']:>15,.0f} {reduction:>10.1f}x {row['fix_type']:<15} {source:<15}"
             )
 
         # Validate

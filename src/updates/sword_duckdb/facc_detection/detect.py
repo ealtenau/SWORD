@@ -24,6 +24,8 @@ The detector returns reaches with anomaly scores that can be used to:
 
 from typing import Optional, List, Dict, Any, Union, Tuple
 from dataclasses import dataclass, field
+from pathlib import Path
+import json
 import duckdb
 import pandas as pd
 import numpy as np
@@ -451,15 +453,19 @@ class FaccDetector:
 def detect_hybrid(
     db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
     region: Optional[str] = None,
+    filter_false_positives: bool = True,
 ) -> DetectionResult:
     """
-    Hybrid detection using ratio_to_median - catches 5/5 seeds, 0/24 FPs.
+    Hybrid detection using ratio_to_median with FP filtering.
 
-    Detection rules:
+    Detection rules (all require facc_jump_from_up > 10 OR headwater):
     1. entry_point: facc_jump > 10 AND ratio_to_median > 50
-    2. propagation_high_ratio: ratio_to_median > 100 at junctions
-    3. junction_extreme: facc/width > 15000 AND end_reach = 3
-    4. headwater_extreme: n_rch_up = 0 AND facc > 500K AND facc/width > 5000
+    2. junction_extreme: facc/width > 15000 AND end_reach = 3 AND facc_jump > 10
+    3. headwater_extreme: n_rch_up = 0 AND facc > 500K AND facc/width > 5000
+
+    FP filtering (when filter_false_positives=True):
+    - Excludes reaches with facc_jump <= 2 AND width_ratio > 0.5
+    - These are consistent flow-through channels, not D8 entry points
 
     Parameters
     ----------
@@ -467,6 +473,8 @@ def detect_hybrid(
         Path to DuckDB database or existing connection.
     region : str, optional
         Region to check.
+    filter_false_positives : bool, default True
+        If True, filter out reaches with no facc_jump + wide (likely FPs).
 
     Returns
     -------
@@ -484,6 +492,22 @@ def detect_hybrid(
         where_region = f"AND r.region = '{region}'" if region else ""
         topo_region = f"AND rt.region = '{region}'" if region else ""
 
+        # Build FP filter clause
+        # FPs have: facc_jump <= 2 AND (width_ratio_to_dn > 0.5 OR long+wide)
+        # We EXCLUDE these from detection
+        fp_filter = ""
+        if filter_false_positives:
+            fp_filter = """
+                AND NOT (
+                    -- Exclude FPs: no facc_jump + wide relative to downstream
+                    (facc_jump_ratio IS NOT NULL AND facc_jump_ratio <= 2)
+                    AND (
+                        width_ratio_to_dn > 0.5
+                        OR (reach_length > 10000 AND width > 200)
+                    )
+                )
+            """
+
         # Compute ratio_to_median for all reaches
         query = f"""
         WITH regional_stats AS (
@@ -499,10 +523,11 @@ def detect_hybrid(
             GROUP BY region
         ),
         upstream_info AS (
-            -- Get upstream facc sum for jump detection
+            -- Get MAX upstream facc for jump detection (more accurate than sum)
             SELECT
                 rt.reach_id,
                 rt.region,
+                MAX(r_up.facc) as max_upstream_facc,
                 SUM(r_up.facc) as upstream_facc_sum,
                 COUNT(*) as n_upstream
             FROM reach_topology rt
@@ -512,12 +537,26 @@ def detect_hybrid(
                 {topo_region}
             GROUP BY rt.reach_id, rt.region
         ),
+        downstream_info AS (
+            -- Get max downstream width for width_ratio calculation
+            SELECT
+                rt.reach_id,
+                rt.region,
+                MAX(r_dn.width) as max_downstream_width
+            FROM reach_topology rt
+            JOIN reaches r_dn ON rt.neighbor_reach_id = r_dn.reach_id AND rt.region = r_dn.region
+            WHERE rt.direction = 'down'
+                AND r_dn.width > 0
+                {topo_region}
+            GROUP BY rt.reach_id, rt.region
+        ),
         reach_metrics AS (
             SELECT
                 r.reach_id,
                 r.region,
                 r.facc,
                 r.width,
+                r.reach_length,
                 r.path_freq,
                 r.stream_order,
                 r.n_rch_up,
@@ -529,16 +568,19 @@ def detect_hybrid(
                 r.facc / NULLIF(r.path_freq, 0) as facc_per_reach,
                 rs.median_fpr,
                 (r.facc / NULLIF(r.path_freq, 0)) / NULLIF(rs.median_fpr, 0) as ratio_to_median,
+                COALESCE(ui.max_upstream_facc, 0) as max_upstream_facc,
                 COALESCE(ui.upstream_facc_sum, 0) as upstream_facc_sum,
                 COALESCE(ui.n_upstream, 0) as n_upstream_actual,
                 CASE
-                    WHEN COALESCE(ui.upstream_facc_sum, 0) > 0
-                    THEN r.facc / ui.upstream_facc_sum
+                    WHEN COALESCE(ui.max_upstream_facc, 0) > 0
+                    THEN r.facc / ui.max_upstream_facc
                     ELSE NULL
-                END as facc_jump_ratio
+                END as facc_jump_ratio,
+                r.width / NULLIF(di.max_downstream_width, 0) as width_ratio_to_dn
             FROM reaches r
             JOIN regional_stats rs ON r.region = rs.region
             LEFT JOIN upstream_info ui ON r.reach_id = ui.reach_id AND r.region = ui.region
+            LEFT JOIN downstream_info di ON r.reach_id = di.reach_id AND r.region = di.region
             WHERE r.facc > 0 AND r.facc != -9999
                 AND r.width > 0
                 {where_region}
@@ -549,21 +591,25 @@ def detect_hybrid(
             CASE
                 -- Rule 1: Entry point (high jump + high ratio)
                 WHEN facc_jump_ratio > 10 AND ratio_to_median > 50 THEN 'entry_point'
-                -- Rule 2: Propagation with high ratio at junctions
-                WHEN ratio_to_median > 100 AND n_rch_up > 0 THEN 'propagation_high_ratio'
-                -- Rule 3: Junction extreme
-                WHEN facc_width_ratio > 15000 AND end_reach = 3 THEN 'junction_extreme'
-                -- Rule 4: Headwater extreme
+                -- Rule 2: Junction extreme (require facc_jump > 10)
+                WHEN facc_width_ratio > 15000 AND end_reach = 3 AND (facc_jump_ratio > 10 OR facc_jump_ratio IS NULL) THEN 'junction_extreme'
+                -- Rule 3: Headwater extreme (no upstream = true entry point)
                 WHEN n_rch_up = 0 AND facc > 500000 AND facc_width_ratio > 5000 THEN 'headwater_extreme'
+                -- Rule 4: Jump entry (path_freq invalid but large facc jump from upstream)
+                -- Catches D8 routing errors where bad facc enters mid-network
+                WHEN (path_freq <= 0 OR path_freq = -9999) AND facc_jump_ratio > 20 AND facc_width_ratio > 500 THEN 'jump_entry'
                 ELSE NULL
             END as detection_rule
         FROM reach_metrics
         WHERE
             -- Any rule triggers detection
-            (facc_jump_ratio > 10 AND ratio_to_median > 50)
-            OR (ratio_to_median > 100 AND n_rch_up > 0)
-            OR (facc_width_ratio > 15000 AND end_reach = 3)
-            OR (n_rch_up = 0 AND facc > 500000 AND facc_width_ratio > 5000)
+            (
+                (facc_jump_ratio > 10 AND ratio_to_median > 50)
+                OR (facc_width_ratio > 15000 AND end_reach = 3 AND (facc_jump_ratio > 10 OR facc_jump_ratio IS NULL))
+                OR (n_rch_up = 0 AND facc > 500000 AND facc_width_ratio > 5000)
+                OR ((path_freq <= 0 OR path_freq = -9999) AND facc_jump_ratio > 20 AND facc_width_ratio > 500)
+            )
+            {fp_filter}
         ORDER BY ratio_to_median DESC NULLS LAST
         """
 
@@ -579,11 +625,10 @@ def detect_hybrid(
         if len(anomalies) > 0:
             rule_counts = anomalies['detection_rule'].value_counts()
             by_entry = rule_counts.get('entry_point', 0)
-            by_propagation = rule_counts.get('propagation_high_ratio', 0)
             by_junction = rule_counts.get('junction_extreme', 0)
             by_headwater = rule_counts.get('headwater_extreme', 0)
         else:
-            by_entry = by_propagation = by_junction = by_headwater = 0
+            by_entry = by_junction = by_headwater = 0
 
         # Get total reaches for percentage
         where_region_simple = f"AND region = '{region}'" if region else ""
@@ -598,7 +643,7 @@ def detect_hybrid(
             config=DetectionConfig(),
             region=region,
             by_facc_width=by_junction + by_headwater,
-            by_facc_reach_acc=by_propagation,
+            by_facc_reach_acc=0,  # Removed propagation_high_ratio (too many FPs)
             by_facc_jump=by_entry,
             by_bifurcation=0,
         )
@@ -644,3 +689,221 @@ def detect_facc_anomalies(
 
     with FaccDetector(db_path_or_conn, config=config) as detector:
         return detector.detect(region=region, anomaly_threshold=anomaly_threshold)
+
+
+def export_categorized_geojsons(
+    db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
+    anomalies: pd.DataFrame,
+    output_dir: Union[str, Path],
+    seed_reach_ids: Optional[List[int]] = None,
+) -> Dict[str, Any]:
+    """
+    Export detection results as categorized GeoJSON files for QGIS review.
+
+    Creates separate GeoJSON files for each detection rule, plus:
+    - propagation.geojson: downstream reaches from entry points
+    - all_anomalies.geojson: combined for quick overview
+    - detection_summary.json: counts and seed verification
+
+    Parameters
+    ----------
+    db_path_or_conn : str or duckdb.DuckDBPyConnection
+        Path to DuckDB database or existing connection.
+    anomalies : pd.DataFrame
+        Detection results from detect_hybrid() with detection_rule column.
+    output_dir : str or Path
+        Directory to write GeoJSON files.
+    seed_reach_ids : list of int, optional
+        Known seed reach IDs to verify in summary.
+
+    Returns
+    -------
+    dict
+        Summary with file paths and counts.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if isinstance(db_path_or_conn, str):
+        conn = duckdb.connect(db_path_or_conn, read_only=True)
+        own_conn = True
+    else:
+        conn = db_path_or_conn
+        own_conn = False
+
+    try:
+        # Load spatial extension for ST_AsGeoJSON
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        summary = {
+            'total_anomalies': len(anomalies),
+            'by_rule': {},
+            'files': {},
+            'seeds_detected': [],
+            'seeds_missed': [],
+        }
+
+        if len(anomalies) == 0:
+            # Write empty summary
+            summary_path = output_dir / 'detection_summary.json'
+            with open(summary_path, 'w') as f:
+                json.dump(summary, f, indent=2)
+            summary['files']['summary'] = str(summary_path)
+            return summary
+
+        # Get geometries for all anomalies
+        reach_ids = anomalies['reach_id'].tolist()
+        reach_ids_str = ', '.join(str(r) for r in reach_ids)
+
+        geom_query = f"""
+        SELECT
+            reach_id,
+            region,
+            ST_AsGeoJSON(geom) as geom_json
+        FROM reaches
+        WHERE reach_id IN ({reach_ids_str})
+        """
+        geom_df = conn.execute(geom_query).fetchdf()
+
+        # Merge geometry with anomalies
+        anomalies_with_geom = anomalies.merge(
+            geom_df[['reach_id', 'geom_json']],
+            on='reach_id',
+            how='left'
+        )
+
+        # Export by detection rule
+        rules = anomalies['detection_rule'].dropna().unique()
+        for rule in rules:
+            rule_df = anomalies_with_geom[anomalies_with_geom['detection_rule'] == rule]
+            if len(rule_df) == 0:
+                continue
+
+            filename = f"{rule}.geojson"
+            filepath = output_dir / filename
+            _write_geojson(rule_df, filepath)
+
+            summary['by_rule'][rule] = len(rule_df)
+            summary['files'][rule] = str(filepath)
+
+        # Export combined all_anomalies.geojson
+        all_filepath = output_dir / 'all_anomalies.geojson'
+        _write_geojson(anomalies_with_geom, all_filepath)
+        summary['files']['all_anomalies'] = str(all_filepath)
+
+        # Verify seeds
+        if seed_reach_ids:
+            detected_ids = set(anomalies['reach_id'].tolist())
+            seeds_detected = [s for s in seed_reach_ids if s in detected_ids]
+            seeds_missed = [s for s in seed_reach_ids if s not in detected_ids]
+            summary['seeds_detected'] = seeds_detected
+            summary['seeds_missed'] = seeds_missed
+            summary['seed_recall'] = len(seeds_detected) / len(seed_reach_ids) if seed_reach_ids else 0
+
+        # Write summary JSON
+        summary_path = output_dir / 'detection_summary.json'
+        with open(summary_path, 'w') as f:
+            json.dump(summary, f, indent=2, default=str)
+        summary['files']['summary'] = str(summary_path)
+
+        return summary
+
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def _write_geojson(df: pd.DataFrame, filepath: Path) -> None:
+    """Write DataFrame with geom_json column to GeoJSON file."""
+    features = []
+
+    for _, row in df.iterrows():
+        if pd.isna(row.get('geom_json')):
+            continue
+
+        # Build properties from all non-geometry columns
+        properties = {}
+        for col in df.columns:
+            if col == 'geom_json':
+                continue
+            val = row[col]
+            # Convert numpy types to Python types for JSON serialization
+            if pd.isna(val):
+                properties[col] = None
+            elif isinstance(val, (np.integer, np.int64)):
+                properties[col] = int(val)
+            elif isinstance(val, (np.floating, np.float64)):
+                properties[col] = float(val)
+            else:
+                properties[col] = val
+
+        try:
+            geometry = json.loads(row['geom_json'])
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        features.append({
+            'type': 'Feature',
+            'properties': properties,
+            'geometry': geometry,
+        })
+
+    geojson = {
+        'type': 'FeatureCollection',
+        'features': features,
+    }
+
+    with open(filepath, 'w') as f:
+        json.dump(geojson, f)
+
+
+def _trace_downstream(
+    conn: duckdb.DuckDBPyConnection,
+    entry_reach_ids: List[int],
+    max_depth: int = 50,
+) -> pd.DataFrame:
+    """
+    Trace downstream from entry points to find propagation reaches.
+
+    Returns reaches downstream of entry points (excluding the entry points themselves).
+    """
+    if not entry_reach_ids:
+        return pd.DataFrame()
+
+    seeds_str = ', '.join(str(r) for r in entry_reach_ids)
+
+    query = f"""
+    WITH RECURSIVE downstream_reaches AS (
+        -- Seeds (entry points)
+        SELECT
+            reach_id,
+            region,
+            reach_id as entry_reach_id,
+            0 as distance
+        FROM reaches
+        WHERE reach_id IN ({seeds_str})
+
+        UNION ALL
+
+        -- Downstream neighbors
+        SELECT
+            rt.neighbor_reach_id as reach_id,
+            rt.region,
+            dr.entry_reach_id,
+            dr.distance + 1 as distance
+        FROM downstream_reaches dr
+        JOIN reach_topology rt ON dr.reach_id = rt.reach_id AND dr.region = rt.region
+        WHERE rt.direction = 'down'
+            AND dr.distance < {max_depth}
+    )
+    SELECT DISTINCT
+        reach_id,
+        region,
+        entry_reach_id,
+        MIN(distance) as distance_from_entry
+    FROM downstream_reaches
+    WHERE distance > 0  -- Exclude entry points themselves
+    GROUP BY reach_id, region, entry_reach_id
+    ORDER BY distance_from_entry
+    """
+
+    return conn.execute(query).fetchdf()
