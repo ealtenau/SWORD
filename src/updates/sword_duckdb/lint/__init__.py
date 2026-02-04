@@ -46,6 +46,13 @@ Check IDs:
         C002: lakeflag_distribution - Lakeflag value distribution
         C003: type_distribution - Type field distribution
         C004: lakeflag_type_consistency - Lakeflag/type agreement
+
+    Facc Anomaly (F0xx):
+        F001: facc_width_ratio_anomaly - Facc/width > 5000 (MERIT corruption)
+        F002: facc_jump_ratio - Facc >> upstream sum (entry points)
+        F003: bifurcation_facc_divergence - Bifurcations with facc divergence > 0.9
+        F004: facc_reach_acc_ratio - Facc >> expected from topology
+        F005: facc_composite_anomaly - Composite anomaly score > 0.5
 """
 
 from .core import (

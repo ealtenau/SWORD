@@ -10,6 +10,7 @@ from . import attributes
 from . import geometry
 from . import classification
 from . import v17c
+from . import facc
 
 __all__ = [
     "topology",
@@ -17,4 +18,5 @@ __all__ = [
     "geometry",
     "classification",
     "v17c",
+    "facc",
 ]
