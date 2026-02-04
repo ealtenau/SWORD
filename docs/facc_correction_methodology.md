@@ -119,6 +119,48 @@ new_facc = width × regional_median_fwr
 
 All 5 seeds successfully corrected.
 
+### Correction Effectiveness
+
+| Metric | Value |
+|--------|-------|
+| Corrections logged | 2,087 |
+| Actually applied to DB | 1,006 |
+| Not applied (bug) | 122 |
+| Reduction >100x | 604 (60%) |
+| Reduction 10-100x | 361 (36%) |
+| Reduction <1.1x (minimal) | 134 (13%) |
+
+### Neighbor Comparison (Direct Continuation)
+For 221 corrected reaches with a single non-corrected downstream neighbor:
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Median ratio to downstream FWR | 50.2x | 2.27x |
+| Within 0.5x-2x of downstream | 27.4% | 14.9% |
+
+**Interpretation**: Median improved significantly (50x → 2x), but the "within range" metric dropped because:
+1. Some corrections over-corrected (now lower than downstream)
+2. Some under-corrected (regression predicted similar value)
+
+### Known Gaps
+
+**772 river reaches with FWR > 5000 were NOT detected** by our hybrid method:
+
+| Issue | Count | Example |
+|-------|-------|---------|
+| Low ratio_to_median despite high FWR | 745 | 17211900064 (AF): FWR=36,640, ratio=5.4 |
+| Lakes (lakeflag=1) | 20 | May be legitimate |
+| Tidal (lakeflag=3) | 7 | May be legitimate |
+
+**Root cause**: The ratio_to_median approach fails when:
+- A reach has legitimately high path_freq but corrupted facc
+- Regional medians are skewed by other anomalies
+
+**Recommendation**: Add a simple FWR-based catch-all:
+```sql
+WHERE facc/width > 5000 AND lakeflag = 0 AND width > 30
+```
+
 ### False Positive Protection
 - Tidal reaches (lakeflag=3) at bifurcations may have legitimately high facc
 - Rolled back 14210000525 after identifying as false positive
@@ -170,10 +212,16 @@ python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --v
 
 | Metric | Before | After |
 |--------|--------|-------|
-| Total corrections | - | 1,129 |
-| Reaches with FWR > 5000 | ~1,200 | ~200 (estimated) |
+| Corrections logged | - | 2,087 |
+| Corrections applied | - | 1,006 |
+| Reaches with FWR > 5000 (rivers, width>30) | ~1,800 | 745 |
 | Seed reaches fixed | 0/5 | 5/5 |
 | Known false positives | 0 | 1 (rolled back) |
+
+### Remaining Work
+- **745 river reaches** still have FWR > 5000 (not detected by hybrid method)
+- **122 corrections** logged but not applied (need to re-run)
+- Consider FWR-based detection as catch-all for remaining anomalies
 
 ## References
 
