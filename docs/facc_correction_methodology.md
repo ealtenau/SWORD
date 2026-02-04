@@ -16,7 +16,7 @@ MERIT Hydro uses D8 (deterministic 8-direction) flow routing, which can only rou
 
 | Mode | Description | Detection |
 |------|-------------|-----------|
-| Entry Point | Bad facc ENTERS a tributary at bifurcation | FWR jump > 10x, ratio_to_median > 50 |
+| Entry Point | D8 routes full upstream facc down wrong branch at bifurcation (split) | FWR jump > 10x, ratio_to_median > 50 |
 | Propagation | Inherited bad facc from upstream entry point | ratio_to_median > 100, n_rch_up > 0 |
 | path_freq=-9999 | Disconnected side channels with bad facc | path_freq=-9999 AND FWR > 5000 |
 
