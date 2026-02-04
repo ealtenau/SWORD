@@ -124,11 +124,10 @@ All 5 seeds successfully corrected.
 | Metric | Value |
 |--------|-------|
 | Corrections logged | 2,087 |
-| Actually applied to DB | 1,127 |
-| Not applied (intentional) | 2 |
-| Reduction >100x | 604 (60%) |
-| Reduction 10-100x | 361 (36%) |
-| Reduction <1.1x (minimal) | 134 (13%) |
+| Actually applied to DB | 2,083 |
+| Not applied (intentional overrides) | 4 |
+| Median reduction factor | 106x |
+| Max reduction factor | 2,344x |
 
 ### Neighbor Comparison (Direct Continuation)
 For 221 corrected reaches with a single non-corrected downstream neighbor:
@@ -173,10 +172,11 @@ src/updates/sword_duckdb/facc_detection/
 ### Output Files
 ```
 output/
-├── facc_anomalies_hybrid.geojson           # Batch 1 anomalies
-├── path_freq_minus9999_high_fwr.geojson    # Batch 3 anomalies
+├── facc_corrections_final.geojson          # FINAL: All 2,087 corrections with before/after values
+├── facc_anomalies_hybrid.geojson           # Batch 1 anomalies (detection)
+├── path_freq_minus9999_high_fwr.geojson    # Batch 3 anomalies (detection)
 ├── path_freq_minus9999_corrections.csv     # Batch 3 corrections log
-└── facc_corrections_SA.csv                 # Regional corrections
+└── remaining_high_fwr_rivers.geojson       # 745 reaches confirmed as false positives
 ```
 
 ### Database Tables
@@ -203,15 +203,19 @@ python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --v
 | Metric | Before | After |
 |--------|--------|-------|
 | Corrections logged | - | 2,087 |
-| Corrections applied | - | 1,127 |
+| Corrections applied | - | 2,083 |
+| Intentional overrides | - | 4 |
 | Reaches with FWR > 5000 (rivers, width>30) | ~1,800 | 745 |
 | Seed reaches fixed | 0/5 | 5/5 |
-| Known false positives | 0 | 1 (rolled back) |
+| Median reduction factor | - | 106x |
 
-### Remaining Work
-- ~~122 corrections logged but not applied~~ **FIXED**: 121 were NA region with `region='nan'` bug in log. Applied 2026-02-04.
+### Completion Status ✅
+- All 2,083 corrections successfully applied to v17c database
+- **4 intentional overrides** (not applied):
+  - 14210000525 (AF): Rolled back - tidal bifurcation false positive
+  - 62293900353 (SA): Manual fix - lake propagation edge case
 - **745 high-FWR reaches** reviewed and confirmed as false positives - no action needed
-- **2 intentional overrides**: 14210000525 (rolled back), 62293900353 (manual fix)
+- Full audit trail in `facc_fix_log` table
 
 ## References
 
