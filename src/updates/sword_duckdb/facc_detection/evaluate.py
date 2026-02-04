@@ -29,29 +29,37 @@ from .features import get_seed_reach_features
 
 # Known corrupted reaches from v17c_status.md
 # All seeds are BAD in v17b (have corrupted facc values)
+# Modes: 'entry' (bad facc enters), 'extreme_fwr' (FWR>10k), 'misrouted' (facc on wrong channel)
 SEED_REACHES = {
-    # Original 5 (SA region - Amazon basin)
-    64231000301: {'mode': 'propagation', 'region': 'SA', 'facc_width_ratio': 35239},
-    62236100011: {'mode': 'entry', 'region': 'SA', 'facc_width_ratio': 22811},
-    62238000021: {'mode': 'entry', 'region': 'SA', 'facc_width_ratio': 1559},
-    64231000291: {'mode': 'propagation', 'region': 'SA', 'facc_width_ratio': 982},
-    62255000451: {'mode': 'propagation', 'region': 'SA', 'facc_width_ratio': 528},
-    # Additional SA seeds
-    17211100181: {'mode': 'entry', 'region': 'SA'},
-    13261100101: {'mode': 'entry', 'region': 'SA'},
-    13214000011: {'mode': 'entry', 'region': 'SA'},
-    13212000011: {'mode': 'entry', 'region': 'SA'},
-    # Critical: facc should be on parallel channel (62210000055, 62210000045, 62210000035)
-    62210000705: {'mode': 'misrouted', 'region': 'SA'},
-    62233000095: {'mode': 'entry', 'region': 'SA'},
+    # SA region - Amazon/Orinoco basins
+    64231000301: {'region': 'SA', 'facc_width_ratio': 35239},  # extreme FWR
+    62236100011: {'region': 'SA', 'facc_width_ratio': 22811},
+    62238000021: {'region': 'SA', 'facc_width_ratio': 1559},
+    64231000291: {'region': 'SA', 'facc_width_ratio': 982},
+    62255000451: {'region': 'SA', 'facc_width_ratio': 528},
+    17211100181: {'region': 'SA'},
+    13261100101: {'region': 'SA', 'facc_width_ratio': 15404},  # extreme FWR
+    13214000011: {'region': 'SA'},
+    13212000011: {'region': 'SA'},
+    62210000705: {'region': 'SA', 'note': 'facc should be on 62210000055/45/35'},  # misrouted
+    62233000095: {'region': 'SA'},
+    61550900161: {'region': 'SA', 'facc_width_ratio': 1124, 'river_name': 'Cinaruco River'},
+    61550700051: {'region': 'SA', 'facc_width_ratio': 6961},
+    62281800021: {'region': 'SA', 'facc_width_ratio': 3197},
+    62283000081: {'region': 'SA', 'facc_width_ratio': 2018, 'river_name': 'Rio Unini'},
     # EU seeds
-    28315000523: {'mode': 'propagation', 'region': 'EU'},
-    28315000751: {'mode': 'propagation', 'region': 'EU', 'note': 'inherited from nearby lake'},
-    28315000783: {'mode': 'entry', 'region': 'EU'},
+    28315000523: {'region': 'EU', 'facc_width_ratio': 1076},
+    28315000751: {'region': 'EU', 'facc_width_ratio': 31989},  # extreme FWR
+    28315000783: {'region': 'EU'},
+    22513000171: {'region': 'EU', 'facc_width_ratio': 2126},
+    28311300405: {'region': 'EU', 'facc_width_ratio': 29193},  # extreme FWR
+    26183000491: {'region': 'EU', 'facc_width_ratio': 1112},
     # AF seeds
-    31251000111: {'mode': 'entry', 'region': 'AF'},
-    31248100141: {'mode': 'jump_entry', 'region': 'AF', 'note': 'side channel inherited downstream facc'},
-    32257000231: {'mode': 'entry', 'region': 'AF'},
+    31251000111: {'region': 'AF'},
+    31248100141: {'region': 'AF', 'note': 'side channel with downstream facc'},
+    32257000231: {'region': 'AF'},
+    # AS seeds
+    45670300691: {'region': 'AS', 'facc_width_ratio': 4548},
 }
 
 

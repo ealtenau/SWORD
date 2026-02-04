@@ -494,17 +494,19 @@ def detect_hybrid(
 
         # Build FP filter clause
         # FPs have: facc_jump <= 2 AND (width_ratio_to_dn > 0.5 OR long+wide)
-        # We EXCLUDE these from detection
+        # We EXCLUDE these from detection UNLESS ratio_to_median is very high
         fp_filter = ""
         if filter_false_positives:
             fp_filter = """
                 AND NOT (
                     -- Exclude FPs: no facc_jump + wide relative to downstream
+                    -- BUT don't exclude if ratio_to_median > 100 (clearly anomalous)
                     (facc_jump_ratio IS NOT NULL AND facc_jump_ratio <= 2)
                     AND (
                         width_ratio_to_dn > 0.5
                         OR (reach_length > 10000 AND width > 200)
                     )
+                    AND (ratio_to_median < 100)  -- Keep high ratio_to_median even without jump
                 )
             """
 
@@ -523,13 +525,15 @@ def detect_hybrid(
             GROUP BY region
         ),
         upstream_info AS (
-            -- Get MAX upstream facc for jump detection (more accurate than sum)
+            -- Get MAX upstream facc and FWR for jump/spike detection
             SELECT
                 rt.reach_id,
                 rt.region,
                 MAX(r_up.facc) as max_upstream_facc,
                 SUM(r_up.facc) as upstream_facc_sum,
-                COUNT(*) as n_upstream
+                COUNT(*) as n_upstream,
+                MAX(r_up.facc / NULLIF(r_up.width, 0)) as max_upstream_fwr,
+                MAX(r_up.type) as max_upstream_type
             FROM reach_topology rt
             JOIN reaches r_up ON rt.neighbor_reach_id = r_up.reach_id AND rt.region = r_up.region
             WHERE rt.direction = 'up'
@@ -538,11 +542,12 @@ def detect_hybrid(
             GROUP BY rt.reach_id, rt.region
         ),
         downstream_info AS (
-            -- Get max downstream width for width_ratio calculation
+            -- Get max downstream width and FWR for ratio calculations
             SELECT
                 rt.reach_id,
                 rt.region,
-                MAX(r_dn.width) as max_downstream_width
+                MAX(r_dn.width) as max_downstream_width,
+                MAX(r_dn.facc / NULLIF(r_dn.width, 0)) as max_downstream_fwr
             FROM reach_topology rt
             JOIN reaches r_dn ON rt.neighbor_reach_id = r_dn.reach_id AND rt.region = r_dn.region
             WHERE rt.direction = 'down'
@@ -571,12 +576,19 @@ def detect_hybrid(
                 COALESCE(ui.max_upstream_facc, 0) as max_upstream_facc,
                 COALESCE(ui.upstream_facc_sum, 0) as upstream_facc_sum,
                 COALESCE(ui.n_upstream, 0) as n_upstream_actual,
+                ui.max_upstream_fwr,
+                ui.max_upstream_type,
+                -- Upstream FWR spike: how much higher is upstream FWR than this reach?
+                ui.max_upstream_fwr / NULLIF(r.facc / NULLIF(r.width, 0), 0) as upstream_fwr_ratio,
                 CASE
                     WHEN COALESCE(ui.max_upstream_facc, 0) > 0
                     THEN r.facc / ui.max_upstream_facc
                     ELSE NULL
                 END as facc_jump_ratio,
-                r.width / NULLIF(di.max_downstream_width, 0) as width_ratio_to_dn
+                r.width / NULLIF(di.max_downstream_width, 0) as width_ratio_to_dn,
+                di.max_downstream_fwr,
+                -- FWR drop ratio: how much does FWR drop going downstream?
+                (r.facc / NULLIF(r.width, 0)) / NULLIF(di.max_downstream_fwr, 0) as fwr_drop_ratio
             FROM reaches r
             JOIN regional_stats rs ON r.region = rs.region
             LEFT JOIN upstream_info ui ON r.reach_id = ui.reach_id AND r.region = ui.region
@@ -591,13 +603,27 @@ def detect_hybrid(
             CASE
                 -- Rule 1: Entry point (high jump + high ratio)
                 WHEN facc_jump_ratio > 10 AND ratio_to_median > 50 THEN 'entry_point'
-                -- Rule 2: Junction extreme (require facc_jump > 10)
-                WHEN facc_width_ratio > 15000 AND end_reach = 3 AND (facc_jump_ratio > 10 OR facc_jump_ratio IS NULL) THEN 'junction_extreme'
+                -- Rule 2: Extreme FWR (facc/width > 15000, regardless of jump)
+                -- Catches cases where upstream also has bad facc (no jump)
+                WHEN facc_width_ratio > 15000 THEN 'extreme_fwr'
                 -- Rule 3: Headwater extreme (no upstream = true entry point)
                 WHEN n_rch_up = 0 AND facc > 500000 AND facc_width_ratio > 5000 THEN 'headwater_extreme'
                 -- Rule 4: Jump entry (path_freq invalid but large facc jump from upstream)
                 -- Catches D8 routing errors where bad facc enters mid-network
                 WHEN (path_freq <= 0 OR path_freq = -9999) AND facc_jump_ratio > 20 AND facc_width_ratio > 500 THEN 'jump_entry'
+                -- Rule 5: Very high ratio_to_median (even without large FWR)
+                -- BUT require fwr_drop > 2 to exclude legitimate multi-channel rivers (Ob, etc.)
+                WHEN ratio_to_median > 500 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL) THEN 'high_ratio'
+                -- Rule 6: FWR drops dramatically downstream (facc doesn't belong here)
+                -- Key discriminator: bad facc has high FWR that drops downstream
+                WHEN fwr_drop_ratio > 5 AND facc_width_ratio > 500 THEN 'fwr_drop'
+                -- Rule 7: Impossible facc for path_freq (mainstem facc on tributary)
+                -- path_freq=1 means near headwater, shouldn't have >1M facc
+                -- Exclude multi-channel rivers (FWR consistent up/down) unless FWR > 5000
+                WHEN path_freq <= 2 AND facc > 1000000 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL OR facc_width_ratio > 5000) THEN 'impossible_headwater'
+                -- Rule 8: Upstream FWR spike (upstream has much higher FWR than this reach)
+                -- Indicates bad facc entered upstream and propagated here
+                WHEN upstream_fwr_ratio > 10 AND facc > 100000 THEN 'upstream_fwr_spike'
                 ELSE NULL
             END as detection_rule
         FROM reach_metrics
@@ -605,9 +631,13 @@ def detect_hybrid(
             -- Any rule triggers detection
             (
                 (facc_jump_ratio > 10 AND ratio_to_median > 50)
-                OR (facc_width_ratio > 15000 AND end_reach = 3 AND (facc_jump_ratio > 10 OR facc_jump_ratio IS NULL))
+                OR (facc_width_ratio > 15000)
                 OR (n_rch_up = 0 AND facc > 500000 AND facc_width_ratio > 5000)
                 OR ((path_freq <= 0 OR path_freq = -9999) AND facc_jump_ratio > 20 AND facc_width_ratio > 500)
+                OR (ratio_to_median > 500 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL))
+                OR (fwr_drop_ratio > 5 AND facc_width_ratio > 500)
+                OR (path_freq <= 2 AND facc > 1000000 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL OR facc_width_ratio > 5000))
+                OR (upstream_fwr_ratio > 10 AND facc > 100000)
             )
             {fp_filter}
         ORDER BY ratio_to_median DESC NULLS LAST
@@ -625,10 +655,12 @@ def detect_hybrid(
         if len(anomalies) > 0:
             rule_counts = anomalies['detection_rule'].value_counts()
             by_entry = rule_counts.get('entry_point', 0)
-            by_junction = rule_counts.get('junction_extreme', 0)
+            by_extreme_fwr = rule_counts.get('extreme_fwr', 0)
             by_headwater = rule_counts.get('headwater_extreme', 0)
+            by_jump_entry = rule_counts.get('jump_entry', 0)
+            by_high_ratio = rule_counts.get('high_ratio', 0)
         else:
-            by_entry = by_junction = by_headwater = 0
+            by_entry = by_extreme_fwr = by_headwater = by_jump_entry = by_high_ratio = 0
 
         # Get total reaches for percentage
         where_region_simple = f"AND region = '{region}'" if region else ""
@@ -642,9 +674,9 @@ def detect_hybrid(
             anomaly_pct=100 * len(anomalies) / total_checked if total_checked > 0 else 0,
             config=DetectionConfig(),
             region=region,
-            by_facc_width=by_junction + by_headwater,
-            by_facc_reach_acc=0,  # Removed propagation_high_ratio (too many FPs)
-            by_facc_jump=by_entry,
+            by_facc_width=by_extreme_fwr + by_headwater,
+            by_facc_reach_acc=by_high_ratio,
+            by_facc_jump=by_entry + by_jump_entry,
             by_bifurcation=0,
         )
 

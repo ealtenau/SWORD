@@ -52,7 +52,8 @@
 ### Current State
 - **Detection pipeline**: `src/updates/sword_duckdb/facc_detection/` ✅ Complete
 - **GeoJSON exports**: `output/facc_detection/` for QGIS review
-- **554 anomalies detected** globally (run on v17b pristine reference)
+- **1,461 anomalies detected** globally (run on v17b pristine reference)
+- **24/25 seeds detected** (96% recall), Ob River FPs correctly excluded
 - **Correction pipeline**: Exists, awaiting visual validation before applying to v17c
 
 ### Detection Pipeline (2026-02-04)
@@ -66,51 +67,40 @@ python -m src.updates.sword_duckdb.facc_detection.cli \
     --output-dir output/facc_detection/
 ```
 
-**Detection rules in `detect_hybrid()`:**
+**Detection rules in `detect_hybrid()` (8 rules):**
 
 | Rule | Criteria | Count | Description |
 |------|----------|-------|-------------|
 | entry_point | facc_jump > 10 AND ratio_to_median > 50 | 424 | Bad facc enters network |
-| jump_entry | path_freq invalid AND facc_jump > 20 AND FWR > 500 | 102 | D8 error with missing metadata |
-| junction_extreme | FWR > 15000 AND end_reach = 3 AND facc_jump > 10 | 15 | Extreme at junctions |
-| headwater_extreme | n_rch_up = 0 AND facc > 500K AND FWR > 5000 | 13 | Impossible headwater facc |
+| fwr_drop | FWR drops >5x downstream | 629 | FWR inconsistent with downstream |
+| extreme_fwr | FWR > 15,000 | 222 | Extremely high facc/width ratio |
+| jump_entry | path_freq invalid AND facc_jump > 20 AND FWR > 500 | 100 | D8 error with missing metadata |
+| impossible_headwater | path_freq ≤ 2 AND facc > 1M (with FWR drop) | 45 | Mainstem facc on tributary |
+| upstream_fwr_spike | Upstream FWR >10x this reach | 19 | Bad facc from upstream |
+| high_ratio | ratio_to_median > 500 (with FWR drop) | 18 | Very high facc per path_freq |
+| headwater_extreme | n_rch_up = 0 AND facc > 500K AND FWR > 5000 | 4 | Impossible headwater facc |
 
-**Output files:**
-- `entry_point.geojson` (424 reaches)
-- `jump_entry.geojson` (102 reaches)
-- `junction_extreme.geojson` (15 reaches)
-- `headwater_extreme.geojson` (13 reaches)
-- `all_anomalies.geojson` (554 total)
-- `detection_summary.json`
+**Key discriminator:** FWR consistency through network. Legitimate multi-channel rivers (Ob) have consistent FWR up/down. Bad facc has dramatic FWR changes (drops downstream or spikes upstream).
 
-### Seed Reaches (17 confirmed bad)
+**Output files:** `output/facc_detection/` contains GeoJSON per rule + `all_anomalies.geojson` + `detection_summary.json`
 
-| reach_id | Region | Mode | Notes |
-|----------|--------|------|-------|
-| 64231000301 | SA | propagation | FWR=35,239 |
-| 62236100011 | SA | entry | FWR=22,811 |
-| 62238000021 | SA | entry | |
-| 64231000291 | SA | propagation | |
-| 62255000451 | SA | propagation | Amazon side channel |
-| 17211100181 | SA | entry | |
-| 13261100101 | SA | entry | |
-| 13214000011 | SA | entry | |
-| 13212000011 | SA | entry | |
-| 62210000705 | SA | misrouted | facc should be on 62210000055/45/35 |
-| 62233000095 | SA | entry | |
-| 28315000523 | EU | propagation | |
-| 28315000751 | EU | propagation | inherited from nearby lake |
-| 28315000783 | EU | entry | |
-| 31251000111 | AF | entry | |
-| 31248100141 | AF | jump_entry | side channel inherited downstream facc |
-| 32257000231 | AF | entry | |
+### Seed Reaches (25 confirmed bad)
 
-**Seed detection:** 11/17 detected directly, 6 are propagation cases (inherit bad facc from upstream)
+| Region | Count | Example reach_ids |
+|--------|-------|-------------------|
+| SA | 15 | 64231000301, 62236100011, 62255000451, 62210000705 |
+| EU | 6 | 28315000523, 28315000751, 28311300405, 22513000171 |
+| AF | 3 | 31251000111, 31248100141, 32257000231 |
+| AS | 1 | 45670300691 |
+
+**Seed detection:** 24/25 detected (96%). Missed: 22513000171 (no clear signal - moderate FWR, consistent up/down).
+
+**Known FPs excluded:** Ob River multi-channel (31239000161, 31239000251) - legitimate high facc with consistent FWR.
 
 ### Next Steps
 
 1. **Visual review** in QGIS using exported GeoJSONs
-2. **Identify false positives** from visual review
+2. **Identify additional false positives** from visual review
 3. **Apply corrections** to v17c using correction pipeline
 4. **Re-run T003 lint** to verify monotonicity restored
 
