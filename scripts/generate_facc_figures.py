@@ -8,6 +8,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import geopandas as gpd
 from pathlib import Path
+from sklearn.model_selection import train_test_split
+import joblib
 
 # Style settings
 plt.style.use('seaborn-v0_8-whitegrid')
@@ -151,42 +153,7 @@ def fig3_fwr_before_after():
     print(f"Saved fig3_fwr_before_after.png")
 
 
-def fig4_detection_rules():
-    """Pie chart of detection rules breakdown."""
-    rules = {
-        'fwr_drop': 815,
-        'entry_point': 466,
-        'extreme_fwr': 200,
-        'jump_entry': 99,
-        'facc_sum_inflation': 45,
-        'Other': 100
-    }
-
-    fig, ax = plt.subplots(figsize=(3.5, 3.5))
-
-    colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6', '#95a5a6']
-    explode = (0.03, 0, 0, 0, 0, 0)
-
-    wedges, texts, autotexts = ax.pie(
-        rules.values(),
-        labels=rules.keys(),
-        autopct='%1.0f%%',
-        colors=colors,
-        explode=explode,
-        startangle=90,
-        textprops={'fontsize': 7}
-    )
-
-    ax.set_title('Detection Rules: 1,725 Anomalies', fontsize=9)
-    ax.set_aspect('equal')
-
-    plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / 'fig4_detection_rules.png', bbox_inches='tight')
-    plt.close()
-    print(f"Saved fig4_detection_rules.png")
-
-
-def fig5_correction_logic():
+def fig4_correction_logic():
     """Conceptual diagram showing RF correction logic."""
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.set_xlim(0, 10)
@@ -240,10 +207,94 @@ def fig5_correction_logic():
                 arrowprops=dict(arrowstyle='->', color='#95a5a6', lw=1.5, linestyle='--'))
 
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / 'fig5_correction_logic.png', bbox_inches='tight',
+    plt.savefig(OUTPUT_DIR / 'fig4_correction_logic.png', bbox_inches='tight',
                 facecolor='white', edgecolor='none')
     plt.close()
-    print(f"Saved fig5_correction_logic.png")
+    print(f"Saved fig4_correction_logic.png")
+
+
+def fig5_model_validation():
+    """Predicted vs Observed plot for RF regressor validation."""
+    # Load model
+    model_data = joblib.load('output/facc_detection/rf_regressor.joblib')
+    model = model_data['model']
+    feature_names = model_data['feature_names']
+    metrics = model_data['metrics']
+
+    # Load features
+    df = pd.read_csv('output/facc_detection/rf_features.csv')
+
+    # Load anomaly IDs to exclude (same as training)
+    anomalies = gpd.read_file('output/facc_detection/all_anomalies.geojson')
+    anomaly_ids = set(anomalies['reach_id'].values)
+
+    # Filter to clean reaches
+    clean = df[~df['reach_id'].isin(anomaly_ids)].copy()
+
+    # Prepare features (same as training)
+    X = clean[[c for c in feature_names if c in clean.columns]].copy()
+    X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+    y = clean['facc'].copy()
+    y_log = np.log1p(y)
+
+    # Same split as training (random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y_log, test_size=0.2, random_state=42
+    )
+
+    # Predict on test set
+    y_pred_log = model.predict(X_test)
+    y_pred = np.expm1(y_pred_log)
+    y_test_orig = np.expm1(y_test)
+
+    # Create figure with 2 subplots
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+
+    # Left: Predicted vs Observed (log scale)
+    ax1 = axes[0]
+    ax1.scatter(y_test_orig, y_pred, alpha=0.3, s=5, c='#3498db')
+
+    # 1:1 line
+    lims = [1, max(y_test_orig.max(), y_pred.max()) * 1.1]
+    ax1.plot(lims, lims, 'k--', lw=1.5, label='1:1 line')
+
+    ax1.set_xscale('log')
+    ax1.set_yscale('log')
+    ax1.set_xlabel('Observed facc (km²)')
+    ax1.set_ylabel('Predicted facc (km²)')
+    ax1.set_title('RF Regressor: Predicted vs Observed')
+    ax1.legend(loc='lower right')
+
+    # Add metrics text
+    ax1.text(0.05, 0.95,
+             f"R² = {metrics['r2']:.3f}\n"
+             f"Median error = {metrics['median_pct_error']:.1f}%\n"
+             f"n = {len(y_test):,}",
+             transform=ax1.transAxes, va='top', fontsize=9,
+             bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+
+    # Right: Residual distribution
+    ax2 = axes[1]
+    pct_errors = (y_pred - y_test_orig.values) / y_test_orig.values * 100
+    pct_errors_clipped = np.clip(pct_errors, -200, 200)
+
+    ax2.hist(pct_errors_clipped, bins=50, color='#3498db', alpha=0.7, edgecolor='white')
+    ax2.axvline(0, color='black', linestyle='--', lw=1.5)
+    ax2.axvline(np.median(pct_errors), color='#e74c3c', linestyle='-', lw=2,
+                label=f'Median: {np.median(pct_errors):.1f}%')
+
+    ax2.set_xlabel('Prediction Error (%)')
+    ax2.set_ylabel('Count')
+    ax2.set_title('Error Distribution (Test Set)')
+    ax2.set_xlim(-200, 200)
+    ax2.legend(loc='upper right', fontsize=8)
+
+    plt.suptitle(f'RF Model Validation (n_test={len(y_test):,}, n_features={len(feature_names)})',
+                 fontsize=11, y=1.02)
+    plt.tight_layout()
+    plt.savefig(OUTPUT_DIR / 'fig5_model_validation.png', bbox_inches='tight')
+    plt.close()
+    print("Saved fig5_model_validation.png")
 
 
 def main():
@@ -253,8 +304,8 @@ def main():
     fig1_feature_importance()
     fig2_hydro_dist_vs_facc()
     fig3_fwr_before_after()
-    fig4_detection_rules()
-    fig5_correction_logic()
+    fig4_correction_logic()
+    fig5_model_validation()
 
     print("=" * 50)
     print(f"All figures saved to {OUTPUT_DIR}/")

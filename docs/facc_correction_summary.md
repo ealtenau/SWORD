@@ -133,8 +133,6 @@ AND facc > 3 × SUM(upstream_facc)
 
 ### Detection Summary
 
-![Detection Rules Breakdown](../output/facc_detection/figures/fig4_detection_rules.png)
-
 | Rule | Count | % |
 |------|-------|---|
 | fwr_drop | 815 | 47% |
@@ -157,7 +155,7 @@ Train Random Forest on **clean reaches** to predict what facc SHOULD be based on
 **Target:** Predict facc from 59 topology/position features
 **Excludes:** Any feature derived FROM facc (to avoid circularity)
 
-![RF Correction Logic](../output/facc_detection/figures/fig5_correction_logic.png)
+![RF Correction Logic](../output/facc_detection/figures/fig4_correction_logic.png)
 
 ### Why This Works
 
@@ -179,6 +177,8 @@ When it sees an anomalous reach at `hydro_dist_hw = 150 km` with `facc = 2,500,0
 | Median % error | 35% |
 | Training samples | 247,000 |
 | Features used | 59 |
+
+![Model Validation](../output/facc_detection/figures/fig5_model_validation.png)
 
 ### Top Predictive Features
 
