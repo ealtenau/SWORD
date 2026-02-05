@@ -280,10 +280,15 @@ CREATE TABLE IF NOT EXISTS reaches (
     width_obs_median DOUBLE,         -- median observed width
     width_obs_std DOUBLE,            -- std dev of observed width
     width_obs_range DOUBLE,          -- range (max-min) of observed width
-    slope_obs_mean DOUBLE,           -- mean observed slope
+    slope_obs_mean DOUBLE,           -- mean observed slope (raw, may be negative)
     slope_obs_median DOUBLE,         -- median observed slope
     slope_obs_std DOUBLE,            -- std dev of observed slope
     slope_obs_range DOUBLE,          -- range (max-min) of observed slope
+    slope_obs_adj DOUBLE,            -- noise-adjusted slope: 1e-5 for noise, keeps significant negatives
+    slope_obs_slopeF DOUBLE,         -- weighted sign fraction (-1 to +1): positive = consistent positive slopes
+    slope_obs_reliable BOOLEAN,      -- TRUE if |slopeF| > 0.5 AND slope_obs_mean > noise floor
+    slope_obs_quality VARCHAR,       -- quality category: reliable, high_uncertainty, below_noise,
+                                     -- moderate_negative, large_negative, flat_water_noise, etc.
     n_obs INTEGER,                   -- count of SWOT observations
 
     -- Addition flag (optional)
@@ -843,10 +848,7 @@ def add_v17c_columns(db) -> bool:
         ("hydro_dist_hw", "DOUBLE"),
         ("rch_id_up_main", "BIGINT"),
         ("rch_id_dn_main", "BIGINT"),
-        # SWOT-derived slope columns
-        ("swot_slope", "DOUBLE"),
-        ("swot_slope_se", "DOUBLE"),
-        ("swot_slope_confidence", "VARCHAR"),
+        # NOTE: swot_slope columns removed - pipeline incomplete (Issue #117)
     ]
 
     def _add_columns_to_table(table_name: str, columns: list) -> bool:
@@ -929,6 +931,10 @@ def add_swot_obs_columns(conn) -> bool:
         ("slope_obs_median", "DOUBLE"),
         ("slope_obs_std", "DOUBLE"),
         ("slope_obs_range", "DOUBLE"),
+        ("slope_obs_adj", "DOUBLE"),
+        ("slope_obs_slopeF", "DOUBLE"),  # Weighted sign fraction (-1 to +1) for consistency
+        ("slope_obs_reliable", "BOOLEAN"),
+        ("slope_obs_quality", "VARCHAR"),
         ("n_obs", "INTEGER"),
     ]
 

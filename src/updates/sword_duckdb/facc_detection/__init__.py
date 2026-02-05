@@ -55,6 +55,7 @@ from .features import extract_facc_features, FaccFeatureExtractor
 from .detect import FaccDetector, detect_facc_anomalies, detect_hybrid
 from .evaluate import evaluate_detection, FaccEvaluator
 from .correct import FaccCorrector, correct_facc_anomalies, CorrectionResult
+from .merit_search import MeritGuidedSearch, create_merit_search
 
 __all__ = [
     # Reach accumulation
@@ -74,4 +75,7 @@ __all__ = [
     "FaccCorrector",
     "correct_facc_anomalies",
     "CorrectionResult",
+    # MERIT guided search
+    "MeritGuidedSearch",
+    "create_merit_search",
 ]

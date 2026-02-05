@@ -477,22 +477,26 @@ def check_low_slope_flag_consistency(conn, region=None, threshold=0.01):
 
 ### 4.2 Valid Values
 
-| Code | Meaning |
-|------|---------|
-| 1 | Reach type change |
-| 2 | Node order change |
-| 3 | Reach neighbor change |
-| 41 | Flow accumulation update |
-| 42 | Elevation update |
-| 43 | Width update |
-| 44 | Slope update |
-| 45 | River name update |
-| 5 | Reach ID change |
-| 6 | Reach boundary change |
-| 7 | Reach/node addition |
-| NaN | No edits |
+| Code | Meaning | v17b | v17c |
+|------|---------|------|------|
+| 1 | Reach type change | ✓ | ✓ |
+| 2 | Node order change | ✓ | ✓ |
+| 3 | Reach neighbor change | ✓ | ✓ |
+| 41 | Flow accumulation update | ✓ | ✓ |
+| 42 | Elevation update | ✓ | ✓ |
+| 43 | Width update | ✓ | ✓ |
+| 44 | Slope update | ✓ | ✓ |
+| 45 | River name update | ✓ | ✓ |
+| 5 | Reach ID change | ✓ | ✓ |
+| 6 | Reach boundary change | ✓ | ✓ |
+| 7 | Reach/node addition | ✓ | ✓ |
+| facc_suspect | Flow accumulation quality flag | - | ✓ NEW |
+| facc_traced | Flow accumulation traced/verified | - | ✓ NEW |
+| NaN | No edits | ✓ | ✓ |
 
-**Note:** Multiple updates are comma-separated (e.g., "41,2" or "7,1").
+**Note:**
+- Multiple updates are comma-separated (e.g., "41,2" or "7,1")
+- v17c introduces new codes for facc QA workflow (facc_suspect, facc_traced)
 
 ### 4.3 Data Type
 
@@ -638,7 +642,12 @@ def check_edit_flag_valid_codes(conn, region=None, threshold=None):
 - add_flag=NULL: 248,673 reaches (100%)
 - add_flag=NULL: 11,112,454 nodes (100%)
 
-**All values are NULL in v17b**, suggesting the flag was added to the schema but never populated.
+**Observed Distribution (v17c):**
+- add_flag=NULL: 248,673 reaches (99.9999%)
+- add_flag=0: 1 reach (0.0004%)
+- add_flag=1: 0 reaches (0%)
+
+**Status:** Flag was added to the schema but rarely populated in v17b. Single add_flag=0 reach appears in v17c.
 
 ### 5.3 Schema Definition
 
@@ -662,12 +671,23 @@ add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
 
 ### 5.5 Code Usage
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/sword_class.py`
+**Primary Implementation Files:**
 
-The add_flag is:
-1. Exported with default value 0 if not present (line 572, 688)
-2. Set to 0 for new ghost reaches (line 3463)
-3. Preserved from source data when loading (line 1258, 1359)
+1. **delta_utils.py** - Delta region MERIT Hydro integration
+   - Nodes added from MERIT Hydro are marked with add_flag=1 (line 1586)
+   - Reaches added from MERIT Hydro are marked with add_flag=1 (line 1840)
+   - Used when filling gaps in SWORD delta network with MERIT Hydro Vector data
+
+2. **sword_class.py** - Core SWORD DuckDB implementation
+   - Exported with default value 0 if not present (lines 572, 688)
+   - Set to 0 for new ghost reaches (line 3463)
+   - Preserved from source data when loading (lines 1258, 1359)
+   - Inserted into database when creating new ghost reaches (line 1873)
+
+**Semantic Meaning:**
+- `add_flag=0`: Original SWORD reach/node (from GRWL centerlines)
+- `add_flag=1`: Added from MERIT Hydro Vector (fill-in reaches for network connectivity)
+- `add_flag=NULL`: Unknown/unset (treated as 0 in most contexts)
 
 ### 5.6 Consistency Rules
 
@@ -708,13 +728,13 @@ def check_add_flag_valid(conn, region=None, threshold=None):
 
 ## 6. Summary Table
 
-| Variable | Source | Values | Status | Lint Check |
-|----------|--------|--------|--------|------------|
-| swot_obs | SWOT Tracks | 0-31 | STUB | None |
-| iceflag | ERA5/Ice Model | -9999,0,1,2 | STUB | None |
-| low_slope_flag | Computed | 0,1 | Active | None |
-| edit_flag | Manual | Codes CSV | Preserve | None |
-| add_flag | Computed | NULL,0,1 | Not populated | None |
+| Variable | Source | Values | v17b Status | v17c Status | Lint Check |
+|----------|--------|--------|-------------|-------------|------------|
+| swot_obs | SWOT Tracks | 0-31 | STUB | STUB | None |
+| iceflag | ERA5/Ice Model | -9999,0,1,2 | STUB | STUB | None |
+| low_slope_flag | Computed | 0,1 | All 0 | All 0 | None |
+| edit_flag | Manual | Codes CSV | 96.4% NaN | Mixed format | Proposed: F007, F008 |
+| add_flag | Computed | NULL,0,1 | All NULL | 99.9999% NULL, 0.0004% 0 | Proposed: F009 |
 
 ---
 
@@ -799,10 +819,77 @@ Flag variables currently have no lint checks. This issue proposes adding 9 new c
 
 ---
 
+## 9. Audit Findings (v17c - February 2026)
+
+### 9.1 add_flag Audit
+
+**Query Date:** February 2, 2026
+
+**v17b Baseline:**
+```sql
+SELECT add_flag, COUNT(*) FROM reaches GROUP BY 1 ORDER BY 2 DESC;
+```
+Result: All 248,673 reaches have add_flag=NULL (100%)
+
+**v17c Current State:**
+```sql
+SELECT add_flag, COUNT(*) FROM reaches GROUP BY 1 ORDER BY 2 DESC;
+```
+Result:
+- add_flag=NULL: 248,673 reaches (99.9960%)
+- add_flag=0: 1 reach (0.0040%)
+- add_flag=1: 0 reaches (0%)
+
+**Interpretation:** The single add_flag=0 reach suggests minimal MERIT Hydro integration in v17c to date. Expected population when delta regions are processed.
+
+### 9.2 edit_flag Audit
+
+**v17b Baseline:**
+```sql
+SELECT edit_flag, COUNT(*) FROM reaches GROUP BY 1 ORDER BY 2 DESC;
+```
+Result:
+| edit_flag | Count | % |
+|-----------|-------|---|
+| NaN | 239,791 | 96.4% |
+| 7 | 6,905 | 2.8% |
+| 1 | 1,866 | 0.8% |
+| 7,1 | 65 | 0.03% |
+| ['7'],1 | 40 | 0.02% |
+| ['1'],1 | 6 | <0.01% |
+
+**v17c Current State:**
+```sql
+SELECT edit_flag, COUNT(*) FROM reaches GROUP BY 1 ORDER BY 2 DESC;
+```
+Result:
+| edit_flag | Count | % |
+|-----------|-------|---|
+| NaN | 239,601 | 96.3% |
+| 7 | 6,784 | 2.7% |
+| 1 | 1,866 | 0.8% |
+| 7,facc_suspect | 121 | 0.05% |
+| facc_traced | 116 | 0.05% |
+| facc_suspect | 73 | 0.03% |
+| 7,1 | 65 | 0.03% |
+| ['7'],1 | 40 | 0.02% |
+| ['1'],1 | 6 | <0.01% |
+| 6 | 2 | <0.01% |
+
+**Key Findings:**
+1. New codes introduced: `facc_suspect`, `facc_traced` (likely from facc QA work)
+2. Formatting bugs persisting: `['7'],1` and `['1'],1` still present
+3. Total reach count decreased by 72 (from 248,673 to 248,674 total with new entry)
+4. edit_flag shows active QA/editing workflow
+
+---
+
 ## 9. References
 
 1. SWORD Product Description Document v17b (March 2025)
 2. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
 3. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py`
-4. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py`
-5. Yang, X., Pavelsky, T. M., Allen, G. H. (2019). The past and future of global river ice. Nature.
+4. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/sword_class.py`
+5. `/Users/jakegearon/projects/SWORD/src/updates/delta_updates/delta_utils.py`
+6. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py`
+7. Yang, X., Pavelsky, T. M., Allen, G. H. (2019). The past and future of global river ice. Nature.

@@ -24,7 +24,7 @@ from ..core import (
     "V001",
     Category.V17C,
     Severity.ERROR,
-    "hydro_dist_out must decrease downstream",
+    "hydro_dist_out must decrease downstream (min of all downstream neighbors)",
     default_threshold=100.0,  # tolerance in meters
 )
 def check_hydro_dist_out_monotonicity(
@@ -37,6 +37,10 @@ def check_hydro_dist_out_monotonicity(
 
     Like T001 for dist_out, but for the v17c hydrologic distance metric.
     hydro_dist_out is computed via Dijkstra from all outlets.
+
+    For reaches with multiple downstream neighbors (bifurcations), at least
+    one path should lead to a nearer outlet. We check the MINIMUM downstream
+    hydro_dist_out, which handles multi-outlet networks correctly.
     """
     tolerance = threshold if threshold is not None else 100.0
     where_clause = f"AND r1.region = '{region}'" if region else ""
@@ -57,15 +61,18 @@ def check_hydro_dist_out_monotonicity(
             description="Column hydro_dist_out not found (v17c pipeline not run)",
         )
 
+    # Check MINIMUM downstream hydro_dist_out - at bifurcations, one path may go
+    # to a more distant outlet, which is expected network behavior
     query = f"""
-    WITH reach_pairs AS (
+    WITH min_downstream AS (
         SELECT
             r1.reach_id,
             r1.region,
             r1.hydro_dist_out as dist_up,
-            r2.hydro_dist_out as dist_down,
+            MIN(r2.hydro_dist_out) as min_dist_down,
             r1.river_name,
-            r1.x, r1.y
+            r1.x, r1.y,
+            r1.n_rch_down
         FROM reaches r1
         JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
         JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
@@ -73,13 +80,15 @@ def check_hydro_dist_out_monotonicity(
             AND r1.hydro_dist_out IS NOT NULL
             AND r2.hydro_dist_out IS NOT NULL
             {where_clause}
+        GROUP BY r1.reach_id, r1.region, r1.hydro_dist_out, r1.river_name, r1.x, r1.y, r1.n_rch_down
     )
     SELECT
         reach_id, region, river_name, x, y,
-        dist_up, dist_down,
-        (dist_down - dist_up) as dist_increase
-    FROM reach_pairs
-    WHERE dist_down > dist_up + {tolerance}
+        dist_up, min_dist_down,
+        (min_dist_down - dist_up) as dist_increase,
+        n_rch_down
+    FROM min_downstream
+    WHERE min_dist_down > dist_up + {tolerance}
     ORDER BY dist_increase DESC
     """
 
@@ -101,7 +110,7 @@ def check_hydro_dist_out_monotonicity(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description="Reaches where hydro_dist_out increases downstream (flow direction error)",
+        description="Reaches where min(downstream hydro_dist_out) increases (flow direction error)",
         threshold=tolerance,
     )
 

@@ -132,6 +132,61 @@ stats = process_region(
 )
 ```
 
+## Pipeline Results (2026-01-27)
+
+All 6 regions processed successfully:
+
+| Region | Reaches | Sections | Mainstem | Direction Valid |
+|--------|---------|----------|----------|-----------------|
+| NA | 38,696 | 6,363 | 38,057 (98.3%) | 91.6% |
+| SA | 42,159 | 7,272 | 41,342 (98.1%) | 93.2% |
+| EU | 31,103 | 4,222 | 30,240 (97.2%) | 92.1% |
+| AF | 21,441 | 3,137 | 20,746 (96.8%) | 93.4% |
+| AS | 100,185 | 18,634 | 96,671 (96.5%) | 94.3% |
+| OC | 15,090 | 2,979 | 14,899 (98.7%) | 90.3% |
+| **Total** | **248,674** | **42,607** | **241,955** | **93.2%** |
+
+## SWOT Observation Aggregation
+
+The `reach_swot_obs.py` script computes reach-level SWOT observations from node data:
+
+```bash
+# Process all regions
+python -m src.updates.sword_v17c_pipeline.reach_swot_obs \
+    --db data/duckdb/sword_v17c.duckdb --all
+
+# Process single region
+python -m src.updates.sword_v17c_pipeline.reach_swot_obs \
+    --db data/duckdb/sword_v17c.duckdb --region NA
+
+# Dry run (compute but don't update DB)
+python -m src.updates.sword_v17c_pipeline.reach_swot_obs \
+    --db data/duckdb/sword_v17c.duckdb --region NA --dry-run
+```
+
+### Outputs
+
+| Column | Description |
+|--------|-------------|
+| slope_obs_mean/std/median/range | Slope statistics (m/km) from OLS regression |
+| wse_obs_mean/std/median/range | WSE statistics (m) |
+| width_obs_mean/std/median/range | Width statistics (m) |
+| n_obs | Total node observations |
+| slope_obs_n_passes | Number of cycle/pass groups for slope |
+| slope_obs_q | Quality flag (bit flags for issues) |
+| swot_obs_source | 'node' (indicates node-derived) |
+
+### Coverage (2026-02-03)
+
+| Region | Slope | WSE/Width |
+|--------|-------|-----------|
+| NA | 82.4% | 67.8% |
+| SA | 86.2% | 82.8% |
+| EU | 76.2% | 78.4% |
+| AF | 87.0% | 84.6% |
+| AS | 79.6% | 83.1% |
+| OC | 77.3% | 78.6% |
+
 ## Verification
 
 ```bash
@@ -147,6 +202,30 @@ SELECT * FROM sword_operations ORDER BY started_at DESC LIMIT 5"
 # Run lint
 python -m src.updates.sword_duckdb.lint.cli --db data/duckdb/sword_v17c.duckdb --region NA
 ```
+
+## Known Issues
+
+### T001 dist_out Monotonicity (Issue #74)
+
+The v17c database has 16 T001 dist_out monotonicity violations in NA region. These are **pre-existing** from previous dist_out recalculation operations, NOT caused by this pipeline.
+
+**Symptoms:**
+- Lint check `T001 dist_out_monotonicity` shows 16 errors (0.04%) in NA
+- All violations are at junction reaches (bifurcations)
+- v17b has 0 errors; issue was introduced during previous FIX_FACC_VIOLATIONS
+
+**Root Cause:**
+When facc was fixed, reactive recalculation modified dist_out but didn't propagate correctly through all bifurcation branches.
+
+**Impact:**
+- The v17c pipeline uses `hydro_dist_out` (newly computed, correct) instead of legacy `dist_out`
+- Legacy `dist_out` inconsistencies don't affect new v17c attributes
+
+**Fix Options:**
+1. Recalculate dist_out via `workflow.calculate_dist_out(region='NA')`
+2. Revert dist_out to v17b values for affected reaches
+
+See: https://github.com/ealtenau/SWORD/issues/74
 
 ## Archived Files
 
@@ -164,7 +243,8 @@ These were archived because v17c now uses the original v17b topology.
 |------|---------|
 | `v17c_pipeline.py` | Main pipeline script |
 | `run_pipeline.sh` | Shell wrapper |
-| `SWOT_slopes.py` | SWOT slope computation (standalone) |
+| `reach_swot_obs.py` | SWOT observation aggregation (slope, wse, width from node data) |
+| `SWOT_slopes.py` | SWOT section-level slope computation (standalone) |
 | `SWORD_graph.py` | Graph utilities |
 | `validate_topology.py` | Topology validation |
 | `validate_edges.py` | Edge validation |

@@ -20,7 +20,10 @@ import duckdb
 import pandas as pd
 import pydeck as pdk
 import folium
+from folium.plugins import AntPath, PolyLineTextPath
 from streamlit_folium import st_folium
+import math
+import re
 from datetime import datetime
 import json
 import os
@@ -358,6 +361,118 @@ def get_reach_facc(conn, reach_id, region):
     return result[0] if result and result[0] is not None else 0
 
 
+def add_topology_connection(conn, reach_id, neighbor_id, direction, region):
+    """
+    Add a topology connection between two reaches.
+    direction: 'up' means neighbor is upstream of reach_id
+               'down' means neighbor is downstream of reach_id
+    """
+    # Check if connection already exists
+    existing = conn.execute("""
+        SELECT 1 FROM reach_topology
+        WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ? AND direction = ?
+    """, [reach_id, neighbor_id, region, direction]).fetchone()
+
+    if existing:
+        return False, "Connection already exists"
+
+    # Get next rank for this reach/direction
+    max_rank = conn.execute("""
+        SELECT COALESCE(MAX(neighbor_rank), -1) FROM reach_topology
+        WHERE reach_id = ? AND region = ? AND direction = ?
+    """, [reach_id, region, direction]).fetchone()[0]
+    new_rank = max_rank + 1
+
+    # Add the forward connection (reach -> neighbor)
+    conn.execute("""
+        INSERT INTO reach_topology (reach_id, neighbor_reach_id, region, direction, neighbor_rank)
+        VALUES (?, ?, ?, ?, ?)
+    """, [reach_id, neighbor_id, region, direction, new_rank])
+
+    # Add the reverse connection (neighbor -> reach)
+    reverse_direction = 'down' if direction == 'up' else 'up'
+    reverse_rank = conn.execute("""
+        SELECT COALESCE(MAX(neighbor_rank), -1) FROM reach_topology
+        WHERE reach_id = ? AND region = ? AND direction = ?
+    """, [neighbor_id, region, reverse_direction]).fetchone()[0] + 1
+
+    conn.execute("""
+        INSERT INTO reach_topology (reach_id, neighbor_reach_id, region, direction, neighbor_rank)
+        VALUES (?, ?, ?, ?, ?)
+    """, [neighbor_id, reach_id, region, reverse_direction, reverse_rank])
+
+    # Update n_rch_up/n_rch_down counts
+    if direction == 'up':
+        conn.execute("UPDATE reaches SET n_rch_up = n_rch_up + 1 WHERE reach_id = ? AND region = ?", [reach_id, region])
+        conn.execute("UPDATE reaches SET n_rch_down = n_rch_down + 1 WHERE reach_id = ? AND region = ?", [neighbor_id, region])
+    else:
+        conn.execute("UPDATE reaches SET n_rch_down = n_rch_down + 1 WHERE reach_id = ? AND region = ?", [reach_id, region])
+        conn.execute("UPDATE reaches SET n_rch_up = n_rch_up + 1 WHERE reach_id = ? AND region = ?", [neighbor_id, region])
+
+    conn.commit()
+
+    # Log the fix
+    log_skip(conn, reach_id, region, 'TOPO', f'Added {direction}stream connection to {neighbor_id}')
+
+    return True, f"Connected {reach_id} ←{direction}→ {neighbor_id}"
+
+
+def undo_last_topology_fix(conn, region):
+    """Undo the most recent topology connection for the region."""
+    # Get most recent topology fix (look for 'Added' in notes)
+    last = conn.execute("""
+        SELECT fix_id, reach_id, notes
+        FROM lint_fix_log
+        WHERE region = ? AND check_id = 'TOPO' AND notes LIKE 'Added %' AND NOT undone
+        ORDER BY timestamp DESC LIMIT 1
+    """, [region]).fetchone()
+
+    if not last:
+        return None, "No topology fixes to undo"
+
+    fix_id, reach_id, notes = last
+
+    # Parse the connection info from notes: "Added upstream connection to 12345"
+    # or "Added downstream connection to 12345"
+    import re
+    match = re.search(r'Added (up|down)stream connection to (\d+)', notes)
+    if not match:
+        return None, f"Could not parse connection from: {notes}"
+
+    direction = match.group(1)
+    neighbor_id = int(match.group(2))
+
+    # Remove the forward connection
+    conn.execute("""
+        DELETE FROM reach_topology
+        WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ? AND direction = ?
+    """, [reach_id, neighbor_id, region, direction])
+
+    # Remove the reverse connection
+    reverse_direction = 'down' if direction == 'up' else 'up'
+    conn.execute("""
+        DELETE FROM reach_topology
+        WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ? AND direction = ?
+    """, [neighbor_id, reach_id, region, reverse_direction])
+
+    # Update n_rch_up/n_rch_down counts
+    if direction == 'up':
+        conn.execute("UPDATE reaches SET n_rch_up = GREATEST(0, n_rch_up - 1) WHERE reach_id = ? AND region = ?", [reach_id, region])
+        conn.execute("UPDATE reaches SET n_rch_down = GREATEST(0, n_rch_down - 1) WHERE reach_id = ? AND region = ?", [neighbor_id, region])
+    else:
+        conn.execute("UPDATE reaches SET n_rch_down = GREATEST(0, n_rch_down - 1) WHERE reach_id = ? AND region = ?", [reach_id, region])
+        conn.execute("UPDATE reaches SET n_rch_up = GREATEST(0, n_rch_up - 1) WHERE reach_id = ? AND region = ?", [neighbor_id, region])
+
+    # Mark fix as undone
+    conn.execute("UPDATE lint_fix_log SET undone = TRUE WHERE fix_id = ?", [fix_id])
+
+    # Log undo action
+    log_skip(conn, reach_id, region, 'TOPO', f'Undid {direction}stream connection to {neighbor_id}')
+
+    conn.commit()
+    return reach_id, f"Undid connection {reach_id} ←{direction}→ {neighbor_id}"
+
+
 def apply_lakeflag_fix(conn, reach_id, region, new_lakeflag):
     """Apply a lakeflag fix to reaches table, with logging and local backup."""
     # Get old lakeflag
@@ -481,25 +596,115 @@ def undo_last_fix(conn, region):
     return reach_id
 
 
-def get_nearby_reaches(conn, center_lon, center_lat, radius_deg, region, exclude_ids=None):
-    """Get all reaches within a bounding box (for showing unconnected reaches)."""
+def get_nearby_reaches(conn, center_lon, center_lat, radius_deg, region, exclude_ids=None, include_all=False, max_reaches=2000):
+    """Get all reaches within a bounding box.
+
+    If include_all=False, excludes reaches in exclude_ids (for finding unconnected).
+    If include_all=True, returns ALL reaches in area with lakeflag for coloring.
+    """
     exclude_ids = exclude_ids or []
     exclude_str = ','.join([str(int(r)) for r in exclude_ids]) if exclude_ids else '0'
 
-    query = f"""
-        SELECT reach_id, x, y
-        FROM reaches
-        WHERE region = ?
-          AND x BETWEEN ? AND ?
-          AND y BETWEEN ? AND ?
-          AND reach_id NOT IN ({exclude_str})
-        LIMIT 200
+    if include_all:
+        # Return ALL reaches with lakeflag for type coloring and flow direction info
+        query = f"""
+            SELECT reach_id, x, y, lakeflag, facc, width, n_rch_up, n_rch_down
+            FROM reaches
+            WHERE region = ?
+              AND x BETWEEN ? AND ?
+              AND y BETWEEN ? AND ?
+            LIMIT {max_reaches}
+        """
+        return conn.execute(query, [
+            region,
+            center_lon - radius_deg, center_lon + radius_deg,
+            center_lat - radius_deg, center_lat + radius_deg
+        ]).fetchdf()
+    else:
+        # Exclude connected reaches (for finding unconnected only)
+        query = f"""
+            SELECT reach_id, x, y, lakeflag, facc, width, n_rch_up, n_rch_down
+            FROM reaches
+            WHERE region = ?
+              AND x BETWEEN ? AND ?
+              AND y BETWEEN ? AND ?
+              AND reach_id NOT IN ({exclude_str})
+            LIMIT {max_reaches}
+        """
+        return conn.execute(query, [
+            region,
+            center_lon - radius_deg, center_lon + radius_deg,
+            center_lat - radius_deg, center_lat + radius_deg
+        ]).fetchdf()
+
+
+def add_flow_arrows(m, coords, color, num_arrows=2, size=0.006):
+    """Add simple vector arrows along a polyline to show flow direction.
+
+    Draws arrow: a line with V-shaped head, all consistent size.
     """
-    return conn.execute(query, [
-        region,
-        center_lon - radius_deg, center_lon + radius_deg,
-        center_lat - radius_deg, center_lat + radius_deg
-    ]).fetchdf()
+    if len(coords) < 2:
+        return
+
+    for i in range(num_arrows):
+        # Position along the line
+        frac = (i + 1) / (num_arrows + 1)
+        idx = int(frac * (len(coords) - 1))
+        idx = max(0, min(idx, len(coords) - 2))
+
+        # Get two adjacent points to calculate direction
+        p1 = coords[idx]
+        p2 = coords[idx + 1]
+
+        # Direction vector (normalized)
+        dx = p2[1] - p1[1]  # lon difference
+        dy = p2[0] - p1[0]  # lat difference
+        length = math.sqrt(dx*dx + dy*dy)
+        if length == 0:
+            continue
+        dx /= length
+        dy /= length
+
+        # Center point of arrow
+        cx = (p1[1] + p2[1]) / 2
+        cy = (p1[0] + p2[0]) / 2
+
+        # Arrow shaft: from tail to tip
+        tail_lon = cx - dx * size
+        tail_lat = cy - dy * size
+        tip_lon = cx + dx * size
+        tip_lat = cy + dy * size
+
+        # V-head points (45 degrees back from tip)
+        head_size = size * 0.6
+        # Rotate direction by +/- 135 degrees for V shape
+        angle1 = math.atan2(dy, dx) + math.radians(150)
+        angle2 = math.atan2(dy, dx) - math.radians(150)
+
+        v1_lon = tip_lon + math.cos(angle1) * head_size
+        v1_lat = tip_lat + math.sin(angle1) * head_size
+        v2_lon = tip_lon + math.cos(angle2) * head_size
+        v2_lat = tip_lat + math.sin(angle2) * head_size
+
+        # Draw black outline first (thicker)
+        folium.PolyLine(
+            [[tail_lat, tail_lon], [tip_lat, tip_lon]],
+            color='black', weight=8, opacity=1
+        ).add_to(m)
+        folium.PolyLine(
+            [[v1_lat, v1_lon], [tip_lat, tip_lon], [v2_lat, v2_lon]],
+            color='black', weight=8, opacity=1
+        ).add_to(m)
+
+        # Draw colored arrow on top
+        folium.PolyLine(
+            [[tail_lat, tail_lon], [tip_lat, tip_lon]],
+            color=color, weight=4, opacity=1
+        ).add_to(m)
+        folium.PolyLine(
+            [[v1_lat, v1_lon], [tip_lat, tip_lon], [v2_lat, v2_lon]],
+            color=color, weight=4, opacity=1
+        ).add_to(m)
 
 
 def render_reach_map_satellite(reach_id, region, conn, hops=None):
@@ -511,7 +716,7 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
 
     # Use sidebar settings
     if hops is None:
-        hops = st.session_state.get('map_hops', 5)
+        hops = st.session_state.get('map_hops', 25)
     show_all = st.session_state.get('show_all_reaches', True)
 
     # Get upstream and downstream geometries
@@ -583,61 +788,116 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
     # Add layer control to toggle between basemaps
     folium.LayerControl().add_to(m)
 
-    # Get and display ALL nearby reaches (unconnected ones in gray)
+    # Get and display ALL nearby reaches with colors by type
     nearby_unconnected = []
+    nearby_all_count = 0
     if show_all:
-        nearby = get_nearby_reaches(conn, center_lon, center_lat, view_radius, region, list(connected_ids))
+        # Get ALL reaches in area with type info - use sidebar settings
+        search_radius = st.session_state.get('map_radius', 3.0)
+        max_reaches = st.session_state.get('max_reaches', 10000)
+        nearby = get_nearby_reaches(conn, center_lon, center_lat, search_radius, region, list(connected_ids), include_all=False, max_reaches=max_reaches)
+        nearby_all_count = len(nearby)
+
+        # Color map by lakeflag: 0=river(white), 1=lake(cyan), 2=canal(yellow), 3=tidal(magenta)
+        type_colors = {0: '#ffffff', 1: '#00ffff', 2: '#ffff00', 3: '#ff00ff'}
+        type_names = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}
+
+        # Highlight either manually previewed or clicked reach
+        highlight_id = st.session_state.get('highlight_reach') or st.session_state.get('clicked_reach')
+
         for _, row in nearby.iterrows():
             nearby_geom = get_reach_geometry(conn, int(row['reach_id']))
             if nearby_geom:
-                nearby_unconnected.append((nearby_geom, row['reach_id']))
+                rid = row['reach_id']
+                lakeflag = int(row['lakeflag']) if pd.notna(row['lakeflag']) else 0
+                facc = row['facc'] if pd.notna(row['facc']) else 0
+                width = row['width'] if pd.notna(row['width']) else 0
+                nearby_unconnected.append((nearby_geom, rid, lakeflag))
 
-        # Draw unconnected reaches first (gray, thin) so they're behind
-        for nearby_geom, rid in nearby_unconnected:
-            coords = [[c[1], c[0]] for c in nearby_geom]
-            folium.PolyLine(
-                coords,
-                color='#ffffff',
-                weight=2,
-                opacity=0.6,
-                tooltip=f"Unconnected: {rid}"
-            ).add_to(m)
+                coords = [[c[1], c[0]] for c in nearby_geom]
+                type_name = type_names.get(lakeflag, '?')
+                color = type_colors.get(lakeflag, '#ffffff')
 
-    # Add upstream reaches (orange, fading based on distance)
+                # Highlight selected reach in bright green
+                if highlight_id and int(rid) == int(highlight_id):
+                    folium.PolyLine(
+                        coords,
+                        color='#00ff00',
+                        weight=6,
+                        opacity=1.0,
+                        tooltip=f"🟢 SELECTED: {rid} ({type_name}, facc={facc:,.0f}, w={width:.0f}m)"
+                    ).add_to(m)
+                    add_flow_arrows(m, coords, '#00ff00', num_arrows=2)
+                else:
+                    # Draw line with flow arrows
+                    folium.PolyLine(
+                        coords,
+                        color=color,
+                        weight=3,
+                        opacity=0.9,
+                        tooltip=f"{type_name}: {rid} (facc={facc:,.0f}, w={width:.0f}m)"
+                    ).add_to(m)
+                    add_flow_arrows(m, coords, color, num_arrows=1)
+
+    # Add upstream reaches (orange with flow arrows)
     for up_geom, i, rid in up_geoms:
-        # Convert [lon, lat] to [lat, lon] for folium
         coords = [[c[1], c[0]] for c in up_geom]
-        # Scale opacity based on total hops
-        opacity = max(0.2, 1.0 - (i / max(hops, 1)) * 0.8)
+        opacity = max(0.4, 1.0 - (i / max(hops, 1)) * 0.6)
         folium.PolyLine(
             coords,
             color='orange',
-            weight=3,
+            weight=4,
             opacity=opacity,
             tooltip=f"Upstream {i+1}: {rid}"
         ).add_to(m)
+        add_flow_arrows(m, coords, 'orange', num_arrows=2)
 
-    # Add downstream reaches (blue, fading based on distance)
+    # Add downstream reaches (blue with flow arrows)
     for dn_geom, i, rid in dn_geoms:
         coords = [[c[1], c[0]] for c in dn_geom]
-        opacity = max(0.2, 1.0 - (i / max(hops, 1)) * 0.8)
+        opacity = max(0.4, 1.0 - (i / max(hops, 1)) * 0.6)
         folium.PolyLine(
             coords,
             color='#0066ff',
-            weight=3,
+            weight=4,
             opacity=opacity,
             tooltip=f"Downstream {i+1}: {rid}"
         ).add_to(m)
+        add_flow_arrows(m, coords, '#0066ff', num_arrows=2)
 
-    # Add main reach (red, thicker)
+    # Add main reach - BRIGHT YELLOW with black outline for visibility
     main_coords = [[c[1], c[0]] for c in geom]
+    # Black outline first
     folium.PolyLine(
         main_coords,
-        color='red',
-        weight=6,
-        opacity=1.0,
-        tooltip=f"Selected: {reach_id}"
+        color='black',
+        weight=12,
+        opacity=1.0
     ).add_to(m)
+    # Bright yellow on top
+    folium.PolyLine(
+        main_coords,
+        color='#FFFF00',
+        weight=8,
+        opacity=1.0,
+        tooltip=f"★ SELECTED: {reach_id}"
+    ).add_to(m)
+    add_flow_arrows(m, main_coords, '#FFFF00', num_arrows=2)
+
+    # Add pulsing circle marker at center of selected reach
+    if len(main_coords) > 0:
+        center_idx = len(main_coords) // 2
+        center = main_coords[center_idx]
+        folium.CircleMarker(
+            center,
+            radius=15,
+            color='black',
+            fill=True,
+            fill_color='#FFFF00',
+            fill_opacity=1.0,
+            weight=3,
+            tooltip=f"★ SELECTED: {reach_id}"
+        ).add_to(m)
 
     # Fit bounds (expand slightly to show context)
     padding = view_radius * 0.2
@@ -646,12 +906,42 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
         [max(lats) + padding, max(lons) + padding]
     ])
 
-    # Render in streamlit
-    st_folium(m, width=None, height=500, returned_objects=[])
+    # Save network IDs to session state for topology fixing
+    st.session_state.last_network_ids = list(connected_ids)
+
+    # Store nearby reach IDs for click detection
+    st.session_state.nearby_reach_ids = [int(rid) for _, rid, _ in nearby_unconnected] if show_all else []
+
+    # Render in streamlit and capture clicks
+    map_data = st_folium(m, width=None, height=500, returned_objects=["last_object_clicked_tooltip"])
+
+    # Check if user clicked on a reach - extract ID from tooltip
+    if map_data and map_data.get("last_object_clicked_tooltip"):
+        tooltip = map_data["last_object_clicked_tooltip"]
+        # Tooltips look like "River: 12345 (facc=...)" or "Lake: 12345 ..."
+        import re
+        match = re.search(r'(?:River|Lake|Canal|Tidal|Unconnected|SELECTED):\s*(\d+)', tooltip)
+        if match:
+            clicked_id = int(match.group(1))
+            # Only set if it's a nearby (unconnected) reach, not the selected or network reaches
+            if clicked_id in st.session_state.get('nearby_reach_ids', []):
+                st.session_state.clicked_reach = clicked_id
+
+    highlight_id = st.session_state.get('highlight_reach')
     if show_all and nearby_unconnected:
-        st.caption(f"🔴 Selected | 🟠 Upstream ({len(up_geoms)}) | 🔵 Downstream ({len(dn_geoms)}) | ⚪ Unconnected ({len(nearby_unconnected)})")
+        # Count by type
+        type_counts = {}
+        for _, rid, lf in nearby_unconnected:
+            type_counts[lf] = type_counts.get(lf, 0) + 1
+
+        legend = f"🟡 SELECTED | 🟠 Up ({len(up_geoms)}) | 🔵 Down ({len(dn_geoms)})"
+        legend += f" | ⚪ River ({type_counts.get(0, 0)}) | 🔵 Lake ({type_counts.get(1, 0)})"
+        legend += f" | 🟡 Canal ({type_counts.get(2, 0)}) | 🟣 Tidal ({type_counts.get(3, 0)})"
+        if highlight_id:
+            legend += f" | 🟢 To Connect"
+        st.caption(legend)
     else:
-        st.caption(f"🔴 Selected | 🟠 Upstream ({len(up_geoms)}) | 🔵 Downstream ({len(dn_geoms)})")
+        st.caption(f"🟡 SELECTED | 🟠 Upstream ({len(up_geoms)}) | 🔵 Downstream ({len(dn_geoms)})")
 
 
 def get_lint_fix_history(conn, region=None, limit=100):
@@ -906,32 +1196,67 @@ st.title("🌊 SWORD Topology & FACC Reviewer")
 st.sidebar.header("Settings")
 region = st.sidebar.selectbox("Region", ["NA", "SA", "EU", "AF", "AS", "OC"], index=0)
 
-# Network display settings
-st.sidebar.subheader("Map Settings")
-st.session_state.map_hops = st.sidebar.slider(
-    "Network depth (reaches)",
-    min_value=1,
-    max_value=15,
-    value=st.session_state.get('map_hops', 5),
-    help="How many reaches to show upstream/downstream"
-)
-st.session_state.show_all_reaches = st.sidebar.checkbox(
-    "Show ALL reaches in area",
-    value=st.session_state.get('show_all_reaches', True),
-    help="Show unconnected reaches (white) to spot missing topology"
-)
+# Summary of saved work
+st.sidebar.subheader("💾 Saved to Database")
+try:
+    # Count unique reaches per check type
+    saved_summary = conn.execute("""
+        SELECT check_id, COUNT(DISTINCT reach_id) as cnt
+        FROM lint_fix_log
+        WHERE region = ? AND NOT undone
+        GROUP BY check_id
+    """, [region]).fetchdf()
+
+    if len(saved_summary) == 0:
+        st.sidebar.info("No saved reviews yet")
+    else:
+        # Get counts by type
+        counts = dict(zip(saved_summary['check_id'], saved_summary['cnt']))
+        hw = int(counts.get('HW', 0))
+        topo = int(counts.get('TOPO', 0))
+        c001 = int(counts.get('C001', 0))
+        c004 = int(counts.get('C004', 0))
+        t003 = int(counts.get('T003', 0))
+        t004 = int(counts.get('T004', 0))
+        suspect = int(counts.get('SUSPECT', 0))
+
+        reviews = hw + c001 + c004 + t003 + t004 + suspect
+        st.sidebar.success(f"**{reviews} reviews, {topo} fixes**")
+
+        st.sidebar.caption("Reviews by tab:")
+        if hw: st.sidebar.write(f"  🏔️ Headwaters: {hw}")
+        if suspect: st.sidebar.write(f"  ⚠️ Suspect: {suspect}")
+        if c001: st.sidebar.write(f"  🥪 Lake Sandwich: {c001}")
+        if c004: st.sidebar.write(f"  🏷️ Type Mismatch: {c004}")
+        if t003: st.sidebar.write(f"  📊 FACC Issues: {t003}")
+        if t004: st.sidebar.write(f"  🏝️ Orphans: {t004}")
+
+        if topo:
+            st.sidebar.caption("Fixes applied:")
+            st.sidebar.write(f"  🔗 Topology connections: {topo}")
+except Exception as e:
+    st.sidebar.warning(f"Could not load summary: {e}")
+
+st.sidebar.divider()
+
+# Map settings - hardcoded large defaults
+st.session_state.map_hops = 30
+st.session_state.map_radius = 4.0  # ~444km
+st.session_state.max_reaches = 15000
+st.session_state.show_all_reaches = True
 
 # Tabs for different issue types
 # NOTE: Tabs 1-2 (Ratio Violations, Monotonicity) hidden until facc strategy decided
 # To restore, uncomment those tabs and their implementations below
-tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "🏔️ Headwaters",
     "⚠️ Suspect",
     "📜 Fix History",
     "🥪 Lake Sandwich",
     "🏷️ Lakeflag/Type",
     "📈 FACC Mono",
-    "🏝️ Orphans"
+    "🏝️ Orphans",
+    "🔍 Review Fixes"
 ])
 
 # =============================================================================
@@ -1019,9 +1344,18 @@ tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 with tab3:
     st.header("🏔️ Suspicious Headwaters")
 
-    # Initialize session state
+    # Load already-reviewed reaches from database (persists across refreshes)
+    reviewed_hw = conn.execute("""
+        SELECT DISTINCT reach_id FROM lint_fix_log
+        WHERE region = ? AND check_id = 'HW' AND NOT undone
+    """, [region]).fetchdf()['reach_id'].tolist()
+
+    # Session state tracks current session additions (merged with DB)
     if 'hw_pending' not in st.session_state:
         st.session_state.hw_pending = []
+
+    # Combine DB + session (avoid duplicates)
+    all_reviewed = set(reviewed_hw) | set(st.session_state.hw_pending)
 
     min_facc = st.slider("Minimum facc threshold", 1000, 100000, 5000, key="hw_slider")
     hw_issues = get_headwater_issues(conn, region, min_facc)
@@ -1030,15 +1364,17 @@ with tab3:
         st.success(f"✅ No suspicious headwaters (facc > {min_facc:,} km²)")
     else:
         total = len(hw_issues)
-        done = len(st.session_state.hw_pending)
-        remaining = len([r for r in hw_issues['reach_id'].tolist() if r not in st.session_state.hw_pending])
+        remaining = len([r for r in hw_issues['reach_id'].tolist() if r not in all_reviewed])
+        total_reviewed = len(all_reviewed)  # Total unique reaches reviewed (saved to DB)
+        pct_done = (total_reviewed / total * 100) if total > 0 else 0
 
-        # Progress
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Remaining", remaining)
-        col2.metric("Reviewed", done)
-        col3.metric("Total", total)
-        st.progress(done / total if total > 0 else 0)
+        # Progress - big and clear
+        st.markdown(f"### Progress: **{pct_done:.1f}%** ({total_reviewed} of {total} reviewed)")
+        st.progress(total_reviewed / total if total > 0 else 0)
+
+        col1, col2 = st.columns(2)
+        col1.metric("⏳ Remaining", remaining)
+        col2.metric("💾 Reviewed & Saved", total_reviewed)
 
         if remaining == 0:
             st.success("🎉 All suspicious headwaters reviewed!")
@@ -1046,13 +1382,13 @@ with tab3:
                 st.session_state.hw_pending = []
                 st.rerun()
         else:
-            available = [r for r in hw_issues['reach_id'].tolist() if r not in st.session_state.hw_pending]
+            available = [r for r in hw_issues['reach_id'].tolist() if r not in all_reviewed]
             selected = available[0]
             h = hw_issues[hw_issues['reach_id'] == selected].iloc[0]
 
             # ===== PROBLEM BOX =====
             st.markdown("---")
-            st.subheader(f"🔍 Issue #{done + 1}: Reach `{selected}`")
+            st.subheader(f"🔍 Issue #{total_reviewed + 1}: Reach `{selected}`")
 
             # Clear problem statement
             st.error(f"""
@@ -1091,10 +1427,62 @@ with tab3:
                     st.session_state.hw_pending.append(selected)
                     st.rerun()
 
-                if st.button("🔗 Missing Upstream", key=f"hw_missing_{selected}", use_container_width=True):
-                    log_skip(conn, selected, region, 'HW', 'Missing upstream topology')
-                    st.session_state.hw_pending.append(selected)
-                    st.rerun()
+                # Expandable section to FIX topology
+                with st.expander("🔗 Fix Missing Upstream", expanded=False):
+                    st.markdown("**Select a reach to connect as upstream:**")
+
+                    # Get nearby unconnected reaches - use same radius as map
+                    network_ids = st.session_state.get('last_network_ids', [])
+                    search_radius = st.session_state.get('map_radius', 3.0)
+                    max_reaches = st.session_state.get('max_reaches', 10000)
+                    nearby = get_nearby_reaches(conn, h['x'], h['y'], search_radius, region, exclude_ids=network_ids, max_reaches=max_reaches)
+
+                    if len(nearby) == 0:
+                        st.info("No unconnected reaches found nearby. Try increasing search radius in sidebar.")
+                    else:
+                        reach_ids = [int(r['reach_id']) for _, r in nearby.iterrows()]
+
+                        # Check if user clicked a reach on the map
+                        clicked = st.session_state.get('clicked_reach')
+
+                        # Clear stale click if it's not in current nearby list
+                        if clicked and clicked not in reach_ids:
+                            st.session_state.clicked_reach = None
+                            clicked = None
+
+                        if clicked:
+                            # User clicked on map - use that reach directly
+                            neighbor_id = clicked
+                            st.success(f"🖱️ **Clicked:** `{neighbor_id}`")
+                            if st.button("❌ Clear selection", key=f"hw_clear_{selected}"):
+                                st.session_state.clicked_reach = None
+                                st.rerun()
+                        else:
+                            # Show dropdown to pick manually
+                            st.caption("👆 Click a reach on the map, or pick from list:")
+                            neighbor_id = st.selectbox("Nearby reaches:", reach_ids, key=f"hw_connect_{selected}")
+
+                        # Show info about selected neighbor
+                        neighbor_info = conn.execute("""
+                            SELECT facc, width, lakeflag, river_name
+                            FROM reaches WHERE reach_id = ? AND region = ?
+                        """, [neighbor_id, region]).fetchone()
+                        if neighbor_info:
+                            n_type = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}.get(neighbor_info[2], '?')
+                            st.markdown(f"**{n_type}** | facc={neighbor_info[0]:,.0f} km² | width={neighbor_info[1]:.0f}m")
+
+                        st.markdown(f"➡️ `{neighbor_id}` (upstream) → `{selected}` (this reach)")
+
+                        if st.button(f"✅ Connect as UPSTREAM", key=f"hw_do_connect_{selected}", type="primary", use_container_width=True):
+                            success, msg = add_topology_connection(conn, selected, neighbor_id, 'up', region)
+                            if success:
+                                st.success(f"✅ {msg}")
+                                st.session_state.hw_pending.append(selected)
+                                st.session_state.highlight_reach = None
+                                st.session_state.clicked_reach = None
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {msg}")
 
                 if st.button("↩️ Wrong Flow Direction", key=f"hw_flow_{selected}", use_container_width=True):
                     log_skip(conn, selected, region, 'HW', 'Wrong flow direction')
@@ -1105,6 +1493,16 @@ with tab3:
                     log_skip(conn, selected, region, 'HW', 'Valid headwater')
                     st.session_state.hw_pending.append(selected)
                     st.rerun()
+
+                st.markdown("---")
+                # Undo button for topology fixes
+                if st.button("⏪ Undo Last Topology Fix", key=f"hw_undo_{selected}", use_container_width=True):
+                    reach_id, msg = undo_last_topology_fix(conn, region)
+                    if reach_id:
+                        st.success(f"✅ {msg}")
+                        st.rerun()
+                    else:
+                        st.warning(msg)
 
 # =============================================================================
 # TAB 4: Suspect Reaches
@@ -1688,6 +2086,233 @@ with tab9:
                         st.session_state.t004_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
+
+# =============================================================================
+# TAB 10: Review Fixes (Verify/Undo Topology Connections)
+# =============================================================================
+with tab10:
+    st.header("🔍 Review Topology Fixes")
+    st.caption("Verify and undo topology connections you've made")
+
+    # Get all TOPO fixes for this region
+    topo_fixes = conn.execute("""
+        SELECT fix_id, timestamp, reach_id, notes, undone
+        FROM lint_fix_log
+        WHERE region = ? AND check_id = 'TOPO' AND notes LIKE 'Added%'
+        ORDER BY timestamp DESC
+    """, [region]).fetchdf()
+
+    active_fixes = topo_fixes[~topo_fixes['undone']]
+    undone_fixes = topo_fixes[topo_fixes['undone']]
+
+    col1, col2 = st.columns(2)
+    col1.metric("Active Fixes", len(active_fixes))
+    col2.metric("Undone", len(undone_fixes))
+
+    if len(active_fixes) == 0:
+        st.info("No active topology fixes to review. Make some connections in the Headwaters tab first.")
+    else:
+        st.success(f"✅ {len(active_fixes)} topology connection(s) to review")
+
+        # Let user select which fix to review
+        fix_options = []
+        for _, fix in active_fixes.iterrows():
+            # Parse the notes to get connected reach
+            notes = fix['notes']
+            # Format: "Added upstream connection to 12345" or "Added downstream connection to 12345"
+            match = re.search(r'Added (\w+)stream connection to (\d+)', notes)
+            if match:
+                direction = match.group(1)
+                connected_id = match.group(2)
+                fix_options.append({
+                    'fix_id': fix['fix_id'],
+                    'reach_id': int(fix['reach_id']),
+                    'connected_id': int(connected_id),
+                    'direction': direction,
+                    'timestamp': fix['timestamp'],
+                    'label': f"#{fix['fix_id']}: {fix['reach_id']} ← {connected_id} (upstream)"
+                })
+
+        if fix_options:
+            selected_idx = st.selectbox(
+                "Select a fix to review",
+                range(len(fix_options)),
+                format_func=lambda i: fix_options[i]['label'],
+                key="review_fix_select"
+            )
+
+            selected_fix = fix_options[selected_idx]
+            reach_id = selected_fix['reach_id']
+            connected_id = selected_fix['connected_id']
+
+            st.markdown("---")
+            st.subheader(f"Fix #{selected_fix['fix_id']}")
+
+            # Info about the connection
+            col1, col2, col3 = st.columns(3)
+            col1.markdown(f"**Headwater Reach:**\n`{reach_id}`")
+            col2.markdown(f"**Connected Upstream:**\n`{connected_id}`")
+            col3.markdown(f"**Made:**\n{str(selected_fix['timestamp'])[:16]}")
+
+            st.info(f"🔗 **Connection:** Reach `{connected_id}` flows INTO reach `{reach_id}`")
+
+            # Render map showing both reaches
+            st.markdown("#### Map View")
+
+            # Get geometries for both reaches
+            main_geom = get_reach_geometry(conn, reach_id)
+            connected_geom = get_reach_geometry(conn, connected_id)
+
+            if main_geom and connected_geom:
+                # Combine coords for bounds
+                all_coords = list(main_geom) + list(connected_geom)
+                lons = [c[0] for c in all_coords]
+                lats = [c[1] for c in all_coords]
+                center_lat = (min(lats) + max(lats)) / 2
+                center_lon = (min(lons) + max(lons)) / 2
+                extent = max(max(lons) - min(lons), max(lats) - min(lats))
+                zoom = 15 if extent < 0.02 else 14 if extent < 0.05 else 12
+
+                m = folium.Map(location=[center_lat, center_lon], zoom_start=zoom, tiles=None)
+                folium.TileLayer(
+                    tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+                    attr='Esri', name='Satellite'
+                ).add_to(m)
+
+                # Draw connected reach (upstream) in orange
+                conn_coords = [[c[1], c[0]] for c in connected_geom]
+                folium.PolyLine(conn_coords, color='black', weight=10, opacity=1.0).add_to(m)
+                folium.PolyLine(conn_coords, color='orange', weight=6, opacity=1.0,
+                                tooltip=f"UPSTREAM: {connected_id}").add_to(m)
+                add_flow_arrows(m, conn_coords, 'orange', num_arrows=2)
+
+                # Draw main reach (headwater that was fixed) in yellow
+                main_coords = [[c[1], c[0]] for c in main_geom]
+                folium.PolyLine(main_coords, color='black', weight=12, opacity=1.0).add_to(m)
+                folium.PolyLine(main_coords, color='#FFFF00', weight=8, opacity=1.0,
+                                tooltip=f"★ HEADWATER: {reach_id}").add_to(m)
+                add_flow_arrows(m, main_coords, '#FFFF00', num_arrows=2)
+
+                # Add markers at centers
+                if len(conn_coords) > 0:
+                    center = conn_coords[len(conn_coords) // 2]
+                    folium.CircleMarker(center, radius=12, color='black', fill_color='orange',
+                                        fill_opacity=1.0, weight=2, tooltip=f"UPSTREAM: {connected_id}").add_to(m)
+
+                if len(main_coords) > 0:
+                    center = main_coords[len(main_coords) // 2]
+                    folium.CircleMarker(center, radius=15, color='black', fill_color='#FFFF00',
+                                        fill_opacity=1.0, weight=3, tooltip=f"★ HEADWATER: {reach_id}").add_to(m)
+
+                # Add connection arrow between reaches
+                if len(conn_coords) > 0 and len(main_coords) > 0:
+                    # Arrow from end of upstream to start of headwater
+                    from_pt = conn_coords[-1]  # End of upstream
+                    to_pt = main_coords[0]     # Start of headwater
+                    folium.PolyLine([from_pt, to_pt], color='#00ff00', weight=4, opacity=0.8,
+                                    dash_array='10,10', tooltip="Connection").add_to(m)
+
+                padding = max(extent * 0.3, 0.005)
+                m.fit_bounds([[min(lats) - padding, min(lons) - padding],
+                              [max(lats) + padding, max(lons) + padding]])
+
+                st_folium(m, width=None, height=400, key=f"review_map_{selected_fix['fix_id']}")
+
+            else:
+                st.warning("Could not load geometry for one or both reaches")
+
+            # Get reach info
+            reach_info = conn.execute("""
+                SELECT facc, width, reach_length, lakeflag, river_name
+                FROM reaches WHERE reach_id = ? AND region = ?
+            """, [reach_id, region]).fetchone()
+
+            connected_info = conn.execute("""
+                SELECT facc, width, reach_length, lakeflag, river_name
+                FROM reaches WHERE reach_id = ? AND region = ?
+            """, [connected_id, region]).fetchone()
+
+            st.markdown("#### Reach Details")
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown(f"**Headwater Reach** `{reach_id}`")
+                if reach_info:
+                    type_name = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}.get(reach_info[3], '?')
+                    st.markdown(f"- **Type:** {type_name}")
+                    st.markdown(f"- **FACC:** {reach_info[0]:,.0f} km²" if reach_info[0] else "- **FACC:** N/A")
+                    st.markdown(f"- **Width:** {reach_info[1]:.0f}m" if reach_info[1] else "- **Width:** N/A")
+                    st.markdown(f"- **Name:** {reach_info[4] or 'Unnamed'}")
+
+            with col2:
+                st.markdown(f"**Upstream Reach** `{connected_id}`")
+                if connected_info:
+                    type_name = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}.get(connected_info[3], '?')
+                    st.markdown(f"- **Type:** {type_name}")
+                    st.markdown(f"- **FACC:** {connected_info[0]:,.0f} km²" if connected_info[0] else "- **FACC:** N/A")
+                    st.markdown(f"- **Width:** {connected_info[1]:.0f}m" if connected_info[1] else "- **Width:** N/A")
+                    st.markdown(f"- **Name:** {connected_info[4] or 'Unnamed'}")
+
+            st.markdown("---")
+            st.markdown("#### Actions")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Looks Good", key=f"review_keep_{selected_fix['fix_id']}", type="primary", use_container_width=True):
+                    st.success("Fix verified! Moving to next...")
+                    st.rerun()
+
+            with col2:
+                if st.button("❌ Undo This Fix", key=f"review_undo_{selected_fix['fix_id']}", type="secondary", use_container_width=True):
+                    # Call the undo function directly for this specific fix
+                    try:
+                        # Get fix details
+                        direction = selected_fix['direction']
+
+                        # Remove topology edges
+                        if direction == 'up':
+                            conn.execute("""
+                                DELETE FROM reach_topology
+                                WHERE reach_id = ? AND neighbor_id = ? AND direction = 'up' AND region = ?
+                            """, [reach_id, connected_id, region])
+                            conn.execute("""
+                                DELETE FROM reach_topology
+                                WHERE reach_id = ? AND neighbor_id = ? AND direction = 'down' AND region = ?
+                            """, [connected_id, reach_id, region])
+                            # Update counts
+                            conn.execute("UPDATE reaches SET n_rch_up = GREATEST(0, n_rch_up - 1) WHERE reach_id = ? AND region = ?", [reach_id, region])
+                            conn.execute("UPDATE reaches SET n_rch_down = GREATEST(0, n_rch_down - 1) WHERE reach_id = ? AND region = ?", [connected_id, region])
+                        else:
+                            conn.execute("""
+                                DELETE FROM reach_topology
+                                WHERE reach_id = ? AND neighbor_id = ? AND direction = 'down' AND region = ?
+                            """, [reach_id, connected_id, region])
+                            conn.execute("""
+                                DELETE FROM reach_topology
+                                WHERE reach_id = ? AND neighbor_id = ? AND direction = 'up' AND region = ?
+                            """, [connected_id, reach_id, region])
+                            # Update counts
+                            conn.execute("UPDATE reaches SET n_rch_down = GREATEST(0, n_rch_down - 1) WHERE reach_id = ? AND region = ?", [reach_id, region])
+                            conn.execute("UPDATE reaches SET n_rch_up = GREATEST(0, n_rch_up - 1) WHERE reach_id = ? AND region = ?", [connected_id, region])
+
+                        # Mark fix as undone
+                        conn.execute("UPDATE lint_fix_log SET undone = TRUE WHERE fix_id = ?", [selected_fix['fix_id']])
+
+                        # Log undo action
+                        log_skip(conn, reach_id, region, 'TOPO', f"Undid {direction}stream connection to {connected_id}")
+
+                        conn.commit()
+                        st.success(f"✅ Undid connection: {reach_id} ← {connected_id}")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error undoing fix: {e}")
+
+    # Show undone fixes history
+    if len(undone_fixes) > 0:
+        with st.expander(f"📜 Previously Undone ({len(undone_fixes)})"):
+            for _, fix in undone_fixes.iterrows():
+                st.text(f"#{fix['fix_id']}: {fix['reach_id']} - {fix['notes']} (undone)")
 
 # Footer
 st.divider()

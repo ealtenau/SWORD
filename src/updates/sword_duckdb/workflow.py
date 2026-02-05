@@ -1736,7 +1736,7 @@ class SWORDWorkflow:
 
         logger.info(f"Aggregating node observations from: {glob_pattern}")
 
-        # Detect available columns for dynamic filtering (matching reach_slope_obs.py)
+        # Detect available columns for dynamic filtering (matching reach_swot_obs.py)
         try:
             sample_df = conn.execute(f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1").df()
             colnames = set(c.lower() for c in sample_df.columns.tolist())

@@ -12,10 +12,12 @@
 | **width_obs_median** | nodes, reaches | meters | SWOT L2 RiverSP |
 | **width_obs_std** | nodes, reaches | meters | SWOT L2 RiverSP |
 | **width_obs_range** | nodes, reaches | meters | SWOT L2 RiverSP |
-| **slope_obs_mean** | reaches only | m/km | SWOT L2 RiverSP |
-| **slope_obs_median** | reaches only | m/km | SWOT L2 RiverSP |
-| **slope_obs_std** | reaches only | m/km | SWOT L2 RiverSP |
-| **slope_obs_range** | reaches only | m/km | SWOT L2 RiverSP |
+| **slope_obs_mean** | reaches only | m/m | SWOT L2 RiverSP (raw, may be negative) |
+| **slope_obs_median** | reaches only | m/m | SWOT L2 RiverSP |
+| **slope_obs_std** | reaches only | m/m | SWOT L2 RiverSP |
+| **slope_obs_range** | reaches only | m/m | SWOT L2 RiverSP |
+| **slope_obs_adj** | reaches only | m/m | GREATEST(slope_obs_mean, 0) |
+| **slope_obs_reliable** | reaches only | boolean | TRUE if slope_obs_mean > noise floor |
 | **n_obs** | nodes, reaches | count | SWOT L2 RiverSP |
 
 **Note:** These are v17c additions - NOT documented in SWORD PDD v17b.
@@ -112,10 +114,11 @@ GROUP BY reach_id
 """
 ```
 
-### SWOT Slope Calculation (v17c pipeline)
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/SWOT_slopes.py`
-- **Algorithm:** Linear Mixed Effects model for junction-to-junction section slopes
-- **Note:** This is a separate, more sophisticated slope calculation than the simple aggregation above
+### SWOT Observation Aggregation (v17c pipeline)
+- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/reach_swot_obs.py`
+- **Algorithm:** OLS regression (wse ~ p_dist_out) per cycle/pass for slope; direct aggregation for wse/width
+- **Bounds checking:** width > 0 AND width < 100000, wse > -1000 AND wse < 10000 (prevents STDDEV_SAMP overflow)
+- **Note:** Renamed from reach_slope_obs.py (2026-02-03) to reflect that it computes slope, wse, and width
 
 ## Schema Definition
 
@@ -145,17 +148,17 @@ slope_obs_range DOUBLE,      -- range (max-min) of observed slope (m/km)
 
 ## Population Statistics (v17c Database)
 
-### Coverage by Region
+### Coverage by Region (Updated 2026-02-03)
 
-| Region | Total Reaches | With SWOT Data | Coverage |
-|--------|---------------|----------------|----------|
-| AF | 26,549 | 21,680 | 81.7% |
-| AS | 71,178 | 52,543 | 73.8% |
-| EU | 30,595 | 20,171 | 65.9% |
-| NA | 62,168 | 40,106 | 64.5% |
-| OC | 14,115 | 10,702 | 75.8% |
-| SA | 43,768 | 35,064 | 80.1% |
-| **Total** | **248,373** | **180,266** | **72.6%** |
+| Region | Total | Slope | Slope % | WSE/Width | WSE % |
+|--------|-------|-------|---------|-----------|-------|
+| AF | 21,441 | 18,643 | 87.0% | 18,133 | 84.6% |
+| AS | 100,185 | 79,749 | 79.6% | 83,208 | 83.1% |
+| EU | 31,103 | 23,695 | 76.2% | 24,392 | 78.4% |
+| NA | 38,696 | 31,873 | 82.4% | 26,241 | 67.8% |
+| OC | 15,090 | 11,658 | 77.3% | 11,860 | 78.6% |
+| SA | 42,159 | 36,325 | 86.2% | 34,912 | 82.8% |
+| **Total** | **248,674** | **201,943** | **81.2%** | **198,746** | **79.9%** |
 
 ### n_obs Distribution
 
@@ -369,21 +372,36 @@ Related existing checks:
 
 ## Known Issues (v17c)
 
-### 1. Negative SWOT Slopes (CRITICAL)
+### 1. Negative SWOT Slopes (RESOLVED)
 
-**Scope:** 24,129 reaches (13.4% of reaches with SWOT data)
+**Scope:** 25,973 reaches (14.3% of reaches with SWOT data)
 
 **Observed values:**
-- Minimum slope_obs_mean: -0.23 m/km
-- Distribution: Most between -0.05 and 0 m/km
+- Minimum slope_obs_mean: -0.23 m/m
+- Distribution: Most between -0.05 and 0 m/m
 
-**Possible causes:**
-1. Measurement noise in flat reaches
-2. Temporal variability (backwater, tides)
-3. Aggregation of heterogeneous slope observations
-4. Sign convention inconsistency in source data
+**Root cause (investigated 2026-02-02):**
+1. **Measurement noise** - SWOT slope accuracy is ~1.7 cm/km (0.000017 m/m). For very flat reaches (slope < this threshold), noise dominates, producing negative measurements.
+2. **Temporal variability** - Backwater effects, tides, or local hydraulics can create temporarily negative water surface slopes in individual observations.
+3. **Not a code bug** - The aggregation correctly averages SWOT observations; negative values are present in source data.
 
-**Recommendation:** Create GitHub issue; investigate source data; consider clipping to zero or flagging.
+**Distribution by reach type:**
+- Very flat reaches (<0.001 m/km MERIT slope): 31.6% negative
+- Tidal reaches (lakeflag=3): 37.4% negative
+- Lakes (lakeflag=1): 38.3% negative
+- Rivers (lakeflag=0): 12.4% negative
+- Steep reaches (>1 m/km): 7.0% negative
+
+**Resolution (v17c):**
+Two new columns added to handle this expected SWOT behavior:
+- `slope_obs_adj = GREATEST(slope_obs_mean, 0.0)` - Clips negative slopes to 0
+- `slope_obs_reliable = TRUE` if slope_obs_mean > 0.000017 (noise floor) AND std < |mean|
+
+**Statistics:**
+- 25,973 reaches clipped to 0 in slope_obs_adj
+- 91,463 reaches (50.2%) marked as slope_obs_reliable = TRUE
+
+**Recommendation for users:** Use `slope_obs_adj` for hydraulic calculations; check `slope_obs_reliable` flag; interpret low/negative slopes as "below SWOT detection limit" rather than actual reverse flow.
 
 ### 2. Low Slope Correlation
 
