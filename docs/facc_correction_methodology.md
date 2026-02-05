@@ -198,24 +198,81 @@ python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --f
 python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --verify-seeds
 ```
 
+### Batch 4: RF Regressor Correction (1,725 reaches)
+**Date**: 2026-02-05
+**Method**: Random Forest regressor predicting facc from network position
+
+**Approach**: Train RF on ~247K "clean" reaches (non-anomalous) to predict what facc SHOULD be based on network position, then apply to detected anomalies.
+
+**Model Performance**:
+| Metric | Value |
+|--------|-------|
+| R² (log space) | 0.787 |
+| R² (original) | 0.773 |
+| MAE | 16,203 km² |
+| Median % error | 34.8% |
+
+**Top Features**:
+| Rank | Feature | Importance | Description |
+|------|---------|------------|-------------|
+| 1 | hydro_dist_hw | 56.4% | Distance from headwater (Dijkstra) |
+| 2 | path_freq | 5.7% | Network traversal count |
+| 3 | main_side | 5.1% | Channel type (main/side/secondary) |
+| 4 | log_path_freq | 4.5% | Log of path_freq |
+| 5 | main_path_id | 2.8% | Mainstem identifier |
+
+**Key Insight**: Network position (`hydro_dist_hw`) dominates - facc accumulates as you move downstream from headwaters.
+
+**Results**:
+- 1,725 reaches corrected
+- Median facc: 68,637 → 4,933 km² (14x reduction)
+- DuckDB batch_id: 2
+- PostgreSQL batch_id: 1
+
+**Known Issues**:
+
+*False Positives (wrongly corrected)*:
+| reach_id | Region | Issue |
+|----------|--------|-------|
+| 77250000153 | OC | Mainstem reach, should not change |
+| 74300400575 | SA | Incorrectly flipped |
+| 74300400565 | SA | Incorrectly flipped |
+
+*False Negatives (missed, added as new seeds)*:
+- 62293100143 (SA)
+- 62293100156 (SA)
+- 62253000321 (SA)
+- 62235900101 (SA)
+
+**Files**:
+```
+src/updates/sword_duckdb/facc_detection/rf_regressor.py  # FaccRegressor class
+output/facc_detection/rf_regressor.joblib                # Trained model (110 MB)
+output/facc_detection/rf_regressor_importance.csv        # Feature rankings
+output/facc_detection/rf_regressor_predictions.csv       # Predictions for anomalies
+output/facc_detection/FACC_DETECTION_REPORT.md           # Detailed ratio definitions
+```
+
+---
+
 ## Summary Statistics
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Corrections logged | - | 2,087 |
-| Corrections applied | - | 2,083 |
-| Intentional overrides | - | 4 |
-| Reaches with FWR > 5000 (rivers, width>30) | ~1,800 | 745 |
-| Seed reaches fixed | 0/5 | 5/5 |
-| Median reduction factor | - | 106x |
+| Metric | Batches 1-3 | Batch 4 (RF) | Total |
+|--------|-------------|--------------|-------|
+| Corrections logged | 2,087 | 1,725 | 3,812 |
+| Corrections applied | 2,083 | 1,725 | 3,808 |
+| Median reduction factor | 106x | 14x | - |
+| Seed reaches (total) | 5 | 39 (+4 new) | 43 |
 
 ### Completion Status ✅
-- All 2,083 corrections successfully applied to v17c database
-- **4 intentional overrides** (not applied):
+- **Batches 1-3**: 2,083 corrections applied
+- **Batch 4**: 1,725 corrections applied via RF regressor
+- **4 intentional overrides** (batches 1-3):
   - 14210000525 (AF): Rolled back - tidal bifurcation false positive
   - 62293900353 (SA): Manual fix - lake propagation edge case
+- **3 RF false positives identified** (batch 4): 77250000153, 74300400575, 74300400565
 - **745 high-FWR reaches** reviewed and confirmed as false positives - no action needed
-- Full audit trail in `facc_fix_log` table
+- Full audit trail in `facc_fix_log` and `facc_corrections` tables
 
 ## References
 
