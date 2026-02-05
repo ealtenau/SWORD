@@ -197,6 +197,26 @@ When it sees an anomalous reach at `hydro_dist_hw = 150 km` with `facc = 2,500,0
 
 **Key insight:** `hydro_dist_hw` alone explains 56% of variance - network position is the dominant predictor.
 
+### Why hydro_dist_hw works (not dist_out)
+
+| Variable | Algorithm | Direction |
+|----------|-----------|-----------|
+| `dist_out` (v17b) | BFS upstream from outlets | Decreases downstream |
+| `hydro_dist_hw` (v17c) | Dijkstra downstream from headwaters | **Increases downstream** |
+
+**hydro_dist_hw computation:**
+1. Build directed graph from SWORD topology (nodes = reaches, edges = flow)
+2. Identify headwaters (reaches with no upstream neighbors)
+3. For each headwater, run Dijkstra downstream using `reach_length` as edge weights
+4. For each reach, keep the **maximum distance from any headwater** that can reach it
+
+**Why it predicts facc:**
+- facc **accumulates downstream** from headwaters
+- `hydro_dist_hw` **increases downstream** from headwaters
+- They move in the **same direction**
+
+`dist_out` moves opposite to facc, so it's less intuitive for prediction.
+
 ### Feature Categories (59 total)
 
 | Category | Count | Examples |
