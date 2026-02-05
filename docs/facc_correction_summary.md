@@ -2,9 +2,14 @@
 
 ## The Problem
 
-SWORD uses MERIT Hydro flow accumulation (facc), which is derived from D8 routing. At river bifurcations, D8 picks ONE downstream branch - the other branch inherits incorrect (inflated) facc values.
+SWORD reach geometries come from GRWL (satellite-derived centerlines). Flow accumulation (facc) comes from MERIT Hydro (DEM-derived flow network). **These are independent datasets with different geometries.**
 
-**Result:** ~1,725 reaches have facc values 10-1000x too high.
+When SWORD reaches are assigned facc values from MERIT Hydro:
+1. **Spatial mismatch:** SWORD centerlines don't perfectly align with MERIT flow paths
+2. **Topology differences:** SWORD may have channels that MERIT doesn't recognize (or vice versa)
+3. **D8 routing artifacts:** At bifurcations, MERIT's D8 algorithm routes ALL flow down one branch
+
+**Result:** ~1,725 reaches have facc values 10-1000x too high - they got assigned facc from the wrong MERIT Hydro cell or inherited flow meant for a different channel.
 
 ---
 
