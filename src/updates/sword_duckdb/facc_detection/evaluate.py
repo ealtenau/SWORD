@@ -27,40 +27,51 @@ from .detect import FaccDetector, DetectionResult, DetectionConfig
 from .features import get_seed_reach_features
 
 
-# Known corrupted reaches from v17c_status.md
+# Known corrupted reaches from v17c_status.md and visual review
 # All seeds are BAD in v17b (have corrupted facc values)
-# Modes: 'entry' (bad facc enters), 'extreme_fwr' (FWR>10k), 'misrouted' (facc on wrong channel)
 SEED_REACHES = {
-    # SA region - Amazon/Orinoco basins
-    64231000301: {'region': 'SA', 'facc_width_ratio': 35239},  # extreme FWR
+    # SA region - Amazon/Orinoco basins (15 seeds)
+    64231000301: {'region': 'SA', 'facc_width_ratio': 35239},
     62236100011: {'region': 'SA', 'facc_width_ratio': 22811},
     62238000021: {'region': 'SA', 'facc_width_ratio': 1559},
     64231000291: {'region': 'SA', 'facc_width_ratio': 982},
     62255000451: {'region': 'SA', 'facc_width_ratio': 528},
     17211100181: {'region': 'SA'},
-    13261100101: {'region': 'SA', 'facc_width_ratio': 15404},  # extreme FWR
+    13261100101: {'region': 'SA', 'facc_width_ratio': 15404},
     13214000011: {'region': 'SA'},
     13212000011: {'region': 'SA'},
-    62210000705: {'region': 'SA', 'note': 'facc should be on 62210000055/45/35'},  # misrouted
+    62210000705: {'region': 'SA', 'note': 'facc should be on 62210000055/45/35'},
     62233000095: {'region': 'SA'},
     61550900161: {'region': 'SA', 'facc_width_ratio': 1124, 'river_name': 'Cinaruco River'},
     61550700051: {'region': 'SA', 'facc_width_ratio': 6961},
     62281800021: {'region': 'SA', 'facc_width_ratio': 3197},
     62283000081: {'region': 'SA', 'facc_width_ratio': 2018, 'river_name': 'Rio Unini'},
-    # EU seeds
+    # EU seeds (6)
     28315000523: {'region': 'EU', 'facc_width_ratio': 1076},
-    28315000751: {'region': 'EU', 'facc_width_ratio': 31989},  # extreme FWR
+    28315000751: {'region': 'EU', 'facc_width_ratio': 31989},
     28315000783: {'region': 'EU'},
     22513000171: {'region': 'EU', 'facc_width_ratio': 2126},
-    28311300405: {'region': 'EU', 'facc_width_ratio': 29193},  # extreme FWR
+    28311300405: {'region': 'EU', 'facc_width_ratio': 29193},
     26183000491: {'region': 'EU', 'facc_width_ratio': 1112},
-    # AF seeds
+    # AF seeds (5)
     31251000111: {'region': 'AF'},
     31248100141: {'region': 'AF', 'note': 'side channel with downstream facc'},
     32257000231: {'region': 'AF'},
-    # AS seeds
+    14279001411: {'region': 'AF', 'facc_width_ratio': 4230, 'river_name': 'Niger River'},
+    14631000181: {'region': 'AF', 'facc_width_ratio': 5049, 'river_name': 'Ngalanka'},
+    # AS seeds (12)
     45670300691: {'region': 'AS', 'facc_width_ratio': 4548},
+    31241700301: {'region': 'AS', 'facc_width_ratio': 4560, 'main_side': 1},
+    44240100011: {'region': 'AS', 'facc_width_ratio': 654, 'river_name': 'Mekong River'},
+    43667100371: {'region': 'AS', 'width': 0, 'river_name': 'Dadu River'},
+    45253002045: {'region': 'AS', 'facc_width_ratio': 3394, 'main_side': 1},
+    31241700541: {'region': 'AS', 'facc_width_ratio': 2555, 'main_side': 1},
+    45259500101: {'region': 'AS', 'facc_width_ratio': 4401},
+    44581100665: {'region': 'AS', 'facc_width_ratio': 2385, 'main_side': 1},
+    44581100675: {'region': 'AS', 'facc_width_ratio': 504, 'main_side': 1},
+    44570000175: {'region': 'AS', 'facc_width_ratio': 4714, 'river_name': 'Irrawaddy River'},
 }
+
 
 
 @dataclass

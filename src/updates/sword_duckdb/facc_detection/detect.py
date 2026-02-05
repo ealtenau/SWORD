@@ -32,6 +32,23 @@ import numpy as np
 
 from .features import FaccFeatureExtractor, get_seed_reach_features
 
+# Known false positives - reaches that look anomalous but are legitimate
+# These are used to filter detection results and track FP patterns
+KNOWN_FALSE_POSITIVES = {
+    # Ob River multi-channel (legitimate high facc, consistent FWR through network)
+    31239000161: {'region': 'AS', 'reason': 'Ob River multi-channel'},
+    31239000251: {'region': 'AS', 'reason': 'Ob River multi-channel'},
+    31231000181: {'region': 'AS', 'reason': 'Ob River junction, consistent FWR'},
+    # Narrow width inflating FWR (width < 15m)
+    28160700191: {'region': 'EU', 'reason': 'width=11m, consistent FWR up/down'},
+    45585500221: {'region': 'AS', 'reason': 'width=2m, upstream/downstream FWR=N/A'},
+    28106300011: {'region': 'EU', 'reason': 'width=2m, narrow channel'},
+    28105000371: {'region': 'EU', 'reason': 'width=8m, narrow channel'},
+    # Complex tidal/delta areas
+    45630500041: {'region': 'AS', 'reason': 'Indus junction, strange geometry'},
+    44570000065: {'region': 'AS', 'reason': 'Irrawaddy tidal, main_side=2'},
+}
+
 
 @dataclass
 class DetectionConfig:
@@ -454,18 +471,26 @@ def detect_hybrid(
     db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
     region: Optional[str] = None,
     filter_false_positives: bool = True,
+    min_width: float = 15.0,
 ) -> DetectionResult:
     """
     Hybrid detection using ratio_to_median with FP filtering.
 
-    Detection rules (all require facc_jump_from_up > 10 OR headwater):
+    Detection rules:
     1. entry_point: facc_jump > 10 AND ratio_to_median > 50
-    2. junction_extreme: facc/width > 15000 AND end_reach = 3 AND facc_jump > 10
+    2. extreme_fwr: facc/width > 15000
     3. headwater_extreme: n_rch_up = 0 AND facc > 500K AND facc/width > 5000
+    4. jump_entry: path_freq invalid AND facc_jump > 20 AND FWR > 500
+    5. high_ratio: ratio_to_median > 500 AND (fwr_drop > 2 OR no downstream)
+    6. fwr_drop: FWR drops >5x downstream AND FWR > 500
+    7. impossible_headwater: path_freq <= 2 AND facc > 1M AND (fwr_drop > 2 OR FWR > 5000)
+    8. upstream_fwr_spike: upstream FWR > 10x this reach AND facc > 100K
+    9. side_channel_mainstem_facc: main_side=1 + dramatic FWR drop downstream
 
-    FP filtering (when filter_false_positives=True):
-    - Excludes reaches with facc_jump <= 2 AND width_ratio > 0.5
-    - These are consistent flow-through channels, not D8 entry points
+    FP filtering:
+    - Excludes reaches with width < min_width (inflated FWR from narrow width)
+    - Excludes known FPs from KNOWN_FALSE_POSITIVES
+    - Excludes consistent flow-through channels (facc_jump <= 2 AND width_ratio > 0.5)
 
     Parameters
     ----------
@@ -475,6 +500,9 @@ def detect_hybrid(
         Region to check.
     filter_false_positives : bool, default True
         If True, filter out reaches with no facc_jump + wide (likely FPs).
+    min_width : float, default 15.0
+        Minimum width in meters. Reaches narrower than this are excluded
+        (FWR is artificially inflated for narrow reaches).
 
     Returns
     -------
@@ -492,21 +520,34 @@ def detect_hybrid(
         where_region = f"AND r.region = '{region}'" if region else ""
         topo_region = f"AND rt.region = '{region}'" if region else ""
 
+        # Build known FP exclusion list
+        known_fp_ids = list(KNOWN_FALSE_POSITIVES.keys())
+        known_fp_str = ', '.join(str(r) for r in known_fp_ids) if known_fp_ids else '0'
+
         # Build FP filter clause
         # FPs have: facc_jump <= 2 AND (width_ratio_to_dn > 0.5 OR long+wide)
-        # We EXCLUDE these from detection UNLESS ratio_to_median is very high
+        # We EXCLUDE these from detection UNLESS:
+        # - ratio_to_median > 100 (clearly anomalous)
+        # - main_side = 1 (side channel - keep for side_channel rules)
+        # - path_freq invalid (may have real issues masked by bad metadata)
+        # - fwr_drop_ratio > 10 (dramatic FWR change indicates problem)
         fp_filter = ""
         if filter_false_positives:
-            fp_filter = """
+            fp_filter = f"""
+                -- Exclude known false positives
+                AND reach_id NOT IN ({known_fp_str})
+                -- Exclude FPs: no facc_jump + wide relative to downstream
                 AND NOT (
-                    -- Exclude FPs: no facc_jump + wide relative to downstream
-                    -- BUT don't exclude if ratio_to_median > 100 (clearly anomalous)
                     (facc_jump_ratio IS NOT NULL AND facc_jump_ratio <= 2)
                     AND (
                         width_ratio_to_dn > 0.5
                         OR (reach_length > 10000 AND width > 200)
                     )
-                    AND (ratio_to_median < 100)  -- Keep high ratio_to_median even without jump
+                    AND (ratio_to_median < 100 OR ratio_to_median IS NULL OR ratio_to_median < 0)
+                    -- BUT don't filter if:
+                    AND (main_side != 1)  -- Keep side channels
+                    AND (path_freq > 0 AND path_freq != -9999)  -- Keep invalid path_freq
+                    AND (fwr_drop_ratio IS NULL OR fwr_drop_ratio <= 10)  -- Keep dramatic FWR drops
                 )
             """
 
@@ -568,6 +609,8 @@ def detect_hybrid(
                 r.n_rch_down,
                 r.end_reach,
                 r.lakeflag,
+                r.main_side,
+                r.type,
                 r.slope,
                 r.facc / NULLIF(r.width, 0) as facc_width_ratio,
                 r.facc / NULLIF(r.path_freq, 0) as facc_per_reach,
@@ -594,15 +637,15 @@ def detect_hybrid(
             LEFT JOIN upstream_info ui ON r.reach_id = ui.reach_id AND r.region = ui.region
             LEFT JOIN downstream_info di ON r.reach_id = di.reach_id AND r.region = di.region
             WHERE r.facc > 0 AND r.facc != -9999
-                AND r.width > 0
+                AND r.width >= {min_width}  -- Exclude narrow reaches (inflated FWR)
                 {where_region}
         )
         SELECT
             *,
             -- Detection rules
             CASE
-                -- Rule 1: Entry point (high jump + high ratio)
-                WHEN facc_jump_ratio > 10 AND ratio_to_median > 50 THEN 'entry_point'
+                -- Rule 1: Entry point (high jump + elevated ratio)
+                WHEN facc_jump_ratio > 10 AND ratio_to_median > 40 THEN 'entry_point'
                 -- Rule 2: Extreme FWR (facc/width > 15000, regardless of jump)
                 -- Catches cases where upstream also has bad facc (no jump)
                 WHEN facc_width_ratio > 15000 THEN 'extreme_fwr'
@@ -624,13 +667,19 @@ def detect_hybrid(
                 -- Rule 8: Upstream FWR spike (upstream has much higher FWR than this reach)
                 -- Indicates bad facc entered upstream and propagated here
                 WHEN upstream_fwr_ratio > 10 AND facc > 100000 THEN 'upstream_fwr_spike'
+                -- Rule 9: Side channel with mainstem facc (main_side=1 + extreme FWR drop)
+                -- Side channels shouldn't have dramatic FWR that drops to near-zero downstream
+                WHEN main_side = 1 AND fwr_drop_ratio > 20 AND facc > 100000 THEN 'side_channel_misroute'
+                -- Rule 10: Invalid path_freq side channel (common pattern in seeds)
+                -- path_freq=-9999 with main_side=1 and significant facc
+                WHEN (path_freq <= 0 OR path_freq = -9999) AND main_side = 1 AND facc > 200000 AND fwr_drop_ratio > 3 THEN 'invalid_side_channel'
                 ELSE NULL
             END as detection_rule
         FROM reach_metrics
         WHERE
             -- Any rule triggers detection
             (
-                (facc_jump_ratio > 10 AND ratio_to_median > 50)
+                (facc_jump_ratio > 10 AND ratio_to_median > 40)
                 OR (facc_width_ratio > 15000)
                 OR (n_rch_up = 0 AND facc > 500000 AND facc_width_ratio > 5000)
                 OR ((path_freq <= 0 OR path_freq = -9999) AND facc_jump_ratio > 20 AND facc_width_ratio > 500)
@@ -638,6 +687,8 @@ def detect_hybrid(
                 OR (fwr_drop_ratio > 5 AND facc_width_ratio > 500)
                 OR (path_freq <= 2 AND facc > 1000000 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL OR facc_width_ratio > 5000))
                 OR (upstream_fwr_ratio > 10 AND facc > 100000)
+                OR (main_side = 1 AND fwr_drop_ratio > 20 AND facc > 100000)
+                OR ((path_freq <= 0 OR path_freq = -9999) AND main_side = 1 AND facc > 200000 AND fwr_drop_ratio > 3)
             )
             {fp_filter}
         ORDER BY ratio_to_median DESC NULLS LAST
@@ -659,8 +710,10 @@ def detect_hybrid(
             by_headwater = rule_counts.get('headwater_extreme', 0)
             by_jump_entry = rule_counts.get('jump_entry', 0)
             by_high_ratio = rule_counts.get('high_ratio', 0)
+            by_fwr_drop = rule_counts.get('fwr_drop', 0)
+            by_side_channel = rule_counts.get('side_channel_misroute', 0) + rule_counts.get('invalid_side_channel', 0)
         else:
-            by_entry = by_extreme_fwr = by_headwater = by_jump_entry = by_high_ratio = 0
+            by_entry = by_extreme_fwr = by_headwater = by_jump_entry = by_high_ratio = by_fwr_drop = by_side_channel = 0
 
         # Get total reaches for percentage
         where_region_simple = f"AND region = '{region}'" if region else ""
@@ -675,9 +728,9 @@ def detect_hybrid(
             config=DetectionConfig(),
             region=region,
             by_facc_width=by_extreme_fwr + by_headwater,
-            by_facc_reach_acc=by_high_ratio,
+            by_facc_reach_acc=by_high_ratio + by_fwr_drop,
             by_facc_jump=by_entry + by_jump_entry,
-            by_bifurcation=0,
+            by_bifurcation=by_side_channel,
         )
 
     finally:

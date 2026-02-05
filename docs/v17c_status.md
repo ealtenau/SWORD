@@ -52,8 +52,8 @@
 ### Current State
 - **Detection pipeline**: `src/updates/sword_duckdb/facc_detection/` ✅ Complete
 - **GeoJSON exports**: `output/facc_detection/` for QGIS review
-- **1,461 anomalies detected** globally (run on v17b pristine reference)
-- **24/25 seeds detected** (96% recall), Ob River FPs correctly excluded
+- **1,610 anomalies detected** globally (run on v17b pristine reference)
+- **30/36 seeds detected** (83.3% recall), 0 false positives
 - **Correction pipeline**: Exists, awaiting visual validation before applying to v17c
 
 ### Detection Pipeline (2026-02-04)
@@ -67,35 +67,44 @@ python -m src.updates.sword_duckdb.facc_detection.cli \
     --output-dir output/facc_detection/
 ```
 
-**Detection rules in `detect_hybrid()` (8 rules):**
+**Detection rules in `detect_hybrid()` (10 rules):**
 
 | Rule | Criteria | Count | Description |
 |------|----------|-------|-------------|
-| entry_point | facc_jump > 10 AND ratio_to_median > 50 | 424 | Bad facc enters network |
-| fwr_drop | FWR drops >5x downstream | 629 | FWR inconsistent with downstream |
-| extreme_fwr | FWR > 15,000 | 222 | Extremely high facc/width ratio |
-| jump_entry | path_freq invalid AND facc_jump > 20 AND FWR > 500 | 100 | D8 error with missing metadata |
-| impossible_headwater | path_freq ≤ 2 AND facc > 1M (with FWR drop) | 45 | Mainstem facc on tributary |
-| upstream_fwr_spike | Upstream FWR >10x this reach | 19 | Bad facc from upstream |
-| high_ratio | ratio_to_median > 500 (with FWR drop) | 18 | Very high facc per path_freq |
+| fwr_drop | FWR drops >5x downstream | 760 | FWR inconsistent with downstream |
+| entry_point | facc_jump > 10 AND ratio_to_median > 40 | 463 | Bad facc enters network |
+| extreme_fwr | FWR > 15,000 | 120 | Extremely high facc/width ratio |
+| jump_entry | path_freq invalid AND facc_jump > 20 AND FWR > 500 | 99 | D8 error with missing metadata |
+| impossible_headwater | path_freq ≤ 2 AND facc > 1M (with FWR drop) | 69 | Mainstem facc on tributary |
+| upstream_fwr_spike | Upstream FWR >10x this reach | 36 | Bad facc from upstream |
+| invalid_side_channel | path_freq=-9999 AND main_side=1 AND facc>200K AND fwr_drop>3 | 27 | Side channel with invalid metadata |
+| high_ratio | ratio_to_median > 500 (with FWR drop) | 17 | Very high facc per path_freq |
+| side_channel_misroute | main_side=1 AND fwr_drop>20 AND facc>100K | 15 | Side channel with mainstem facc |
 | headwater_extreme | n_rch_up = 0 AND facc > 500K AND FWR > 5000 | 4 | Impossible headwater facc |
 
-**Key discriminator:** FWR consistency through network. Legitimate multi-channel rivers (Ob) have consistent FWR up/down. Bad facc has dramatic FWR changes (drops downstream or spikes upstream).
+**Key discriminators:**
+- FWR consistency through network (legitimate rivers have consistent FWR up/down)
+- main_side=1 + dramatic FWR drop = misrouted facc on side channel
+- path_freq=-9999 often indicates D8 routing errors
+- Width minimum 15m to avoid FWR inflation from narrow reaches
 
 **Output files:** `output/facc_detection/` contains GeoJSON per rule + `all_anomalies.geojson` + `detection_summary.json`
 
-### Seed Reaches (25 confirmed bad)
+### Seed Reaches (36 confirmed bad)
 
 | Region | Count | Example reach_ids |
 |--------|-------|-------------------|
 | SA | 15 | 64231000301, 62236100011, 62255000451, 62210000705 |
 | EU | 6 | 28315000523, 28315000751, 28311300405, 22513000171 |
-| AF | 3 | 31251000111, 31248100141, 32257000231 |
-| AS | 1 | 45670300691 |
+| AF | 5 | 31251000111, 31248100141, 32257000231, 14279001411, 14631000181 |
+| AS | 10 | 45670300691, 31241700301, 44240100011, 45253002045, etc. |
 
-**Seed detection:** 24/25 detected (96%). Missed: 22513000171 (no clear signal - moderate FWR, consistent up/down).
+**Seed detection:** 30/36 detected (83.3%). Missed:
+- 22513000171, 44240100011: No clear signal (moderate FWR, consistent up/down)
+- 17211100181, 43667100371: Filtered by min_width (width < 15m)
+- 44581100665, 44581100675: FWR increases downstream (problem is upstream)
 
-**Known FPs excluded:** Ob River multi-channel (31239000161, 31239000251) - legitimate high facc with consistent FWR.
+**Known FPs excluded (9):** Ob River multi-channel (31239000161, 31239000251, 31231000181), narrow width (28160700191, 45585500221, 28106300011, 28105000371), tidal complex (45630500041, 44570000065)
 
 ### Next Steps
 
