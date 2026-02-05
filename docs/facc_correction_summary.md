@@ -15,7 +15,9 @@ When SWORD reaches are assigned facc values from MERIT Hydro:
 
 ## Detection: How We Found Them
 
-### Key Metric: Flow-Width Ratio (FWR)
+### Key Metrics
+
+**1. Flow-Width Ratio (FWR)**
 
 ```
 FWR = facc / width
@@ -28,6 +30,32 @@ FWR = facc / width
 | Secondary outlet | ~1 |
 
 Anomalous reaches have FWR of 2,000-75,000.
+
+---
+
+**2. Ratio to Median (facc vs network position)**
+
+```
+facc_per_reach = facc / path_freq
+ratio_to_median = facc_per_reach / regional_median
+```
+
+`path_freq` is a traversal count that increases toward outlets - essentially "how many upstream reaches flow into this point."
+
+- **Normal:** ratio_to_median = 0.5-2.0
+- **Anomaly:** ratio_to_median = 40-1000+
+
+This catches reaches with facc way too high for their network position.
+
+---
+
+**3. Upstream Sum Comparison**
+
+```
+facc vs SUM(upstream_facc)
+```
+
+At confluences, a reach's facc should roughly equal the sum of its upstream tributaries. If `facc > 3× upstream_sum`, the reach grabbed facc from the wrong MERIT cell.
 
 ### Detection Rules
 
@@ -90,6 +118,19 @@ AND facc > 1000
 
 ---
 
+**5. facc_sum_inflation (45 detections)**
+
+*Logic:* At confluences, facc should equal the sum of upstream tributaries. Large inflation indicates D8 error.
+
+```
+n_rch_up >= 2   (confluence)
+AND facc > 3 × SUM(upstream_facc)
+```
+
+*Why it works:* Mass balance. If two tributaries with facc = 100K and 50K meet, the downstream reach should have ~150K. If it has 500K+, the reach grabbed facc from a different MERIT cell.
+
+---
+
 ### Detection Summary
 
 ![Detection Rules Breakdown](../output/facc_detection/figures/fig4_detection_rules.png)
@@ -100,7 +141,8 @@ AND facc > 1000
 | entry_point | 466 | 27% |
 | extreme_fwr | 200 | 12% |
 | jump_entry | 99 | 6% |
-| Other | 145 | 8% |
+| facc_sum_inflation | 45 | 3% |
+| Other | 100 | 6% |
 | **Total** | **1,725** | 100% |
 
 ---

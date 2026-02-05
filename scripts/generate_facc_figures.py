@@ -150,13 +150,14 @@ def fig4_detection_rules():
         'entry_point': 466,
         'extreme_fwr': 200,
         'jump_entry': 99,
-        'Other': 145
+        'facc_sum_inflation': 45,
+        'Other': 100
     }
 
     fig, ax = plt.subplots(figsize=(8, 8))
 
-    colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6']
-    explode = (0.05, 0, 0, 0, 0)
+    colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6', '#95a5a6']
+    explode = (0.05, 0, 0, 0, 0, 0)
 
     wedges, texts, autotexts = ax.pie(
         rules.values(),
@@ -165,14 +166,8 @@ def fig4_detection_rules():
         colors=colors,
         explode=explode,
         startangle=90,
-        textprops={'fontsize': 11}
+        textprops={'fontsize': 10}
     )
-
-    # Add count labels
-    for i, (wedge, (rule, count)) in enumerate(zip(wedges, rules.items())):
-        angle = (wedge.theta2 - wedge.theta1) / 2 + wedge.theta1
-        x = 0.7 * np.cos(np.radians(angle))
-        y = 0.7 * np.sin(np.radians(angle))
 
     ax.set_title('Detection Rules: How 1,725 Anomalies Were Found', fontsize=12)
 
@@ -182,9 +177,10 @@ def fig4_detection_rules():
         'entry_point (466): facc jump + high ratio_to_median',
         'extreme_fwr (200): FWR > 15,000',
         'jump_entry (99): disconnected + high facc',
-        'Other (145): additional rules'
+        'facc_sum_inflation (45): facc > 3x upstream sum',
+        'Other (100): additional rules'
     ]
-    ax.legend(wedges, legend_labels, loc='lower center', bbox_to_anchor=(0.5, -0.15),
+    ax.legend(wedges, legend_labels, loc='lower center', bbox_to_anchor=(0.5, -0.18),
               fontsize=9)
 
     plt.tight_layout()
