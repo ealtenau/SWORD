@@ -52,8 +52,8 @@
 ### Current State
 - **Detection pipeline**: `src/updates/sword_duckdb/facc_detection/` ✅ Complete
 - **GeoJSON exports**: `output/facc_detection/` for QGIS review
-- **1,610 anomalies detected** globally (run on v17b pristine reference)
-- **30/36 seeds detected** (83.3% recall), 0 false positives
+- **1,754 anomalies detected** globally (run on v17b pristine reference)
+- **32/36 seeds detected** (88.9% recall), 0 false positives
 - **Correction pipeline**: Exists, awaiting visual validation before applying to v17c
 
 ### Detection Pipeline (2026-02-04)
@@ -71,12 +71,12 @@ python -m src.updates.sword_duckdb.facc_detection.cli \
 
 | Rule | Criteria | Count | Description |
 |------|----------|-------|-------------|
-| fwr_drop | FWR drops >5x downstream | 760 | FWR inconsistent with downstream |
-| entry_point | facc_jump > 10 AND ratio_to_median > 40 | 463 | Bad facc enters network |
-| extreme_fwr | FWR > 15,000 | 120 | Extremely high facc/width ratio |
-| jump_entry | path_freq invalid AND facc_jump > 20 AND FWR > 500 | 99 | D8 error with missing metadata |
+| fwr_drop | FWR drops >5x downstream | 815 | FWR inconsistent with downstream |
+| entry_point | facc_jump > 10 AND ratio_to_median > 40 | 467 | Bad facc enters network |
+| extreme_fwr | FWR > 15,000 | 200 | Extremely high facc/width ratio |
+| jump_entry | path_freq invalid AND facc_jump > 20 AND FWR > 500 | 100 | D8 error with missing metadata |
 | impossible_headwater | path_freq ≤ 2 AND facc > 1M (with FWR drop) | 69 | Mainstem facc on tributary |
-| upstream_fwr_spike | Upstream FWR >10x this reach | 36 | Bad facc from upstream |
+| upstream_fwr_spike | Upstream FWR >10x this reach | 40 | Bad facc from upstream |
 | invalid_side_channel | path_freq=-9999 AND main_side=1 AND facc>200K AND fwr_drop>3 | 27 | Side channel with invalid metadata |
 | high_ratio | ratio_to_median > 500 (with FWR drop) | 17 | Very high facc per path_freq |
 | side_channel_misroute | main_side=1 AND fwr_drop>20 AND facc>100K | 15 | Side channel with mainstem facc |
@@ -99,10 +99,11 @@ python -m src.updates.sword_duckdb.facc_detection.cli \
 | AF | 5 | 31251000111, 31248100141, 32257000231, 14279001411, 14631000181 |
 | AS | 10 | 45670300691, 31241700301, 44240100011, 45253002045, etc. |
 
-**Seed detection:** 30/36 detected (83.3%). Missed:
+**Seed detection:** 32/36 detected (88.9%). Missed:
 - 22513000171, 44240100011: No clear signal (moderate FWR, consistent up/down)
-- 17211100181, 43667100371: Filtered by min_width (width < 15m)
 - 44581100665, 44581100675: FWR increases downstream (problem is upstream)
+
+**FWR capping:** Width capped at 15m for FWR calculation (avoids inflation from narrow reaches while still detecting them).
 
 **Known FPs excluded (9):** Ob River multi-channel (31239000161, 31239000251, 31231000181), narrow width (28160700191, 45585500221, 28106300011, 28105000371), tidal complex (45630500041, 44570000065)
 
