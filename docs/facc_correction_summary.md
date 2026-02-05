@@ -61,6 +61,8 @@ At confluences, a reach's facc should roughly equal the sum of its upstream trib
 
 **1. fwr_drop (815 detections)**
 
+![fwr_drop schematic](../output/facc_detection/figures/schematic_fwr_drop.png)
+
 *Logic:* If a reach has bad facc but its downstream neighbor has correct facc, the FWR will drop dramatically at that boundary.
 
 ```
@@ -72,6 +74,8 @@ FWR_current / FWR_downstream > 5
 ---
 
 **2. entry_point (466 detections)**
+
+![entry_point schematic](../output/facc_detection/figures/schematic_entry_point.png)
 
 *Logic:* Bad facc "enters" a reach when facc suddenly jumps AND the resulting FWR is way above regional norms.
 
@@ -94,6 +98,8 @@ The **ratio_to_median** filter is key: when a mainstem receives tributary flow, 
 
 **3. extreme_fwr (200 detections)**
 
+![extreme_fwr schematic](../output/facc_detection/figures/schematic_extreme_fwr.png)
+
 *Logic:* Some FWR values are simply impossible - no river has 15,000+ km² drainage per meter of width.
 
 ```
@@ -105,6 +111,8 @@ FWR > 15,000
 ---
 
 **4. jump_entry (99 detections)**
+
+![jump_entry schematic](../output/facc_detection/figures/schematic_jump_entry.png)
 
 *Logic:* Disconnected side channels (path_freq = -9999) that somehow have high facc.
 
@@ -119,6 +127,8 @@ AND facc > 1000
 ---
 
 **5. facc_sum_inflation (45 detections)**
+
+![facc_sum_inflation schematic](../output/facc_detection/figures/schematic_facc_sum_inflation.png)
 
 *Logic:* At confluences, facc should equal the sum of upstream tributaries. Large inflation indicates D8 error.
 
