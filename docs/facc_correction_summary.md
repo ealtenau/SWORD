@@ -53,7 +53,14 @@ AND
 FWR_current / regional_median_FWR > 40   (40x above peers)
 ```
 
-*Why it works:* Normal facc increases gradually downstream. A 10x jump signals the reach grabbed facc from a much larger MERIT cell. The regional median check confirms it's not just a large river - it's anomalous for its stream order.
+*Why it works:* The facc jump alone isn't enough - a tributary joining a mainstem also causes a facc jump. The difference:
+
+| Scenario | facc jump? | FWR after? |
+|----------|------------|------------|
+| Tributary → mainstem (legit) | Yes | Normal for mainstem width |
+| Bad facc enters side channel | Yes | 40x+ above normal |
+
+The **ratio_to_median** filter is key: when a mainstem receives tributary flow, its FWR stays normal because both facc AND width are large. When a narrow side channel (50-200m) gets mainstem facc (millions km²), the FWR explodes to 40-1000x above peers of similar stream order.
 
 ---
 
