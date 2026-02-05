@@ -31,14 +31,66 @@ Anomalous reaches have FWR of 2,000-75,000.
 
 ### Detection Rules
 
-| Rule | Count | Logic |
-|------|-------|-------|
-| **fwr_drop** | 815 | FWR drops >5x at downstream boundary |
-| **entry_point** | 466 | facc jumps >10x AND FWR >40x regional median |
-| **extreme_fwr** | 200 | FWR > 15,000 |
-| **jump_entry** | 99 | Disconnected reach (path_freq invalid) + high facc jump |
-| Other rules | 145 | Various edge cases |
-| **Total** | **1,725** | |
+**1. fwr_drop (815 detections)**
+
+*Logic:* If a reach has bad facc but its downstream neighbor has correct facc, the FWR will drop dramatically at that boundary.
+
+```
+FWR_current / FWR_downstream > 5
+```
+
+*Why it works:* Bad facc doesn't propagate everywhere - when flow rejoins the correct MERIT path downstream, FWR returns to normal. This rule catches the downstream edge of corrupted segments.
+
+---
+
+**2. entry_point (466 detections)**
+
+*Logic:* Bad facc "enters" a reach when facc suddenly jumps AND the resulting FWR is way above regional norms.
+
+```
+facc_current / facc_upstream > 10   (sudden 10x jump)
+AND
+FWR_current / regional_median_FWR > 40   (40x above peers)
+```
+
+*Why it works:* Normal facc increases gradually downstream. A 10x jump signals the reach grabbed facc from a much larger MERIT cell. The regional median check confirms it's not just a large river - it's anomalous for its stream order.
+
+---
+
+**3. extreme_fwr (200 detections)**
+
+*Logic:* Some FWR values are simply impossible - no river has 15,000+ km² drainage per meter of width.
+
+```
+FWR > 15,000
+```
+
+*Why it works:* Even the Amazon's FWR is ~2,000. Values above 15,000 indicate a narrow channel (50-200m) with drainage area of a continental river (millions of km²). Physically impossible.
+
+---
+
+**4. jump_entry (99 detections)**
+
+*Logic:* Disconnected side channels (path_freq = -9999) that somehow have high facc.
+
+```
+path_freq <= 0   (disconnected from main network)
+AND facc_jump > 5   (significant facc present)
+AND facc > 1000
+```
+
+*Why it works:* If a reach is topologically disconnected (path_freq invalid), it shouldn't have accumulated significant drainage. High facc here means it grabbed a value from an unrelated MERIT cell.
+
+---
+
+| Rule | Count |
+|------|-------|
+| fwr_drop | 815 |
+| entry_point | 466 |
+| extreme_fwr | 200 |
+| jump_entry | 99 |
+| Other | 145 |
+| **Total** | **1,725** |
 
 ---
 
