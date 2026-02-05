@@ -612,7 +612,8 @@ def detect_hybrid(
                 r.main_side,
                 r.type,
                 r.slope,
-                r.facc / NULLIF(r.width, 0) as facc_width_ratio,
+                -- Cap width at min_width to avoid inflated FWR from narrow reaches
+                r.facc / GREATEST(r.width, {min_width}) as facc_width_ratio,
                 r.facc / NULLIF(r.path_freq, 0) as facc_per_reach,
                 rs.median_fpr,
                 (r.facc / NULLIF(r.path_freq, 0)) / NULLIF(rs.median_fpr, 0) as ratio_to_median,
@@ -622,7 +623,7 @@ def detect_hybrid(
                 ui.max_upstream_fwr,
                 ui.max_upstream_type,
                 -- Upstream FWR spike: how much higher is upstream FWR than this reach?
-                ui.max_upstream_fwr / NULLIF(r.facc / NULLIF(r.width, 0), 0) as upstream_fwr_ratio,
+                ui.max_upstream_fwr / NULLIF(r.facc / GREATEST(r.width, {min_width}), 0) as upstream_fwr_ratio,
                 CASE
                     WHEN COALESCE(ui.max_upstream_facc, 0) > 0
                     THEN r.facc / ui.max_upstream_facc
@@ -631,13 +632,13 @@ def detect_hybrid(
                 r.width / NULLIF(di.max_downstream_width, 0) as width_ratio_to_dn,
                 di.max_downstream_fwr,
                 -- FWR drop ratio: how much does FWR drop going downstream?
-                (r.facc / NULLIF(r.width, 0)) / NULLIF(di.max_downstream_fwr, 0) as fwr_drop_ratio
+                (r.facc / GREATEST(r.width, {min_width})) / NULLIF(di.max_downstream_fwr, 0) as fwr_drop_ratio
             FROM reaches r
             JOIN regional_stats rs ON r.region = rs.region
             LEFT JOIN upstream_info ui ON r.reach_id = ui.reach_id AND r.region = ui.region
             LEFT JOIN downstream_info di ON r.reach_id = di.reach_id AND r.region = di.region
             WHERE r.facc > 0 AND r.facc != -9999
-                AND r.width >= {min_width}  -- Exclude narrow reaches (inflated FWR)
+                AND r.width >= 0  -- Allow zero width (FWR capped to min_width)
                 {where_region}
         )
         SELECT
