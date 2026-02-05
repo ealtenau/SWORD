@@ -90,14 +90,18 @@ AND facc > 1000
 
 ---
 
-| Rule | Count |
-|------|-------|
-| fwr_drop | 815 |
-| entry_point | 466 |
-| extreme_fwr | 200 |
-| jump_entry | 99 |
-| Other | 145 |
-| **Total** | **1,725** |
+### Detection Summary
+
+![Detection Rules Breakdown](../output/facc_detection/figures/fig4_detection_rules.png)
+
+| Rule | Count | % |
+|------|-------|---|
+| fwr_drop | 815 | 47% |
+| entry_point | 466 | 27% |
+| extreme_fwr | 200 | 12% |
+| jump_entry | 99 | 6% |
+| Other | 145 | 8% |
+| **Total** | **1,725** | 100% |
 
 ---
 
@@ -107,8 +111,23 @@ AND facc > 1000
 
 Train Random Forest on **clean reaches** to predict what facc SHOULD be based on network position.
 
-**Training:** 247,000 clean reaches
-**Target:** Predict facc from topology features
+**Training:** 247,000 clean reaches (all non-anomalous)
+**Target:** Predict facc from 59 topology/position features
+**Excludes:** Any feature derived FROM facc (to avoid circularity)
+
+![RF Correction Logic](../output/facc_detection/figures/fig5_correction_logic.png)
+
+### Why This Works
+
+Facc = cumulative drainage area. Drainage accumulates as you move downstream. Therefore:
+
+```
+farther from headwater → more accumulated drainage → higher facc
+```
+
+The RF model learns: **"at this network position, facc should be approximately X"**
+
+When it sees an anomalous reach at `hydro_dist_hw = 150 km` with `facc = 2,500,000 km²`, it knows that's wrong because other reaches at similar positions have facc ~5,000 km².
 
 ### Model Performance
 
@@ -116,23 +135,51 @@ Train Random Forest on **clean reaches** to predict what facc SHOULD be based on
 |--------|-------|
 | R² | 0.77 |
 | Median % error | 35% |
+| Training samples | 247,000 |
+| Features used | 59 |
 
 ### Top Predictive Features
 
-| Feature | Importance | Meaning |
-|---------|------------|---------|
-| `hydro_dist_hw` | 56% | Distance from headwater |
-| `path_freq` | 6% | Network traversal count |
-| `main_side` | 5% | Main vs side channel |
+![Feature Importance](../output/facc_detection/figures/fig1_feature_importance.png)
 
-**Key insight:** Distance from headwater predicts facc because drainage area accumulates downstream.
+| Feature | Importance | Description |
+|---------|------------|-------------|
+| `hydro_dist_hw` | **56%** | Dijkstra distance from nearest headwater |
+| `path_freq` | 6% | Network traversal count (increases toward outlets) |
+| `main_side` | 5% | Channel type: 0=main, 1=side, 2=secondary |
+| `log_path_freq` | 5% | Log-transformed path_freq |
+| `main_path_id` | 3% | Mainstem identifier |
+| `lakeflag` | 2% | Lake/river/canal/tidal classification |
+| `wse` | 1% | Water surface elevation |
+| `hydro_dist_out` | 1% | Dijkstra distance to outlet |
+
+**Key insight:** `hydro_dist_hw` alone explains 56% of variance - network position is the dominant predictor.
+
+### Feature Categories (59 total)
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| Position/Topology | 10 | hydro_dist_hw, path_freq, dist_out |
+| Channel Classification | 13 | main_side, lakeflag, is_mainstem |
+| Width metrics | 8 | width, max_width, width_ratio_to_dn |
+| SWOT observations | 14 | wse_obs_median, width_obs_mean |
+| Other | 14 | wse, slope, reach_length, network |
+
+### Anomalies vs Clean Reaches
+
+![Hydro Dist vs FACC](../output/facc_detection/figures/fig2_hydro_dist_vs_facc.png)
+
+Anomalies (red) have facc values 10-1000x higher than clean reaches at the same network position.
 
 ### Correction Results
+
+![Before/After FWR](../output/facc_detection/figures/fig3_fwr_before_after.png)
 
 | Metric | Before | After |
 |--------|--------|-------|
 | Median facc | 68,637 km² | 4,933 km² |
 | Median FWR | ~1,000 | ~50 |
+| Reduction | - | **14x** |
 
 ---
 
