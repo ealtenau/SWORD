@@ -162,10 +162,10 @@ def fig4_detection_rules():
         'Other': 100
     }
 
-    fig, ax = plt.subplots(figsize=(5, 4))
+    fig, ax = plt.subplots(figsize=(3.5, 3.5))
 
     colors = ['#3498db', '#2ecc71', '#e74c3c', '#f39c12', '#9b59b6', '#95a5a6']
-    explode = (0.05, 0, 0, 0, 0, 0)
+    explode = (0.03, 0, 0, 0, 0, 0)
 
     wedges, texts, autotexts = ax.pie(
         rules.values(),
@@ -174,10 +174,11 @@ def fig4_detection_rules():
         colors=colors,
         explode=explode,
         startangle=90,
-        textprops={'fontsize': 8}
+        textprops={'fontsize': 7}
     )
 
-    ax.set_title('Detection Rules: 1,725 Anomalies', fontsize=10)
+    ax.set_title('Detection Rules: 1,725 Anomalies', fontsize=9)
+    ax.set_aspect('equal')
 
     plt.tight_layout()
     plt.savefig(OUTPUT_DIR / 'fig4_detection_rules.png', bbox_inches='tight')
