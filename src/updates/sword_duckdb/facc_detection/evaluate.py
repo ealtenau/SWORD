@@ -46,20 +46,21 @@ SEED_REACHES = {
     61550700051: {'region': 'SA', 'facc_width_ratio': 6961},
     62281800021: {'region': 'SA', 'facc_width_ratio': 3197},
     62283000081: {'region': 'SA', 'facc_width_ratio': 2018, 'river_name': 'Rio Unini'},
-    # EU seeds (6)
+    # EU seeds (7)
     28315000523: {'region': 'EU', 'facc_width_ratio': 1076},
     28315000751: {'region': 'EU', 'facc_width_ratio': 31989},
     28315000783: {'region': 'EU'},
     22513000171: {'region': 'EU', 'facc_width_ratio': 2126},
     28311300405: {'region': 'EU', 'facc_width_ratio': 29193},
     26183000491: {'region': 'EU', 'facc_width_ratio': 1112},
+    28311700191: {'region': 'EU', 'note': 'detected by fwr_drop rule'},
     # AF seeds (5)
     31251000111: {'region': 'AF'},
     31248100141: {'region': 'AF', 'note': 'side channel with downstream facc'},
     32257000231: {'region': 'AF'},
     14279001411: {'region': 'AF', 'facc_width_ratio': 4230, 'river_name': 'Niger River'},
     14631000181: {'region': 'AF', 'facc_width_ratio': 5049, 'river_name': 'Ngalanka'},
-    # AS seeds (12)
+    # AS seeds (14)
     45670300691: {'region': 'AS', 'facc_width_ratio': 4548},
     31241700301: {'region': 'AS', 'facc_width_ratio': 4560, 'main_side': 1},
     44240100011: {'region': 'AS', 'facc_width_ratio': 654, 'river_name': 'Mekong River'},
@@ -70,6 +71,8 @@ SEED_REACHES = {
     44581100665: {'region': 'AS', 'facc_width_ratio': 2385, 'main_side': 1},
     44581100675: {'region': 'AS', 'facc_width_ratio': 504, 'main_side': 1},
     44570000175: {'region': 'AS', 'facc_width_ratio': 4714, 'river_name': 'Irrawaddy River'},
+    34211700241: {'region': 'AS', 'facc_width_ratio': 1146, 'river_name': 'Lena River', 'note': 'propagation from 34211700251'},
+    34211101775: {'region': 'AS', 'facc_width_ratio': 3131, 'main_side': 1, 'river_name': 'Lena River', 'note': 'side channel with mainstem facc'},
 }
 
 

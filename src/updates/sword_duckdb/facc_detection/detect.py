@@ -47,6 +47,11 @@ KNOWN_FALSE_POSITIVES = {
     # Complex tidal/delta areas
     45630500041: {'region': 'AS', 'reason': 'Indus junction, strange geometry'},
     44570000065: {'region': 'AS', 'reason': 'Irrawaddy tidal, main_side=2'},
+    # Nile delta distributaries (legitimate high facc, consistent FWR, main_side=2)
+    17211100904: {'region': 'AF', 'reason': 'Nile Rosetta branch, delta distributary, consistent FWR'},
+    # AF region - moderate FWR, consistent through network
+    17291500221: {'region': 'AF', 'reason': 'path_freq=1 but moderate FWR, consistent'},
+    17291500351: {'region': 'AF', 'reason': 'main_side=1 but moderate FWR, consistent'},
 }
 
 
@@ -486,6 +491,8 @@ def detect_hybrid(
     7. impossible_headwater: path_freq <= 2 AND facc > 1M AND (fwr_drop > 2 OR FWR > 5000)
     8. upstream_fwr_spike: upstream FWR > 10x this reach AND facc > 100K
     9. side_channel_mainstem_facc: main_side=1 + dramatic FWR drop downstream
+    10. invalid_side_channel: path_freq=-9999 + main_side=1 + facc>200K + fwr_drop>3
+    11. facc_sum_inflation: facc > 3x sum(upstream) at confluence (n_rch_up >= 2)
 
     FP filtering:
     - Excludes reaches with width < min_width (inflated FWR from narrow width)
@@ -663,8 +670,8 @@ def detect_hybrid(
                 WHEN fwr_drop_ratio > 5 AND facc_width_ratio > 500 THEN 'fwr_drop'
                 -- Rule 7: Impossible facc for path_freq (mainstem facc on tributary)
                 -- path_freq=1 means near headwater, shouldn't have >1M facc
-                -- Exclude multi-channel rivers (FWR consistent up/down) unless FWR > 5000
-                WHEN path_freq <= 2 AND facc > 1000000 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL OR facc_width_ratio > 5000) THEN 'impossible_headwater'
+                -- Require FWR inconsistency (drop > 2x) to exclude delta distributaries with consistent FWR
+                WHEN path_freq <= 2 AND facc > 1000000 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL) THEN 'impossible_headwater'
                 -- Rule 8: Upstream FWR spike (upstream has much higher FWR than this reach)
                 -- Indicates bad facc entered upstream and propagated here
                 WHEN upstream_fwr_ratio > 10 AND facc > 100000 THEN 'upstream_fwr_spike'
@@ -674,6 +681,9 @@ def detect_hybrid(
                 -- Rule 10: Invalid path_freq side channel (common pattern in seeds)
                 -- path_freq=-9999 with main_side=1 and significant facc
                 WHEN (path_freq <= 0 OR path_freq = -9999) AND main_side = 1 AND facc > 200000 AND fwr_drop_ratio > 3 THEN 'invalid_side_channel'
+                -- Rule 11: facc inflation at confluence (facc >> sum of tributaries)
+                -- At confluences, facc should roughly equal sum of upstream. 3x+ indicates D8 error.
+                WHEN n_rch_up >= 2 AND upstream_facc_sum > 50000 AND facc > 3 * upstream_facc_sum THEN 'facc_sum_inflation'
                 ELSE NULL
             END as detection_rule
         FROM reach_metrics
@@ -686,10 +696,11 @@ def detect_hybrid(
                 OR ((path_freq <= 0 OR path_freq = -9999) AND facc_jump_ratio > 20 AND facc_width_ratio > 500)
                 OR (ratio_to_median > 500 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL))
                 OR (fwr_drop_ratio > 5 AND facc_width_ratio > 500)
-                OR (path_freq <= 2 AND facc > 1000000 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL OR facc_width_ratio > 5000))
+                OR (path_freq <= 2 AND facc > 1000000 AND (fwr_drop_ratio > 2 OR fwr_drop_ratio IS NULL))
                 OR (upstream_fwr_ratio > 10 AND facc > 100000)
                 OR (main_side = 1 AND fwr_drop_ratio > 20 AND facc > 100000)
                 OR ((path_freq <= 0 OR path_freq = -9999) AND main_side = 1 AND facc > 200000 AND fwr_drop_ratio > 3)
+                OR (n_rch_up >= 2 AND upstream_facc_sum > 50000 AND facc > 3 * upstream_facc_sum)
             )
             {fp_filter}
         ORDER BY ratio_to_median DESC NULLS LAST
