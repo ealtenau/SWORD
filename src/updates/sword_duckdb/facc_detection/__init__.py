@@ -36,6 +36,18 @@ Correction Usage (Phase 2):
         result = corrector.apply_corrections(corrections, dry_run=True)
         print(result.summary())
 
+RF Classifier Usage:
+    from updates.sword_duckdb.facc_detection import RFFeatureExtractor, RFClassifier
+
+    # Extract features
+    extractor = RFFeatureExtractor("sword_v17c.duckdb")
+    features = extractor.extract_all()
+
+    # Train classifier
+    clf = RFClassifier(use_rfe=True)
+    clf.fit(X_train, y_train)
+    importance = clf.get_feature_importance()
+
 CLI Usage:
     # Detect anomalies
     python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --region NA
@@ -48,6 +60,18 @@ CLI Usage:
 
     # Rollback
     python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --rollback --batch-id 1
+
+    # RF training
+    python -m src.updates.sword_duckdb.facc_detection.rf_classifier \\
+        --features output/facc_detection/rf_features.parquet \\
+        --labels output/facc_detection/all_anomalies.geojson \\
+        --output output/facc_detection/
+
+    # RF evaluation
+    python -m src.updates.sword_duckdb.facc_detection.rf_evaluate \\
+        --predictions output/facc_detection/rf_predictions.parquet \\
+        --model output/facc_detection/rf_model.joblib \\
+        --output output/facc_detection/
 """
 
 from .reach_acc import compute_reach_accumulation, ReachAccumulator
@@ -56,6 +80,10 @@ from .detect import FaccDetector, detect_facc_anomalies, detect_hybrid
 from .evaluate import evaluate_detection, FaccEvaluator
 from .correct import FaccCorrector, correct_facc_anomalies, CorrectionResult
 from .merit_search import MeritGuidedSearch, create_merit_search
+from .rf_features import RFFeatureExtractor, extract_rf_features, load_anomaly_labels
+from .rf_classifier import RFClassifier, train_rf_classifier
+from .rf_evaluate import RFEvaluator, evaluate_rf_classifier
+from .rf_regressor import FaccRegressor
 
 __all__ = [
     # Reach accumulation
@@ -78,4 +106,14 @@ __all__ = [
     # MERIT guided search
     "MeritGuidedSearch",
     "create_merit_search",
+    # RF Classifier
+    "RFFeatureExtractor",
+    "extract_rf_features",
+    "load_anomaly_labels",
+    "RFClassifier",
+    "train_rf_classifier",
+    "RFEvaluator",
+    "evaluate_rf_classifier",
+    # RF Regressor
+    "FaccRegressor",
 ]

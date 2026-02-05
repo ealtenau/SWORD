@@ -52,6 +52,10 @@ KNOWN_FALSE_POSITIVES = {
     # AF region - moderate FWR, consistent through network
     17291500221: {'region': 'AF', 'reason': 'path_freq=1 but moderate FWR, consistent'},
     17291500351: {'region': 'AF', 'reason': 'main_side=1 but moderate FWR, consistent'},
+    # RF regressor false positives (2026-02-05) - wrongly corrected
+    77250000153: {'region': 'OC', 'reason': 'mainstem reach, should not be corrected'},
+    74300400575: {'region': 'SA', 'reason': 'incorrectly flipped by RF regressor'},
+    74300400565: {'region': 'SA', 'reason': 'incorrectly flipped by RF regressor'},
 }
 
 

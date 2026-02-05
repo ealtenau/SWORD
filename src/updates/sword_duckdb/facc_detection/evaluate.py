@@ -46,6 +46,10 @@ SEED_REACHES = {
     61550700051: {'region': 'SA', 'facc_width_ratio': 6961},
     62281800021: {'region': 'SA', 'facc_width_ratio': 3197},
     62283000081: {'region': 'SA', 'facc_width_ratio': 2018, 'river_name': 'Rio Unini'},
+    62293100143: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
+    62293100156: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
+    62253000321: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
+    62235900101: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
     # EU seeds (7)
     28315000523: {'region': 'EU', 'facc_width_ratio': 1076},
     28315000751: {'region': 'EU', 'facc_width_ratio': 31989},
