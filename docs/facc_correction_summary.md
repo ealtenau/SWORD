@@ -65,6 +65,7 @@ At confluences, a reach's facc should roughly equal the sum of its upstream trib
 
 ```
 FWR_current / FWR_downstream > 5
+AND FWR > 500
 ```
 
 *Why it works:* Bad facc doesn't propagate everywhere - when flow rejoins the correct MERIT path downstream, FWR returns to normal. This rule catches the downstream edge of corrupted segments.
@@ -110,20 +111,90 @@ FWR > 15,000
 
 ```
 path_freq <= 0   (disconnected from main network)
-AND facc_jump > 5   (significant facc present)
-AND facc > 1000
+AND facc_jump > 20
+AND FWR > 500
 ```
 
 *Why it works:* If a reach is topologically disconnected (path_freq invalid), it shouldn't have accumulated significant drainage. High facc here means it grabbed a value from an unrelated MERIT cell.
 
 ---
 
-**5. facc_sum_inflation (45 detections)**
+**5. upstream_fwr_spike (40 detections)**
+
+*Logic:* Catches propagated bad facc by looking upstream.
+
+```
+upstream_FWR / this_FWR > 10
+AND facc > 100,000
+```
+
+*Why it works:* When bad facc enters upstream, it can propagate down. If an upstream reach has 10x higher FWR than its downstream neighbor, the bad facc started upstream.
+
+---
+
+**6. impossible_headwater (30 detections)**
+
+*Logic:* Near-headwater reaches (path_freq ≤ 2) shouldn't have continental-scale drainage.
+
+```
+path_freq <= 2
+AND facc > 1,000,000
+AND (fwr_drop > 2 OR FWR > 5000)
+```
+
+*Why it works:* path_freq=1-2 means near the headwater. These reaches couldn't have accumulated millions of km² of drainage. The FWR check excludes delta distributaries.
+
+---
+
+**7. invalid_side_channel (27 detections)**
+
+*Logic:* Side channels with invalid topology and high facc.
+
+```
+path_freq = -9999   (disconnected)
+AND main_side = 1   (marked as side channel)
+AND facc > 200,000
+AND fwr_drop > 3
+```
+
+*Why it works:* A disconnected side channel shouldn't have significant facc. These grabbed MERIT cell values from the adjacent mainstem.
+
+---
+
+**8. high_ratio (17 detections)**
+
+*Logic:* Extreme ratio_to_median without other triggers.
+
+```
+ratio_to_median > 500
+AND (fwr_drop > 2 OR no downstream neighbor)
+```
+
+*Why it works:* When facc is 500x above what's expected for the network position, it's wrong. The fwr_drop check excludes legitimate multi-channel rivers (Ob, etc.).
+
+---
+
+**9. side_channel_misroute (15 detections)**
+
+*Logic:* Side channels with mainstem facc values.
+
+```
+main_side = 1   (side channel)
+AND fwr_drop > 20
+AND facc > 100,000
+```
+
+*Why it works:* Side channels shouldn't have FWR that drops 20x downstream. This indicates the side channel got routed through a mainstem MERIT cell.
+
+---
+
+**10. facc_sum_inflation (12 detections)**
 
 *Logic:* At confluences, facc should equal the sum of upstream tributaries. Large inflation indicates D8 error.
 
 ```
 n_rch_up >= 2   (confluence)
+AND upstream_facc_sum > 50,000
 AND facc > 3 × SUM(upstream_facc)
 ```
 
@@ -131,16 +202,35 @@ AND facc > 3 × SUM(upstream_facc)
 
 ---
 
+**11. headwater_extreme (4 detections)**
+
+*Logic:* True headwaters (no upstream) with impossible facc.
+
+```
+n_rch_up = 0   (true headwater)
+AND facc > 500,000
+AND FWR > 5,000
+```
+
+*Why it works:* A reach with no upstream neighbors is a true entry point - it can't have accumulated 500K+ km² of drainage. This is the most unambiguous signal.
+
+---
+
 ### Detection Summary
 
 | Rule | Count | % |
 |------|-------|---|
-| fwr_drop | 815 | 47% |
-| entry_point | 466 | 27% |
-| extreme_fwr | 200 | 12% |
-| jump_entry | 99 | 6% |
-| facc_sum_inflation | 45 | 3% |
-| Other | 100 | 6% |
+| fwr_drop | 815 | 47.2% |
+| entry_point | 466 | 27.0% |
+| extreme_fwr | 200 | 11.6% |
+| jump_entry | 99 | 5.7% |
+| upstream_fwr_spike | 40 | 2.3% |
+| impossible_headwater | 30 | 1.7% |
+| invalid_side_channel | 27 | 1.6% |
+| high_ratio | 17 | 1.0% |
+| side_channel_misroute | 15 | 0.9% |
+| facc_sum_inflation | 12 | 0.7% |
+| headwater_extreme | 4 | 0.2% |
 | **Total** | **1,725** | 100% |
 
 ---
@@ -259,7 +349,14 @@ Anomalies (red) have facc values 10-1000x higher than clean reaches at the same 
 
 - **39 seed reaches** (known bad) used for validation
 - **36/39 (92%)** detected by rules
-- **3 missed** - propagation patterns too subtle for any method
+- **5 missed** by rule-based detection (see below)
+
+**Missed seeds** (propagation patterns too subtle for any method):
+- 22513000171
+- 44581100665
+- 44581100675
+- 34211700241
+- 34211101775
 
 ### Known Issues
 

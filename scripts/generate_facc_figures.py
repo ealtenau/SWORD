@@ -82,19 +82,19 @@ def fig2_hydro_dist_vs_facc():
     ax.set_yscale('log')
     ax.set_title('FACC vs Network Position')
 
-    # Legend in upper left to avoid overlap
-    ax.legend(loc='upper left')
+    # Legend in lower right to avoid overlap with anomaly cluster in upper left
+    ax.legend(loc='lower right')
 
-    # Add annotation - position in upper area where anomalies cluster
+    # Add annotation - point to anomaly cluster, position text away from it
     ax.annotate('Anomalies: facc 10-1000x\ntoo high for position',
-                xy=(150, 2e6), xytext=(250, 5e6),
+                xy=(100, 3e6), xytext=(300, 1e5),
                 arrowprops=dict(arrowstyle='->', color='#c0392b', lw=1.5),
                 fontsize=9, color='#c0392b', fontweight='bold',
                 bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
 
-    # Add explanation - move to top right area to avoid overlap with legend
-    ax.text(0.98, 0.98, 'facc accumulates downstream\n→ increases with hydro_dist_hw',
-            transform=ax.transAxes, ha='right', va='top',
+    # Add explanation - position in upper left where there's space
+    ax.text(0.02, 0.98, 'facc accumulates downstream\n→ increases with hydro_dist_hw',
+            transform=ax.transAxes, ha='left', va='top',
             fontsize=8, style='italic', color='#555',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
 
