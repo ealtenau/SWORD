@@ -40,12 +40,15 @@ facc_per_reach = facc / path_freq
 ratio_to_median = facc_per_reach / regional_median
 ```
 
-`path_freq` is a traversal count that increases toward outlets - essentially "how many upstream reaches flow into this point."
+`path_freq` is a traversal count that increases toward outlets - essentially "how many upstream reaches flow into this point." Dividing facc by path_freq normalizes for network position.
 
-- **Normal:** ratio_to_median = 0.5-2.0
-- **Anomaly:** ratio_to_median = 40-1000+
+| Reach Type | ratio_to_median |
+|------------|-----------------|
+| Normal | 0.5 - 2.0 |
+| Suspicious | 10 - 40 |
+| **Anomaly** | **40 - 1000+** |
 
-This catches reaches with facc way too high for their network position.
+This is the key discriminator between legitimate tributary junctions and bad facc. When a mainstem receives tributary flow, ratio_to_median stays ~1 because both facc AND path_freq increase. When a side channel gets mainstem facc, ratio_to_median explodes because facc is huge but path_freq is small.
 
 ---
 
