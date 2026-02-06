@@ -299,7 +299,7 @@ python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v
 |-------|------------|
 | **RTREE index segfault** | Drop index → UPDATE → Recreate index |
 | **Region case sensitivity** | DuckDB=uppercase (NA), pipeline=lowercase (na) |
-| **Lake sandwiches** | 3,167 reaches (1.55%) - river between lakes |
+| **Lake sandwiches** | 1,252 corrected (wide + shorter than ≥1 lake neighbor) → lakeflag=1, tagged `edit_flag='lake_sandwich'`. ~1,755 remaining (narrow connecting channels, chains). See issues #18/#19 |
 
 ## Reactive Recalculation
 
