@@ -32,6 +32,7 @@ from pathlib import Path
 # Import lint checks
 from src.updates.sword_duckdb.lint.checks.classification import check_lake_sandwich, check_lakeflag_type_consistency
 from src.updates.sword_duckdb.lint.checks.topology import check_facc_monotonicity, check_orphan_reaches
+from src.updates.sword_duckdb.lint.checks.attributes import check_slope_reasonableness, check_end_reach_consistency
 
 # =============================================================================
 # LOCAL PERSISTENCE (JSON file backup for session fixes)
@@ -638,7 +639,7 @@ def get_nearby_reaches(conn, center_lon, center_lat, radius_deg, region, exclude
         ]).fetchdf()
 
 
-def add_flow_arrows(m, coords, color, num_arrows=2, size=0.006):
+def add_flow_arrows(m, coords, color, num_arrows=2, size=0.003):
     """Add simple vector arrows along a polyline to show flow direction.
 
     Draws arrow: a line with V-shaped head, all consistent size.
@@ -689,25 +690,25 @@ def add_flow_arrows(m, coords, color, num_arrows=2, size=0.006):
         # Draw black outline first (thicker)
         folium.PolyLine(
             [[tail_lat, tail_lon], [tip_lat, tip_lon]],
-            color='black', weight=8, opacity=1
+            color='black', weight=5, opacity=1
         ).add_to(m)
         folium.PolyLine(
             [[v1_lat, v1_lon], [tip_lat, tip_lon], [v2_lat, v2_lon]],
-            color='black', weight=8, opacity=1
+            color='black', weight=5, opacity=1
         ).add_to(m)
 
         # Draw colored arrow on top
         folium.PolyLine(
             [[tail_lat, tail_lon], [tip_lat, tip_lon]],
-            color=color, weight=4, opacity=1
+            color=color, weight=3, opacity=1
         ).add_to(m)
         folium.PolyLine(
             [[v1_lat, v1_lon], [tip_lat, tip_lon], [v2_lat, v2_lon]],
-            color=color, weight=4, opacity=1
+            color=color, weight=3, opacity=1
         ).add_to(m)
 
 
-def render_reach_map_satellite(reach_id, region, conn, hops=None):
+def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=False):
     """Render a map centered on a reach with Esri satellite basemap using folium."""
     geom = get_reach_geometry(conn, reach_id)
     if not geom:
@@ -767,13 +768,14 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
         tiles=None  # Start with no tiles
     )
 
-    # Add Esri World Imagery (free satellite tiles) - default
+    # Add Esri World Imagery (free satellite tiles) - default & shown
     folium.TileLayer(
         tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
         attr='Esri',
         name='Satellite',
         overlay=False,
-        control=True
+        control=True,
+        show=True
     ).add_to(m)
 
     # Add CartoDB Dark for contrast option
@@ -782,7 +784,8 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
         attr='CartoDB',
         name='Dark',
         overlay=False,
-        control=True
+        control=True,
+        show=False
     ).add_to(m)
 
     # Add layer control to toggle between basemaps
@@ -839,31 +842,52 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None):
                     ).add_to(m)
                     add_flow_arrows(m, coords, color, num_arrows=1)
 
-    # Add upstream reaches (orange with flow arrows)
+    # Batch lookup lakeflags for connected reaches when coloring by type
+    connected_lakeflags = {}
+    if color_by_type:
+        all_connected = [rid for _, _, rid in up_geoms] + [rid for _, _, rid in dn_geoms]
+        if all_connected:
+            placeholders = ','.join(['?'] * len(all_connected))
+            lf_rows = conn.execute(f"SELECT reach_id, lakeflag FROM reaches WHERE reach_id IN ({placeholders}) AND region = ?",
+                                   all_connected + [region]).fetchall()
+            connected_lakeflags = {r[0]: int(r[1]) if r[1] is not None else 0 for r in lf_rows}
+
+    type_colors_conn = {0: '#ffffff', 1: '#00ffff', 2: '#ffff00', 3: '#ff00ff'}
+    type_names_conn = {0: 'River', 1: 'Lake', 2: 'Canal', 3: 'Tidal'}
+
+    # Add upstream reaches
     for up_geom, i, rid in up_geoms:
         coords = [[c[1], c[0]] for c in up_geom]
         opacity = max(0.4, 1.0 - (i / max(hops, 1)) * 0.6)
+        if color_by_type:
+            lf = connected_lakeflags.get(rid, 0)
+            color = type_colors_conn.get(lf, '#ffffff')
+            tn = type_names_conn.get(lf, '?')
+            tooltip = f"Up {i+1}: {rid} ({tn})"
+        else:
+            color = 'orange'
+            tooltip = f"Upstream {i+1}: {rid}"
         folium.PolyLine(
-            coords,
-            color='orange',
-            weight=4,
-            opacity=opacity,
-            tooltip=f"Upstream {i+1}: {rid}"
+            coords, color=color, weight=4, opacity=opacity, tooltip=tooltip
         ).add_to(m)
-        add_flow_arrows(m, coords, 'orange', num_arrows=2)
+        add_flow_arrows(m, coords, color, num_arrows=2)
 
-    # Add downstream reaches (blue with flow arrows)
+    # Add downstream reaches
     for dn_geom, i, rid in dn_geoms:
         coords = [[c[1], c[0]] for c in dn_geom]
         opacity = max(0.4, 1.0 - (i / max(hops, 1)) * 0.6)
+        if color_by_type:
+            lf = connected_lakeflags.get(rid, 0)
+            color = type_colors_conn.get(lf, '#ffffff')
+            tn = type_names_conn.get(lf, '?')
+            tooltip = f"Down {i+1}: {rid} ({tn})"
+        else:
+            color = '#0066ff'
+            tooltip = f"Downstream {i+1}: {rid}"
         folium.PolyLine(
-            coords,
-            color='#0066ff',
-            weight=4,
-            opacity=opacity,
-            tooltip=f"Downstream {i+1}: {rid}"
+            coords, color=color, weight=4, opacity=opacity, tooltip=tooltip
         ).add_to(m)
-        add_flow_arrows(m, coords, '#0066ff', num_arrows=2)
+        add_flow_arrows(m, coords, color, num_arrows=2)
 
     # Add main reach - BRIGHT YELLOW with black outline for visibility
     main_coords = [[c[1], c[0]] for c in geom]
@@ -1219,8 +1243,10 @@ try:
         t003 = int(counts.get('T003', 0))
         t004 = int(counts.get('T004', 0))
         suspect = int(counts.get('SUSPECT', 0))
+        a010 = int(counts.get('A010', 0))
+        a002 = int(counts.get('A002', 0))
 
-        reviews = hw + c001 + c004 + t003 + t004 + suspect
+        reviews = hw + c001 + c004 + t003 + t004 + suspect + a010 + a002
         st.sidebar.success(f"**{reviews} reviews, {topo} fixes**")
 
         st.sidebar.caption("Reviews by tab:")
@@ -1230,12 +1256,20 @@ try:
         if c004: st.sidebar.write(f"  🏷️ Type Mismatch: {c004}")
         if t003: st.sidebar.write(f"  📊 FACC Issues: {t003}")
         if t004: st.sidebar.write(f"  🏝️ Orphans: {t004}")
+        if a010: st.sidebar.write(f"  🔚 End Reach: {a010}")
+        if a002: st.sidebar.write(f"  📐 Slope: {a002}")
 
         if topo:
             st.sidebar.caption("Fixes applied:")
             st.sidebar.write(f"  🔗 Topology connections: {topo}")
 except Exception as e:
     st.sidebar.warning(f"Could not load summary: {e}")
+
+st.sidebar.divider()
+
+# Beginner mode toggle
+beginner_mode = st.sidebar.toggle("Beginner mode", value=True,
+    help="Show only tabs relevant to QA review. Hides advanced/already-reviewed tabs.")
 
 st.sidebar.divider()
 
@@ -1247,17 +1281,33 @@ st.session_state.show_all_reaches = True
 
 # Tabs for different issue types
 # NOTE: Tabs 1-2 (Ratio Violations, Monotonicity) hidden until facc strategy decided
-# To restore, uncomment those tabs and their implementations below
-tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
-    "🏔️ Headwaters",
-    "⚠️ Suspect",
-    "📜 Fix History",
-    "🥪 Lake Sandwich",
-    "🏷️ Lakeflag/Type",
-    "📈 FACC Mono",
-    "🏝️ Orphans",
-    "🔍 Review Fixes"
-])
+if beginner_mode:
+    # Beginner mode: undergrad-relevant tabs first, advanced tabs hidden at end
+    tab7, tab_a010, tab9, tab_a002, tab4, tab5, tab3, tab6, tab8, tab10 = st.tabs([
+        "🏷️ Lakeflag/Type",
+        "🔚 End Reach",
+        "🏝️ Orphans",
+        "📐 Slope",
+        "⚠️ Suspect",
+        "📜 Fix History",
+        "🏔️ Headwaters ⚙️",
+        "🥪 Lake Sandwich ⚙️",
+        "📈 FACC Mono ⚙️",
+        "🔍 Review Fixes ⚙️",
+    ])
+else:
+    tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab_a010, tab_a002 = st.tabs([
+        "🏔️ Headwaters",
+        "⚠️ Suspect",
+        "📜 Fix History",
+        "🥪 Lake Sandwich",
+        "🏷️ Lakeflag/Type",
+        "📈 FACC Mono",
+        "🏝️ Orphans",
+        "🔍 Review Fixes",
+        "🔚 End Reach",
+        "📐 Slope",
+    ])
 
 # =============================================================================
 # TAB 1: Ratio Violations (HIDDEN - uncomment when facc strategy decided)
@@ -1792,30 +1842,56 @@ with tab7:
     st.header("🏷️ Lakeflag/Type Mismatch")
 
     # Initialize session state for C004
-    if 'c004_results' not in st.session_state:
-        st.session_state.c004_results = None
+    if 'c004_issues' not in st.session_state:
+        st.session_state.c004_issues = None
     if 'c004_pending' not in st.session_state:
         st.session_state.c004_pending = []
 
-    # Auto-run check
-    if st.session_state.c004_results is None or st.session_state.get('c004_region') != region:
-        with st.spinner("Running C004 check..."):
-            st.session_state.c004_results = check_lakeflag_type_consistency(conn, region)
+    # Load already-reviewed reaches from database
+    reviewed_c004 = conn.execute("""
+        SELECT DISTINCT reach_id FROM lint_fix_log
+        WHERE region = ? AND check_id = 'C004' AND NOT undone
+    """, [region]).fetchdf()['reach_id'].tolist()
+    all_reviewed_c004 = set(reviewed_c004) | set(st.session_state.c004_pending)
+
+    # Query individual mismatched reaches directly (the lint check only returns a cross-tab summary)
+    if st.session_state.c004_issues is None or st.session_state.get('c004_region') != region:
+        with st.spinner("Finding lakeflag/type mismatches..."):
+            try:
+                c004_df = conn.execute(f"""
+                    SELECT reach_id, region, river_name, x, y, lakeflag, type,
+                        CASE
+                            WHEN lakeflag = 1 AND type = 1 THEN 'lake_labeled_as_river_type'
+                            WHEN lakeflag = 0 AND type = 3 THEN 'river_labeled_as_lake_type'
+                            WHEN lakeflag = 2 AND type NOT IN (1, 4, 5, 6) THEN 'canal_type_mismatch'
+                            WHEN lakeflag = 3 AND type NOT IN (5, 6) THEN 'tidal_type_mismatch'
+                            ELSE 'other_mismatch'
+                        END as issue_type
+                    FROM reaches
+                    WHERE region = ?
+                        AND lakeflag IS NOT NULL AND type IS NOT NULL
+                        AND NOT (
+                            (lakeflag = 0 AND type IN (1, 4))
+                            OR (lakeflag = 1 AND type IN (3, 4))
+                            OR (lakeflag = 2 AND type IN (1, 4))
+                            OR type IN (5, 6)
+                        )
+                    ORDER BY reach_id
+                """, [region]).fetchdf()
+                st.session_state.c004_issues = c004_df
+            except Exception:
+                st.session_state.c004_issues = pd.DataFrame()
             st.session_state.c004_region = region
 
-    result = st.session_state.c004_results
+    issues = st.session_state.c004_issues
 
-    # Check if type column exists
-    if result and result.total_checked == 0:
-        st.warning("⚠️ **Type column not in database** - this check requires adding the 'type' column first.")
-        st.info("Once the type column is added, this tab will show reaches where lakeflag and type don't match.")
-    elif result is None or len(result.details) == 0:
-        st.success("✅ No lakeflag/type mismatches in this region!")
+    # Check if type column exists / has results
+    if issues is None or len(issues) == 0:
+        st.success("No lakeflag/type mismatches in this region!")
     else:
-        issues = result.details
         total = len(issues)
-        done = len(st.session_state.c004_pending)
-        remaining = len([r for r in issues['reach_id'].tolist() if r not in st.session_state.c004_pending])
+        remaining = len([r for r in issues['reach_id'].tolist() if r not in all_reviewed_c004])
+        done = len(all_reviewed_c004)
 
         # Progress
         col1, col2, col3 = st.columns(3)
@@ -1827,7 +1903,7 @@ with tab7:
         if remaining == 0:
             st.success("🎉 All mismatches reviewed!")
         else:
-            available = [r for r in issues['reach_id'].tolist() if r not in st.session_state.c004_pending]
+            available = [r for r in issues['reach_id'].tolist() if r not in all_reviewed_c004]
             selected = available[0]
             issue = issues[issues['reach_id'] == selected].iloc[0]
 
@@ -1848,7 +1924,7 @@ with tab7:
 
             col1, col2 = st.columns([2, 1])
             with col1:
-                render_reach_map_satellite(int(selected), region, conn)
+                render_reach_map_satellite(int(selected), region, conn, color_by_type=True)
 
             with col2:
                 st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
@@ -1882,10 +1958,17 @@ with tab7:
                         st.cache_data.clear()
                         st.rerun()
                 elif 'tidal' in issue['issue_type']:
-                    if st.button("✅ Set type=3 (tidal)", key=f"c004_fix_{selected}", type="primary", use_container_width=True):
-                        conn.execute("UPDATE reaches SET type = 3 WHERE reach_id = ? AND region = ?", [selected, region])
+                    if st.button("✅ Set lakeflag=0 (river)", key=f"c004_fix_lf_{selected}", type="primary", use_container_width=True):
+                        conn.execute("UPDATE reaches SET lakeflag = 0 WHERE reach_id = ? AND region = ?", [selected, region])
                         conn.commit()
-                        log_skip(conn, selected, region, 'C004', f'Fixed: type→3')
+                        log_skip(conn, selected, region, 'C004', f'Fixed: lakeflag→0 (was tidal)')
+                        st.session_state.c004_pending.append(selected)
+                        st.cache_data.clear()
+                        st.rerun()
+                    if st.button("✅ Set type=1 (river)", key=f"c004_fix_tp_{selected}", use_container_width=True):
+                        conn.execute("UPDATE reaches SET type = 1 WHERE reach_id = ? AND region = ?", [selected, region])
+                        conn.commit()
+                        log_skip(conn, selected, region, 'C004', f'Fixed: type→1 (was tidal)')
                         st.session_state.c004_pending.append(selected)
                         st.cache_data.clear()
                         st.rerun()
@@ -2313,6 +2396,265 @@ with tab10:
         with st.expander(f"📜 Previously Undone ({len(undone_fixes)})"):
             for _, fix in undone_fixes.iterrows():
                 st.text(f"#{fix['fix_id']}: {fix['reach_id']} - {fix['notes']} (undone)")
+
+# =============================================================================
+# TAB A010: End Reach Consistency
+# =============================================================================
+with tab_a010:
+    st.header("🔚 End Reach Consistency (A010)")
+
+    # Initialize session state for A010
+    if 'a010_results' not in st.session_state:
+        st.session_state.a010_results = None
+    if 'a010_pending' not in st.session_state:
+        st.session_state.a010_pending = []
+
+    # Load already-reviewed reaches from database
+    reviewed_a010 = conn.execute("""
+        SELECT DISTINCT reach_id FROM lint_fix_log
+        WHERE region = ? AND check_id = 'A010' AND NOT undone
+    """, [region]).fetchdf()['reach_id'].tolist()
+    all_reviewed_a010 = set(reviewed_a010) | set(st.session_state.a010_pending)
+
+    # Auto-run check
+    if st.session_state.a010_results is None or st.session_state.get('a010_region') != region:
+        with st.spinner("Running A010 end_reach consistency check..."):
+            st.session_state.a010_results = check_end_reach_consistency(conn, region)
+            st.session_state.a010_region = region
+
+    result = st.session_state.a010_results
+    if result is None or len(result.details) == 0:
+        st.success("No end_reach consistency issues in this region!")
+    else:
+        issues = result.details
+        total = len(issues)
+        remaining = len([r for r in issues['reach_id'].tolist() if r not in all_reviewed_a010])
+        total_reviewed = len(all_reviewed_a010)
+        pct_done = (total_reviewed / total * 100) if total > 0 else 0
+
+        st.markdown(f"### Progress: **{pct_done:.1f}%** ({total_reviewed} of {total} reviewed)")
+        st.progress(total_reviewed / total if total > 0 else 0)
+
+        col1, col2 = st.columns(2)
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed & Saved", total_reviewed)
+
+        end_reach_map = {0: 'normal', 1: 'headwater', 2: 'outlet', 3: 'junction'}
+
+        if remaining == 0:
+            st.success("All end_reach issues reviewed!")
+            if st.button("Re-run check", key="rerun_a010"):
+                st.session_state.a010_results = None
+                st.session_state.a010_pending = []
+                st.rerun()
+        else:
+            available = [r for r in issues['reach_id'].tolist() if r not in all_reviewed_a010]
+            selected = available[0]
+            issue = issues[issues['reach_id'] == selected].iloc[0]
+
+            issue_type = issue['issue_type']
+            er_val = int(issue['end_reach'])
+            n_up = int(issue['n_rch_up'])
+            n_dn = int(issue['n_rch_down'])
+
+            # Problem box
+            st.markdown("---")
+            st.subheader(f"Issue #{total_reviewed + 1}: Reach `{selected}`")
+
+            # Human-readable explanations
+            explanations = {
+                'marked_headwater_but_has_upstream': f"end_reach=1 (headwater) but has **{n_up} upstream** neighbor(s). Not a true headwater.",
+                'marked_outlet_but_has_downstream': f"end_reach=2 (outlet) but has **{n_dn} downstream** neighbor(s). Not a true outlet.",
+                'unmarked_headwater': f"end_reach=0 (normal) but has **0 upstream** neighbors. Should be headwater (1).",
+                'unmarked_outlet': f"end_reach=0 (normal) but has **0 downstream** neighbors. Should be outlet (2).",
+            }
+
+            st.error(f"""
+            **PROBLEM:** {explanations.get(issue_type, issue_type)}
+
+            - **Current label:** end_reach = {er_val} ({end_reach_map.get(er_val, '?')})
+            - **Upstream neighbors:** {n_up}
+            - **Downstream neighbors:** {n_dn}
+            """)
+
+            # Determine the correct end_reach value
+            if issue_type in ('unmarked_headwater', 'marked_outlet_but_has_downstream'):
+                correct_val = 1 if n_up == 0 and n_dn > 0 else 0
+            elif issue_type in ('unmarked_outlet', 'marked_headwater_but_has_upstream'):
+                correct_val = 2 if n_dn == 0 and n_up > 0 else 0
+            else:
+                correct_val = 0
+
+            # If it's a junction scenario
+            if n_up > 1 or n_dn > 1:
+                correct_val = 3
+
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                render_reach_map_satellite(int(selected), region, conn)
+
+            with col2:
+                st.markdown("### Details")
+                st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
+                st.markdown(f"**end_reach:** {er_val} ({end_reach_map.get(er_val, '?')})")
+                st.markdown(f"**n_rch_up:** {n_up}")
+                st.markdown(f"**n_rch_down:** {n_dn}")
+
+                st.markdown("---")
+                st.markdown("### Fix Options")
+
+                # Auto-fix button
+                if st.button(
+                    f"Fix: set end_reach = {correct_val} ({end_reach_map.get(correct_val, '?')})",
+                    key=f"a010_fix_{selected}", type="primary", use_container_width=True
+                ):
+                    conn.execute(
+                        "UPDATE reaches SET end_reach = ? WHERE reach_id = ? AND region = ?",
+                        [correct_val, selected, region]
+                    )
+                    conn.commit()
+                    # Log fix
+                    max_id = conn.execute("SELECT COALESCE(MAX(fix_id), 0) FROM lint_fix_log").fetchone()[0]
+                    conn.execute("""
+                        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
+                        VALUES (?, 'A010', ?, ?, 'fix', 'end_reach', ?, ?, ?)
+                    """, [max_id + 1, selected, region, str(er_val), str(correct_val), f'Auto-fix {issue_type}'])
+                    conn.commit()
+                    st.session_state.a010_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
+
+                # Skip button
+                if st.button("Skip (correct as-is)", key=f"a010_skip_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'A010', f'Skipped: {issue_type} - correct as-is')
+                    st.session_state.a010_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
+
+    # Refresh
+    st.markdown("---")
+    if st.button("Refresh Check", key="refresh_a010"):
+        st.session_state.a010_results = None
+        st.session_state.a010_pending = []
+        st.rerun()
+
+# =============================================================================
+# TAB A002: Slope Reasonableness
+# =============================================================================
+with tab_a002:
+    st.header("📐 Slope Reasonableness (A002)")
+
+    # Initialize session state for A002
+    if 'a002_results' not in st.session_state:
+        st.session_state.a002_results = None
+    if 'a002_pending' not in st.session_state:
+        st.session_state.a002_pending = []
+
+    # Load already-reviewed reaches from database
+    reviewed_a002 = conn.execute("""
+        SELECT DISTINCT reach_id FROM lint_fix_log
+        WHERE region = ? AND check_id = 'A002' AND NOT undone
+    """, [region]).fetchdf()['reach_id'].tolist()
+    all_reviewed_a002 = set(reviewed_a002) | set(st.session_state.a002_pending)
+
+    # Auto-run check
+    if st.session_state.a002_results is None or st.session_state.get('a002_region') != region:
+        with st.spinner("Running A002 slope check..."):
+            st.session_state.a002_results = check_slope_reasonableness(conn, region)
+            st.session_state.a002_region = region
+
+    result = st.session_state.a002_results
+    if result is None or len(result.details) == 0:
+        st.success("No slope issues in this region!")
+    else:
+        issues = result.details
+        total = len(issues)
+        remaining = len([r for r in issues['reach_id'].tolist() if r not in all_reviewed_a002])
+        total_reviewed = len(all_reviewed_a002)
+        pct_done = (total_reviewed / total * 100) if total > 0 else 0
+
+        st.markdown(f"### Progress: **{pct_done:.1f}%** ({total_reviewed} of {total} reviewed)")
+        st.progress(total_reviewed / total if total > 0 else 0)
+
+        col1, col2 = st.columns(2)
+        col1.metric("Remaining", remaining)
+        col2.metric("Reviewed & Saved", total_reviewed)
+
+        st.info("**Note:** Slope corrections are complex. This tab is triage-only: classify each issue, don't fix values directly.")
+
+        if remaining == 0:
+            st.success("All slope issues reviewed!")
+            if st.button("Re-run check", key="rerun_a002"):
+                st.session_state.a002_results = None
+                st.session_state.a002_pending = []
+                st.rerun()
+        else:
+            available = [r for r in issues['reach_id'].tolist() if r not in all_reviewed_a002]
+            selected = available[0]
+            issue = issues[issues['reach_id'] == selected].iloc[0]
+
+            issue_type = issue['issue_type']
+            slope_val = issue['slope']
+
+            # Problem box
+            st.markdown("---")
+            st.subheader(f"Issue #{total_reviewed + 1}: Reach `{selected}`")
+
+            if issue_type == 'negative':
+                st.error(f"""
+                **PROBLEM:** This reach has **negative slope ({slope_val:.6f})**
+
+                Negative slope means the river would flow uphill - this is a data error.
+                Common cause: DEM artifacts, bridge overpasses, or bad elevation data.
+                """)
+            else:
+                st.error(f"""
+                **PROBLEM:** This reach has **extremely high slope ({slope_val:.4f} m/km)**
+
+                Very steep slopes are unusual for rivers. Could be a waterfall,
+                dam spillway, or elevation data error.
+                """)
+
+            col1, col2 = st.columns([2, 1])
+
+            with col1:
+                render_reach_map_satellite(int(selected), region, conn)
+
+            with col2:
+                st.markdown("### Details")
+                st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
+                st.markdown(f"**Slope:** {slope_val:.6f}")
+                st.markdown(f"**Reach length:** {issue['reach_length']:.0f}m" if pd.notna(issue['reach_length']) else "")
+                st.markdown(f"**Issue type:** {issue_type}")
+
+                st.markdown("---")
+                st.markdown("### Classification")
+
+                if st.button("DEM Artifact (expected)", key=f"a002_artifact_{selected}", type="primary", use_container_width=True):
+                    log_skip(conn, selected, region, 'A002', f'DEM artifact - {issue_type} slope')
+                    st.session_state.a002_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
+
+                if st.button("Looks wrong (flag for review)", key=f"a002_wrong_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'A002', f'Flagged: slope looks wrong - {issue_type}')
+                    st.session_state.a002_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
+
+                if st.button("Skip (unsure)", key=f"a002_skip_{selected}", use_container_width=True):
+                    log_skip(conn, selected, region, 'A002', f'Skipped: unsure about {issue_type} slope')
+                    st.session_state.a002_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
+
+    # Refresh
+    st.markdown("---")
+    if st.button("Refresh Check", key="refresh_a002"):
+        st.session_state.a002_results = None
+        st.session_state.a002_pending = []
+        st.rerun()
 
 # Footer
 st.divider()

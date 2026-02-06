@@ -37,52 +37,8 @@ Example Usage:
     reactive.recalculate()
 """
 
-from .sword_db import SWORDDatabase, create_database
+# --- Core imports (always available) ---
 from .schema import create_schema, get_schema_sql, SCHEMA_VERSION
-from .migrations import migrate_region, migrate_all_regions, validate_migration, build_all_geometry
-from .sword_class import SWORD
-from .views import CenterlinesView, NodesView, ReachesView, WritableArray
-from .reactive import (
-    SWORDReactive,
-    DependencyGraph,
-    ChangeType,
-    mark_geometry_changed,
-    mark_topology_changed,
-    full_recalculate,
-)
-from .export import (
-    export_to_postgres,
-    export_to_geoparquet,
-    export_to_geopackage,
-    sync_from_postgres,
-    PostgresExportError,
-    PgConnectionError,
-    AuthenticationError,
-    NetworkError,
-)
-from .triggers import (
-    install_triggers,
-    remove_triggers,
-    get_pending_changes,
-    get_changed_entities,
-    mark_changes_synced,
-    get_trigger_sql,
-)
-from .workflow import SWORDWorkflow
-from .provenance import ProvenanceLogger, OperationType, OperationStatus
-from .schema import (
-    create_provenance_tables,
-    add_v17c_columns,
-    add_swot_obs_columns,
-    add_sync_tracking_column,
-)
-from .reconstruction import (
-    ReconstructionEngine,
-    SourceDataset,
-    DerivationMethod,
-    AttributeSpec,
-    ATTRIBUTE_SOURCES,
-)
 from .lint import (
     LintRunner,
     Severity,
@@ -90,15 +46,118 @@ from .lint import (
     CheckResult,
     get_registry as get_lint_registry,
 )
-from .backends import (
-    DatabaseBackend,
-    BackendType,
-    DuckDBBackend,
-    PostgresBackend,
-    get_backend,
-    detect_backend_type,
-)
-from .backends.base import IsolationLevel, TransactionContext
+
+# --- Optional imports (require full dependency tree) ---
+# Wrapped so that lint-only / reviewer-only usage works without psycopg2, aiohttp, etc.
+try:
+    from .sword_db import SWORDDatabase, create_database
+except ImportError:
+    SWORDDatabase = create_database = None
+
+try:
+    from .migrations import migrate_region, migrate_all_regions, validate_migration, build_all_geometry
+except ImportError:
+    migrate_region = migrate_all_regions = validate_migration = build_all_geometry = None
+
+try:
+    from .sword_class import SWORD
+except ImportError:
+    SWORD = None
+
+try:
+    from .views import CenterlinesView, NodesView, ReachesView, WritableArray
+except ImportError:
+    CenterlinesView = NodesView = ReachesView = WritableArray = None
+
+try:
+    from .reactive import (
+        SWORDReactive,
+        DependencyGraph,
+        ChangeType,
+        mark_geometry_changed,
+        mark_topology_changed,
+        full_recalculate,
+    )
+except ImportError:
+    SWORDReactive = DependencyGraph = ChangeType = None
+    mark_geometry_changed = mark_topology_changed = full_recalculate = None
+
+try:
+    from .export import (
+        export_to_postgres,
+        export_to_geoparquet,
+        export_to_geopackage,
+        sync_from_postgres,
+        PostgresExportError,
+        PgConnectionError,
+        AuthenticationError,
+        NetworkError,
+    )
+except ImportError:
+    export_to_postgres = export_to_geoparquet = export_to_geopackage = None
+    sync_from_postgres = None
+    PostgresExportError = PgConnectionError = AuthenticationError = NetworkError = None
+
+try:
+    from .triggers import (
+        install_triggers,
+        remove_triggers,
+        get_pending_changes,
+        get_changed_entities,
+        mark_changes_synced,
+        get_trigger_sql,
+    )
+except ImportError:
+    install_triggers = remove_triggers = get_pending_changes = None
+    get_changed_entities = mark_changes_synced = get_trigger_sql = None
+
+try:
+    from .workflow import SWORDWorkflow
+except ImportError:
+    SWORDWorkflow = None
+
+try:
+    from .provenance import ProvenanceLogger, OperationType, OperationStatus
+except ImportError:
+    ProvenanceLogger = OperationType = OperationStatus = None
+
+try:
+    from .schema import (
+        create_provenance_tables,
+        add_v17c_columns,
+        add_swot_obs_columns,
+        add_sync_tracking_column,
+    )
+except ImportError:
+    create_provenance_tables = add_v17c_columns = None
+    add_swot_obs_columns = add_sync_tracking_column = None
+
+try:
+    from .reconstruction import (
+        ReconstructionEngine,
+        SourceDataset,
+        DerivationMethod,
+        AttributeSpec,
+        ATTRIBUTE_SOURCES,
+    )
+except ImportError:
+    ReconstructionEngine = SourceDataset = DerivationMethod = None
+    AttributeSpec = ATTRIBUTE_SOURCES = None
+
+try:
+    from .backends import (
+        DatabaseBackend,
+        BackendType,
+        DuckDBBackend,
+        PostgresBackend,
+        get_backend,
+        detect_backend_type,
+    )
+    from .backends.base import IsolationLevel, TransactionContext
+except ImportError:
+    DatabaseBackend = BackendType = DuckDBBackend = PostgresBackend = None
+    get_backend = detect_backend_type = None
+    IsolationLevel = TransactionContext = None
 
 __all__ = [
     # Main SWORD class (drop-in replacement)
