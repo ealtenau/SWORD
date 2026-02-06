@@ -291,6 +291,16 @@ CREATE TABLE reaches (
     subnetwork_id INTEGER,
     type INTEGER,
 
+    -- SWOT slope observation quality
+    slope_obs_adj DOUBLE PRECISION,
+    slope_obs_reliable BOOLEAN,
+    slope_obs_quality VARCHAR,
+    slope_obs_n INTEGER,
+    slope_obs_n_passes INTEGER,
+    slope_obs_q INTEGER,
+    slope_obs_slopeF DOUBLE PRECISION,
+    swot_obs_source VARCHAR,
+
     PRIMARY KEY (reach_id, region)
 );
 
@@ -676,7 +686,7 @@ CREATE OR REPLACE VIEW as_reaches AS SELECT * FROM reaches WHERE region = 'AS';
 -- =============================================================================
 
 INSERT INTO sword_versions (version, schema_version, notes)
-VALUES ('schema', '1.5.0', 'PostgreSQL/PostGIS schema created from DuckDB')
+VALUES ('schema', '1.6.0', 'Add SWOT slope obs quality columns to reaches')
 ON CONFLICT (version) DO UPDATE
 SET schema_version = EXCLUDED.schema_version,
     notes = EXCLUDED.notes,
