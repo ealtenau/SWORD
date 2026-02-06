@@ -56,6 +56,10 @@ KNOWN_FALSE_POSITIVES = {
     77250000153: {'region': 'OC', 'reason': 'mainstem reach, should not be corrected'},
     74300400575: {'region': 'SA', 'reason': 'incorrectly flipped by RF regressor'},
     74300400565: {'region': 'SA', 'reason': 'incorrectly flipped by RF regressor'},
+    # Pipeline v17c FPs (2026-02-06) - rolled back to v17b
+    62295700041: {'region': 'SA', 'reason': 'large river, original facc correct'},
+    62295700121: {'region': 'SA', 'reason': 'large river, original facc correct'},
+    74249300081: {'region': 'NA', 'reason': 'wrongly corrected by pipeline'},
 }
 
 
