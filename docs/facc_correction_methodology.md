@@ -204,24 +204,27 @@ python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --v
 
 **Approach**: Train RF on ~247K "clean" reaches (non-anomalous) to predict what facc SHOULD be based on network position, then apply to detected anomalies.
 
-**Model Performance**:
-| Metric | Value |
-|--------|-------|
-| R² (log space) | 0.787 |
-| R² (original) | 0.773 |
-| MAE | 16,203 km² |
-| Median % error | 34.8% |
+**Model Variants**:
 
-**Top Features**:
+| Model | R² | Median Error | Top Feature | Purpose |
+|-------|-------|--------------|-------------|---------|
+| Standard (2-hop facc) | 0.98 | 0.3% | max_2hop_upstream_facc (64%) | Primary correction |
+| No-facc (topology only) | 0.79 | 32.8% | hydro_dist_hw (56.6%) | Sanity check |
+
+**Standard Model** uses 2-hop upstream/downstream facc features. Very accurate but tautology risk if neighbors are also corrupted.
+
+**No-facc Model** excludes ALL facc-derived features (44 total). Lower accuracy but provides independent validation.
+
+**Top Features (No-facc model)**:
 | Rank | Feature | Importance | Description |
 |------|---------|------------|-------------|
-| 1 | hydro_dist_hw | 56.4% | Distance from headwater (Dijkstra) |
+| 1 | hydro_dist_hw | 56.6% | Distance from headwater (Dijkstra) |
 | 2 | path_freq | 5.7% | Network traversal count |
-| 3 | main_side | 5.1% | Channel type (main/side/secondary) |
-| 4 | log_path_freq | 4.5% | Log of path_freq |
-| 5 | main_path_id | 2.8% | Mainstem identifier |
+| 3 | main_side | 5.6% | Channel type (main/side/secondary) |
+| 4 | log_path_freq | 4.7% | Log of path_freq |
+| 5 | main_path_id | 2.5% | Mainstem identifier |
 
-**Key Insight**: Network position (`hydro_dist_hw`) dominates - facc accumulates as you move downstream from headwaters.
+**Key Insight**: Network position (`hydro_dist_hw`) explains 56.6% of variance when facc features excluded - confirms facc accumulates downstream from headwaters.
 
 **Results**:
 - 1,725 reaches corrected
@@ -246,11 +249,19 @@ python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --v
 
 **Files**:
 ```
-src/updates/sword_duckdb/facc_detection/rf_regressor.py  # FaccRegressor class
-output/facc_detection/rf_regressor.joblib                # Trained model (110 MB)
-output/facc_detection/rf_regressor_importance.csv        # Feature rankings
-output/facc_detection/rf_regressor_predictions.csv       # Predictions for anomalies
-output/facc_detection/FACC_DETECTION_REPORT.md           # Detailed ratio definitions
+src/updates/sword_duckdb/facc_detection/
+├── rf_regressor.py                   # FaccRegressor, SplitFaccRegressor classes
+├── rf_features.py                    # RFFeatureExtractor (91 features)
+└── train_split_regressor.py          # Training script with --exclude-facc-features flag
+
+output/facc_detection/
+├── rf_regressor_baseline.joblib      # Standard model (with 2-hop facc)
+├── rf_split_regressor.joblib         # Split by main_side × lakeflag
+├── rf_regressor_baseline_nofacc.joblib    # No-facc model
+├── rf_split_regressor_nofacc.joblib       # No-facc split model
+├── rf_*_importance.csv               # Feature rankings
+├── rf_*_predictions.csv              # Predictions for anomalies
+└── rf_split_comparison*.json         # Model comparison metrics
 ```
 
 ---

@@ -481,6 +481,8 @@ def detect_hybrid(
     region: Optional[str] = None,
     filter_false_positives: bool = True,
     min_width: float = 15.0,
+    include_propagation: bool = True,
+    propagation_max_hops: int = 3,
 ) -> DetectionResult:
     """
     Hybrid detection using ratio_to_median with FP filtering.
@@ -560,6 +562,12 @@ def detect_hybrid(
                     AND (path_freq > 0 AND path_freq != -9999)  -- Keep invalid path_freq
                     AND (fwr_drop_ratio IS NULL OR fwr_drop_ratio <= 10)  -- Keep dramatic FWR drops
                 )
+                -- 1:1:1 stable filter DISABLED for v17b baseline
+                -- On v17b, propagation is stable (bad facc flows consistently)
+                -- These reaches need correction, not filtering
+                -- AND NOT (n_rch_up = 1 AND n_rch_down = 1 AND end_reach != 3
+                --          AND facc_jump_ratio IS NOT NULL AND facc_jump_ratio BETWEEN 0.9 AND 1.1
+                --          AND facc_diff_from_downstream_pct IS NOT NULL AND facc_diff_from_downstream_pct < 0.1)
             """
 
         # Compute ratio_to_median for all reaches
@@ -594,16 +602,16 @@ def detect_hybrid(
             GROUP BY rt.reach_id, rt.region
         ),
         downstream_info AS (
-            -- Get max downstream width and FWR for ratio calculations
+            -- Get max downstream width, FWR, and facc for ratio calculations
             SELECT
                 rt.reach_id,
                 rt.region,
                 MAX(r_dn.width) as max_downstream_width,
-                MAX(r_dn.facc / NULLIF(r_dn.width, 0)) as max_downstream_fwr
+                MAX(r_dn.facc / NULLIF(r_dn.width, 0)) as max_downstream_fwr,
+                MAX(r_dn.facc) as max_downstream_facc
             FROM reach_topology rt
             JOIN reaches r_dn ON rt.neighbor_reach_id = r_dn.reach_id AND rt.region = r_dn.region
             WHERE rt.direction = 'down'
-                AND r_dn.width > 0
                 {topo_region}
             GROUP BY rt.reach_id, rt.region
         ),
@@ -642,8 +650,11 @@ def detect_hybrid(
                 END as facc_jump_ratio,
                 r.width / NULLIF(di.max_downstream_width, 0) as width_ratio_to_dn,
                 di.max_downstream_fwr,
+                di.max_downstream_facc,
                 -- FWR drop ratio: how much does FWR drop going downstream?
-                (r.facc / GREATEST(r.width, {min_width})) / NULLIF(di.max_downstream_fwr, 0) as fwr_drop_ratio
+                (r.facc / GREATEST(r.width, {min_width})) / NULLIF(di.max_downstream_fwr, 0) as fwr_drop_ratio,
+                -- Facc difference from downstream (for 1:1:1 stable filter)
+                ABS(r.facc - COALESCE(di.max_downstream_facc, 0)) / NULLIF(di.max_downstream_facc, 0) as facc_diff_from_downstream_pct
             FROM reaches r
             JOIN regional_stats rs ON r.region = rs.region
             LEFT JOIN upstream_info ui ON r.reach_id = ui.reach_id AND r.region = ui.region
@@ -717,6 +728,32 @@ def detect_hybrid(
             max_ratio = anomalies['ratio_to_median'].max()
             anomalies['anomaly_score'] = np.clip(anomalies['ratio_to_median'] / max_ratio, 0, 1)
             anomalies['anomaly_reason'] = anomalies['detection_rule']
+
+        # Pass 2: Topology-aware propagation detection
+        if include_propagation and len(anomalies) > 0:
+            entry_rules = ['entry_point', 'extreme_fwr', 'headwater_extreme', 'jump_entry',
+                          'facc_sum_inflation']
+            entry_df = anomalies[anomalies['detection_rule'].isin(entry_rules)]
+
+            if len(entry_df) > 0:
+                entry_ids = entry_df['reach_id'].tolist()
+                entry_facc = dict(zip(entry_df['reach_id'], entry_df['facc']))
+
+                propagation = detect_propagation_topology_aware(
+                    conn=conn,
+                    entry_point_ids=entry_ids,
+                    entry_point_facc=entry_facc,
+                    max_hops=propagation_max_hops,
+                    min_width=min_width,
+                )
+
+                if len(propagation) > 0:
+                    already_detected = set(anomalies['reach_id'].tolist())
+                    propagation = propagation[~propagation['reach_id'].isin(already_detected)]
+
+                    if len(propagation) > 0:
+                        propagation_aligned = propagation.reindex(columns=anomalies.columns)
+                        anomalies = pd.concat([anomalies, propagation_aligned], ignore_index=True)
 
         # Count by rule
         if len(anomalies) > 0:
@@ -1008,3 +1045,126 @@ def _trace_downstream(
     """
 
     return conn.execute(query).fetchdf()
+
+
+def detect_propagation_topology_aware(
+    conn: duckdb.DuckDBPyConnection,
+    entry_point_ids: List[int],
+    entry_point_facc: Dict[int, float],
+    max_hops: int = 3,
+    facc_similarity_threshold: float = 0.9,
+    facc_drop_threshold: float = 0.5,
+    min_width: float = 15.0,
+) -> pd.DataFrame:
+    """
+    Trace downstream from entry points and flag propagation reaches.
+
+    A reach is flagged as propagation if:
+    1. It's within max_hops of an entry point
+    2. Its facc is similar to entry point (within similarity threshold)
+    3. Downstream facc drops significantly (indicates bad facc doesn't belong)
+
+    This catches "1:1:1 stable propagation" patterns where bad facc flows
+    through unchanged.
+    """
+    if not entry_point_ids:
+        return pd.DataFrame()
+
+    seeds_str = ', '.join(str(r) for r in entry_point_ids)
+
+    query = f"""
+    WITH RECURSIVE downstream_trace AS (
+        SELECT
+            r.reach_id,
+            r.region,
+            r.facc,
+            r.width,
+            r.reach_id as entry_reach_id,
+            0 as hops
+        FROM reaches r
+        WHERE r.reach_id IN ({seeds_str})
+
+        UNION ALL
+
+        SELECT
+            r_dn.reach_id,
+            r_dn.region,
+            r_dn.facc,
+            r_dn.width,
+            dt.entry_reach_id,
+            dt.hops + 1 as hops
+        FROM downstream_trace dt
+        JOIN reach_topology rt ON dt.reach_id = rt.reach_id AND dt.region = rt.region
+        JOIN reaches r_dn ON rt.neighbor_reach_id = r_dn.reach_id AND rt.region = r_dn.region
+        WHERE rt.direction = 'down'
+            AND dt.hops < {max_hops}
+            AND r_dn.facc > 0 AND r_dn.facc != -9999
+    ),
+    with_downstream AS (
+        SELECT
+            dt.reach_id,
+            dt.region,
+            dt.facc,
+            dt.width,
+            dt.entry_reach_id,
+            dt.hops,
+            MAX(r_dn.facc) as downstream_facc
+        FROM downstream_trace dt
+        LEFT JOIN reach_topology rt ON dt.reach_id = rt.reach_id AND dt.region = rt.region
+        LEFT JOIN reaches r_dn ON rt.neighbor_reach_id = r_dn.reach_id AND rt.region = r_dn.region
+            AND r_dn.facc > 0 AND r_dn.facc != -9999
+        WHERE dt.hops > 0
+            AND (rt.direction = 'down' OR rt.direction IS NULL)
+        GROUP BY dt.reach_id, dt.region, dt.facc, dt.width, dt.entry_reach_id, dt.hops
+    )
+    SELECT DISTINCT
+        reach_id,
+        region,
+        facc,
+        width,
+        facc / GREATEST(width, {min_width}) as facc_width_ratio,
+        entry_reach_id,
+        hops as hops_from_entry,
+        downstream_facc
+    FROM with_downstream
+    ORDER BY entry_reach_id, hops
+    """
+
+    traced = conn.execute(query).fetchdf()
+
+    if len(traced) == 0:
+        return pd.DataFrame()
+
+    traced['entry_facc'] = traced['entry_reach_id'].map(entry_point_facc)
+    traced['facc_similarity'] = traced['facc'] / traced['entry_facc']
+    traced['facc_drop_ratio'] = traced['downstream_facc'] / traced['facc']
+
+    propagation = traced[
+        (traced['facc_similarity'] >= facc_similarity_threshold)
+        & (
+            (traced['facc_drop_ratio'] < facc_drop_threshold)
+            | (traced['downstream_facc'].isna())
+        )
+    ].copy()
+
+    if len(propagation) == 0:
+        return pd.DataFrame()
+
+    propagation['detection_rule'] = 'propagation_from_entry'
+
+    def _make_reason(r):
+        dn_facc = f"{r['downstream_facc']:.0f}" if pd.notna(r['downstream_facc']) else 'outlet'
+        return (f"propagation: {r['hops_from_entry']} hops from {r['entry_reach_id']}, "
+                f"facc={r['facc']:.0f} (~{r['facc_similarity']*100:.0f}% of entry), "
+                f"drops to {dn_facc}")
+
+    propagation['anomaly_reason'] = propagation.apply(_make_reason, axis=1)
+    propagation['ratio_to_median'] = None
+    propagation['anomaly_score'] = 0.8
+
+    return propagation[[
+        'reach_id', 'region', 'facc', 'width', 'facc_width_ratio',
+        'entry_reach_id', 'entry_facc', 'hops_from_entry',
+        'downstream_facc', 'facc_drop_ratio', 'facc_similarity',
+        'detection_rule', 'anomaly_reason', 'anomaly_score'
+    ]]

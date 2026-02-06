@@ -104,31 +104,69 @@ When it sees an anomalous reach at `hydro_dist_hw = 150 km` with `facc = 2,500,0
 
 ### Model Performance
 
-| Metric | Value |
-|--------|-------|
-| R² | 0.77 |
-| Median % error | 35% |
-| Training samples | 247,000 |
-| Features used | 59 |
+Two model variants exist:
+
+| Model | R² | Median % Error | Top Feature | Use Case |
+|-------|-------|----------------|-------------|----------|
+| **Standard** (with 2-hop facc) | 0.98 | 0.3% | max_2hop_upstream_facc (64%) | Primary correction |
+| **No-facc** (topology/width only) | 0.79 | 32.8% | hydro_dist_hw (56.6%) | Sanity check |
+
+**Standard model** uses 2-hop upstream/downstream facc features - these dominate prediction but create tautology risk if neighbors are also corrupted.
+
+**No-facc model** excludes ALL facc-derived features to avoid circularity. Lower accuracy but useful as independent sanity check.
 
 ![Model Validation](../output/facc_detection/figures/fig5_model_validation.png)
 
 ### Top Predictive Features
 
+**Standard Model (with 2-hop facc):**
+
+| Feature | Importance | Description |
+|---------|------------|-------------|
+| `max_2hop_upstream_facc` | **64%** | Max facc of 2-hop upstream neighbors |
+| `max_2hop_downstream_facc` | 21% | Max facc of 2-hop downstream neighbors |
+| `facc_2hop_ratio` | 8% | Ratio of facc to 2-hop upstream |
+| `hydro_dist_hw` | 2% | Dijkstra distance from headwater |
+
+**No-facc Model (topology/width only):**
+
 ![Feature Importance](../output/facc_detection/figures/fig1_feature_importance.png)
 
 | Feature | Importance | Description |
 |---------|------------|-------------|
-| `hydro_dist_hw` | **56%** | Dijkstra distance from nearest headwater |
-| `path_freq` | 6% | Network traversal count (increases toward outlets) |
-| `main_side` | 5% | Channel type: 0=main, 1=side, 2=secondary |
-| `log_path_freq` | 5% | Log-transformed path_freq |
-| `main_path_id` | 3% | Mainstem identifier |
-| `lakeflag` | 2% | Lake/river/canal/tidal classification |
-| `wse` | 1% | Water surface elevation |
-| `hydro_dist_out` | 1% | Dijkstra distance to outlet |
+| `hydro_dist_hw` | **56.6%** | Dijkstra distance from nearest headwater |
+| `path_freq` | 5.7% | Network traversal count (increases toward outlets) |
+| `main_side` | 5.6% | Channel type: 0=main, 1=side, 2=secondary |
+| `log_path_freq` | 4.7% | Log-transformed path_freq |
+| `main_path_id` | 2.5% | Mainstem identifier |
+| `lakeflag` | 2.2% | Lake/river/canal/tidal classification |
+| `hydro_dist_out` | 1.7% | Dijkstra distance to outlet |
+| `wse` | 1.3% | Water surface elevation |
 
-**Key insight:** `hydro_dist_hw` alone explains 56% of variance - network position is the dominant predictor.
+**Key insight:** `hydro_dist_hw` alone explains 56.6% of variance when facc features are excluded - network position is the dominant non-facc predictor.
+
+### No-Facc Model Experiment (2026-02)
+
+**Problem:** Standard model uses 93% facc-derived features. If 2-hop neighbors are also corrupted, model predicts corrupted value as "correct."
+
+**Solution:** Train RF excluding ALL facc-derived features:
+- Excluded: max_2hop_upstream_facc, all FWR metrics, facc ratios (44 features total)
+- Retained: hydro_dist_hw, path_freq, width, slope, main_side, lakeflag, etc. (65 features)
+
+**Results:**
+
+| Metric | Standard | No-Facc | Δ |
+|--------|----------|---------|---|
+| R² | 0.98 | 0.79 | -0.19 |
+| Median % Error | 0.3% | 32.8% | +32.5pp |
+| Features | ~80 | 65 | -15 |
+
+**Conclusion:** No-facc model is usable as sanity check but too high error for direct correction. If predicted/current ratio differs significantly between models, that's a red flag for cascading corruption.
+
+**Files:**
+- `rf_regressor_baseline_nofacc.joblib` - single model
+- `rf_split_regressor_nofacc.joblib` - split by main_side × lakeflag
+- `rf_*_nofacc_importance.csv` - feature rankings
 
 ### Why hydro_dist_hw works (not dist_out)
 

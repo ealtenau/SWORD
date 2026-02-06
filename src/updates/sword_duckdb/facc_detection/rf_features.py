@@ -173,7 +173,50 @@ class RFFeatureExtractor:
         topo_region = f"AND rt.region = '{region}'" if region else ""
 
         query = f"""
-        WITH upstream_info AS (
+        WITH -- 2-hop upstream info
+        hop1_up AS (
+            SELECT rt.reach_id, rt.region, rt.neighbor_reach_id as up1_id
+            FROM reach_topology rt
+            WHERE rt.direction = 'up' {topo_region}
+        ),
+        hop2_up AS (
+            SELECT h1.reach_id, h1.region, rt.neighbor_reach_id as up2_id
+            FROM hop1_up h1
+            JOIN reach_topology rt ON h1.up1_id = rt.reach_id AND h1.region = rt.region
+            WHERE rt.direction = 'up'
+        ),
+        two_hop_upstream AS (
+            SELECT h2.reach_id, h2.region,
+                MAX(r.facc) as max_2hop_upstream_facc,
+                AVG(r.facc / NULLIF(r.width, 0)) as avg_2hop_upstream_fwr,
+                COUNT(DISTINCT h2.up2_id) as n_upstream_2hop
+            FROM hop2_up h2
+            JOIN reaches r ON h2.up2_id = r.reach_id AND h2.region = r.region
+            WHERE r.facc > 0 AND r.facc != -9999
+            GROUP BY h2.reach_id, h2.region
+        ),
+        -- 2-hop downstream info
+        hop1_dn AS (
+            SELECT rt.reach_id, rt.region, rt.neighbor_reach_id as dn1_id
+            FROM reach_topology rt
+            WHERE rt.direction = 'down' {topo_region}
+        ),
+        hop2_dn AS (
+            SELECT h1.reach_id, h1.region, rt.neighbor_reach_id as dn2_id
+            FROM hop1_dn h1
+            JOIN reach_topology rt ON h1.dn1_id = rt.reach_id AND h1.region = rt.region
+            WHERE rt.direction = 'down'
+        ),
+        two_hop_downstream AS (
+            SELECT h2.reach_id, h2.region,
+                MAX(r.facc) as max_2hop_downstream_facc,
+                AVG(r.facc / NULLIF(r.width, 0)) as avg_2hop_downstream_fwr
+            FROM hop2_dn h2
+            JOIN reaches r ON h2.dn2_id = r.reach_id AND h2.region = r.region
+            WHERE r.facc > 0 AND r.facc != -9999
+            GROUP BY h2.reach_id, h2.region
+        ),
+        upstream_info AS (
             SELECT
                 rt.reach_id,
                 rt.region,
@@ -278,11 +321,33 @@ class RFFeatureExtractor:
                 WHEN di.avg_downstream_fwr IS NOT NULL AND di.avg_downstream_fwr > 0
                 THEN (r.facc / NULLIF(r.width, 0)) / di.avg_downstream_fwr
                 ELSE NULL
-            END as fwr_downstream_consistency
+            END as fwr_downstream_consistency,
+            -- 2-HOP UPSTREAM FEATURES
+            tu.max_2hop_upstream_facc,
+            tu.avg_2hop_upstream_fwr,
+            COALESCE(tu.n_upstream_2hop, 0) as n_upstream_2hop,
+            -- Facc ratio to 2-hop upstream (high = anomaly entry point)
+            CASE
+                WHEN tu.max_2hop_upstream_facc IS NOT NULL AND tu.max_2hop_upstream_facc > 0
+                THEN r.facc / tu.max_2hop_upstream_facc
+                ELSE NULL
+            END as facc_2hop_ratio,
+            -- 2-HOP DOWNSTREAM FEATURES
+            td.max_2hop_downstream_facc,
+            td.avg_2hop_downstream_fwr,
+            -- Facc chain direction: 1 if increasing downstream, -1 if decreasing
+            CASE
+                WHEN tu.max_2hop_upstream_facc IS NOT NULL AND td.max_2hop_downstream_facc IS NOT NULL
+                     AND tu.max_2hop_upstream_facc > 0
+                THEN SIGN(td.max_2hop_downstream_facc - tu.max_2hop_upstream_facc)
+                ELSE NULL
+            END as facc_chain_direction
         FROM reaches r
         LEFT JOIN upstream_info ui ON r.reach_id = ui.reach_id AND r.region = ui.region
         LEFT JOIN downstream_info di ON r.reach_id = di.reach_id AND r.region = di.region
         LEFT JOIN network_stats ns ON r.network = ns.network AND r.region = ns.region
+        LEFT JOIN two_hop_upstream tu ON r.reach_id = tu.reach_id AND r.region = tu.region
+        LEFT JOIN two_hop_downstream td ON r.reach_id = td.reach_id AND r.region = td.region
         WHERE r.facc > 0 AND r.facc != -9999
             {where_region}
         """
@@ -336,7 +401,7 @@ class RFFeatureExtractor:
 
         return self.conn.execute(query).fetchdf()
 
-    def compute_derived_features(self, df: pd.DataFrame) -> pd.DataFrame:
+    def compute_derived_features(self, df: pd.DataFrame, include_region_encoding: bool = True) -> pd.DataFrame:
         """
         Compute derived features from base features.
 
@@ -344,6 +409,8 @@ class RFFeatureExtractor:
         ----------
         df : pd.DataFrame
             DataFrame with base features.
+        include_region_encoding : bool
+            If True, add one-hot encoded region columns.
 
         Returns
         -------
@@ -351,6 +418,16 @@ class RFFeatureExtractor:
             DataFrame with additional computed features.
         """
         df = df.copy()
+
+        # Regional one-hot encoding
+        if include_region_encoding and 'region' in df.columns:
+            region_dummies = pd.get_dummies(df['region'], prefix='region')
+            # Ensure all regions are present even if not in data
+            for r in ['NA', 'SA', 'EU', 'AF', 'AS', 'OC']:
+                col = f'region_{r}'
+                if col not in region_dummies.columns:
+                    region_dummies[col] = 0
+            df = pd.concat([df, region_dummies], axis=1)
 
         # Facc-width ratio (FWR)
         df['facc_width_ratio'] = df['facc'] / df['width'].replace(0, np.nan)
@@ -539,14 +616,20 @@ class RFFeatureExtractor:
                 'max_upstream_facc', 'upstream_facc_sum', 'n_upstream_actual',
                 'max_upstream_fwr', 'avg_upstream_width',
                 'max_downstream_facc', 'max_downstream_width', 'max_downstream_fwr',
-                'facc_jump_ratio', 'fwr_drop_ratio', 'upstream_fwr_ratio', 'width_ratio_to_dn'
+                'facc_jump_ratio', 'fwr_drop_ratio', 'upstream_fwr_ratio', 'width_ratio_to_dn',
+                # 2-hop features
+                'max_2hop_upstream_facc', 'avg_2hop_upstream_fwr', 'n_upstream_2hop',
+                'facc_2hop_ratio', 'max_2hop_downstream_facc', 'avg_2hop_downstream_fwr',
+                'facc_chain_direction'
             ],
             'derived': [
                 'facc_width_ratio', 'facc_per_reach',
                 'log_facc', 'log_width', 'log_path_freq',
                 'is_headwater', 'is_outlet', 'is_junction', 'is_side_channel', 'is_lake',
                 'has_swot_obs', 'is_mainstem', 'valid_path_freq',
-                'ratio_to_median', 'fwr_ratio_to_median'
+                'ratio_to_median', 'fwr_ratio_to_median',
+                # Regional encoding
+                'region_NA', 'region_SA', 'region_EU', 'region_AF', 'region_AS', 'region_OC'
             ]
         }
 

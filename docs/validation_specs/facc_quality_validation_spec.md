@@ -62,7 +62,37 @@ python -m src.updates.sword_duckdb.facc_detection.cli \
 
 **Output:** GeoJSON files for QGIS review (`entry_point.geojson`, `jump_entry.geojson`, etc.)
 
-### 3.2 Legacy Detection: fix_facc_violations() Method
+### 3.2 RF Regressor Correction (2026-02)
+
+**Location:** `src/updates/sword_duckdb/facc_detection/rf_regressor.py`
+
+Trained RF to predict what facc SHOULD be based on network position, then apply to detected anomalies.
+
+**Two Model Variants:**
+
+| Model | R² | Med Error | Top Feature | Purpose |
+|-------|------|-----------|-------------|---------|
+| Standard | 0.98 | 0.3% | max_2hop_upstream_facc (64%) | Primary correction |
+| No-facc | 0.79 | 32.8% | hydro_dist_hw (56.6%) | Sanity check |
+
+**Standard model** uses 2-hop facc features - accurate but tautology risk if neighbors corrupted.
+**No-facc model** excludes ALL facc-derived features - lower accuracy but independent validation.
+
+**Usage:**
+```bash
+# Train no-facc model
+python -m src.updates.sword_duckdb.facc_detection.train_split_regressor \
+    --db data/duckdb/sword_v17c.duckdb \
+    --output-dir output/facc_detection \
+    --exclude-facc-features
+```
+
+**Files:**
+- `rf_regressor_baseline.joblib` - Standard model
+- `rf_regressor_baseline_nofacc.joblib` - No-facc variant
+- `rf_split_regressor*.joblib` - Split by main_side × lakeflag
+
+### 3.3 Legacy Detection: fix_facc_violations() Method
 
 **Location:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/workflow.py` (lines 3517-3763)
 
@@ -109,7 +139,7 @@ Reaches are identified as "corrupted" when BOTH conditions hold:
 - Tributary with width=50m but facc=2,000,000 km² (ratio=40,000)
 - Secondary distributary with width=100m but facc=500,000 km² (ratio=5,000)
 
-### 3.2 Manual Correction: topology_reviewer GUI
+### 3.4 Manual Correction: topology_reviewer GUI
 
 **Location:** `/Users/jakegearon/projects/SWORD/topology_reviewer.py` (lines 180-1183)
 

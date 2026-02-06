@@ -77,6 +77,23 @@ SEED_REACHES = {
     44570000175: {'region': 'AS', 'facc_width_ratio': 4714, 'river_name': 'Irrawaddy River'},
     34211700241: {'region': 'AS', 'facc_width_ratio': 1146, 'river_name': 'Lena River', 'note': 'propagation from 34211700251'},
     34211101775: {'region': 'AS', 'facc_width_ratio': 3131, 'main_side': 1, 'river_name': 'Lena River', 'note': 'side channel with mainstem facc'},
+    # NA seeds (12) - added 2026-02-05
+    # 74268100011 removed - facc is stable, not anomalous
+    72555700163: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72555700173: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72555700183: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72555700193: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72570700063: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72570700053: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72570700043: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72570900013: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72570800013: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72570800023: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72570800033: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
+    72557600023: {'region': 'NA', 'note': 'lake polluted by through-flow river'},
+    72557600033: {'region': 'NA', 'note': 'lake polluted by through-flow river'},
+    72557400013: {'region': 'NA', 'note': 'lake polluted by through-flow river'},
+    72557400021: {'region': 'NA', 'note': 'river into lake, entry point for pollution'},
 }
 
 
