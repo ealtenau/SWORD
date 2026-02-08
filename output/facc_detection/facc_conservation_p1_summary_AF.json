@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-02-07T19:49:36.551488",
+  "region": "AF",
+  "dry_run": false,
+  "pass": 1,
+  "total_reaches": 21441,
+  "corrections": 2165,
+  "total_facc_before": 2527716523.9185066,
+  "total_facc_increase": 169217477.30900002,
+  "pct_increase": 6.6945,
+  "by_correction_type": {
+    "conservation_floor": {
+      "count": 326,
+      "median_delta": 10965.13,
+      "median_delta_pct": 560.48
+    },
+    "single_upstream": {
+      "count": 1839,
+      "median_delta": 18083.4,
+      "median_delta_pct": 205.83
+    }
+  },
+  "db_path": "data/duckdb/sword_v17c.duckdb"
+}
