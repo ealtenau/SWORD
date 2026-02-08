@@ -297,9 +297,40 @@ python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v
 
 | Issue | Workaround |
 |-------|------------|
-| **RTREE index segfault** | Drop index → UPDATE → Recreate index |
+| **RTREE index segfault** | Drop index → UPDATE → Recreate index. See RTREE Update Pattern below. |
 | **Region case sensitivity** | DuckDB=uppercase (NA), pipeline=lowercase (na) |
 | **Lake sandwiches** | 1,252 corrected (wide + shorter than ≥1 lake neighbor) → lakeflag=1, tagged `edit_flag='lake_sandwich'`. ~1,755 remaining (narrow connecting channels, chains). See issues #18/#19 |
+| **DuckDB lock contention** | Only one write connection at a time. Kill Streamlit/other processes before UPDATE. |
+
+## Column Name Gotchas
+
+DuckDB column names that are easy to get wrong:
+
+| Wrong | Correct | Table |
+|-------|---------|-------|
+| `n_rch_dn` | `n_rch_down` | reaches |
+| `timestamp` | `started_at` / `completed_at` | sword_operations |
+| `description` | `reason` | sword_operations |
+
+**`sword_operations` schema:** `operation_id` (NOT auto-increment — must provide), `operation_type`, `table_name`, `entity_ids` (BIGINT[]), `region`, `user_id`, `session_id`, `started_at`, `completed_at`, `operation_details` (JSON), `affected_columns` (VARCHAR[]), `reason`, `source_operation_id`, `status` (default 'PENDING'), `error_message`, `before_checksum`, `after_checksum`
+
+## RTREE Update Pattern
+
+DuckDB cannot UPDATE tables with RTREE indexes without loading the spatial extension first and dropping/recreating indexes:
+
+```python
+con.execute('INSTALL spatial; LOAD spatial;')
+# 1. Find RTREE indexes
+indexes = con.execute("SELECT index_name, table_name, sql FROM duckdb_indexes() WHERE sql LIKE '%RTREE%'").fetchall()
+# 2. Drop them
+for idx_name, tbl, sql in indexes:
+    con.execute(f'DROP INDEX "{idx_name}"')
+# 3. Do your UPDATEs
+con.execute('UPDATE reaches SET ...')
+# 4. Recreate indexes
+for idx_name, tbl, sql in indexes:
+    con.execute(sql)
+```
 
 ## Reactive Recalculation
 
@@ -320,7 +351,7 @@ Dependency graph auto-recalculates derived attributes:
 
 **Location:** `src/updates/sword_duckdb/lint/`
 
-Comprehensive linting framework with 35 checks across 5 categories (T=Topology, A=Attributes, G=Geometry, C=Classification, V=v17c).
+Comprehensive linting framework with 44 checks across 5 categories (T=Topology, A=Attributes, G=Geometry, C=Classification, V=v17c).
 
 **CLI Usage:**
 ```bash
@@ -356,7 +387,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
     results = runner.run(region="NA", severity=Severity.ERROR)
 ```
 
-**Check IDs (35 total):**
+**Check IDs (44 total):**
 
 | ID | Name | Severity | Description |
 |----|------|----------|-------------|
@@ -383,6 +414,15 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | G001 | reach_length_bounds | INFO | 100m-50km, excl end_reach |
 | G002 | node_length_consistency | WARNING | Node sum ≈ reach length |
 | G003 | zero_length_reaches | INFO | Zero/negative length |
+| G004 | self_intersection | WARNING | ST_IsSimple = FALSE |
+| G005 | reach_length_vs_geom_length | WARNING | reach_length vs ST_Length >20% diff |
+| G006 | excessive_sinuosity | INFO | sinuosity > 10 |
+| G007 | width_exceeds_length | WARNING | width > reach_length |
+| G008 | geom_not_null | ERROR | NULL geometry |
+| G009 | geom_is_valid | ERROR | ST_IsValid = FALSE |
+| G010 | geom_min_points | ERROR | ST_NPoints < 2 |
+| G011 | bbox_consistency | WARNING | Centroid outside bbox or inverted min/max |
+| G012 | endpoint_alignment | INFO | Connected reach endpoints >500m apart |
 | C001 | lake_sandwich | WARNING | River between lakes |
 | C002 | lakeflag_distribution | INFO | Lakeflag values |
 | C003 | type_distribution | INFO | Type field values |
@@ -422,10 +462,22 @@ Test DB: `tests/sword_duckdb/fixtures/sword_test_minimal.duckdb` (100 reaches, 5
 | `src/updates/sword_duckdb/schema.py` | Table definitions |
 | `src/updates/sword_duckdb/reactive.py` | Dependency graph |
 | `src/updates/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
-| `src/updates/sword_duckdb/lint/` | Lint framework (35 checks) |
+| `src/updates/sword_duckdb/lint/` | Lint framework (44 checks) |
 | `run_v17c_topology.py` | Topology recalculation script |
 | `rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
 | `topology_reviewer.py` | Streamlit GUI for facc/topology fixes |
+
+## Topology Reviewer (topology_reviewer.py)
+
+Streamlit app for manual QA review of SWORD reaches.
+
+**Key gotchas:**
+- `check_lakeflag_type_consistency()` returns cross-tab summary (lakeflag, type, count), NOT individual reaches. Use direct SQL for per-reach review.
+- Streamlit tabs must ALL be created in every code path — no conditional `None` tabs
+- `render_reach_map_satellite()` supports `color_by_type=True` for lakeflag-colored connected reaches (used in C004 tab)
+- Beginner mode (default ON) reorders tabs: C004, A010, T004, A002, Suspect, Fix History first
+- All review actions logged to `lint_fix_log` table with check_id, action, old/new values
+- `requirements-reviewer.txt` has minimal deps for reviewer-only usage (no psycopg2/aiohttp)
 
 ## Git
 

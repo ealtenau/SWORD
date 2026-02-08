@@ -484,3 +484,78 @@ def check_facc_composite_anomaly(
         description=f"Reaches with composite facc anomaly score > {score_threshold}",
         threshold=score_threshold,
     )
+
+
+@register_check(
+    "F006",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "Facc conservation deficit (downstream < sum upstream)",
+    default_threshold=0.0,
+)
+def check_facc_conservation(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that drainage area is conserved: facc >= sum(upstream facc).
+
+    Drainage area can only grow downstream (local catchment adds area).
+    Any deficit where facc < sum(upstream facc) indicates a data error
+    from MERIT Hydro D8 / SWORD topology mismatch.
+
+    Threshold controls minimum deficit to flag (default 0 = any deficit).
+    """
+    min_deficit = threshold if threshold is not None else 0.0
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    WITH upstream_facc AS (
+        SELECT rt.reach_id, rt.region,
+               SUM(r_up.facc) as upstream_facc_sum,
+               COUNT(*) as n_upstream
+        FROM reach_topology rt
+        JOIN reaches r_up ON rt.neighbor_reach_id = r_up.reach_id
+            AND rt.region = r_up.region
+        WHERE rt.direction = 'up'
+          AND r_up.facc > 0 AND r_up.facc != -9999
+        GROUP BY rt.reach_id, rt.region
+    )
+    SELECT r.reach_id, r.region, r.river_name, r.x, r.y,
+           r.facc, uf.upstream_facc_sum,
+           uf.upstream_facc_sum - r.facc as conservation_deficit,
+           100.0 * (uf.upstream_facc_sum - r.facc) / uf.upstream_facc_sum as deficit_pct,
+           uf.n_upstream, r.width, r.stream_order
+    FROM reaches r
+    JOIN upstream_facc uf ON r.reach_id = uf.reach_id AND r.region = uf.region
+    WHERE r.facc > 0 AND r.facc != -9999
+      AND r.facc < uf.upstream_facc_sum
+      AND (uf.upstream_facc_sum - r.facc) > {min_deficit}
+      {where_clause}
+    ORDER BY (uf.upstream_facc_sum - r.facc) DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(DISTINCT rt.reach_id) FROM reach_topology rt
+    JOIN reaches r ON rt.reach_id = r.reach_id AND rt.region = r.region
+    WHERE rt.direction = 'up'
+        AND r.facc > 0 AND r.facc != -9999
+    {where_clause.replace('r.', 'rt.') if where_clause else ''}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="F006",
+        name="facc_conservation",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Reaches where facc < sum(upstream facc) (conservation deficit > {min_deficit})",
+        threshold=min_deficit,
+    )

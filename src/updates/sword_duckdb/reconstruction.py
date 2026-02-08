@@ -3467,27 +3467,15 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
-        Reconstruct node n_chan_max as max of centerline nchan values.
+        STUB: n_chan_max is a native node attribute from GRWL (via NetCDF).
+        It does NOT exist on centerlines — cannot be reconstructed from other data.
+        Reach-level n_chan_max is reconstructed from nodes (see _reconstruct_reach_n_chan_max).
         """
-        logger.info("Reconstructing node.n_chan_max from centerline max")
-
-        where_clause = ""
-        params = [self._region]
-        if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
-            where_clause = f"AND c.node_id IN ({placeholders})"
-            params.extend(node_ids)
-
-        result_df = self._conn.execute(f"""
-            SELECT
-                c.node_id,
-                MAX(c.n_chan_max) as n_chan_max
-            FROM centerlines c
-            WHERE c.region = ? {where_clause}
-            GROUP BY c.node_id
-        """, params).fetchdf()
-
-        return self._update_node_attribute('n_chan_max', result_df, dry_run)
+        logger.warning(
+            "node.n_chan_max is a source-level attribute (GRWL/NetCDF) — "
+            "cannot be reconstructed. Preserving existing values."
+        )
+        return {"status": "stub", "reason": "source-level attribute, not derivable"}
 
     def _reconstruct_node_n_chan_mod(
         self,
@@ -3496,27 +3484,15 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
-        Reconstruct node n_chan_mod as mode of centerline nchan values.
+        STUB: n_chan_mod is a native node attribute from GRWL (via NetCDF).
+        It does NOT exist on centerlines — cannot be reconstructed from other data.
+        Reach-level n_chan_mod is reconstructed from nodes (see _reconstruct_reach_n_chan_mod).
         """
-        logger.info("Reconstructing node.n_chan_mod from centerline mode")
-
-        where_clause = ""
-        params = [self._region]
-        if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
-            where_clause = f"AND c.node_id IN ({placeholders})"
-            params.extend(node_ids)
-
-        result_df = self._conn.execute(f"""
-            SELECT
-                c.node_id,
-                MODE(c.n_chan_max) as n_chan_mod
-            FROM centerlines c
-            WHERE c.region = ? {where_clause}
-            GROUP BY c.node_id
-        """, params).fetchdf()
-
-        return self._update_node_attribute('n_chan_mod', result_df, dry_run)
+        logger.warning(
+            "node.n_chan_mod is a source-level attribute (GRWL/NetCDF) — "
+            "cannot be reconstructed. Preserving existing values."
+        )
+        return {"status": "stub", "reason": "source-level attribute, not derivable"}
 
     def _reconstruct_node_width(
         self,
