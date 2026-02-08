@@ -1,0 +1,30 @@
+{
+  "timestamp": "2026-02-07T20:50:39.497114",
+  "region": "EU",
+  "dry_run": false,
+  "pass": 3,
+  "inflate_threshold": 1.5,
+  "total_reaches": 31103,
+  "bifurcations": 329,
+  "corrections": 3471,
+  "raised": 144,
+  "lowered": 3327,
+  "total_facc_before": 1096002869.7054207,
+  "net_facc_change": -70988897.90900001,
+  "pct_change": -6.4771,
+  "by_type": {
+    "bifurc_surplus": {
+      "count": 317,
+      "median_delta": -17792.99
+    },
+    "cascade_surplus": {
+      "count": 3010,
+      "median_delta": -2597.03
+    },
+    "junction_floor_p3": {
+      "count": 144,
+      "median_delta": 5833.72
+    }
+  },
+  "db_path": "data/duckdb/sword_v17c.duckdb"
+}
