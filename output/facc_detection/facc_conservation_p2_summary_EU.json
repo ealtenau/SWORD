@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-02-07T20:10:00.256825",
+  "region": "EU",
+  "dry_run": false,
+  "pass": 2,
+  "total_reaches": 31103,
+  "corrections": 932,
+  "total_facc_before": 1074458729.1234334,
+  "total_facc_increase": 21544140.580400005,
+  "pct_increase": 2.0051,
+  "by_correction_type": {
+    "junction_floor": {
+      "count": 932,
+      "median_delta": 3553.04,
+      "median_delta_pct": 25.95
+    }
+  },
+  "db_path": "data/duckdb/sword_v17c.duckdb"
+}
