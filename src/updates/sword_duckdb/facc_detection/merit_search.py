@@ -116,16 +116,23 @@ class MeritGuidedSearch:
 
         return f"upa_{lat_prefix}{abs(lat_group):02d}{lon_prefix}{abs(lon_group):03d}"
 
-    def _get_tile_path(self, region: str, lon: float, lat: float) -> Optional[Path]:
-        """Get path to MERIT upa tile for a coordinate."""
+    def _get_tile_path(self, region: str, lon: float, lat: float,
+                       layer: str = 'upa') -> Optional[Path]:
+        """Get path to MERIT tile for a coordinate.
+
+        Parameters
+        ----------
+        layer : str
+            'upa' for flow accumulation, 'dir' for D8 flow direction.
+        """
         merit_region = self.REGION_MAP.get(region.upper())
         if not merit_region:
             logger.warning(f"Unknown region: {region}")
             return None
 
-        tile_group = self._get_tile_group(lon, lat)
+        tile_group = self._get_tile_group(lon, lat).replace('upa_', f'{layer}_')
         tile_name = self._get_tile_name(lon, lat)
-        tile_path = self.base_path / merit_region / 'upa' / tile_group / f"{tile_name}_upa.tif"
+        tile_path = self.base_path / merit_region / layer / tile_group / f"{tile_name}_{layer}.tif"
 
         if tile_path.exists():
             return tile_path
@@ -337,6 +344,208 @@ class MeritGuidedSearch:
         # Return closest to estimate
         best = min(candidates, key=lambda x: abs(x - facc_expected))
         return best, metadata
+
+    def search_near_reach_topo(
+        self,
+        geom: Union[LineString, Any],
+        region: str,
+        topo_expected: float,
+        buffer_m: Optional[float] = None,
+        width: Optional[float] = None,
+        order_of_magnitude: float = 10.0,
+    ) -> Tuple[Optional[float], Dict[str, Any]]:
+        """
+        Search MERIT for upa values near reach using topology-consistent selection.
+
+        Unlike search_near_reach (which picks closest to a regression estimate),
+        this picks the candidate closest to the topology expectation:
+        ``sum(corrected_upstream) + median_lateral``.
+
+        Parameters
+        ----------
+        geom : LineString or similar
+            Reach geometry (LINESTRING in WGS84).
+        region : str
+            SWORD region code.
+        topo_expected : float
+            Topology-based expected facc (sum corrected upstream + median lateral).
+        buffer_m : float, optional
+            Search buffer in meters. If None, computed from width.
+        width : float, optional
+            Reach width in meters (used to compute buffer if not provided).
+        order_of_magnitude : float
+            Candidate filter: keep values within this factor of topo_expected.
+
+        Returns
+        -------
+        tuple of (best_match, metadata)
+            best_match : float or None
+                Best matching MERIT upa value, or None if no good match.
+            metadata : dict
+                Search statistics.
+        """
+        metadata = {
+            'searched': 0,
+            'matched': 0,
+            'candidates': [],
+            'buffer_m': None,
+            'topo_expected': topo_expected,
+            'selection': 'topo_consistent',
+        }
+
+        if buffer_m is None:
+            buffer_m = min(3 * (width or 100), 3000)
+        metadata['buffer_m'] = buffer_m
+
+        try:
+            centroid = geom.centroid
+            lat = centroid.y
+        except Exception:
+            lat = 0
+
+        meters_per_degree = 111320 * np.cos(np.radians(lat))
+        if meters_per_degree <= 0:
+            meters_per_degree = 111320
+        buffer_deg = buffer_m / meters_per_degree
+
+        try:
+            buffered = geom.buffer(buffer_deg)
+        except Exception as e:
+            logger.warning(f"Failed to buffer geometry: {e}")
+            return None, metadata
+
+        merit_values = self._sample_in_polygon(buffered, region)
+        metadata['searched'] = len(merit_values)
+
+        if not merit_values:
+            return None, metadata
+
+        # Filter to within order_of_magnitude of topo_expected
+        if topo_expected > 0:
+            order_low = topo_expected / order_of_magnitude
+            order_high = topo_expected * order_of_magnitude
+            candidates = [v for v in merit_values if order_low <= v <= order_high]
+        else:
+            candidates = merit_values
+
+        metadata['matched'] = len(candidates)
+        metadata['candidates'] = candidates[:100]
+
+        if not candidates:
+            return None, metadata
+
+        # Pick candidate closest to topology expectation
+        best = min(candidates, key=lambda x: abs(x - topo_expected))
+        return best, metadata
+
+    # D8 direction encoding: value -> (row_offset, col_offset)
+    # 1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE
+    D8_OFFSETS = {
+        1: (0, 1),      # East
+        2: (1, 1),      # SE
+        4: (1, 0),      # South
+        8: (1, -1),     # SW
+        16: (0, -1),    # West
+        32: (-1, -1),   # NW
+        64: (-1, 0),    # North
+        128: (-1, 1),   # NE
+    }
+
+    def walk_d8_downstream(
+        self,
+        lon: float,
+        lat: float,
+        region: str,
+        target_min: float,
+        max_steps: int = 150,
+    ) -> Tuple[Optional[float], Dict[str, Any]]:
+        """
+        Walk downstream along MERIT D8 flow direction from a point.
+
+        Starts at the MERIT pixel nearest to (lon, lat), then follows the D8
+        flow direction for up to max_steps. At each cell, checks UPA. Returns
+        the first UPA value >= target_min, or the maximum found if none qualifies.
+
+        This "snaps" to MERIT's actual thalweg, solving the structural mismatch
+        where SWORD's junction is offset from MERIT's confluence.
+
+        Parameters
+        ----------
+        lon, lat : float
+            Starting point in WGS84.
+        region : str
+            SWORD region code.
+        target_min : float
+            Minimum UPA needed (corrected upstream value).
+        max_steps : int
+            Maximum D8 cells to walk (default 150 ≈ 13.5km at 90m).
+
+        Returns
+        -------
+        (best_value, metadata)
+        """
+        metadata = {
+            'start_lon': lon,
+            'start_lat': lat,
+            'steps_walked': 0,
+            'values_seen': [],
+            'found_above_target': False,
+            'target_min': target_min,
+        }
+
+        # Load UPA and DIR tiles at starting point
+        upa_path = self._get_tile_path(region, lon, lat, layer='upa')
+        dir_path = self._get_tile_path(region, lon, lat, layer='dir')
+        if upa_path is None or dir_path is None:
+            return None, metadata
+
+        upa_info = self._load_tile(upa_path)
+        dir_info = self._load_tile(dir_path)
+        if upa_info is None or dir_info is None:
+            return None, metadata
+
+        # Starting pixel
+        col = int((lon - upa_info['xmin']) / upa_info['xres'])
+        row = int((lat - upa_info['ymax']) / upa_info['yres'])
+
+        best_above = None
+        best_below = None
+        visited = set()
+
+        for step in range(max_steps):
+            if not (0 <= col < upa_info['width'] and 0 <= row < upa_info['height']):
+                break
+            if (row, col) in visited:
+                break  # Cycle or flat
+            visited.add((row, col))
+
+            upa_val = float(upa_info['data'][row, col])
+            if upa_val > 0:
+                metadata['values_seen'].append(round(upa_val, 2))
+
+                if upa_val >= target_min:
+                    if best_above is None or upa_val < best_above:
+                        best_above = upa_val  # Min value above target
+                    metadata['found_above_target'] = True
+                else:
+                    if best_below is None or upa_val > best_below:
+                        best_below = upa_val  # Max value below target
+
+            # Follow D8 direction
+            d8_val = int(dir_info['data'][row, col])
+            if d8_val not in self.D8_OFFSETS:
+                break  # Nodata, ocean, or flat
+            dr, dc = self.D8_OFFSETS[d8_val]
+            row += dr
+            col += dc
+
+        metadata['steps_walked'] = len(visited)
+
+        if best_above is not None:
+            return best_above, metadata
+        elif best_below is not None:
+            return best_below, metadata
+        return None, metadata
 
     def search_batch(
         self,
