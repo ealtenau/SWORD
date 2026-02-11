@@ -158,6 +158,8 @@ The lateral is zero here because Reach X's baseline (410K) is less than the pare
 - Negative lateral drainage is always a UPA artifact (from D8 cloning), never real physics.
 - Junction-floor raises should not propagate, because they reflect corrections to local accounting errors, not changes to actual upstream drainage.
 
+**After Phase 2**, bifurcation children have width-proportional shares instead of cloned UPA values, junctions satisfy conservation (facc >= sum of upstream), and lowered values have propagated through 1:1 chains. However, residual UPA noise remains: some 1:1 links still have downstream facc < upstream facc (monotonicity violations) from raster-vector misalignment that Phase 1 didn't catch, and some junctions may be over-floored by partially inflated upstream branches. Phases 3-5 address these residuals.
+
 #### Phase 3 — Outlier detection
 
 Flag remaining outliers after topology correction, using three independent criteria:
