@@ -105,41 +105,42 @@ The pipeline has two correction phases plus a diagnostic step:
 stateDiagram-v2
     direction LR
 
-    [*] --> Phase1a: v17b node data
+    [*] --> Phase1a
 
-    state "Phase 1 — Topology-aware baseline correction" as P1 {
-        Phase1a: 1a: Node denoise
-        Phase1b: 1b: Topological single pass
-        Phase1c: 1c: MERIT UPA resampling
-        Phase1b_rerun: 1b (re-run on affected subgraph)
+    state "Phase 1: Topology-aware baseline correction" as P1 {
+        state "1a Node denoise" as Phase1a
+        state "1b Topological single pass" as Phase1b
+        state "1c MERIT UPA resampling" as Phase1c
+        state "1b re-run on affected subgraph" as Phase1b_rerun
 
-        Phase1a --> Phase1b: baseline facc per reach
-        Phase1b --> Phase1c: corrected facc + T003 violations
-        Phase1c --> Phase1b_rerun: resampled baselines
+        Phase1a --> Phase1b : baseline facc
+        Phase1b --> Phase1c : corrected facc
+        Phase1c --> Phase1b_rerun : resampled baselines
     }
 
-    state "Diagnostics" as Diag {
-        Flags: Tukey IQR + junction raise + 1:1 drop flags
-        note right of Flags: Metadata only — no facc changes
+    state "Diagnostics (metadata only)" as Diag {
+        state "Tukey IQR flags" as Flag1
+        state "Junction raise flags" as Flag2
+        state "1:1 drop flags" as Flag3
     }
 
-    state "Phase 2 — Monotonicity enforcement" as P2 {
-        Phase2a: 2a: Isotonic regression (PAVA)
-        Phase2b: 2b: Junction floor re-enforcement
+    state "Phase 2: Monotonicity enforcement" as P2 {
+        state "2a Isotonic regression (PAVA)" as Phase2a
+        state "2b Junction floor re-enforcement" as Phase2b
 
-        Phase2a --> Phase2b: monotonic 1:1 chains
+        Phase2a --> Phase2b : monotonic chains
     }
 
-    P1 --> Diag: corrected facc
-    Diag --> P2: flagged reaches (unchanged facc)
-    P2 --> Validation: F006=0 guaranteed
+    P1 --> Diag : corrected facc
+    Diag --> P2 : unchanged facc + flags
+    P2 --> Validation : F006 = 0
 
     state "Validation" as Validation {
-        F006check: F006 junction conservation = 0
-        T003flag: T003 remaining → flagged as metadata
+        state "F006 junction conservation = 0" as F006check
+        state "T003 remaining flagged as metadata" as T003flag
     }
 
-    Validation --> [*]: corrected facc + flags written to DB
+    Validation --> [*] : facc + flags to DB
 ```
 
 #### Phase 1 — Topology-aware baseline correction
