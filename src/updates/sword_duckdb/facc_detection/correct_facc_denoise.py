@@ -1478,12 +1478,21 @@ def correct_facc_denoise(
         # not lower them, or it would break junction conservation (F006).
         print("\n  Phase 4b: Chain-wise isotonic regression (PAVA)")
         anchors: Dict[int, float] = {}
+        n_anchor_jfeed = 0
+        n_anchor_bifchild = 0
         for node in G.nodes():
             succs = list(G.successors(node))
+            preds = list(G.predecessors(node))
+            # Anchor junction feeders — don't lower or F006 breaks
             if any(G.in_degree(s) >= 2 for s in succs):
-                # This node feeds a junction — don't lower it
                 anchors[node] = corrected[node]
-        print(f"    Anchored {len(anchors)} chain-tail nodes (junction feeders)")
+                n_anchor_jfeed += 1
+            # Anchor bifurcation children — preserve width-proportional share
+            if len(preds) == 1 and G.out_degree(preds[0]) >= 2:
+                anchors[node] = corrected[node]
+                n_anchor_bifchild += 1
+        print(f"    Anchored {len(anchors)} nodes "
+              f"({n_anchor_jfeed} junction feeders, {n_anchor_bifchild} bifurc children)")
         corrected, adjusted = _phase4b_isotonic_chains(
             G, corrected, dn_node_facc, anchor_overrides=anchors,
         )
