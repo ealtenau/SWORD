@@ -198,7 +198,7 @@ def check_hydro_dist_vs_pathlen(
 @register_check(
     "V003",
     Category.V17C,
-    Severity.WARNING,
+    Severity.INFO,
     "pathlen_hw + pathlen_out consistency check",
 )
 def check_pathlen_consistency(
@@ -246,7 +246,6 @@ def check_pathlen_consistency(
         AND ABS((r.pathlen_hw + r.pathlen_out) - hw.pathlen_out) > {tolerance}
         {where_clause}
     ORDER BY discrepancy DESC
-    LIMIT 1000
     """
 
     issues = conn.execute(query).fetchdf()
@@ -261,7 +260,7 @@ def check_pathlen_consistency(
     return CheckResult(
         check_id="V003",
         name="pathlen_consistency",
-        severity=Severity.WARNING,
+        severity=Severity.INFO,
         passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),

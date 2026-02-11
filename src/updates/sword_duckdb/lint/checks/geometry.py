@@ -452,7 +452,11 @@ def check_width_exceeds_length(
     region: Optional[str] = None,
     threshold: Optional[float] = None,
 ) -> CheckResult:
-    """Flag reaches where width > reach_length."""
+    """Flag river/canal reaches where width > reach_length.
+
+    Lakes (lakeflag=1) and tidal reaches (lakeflag=3) are excluded because
+    width > length is physically normal for wide water bodies.
+    """
     where_clause = f"AND r.region = '{region}'" if region else ""
 
     query = f"""
@@ -465,6 +469,7 @@ def check_width_exceeds_length(
         AND r.width > 0 AND r.width != -9999
         AND r.reach_length > 0 AND r.reach_length != -9999
         AND r.width > r.reach_length
+        AND r.lakeflag NOT IN (1, 3)
         {where_clause}
     ORDER BY (r.width / r.reach_length) DESC
     """
@@ -475,6 +480,7 @@ def check_width_exceeds_length(
     WHERE r.width IS NOT NULL AND r.width > 0 AND r.width != -9999
         AND r.reach_length IS NOT NULL AND r.reach_length > 0
         AND r.reach_length != -9999
+        AND r.lakeflag NOT IN (1, 3)
         {where_clause}
     """
     total = conn.execute(total_query).fetchone()[0]
@@ -488,7 +494,7 @@ def check_width_exceeds_length(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description="Reaches where width exceeds reach_length",
+        description="River/canal reaches where width exceeds reach_length (lakes/tidal excluded)",
     )
 
 

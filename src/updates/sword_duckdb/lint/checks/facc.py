@@ -7,15 +7,15 @@ Validates flow accumulation (facc) values post-conservation-correction.
 Checks:
   F001 - facc/width ratio anomaly (MERIT entry point corruption)
   F002 - facc jump ratio (entry point detection)
-  F004 - facc vs reach accumulation mismatch
+  F004 - facc vs reach accumulation mismatch — INFO (structural D8/vector noise)
   F006 - junction conservation (facc < sum upstream at 2+ input junctions) — ERROR
   F011 - 1:1 link monotonicity (facc drop on single-upstream links) — INFO
-  F007 - bifurcation balance (children sum / parent ratio)
-  F008 - bifurcation surplus (child facc > parent facc)
-  F009 - facc_quality tag coverage
-  F010 - junction-raise drop (raised junction → unchanged downstream)
-  F012 - incremental area non-negativity (unified physical constraint) — ERROR
-  F013 - correction magnitude outlier (Tukey IQR on incremental area) — WARNING
+  F007 - bifurcation balance (children sum / parent ratio) — INFO (expected post-correction)
+  F008 - bifurcation surplus (child facc > parent facc) — WARNING
+  F009 - facc_quality tag coverage — INFO
+  F010 - junction-raise drop (raised junction → unchanged downstream) — INFO
+  F012 - incremental area non-negativity (junctions only) — ERROR
+  F013 - incremental area Tukey IQR outlier — INFO (statistical, not a violation)
 Removed:
   F015 - junction surplus — removed because surplus = lateral drainage from
          unmapped tributaries, not a violation.
@@ -186,7 +186,7 @@ def check_facc_jump_ratio(
 @register_check(
     "F004",
     Category.ATTRIBUTES,
-    Severity.WARNING,
+    Severity.INFO,
     "Facc vs reach accumulation mismatch",
     default_threshold=10.0,
 )
@@ -260,7 +260,7 @@ def check_facc_reach_acc_ratio(
     return CheckResult(
         check_id="F004",
         name="facc_reach_acc_ratio",
-        severity=Severity.WARNING,
+        severity=Severity.INFO,
         passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),
@@ -459,7 +459,7 @@ def check_facc_link_monotonicity(
 @register_check(
     "F007",
     Category.ATTRIBUTES,
-    Severity.WARNING,
+    Severity.INFO,
     "Bifurcation balance (children sum vs parent)",
     default_threshold=0.10,
 )
@@ -543,7 +543,7 @@ def check_bifurcation_balance(
     return CheckResult(
         check_id="F007",
         name="bifurcation_balance",
-        severity=Severity.WARNING,
+        severity=Severity.INFO,
         passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),
@@ -905,7 +905,7 @@ def check_incremental_area_nonneg(
 @register_check(
     "F013",
     Category.ATTRIBUTES,
-    Severity.WARNING,
+    Severity.INFO,
     "Incremental area Tukey IQR outlier (correction magnitude)",
     default_threshold=1.5,
 )
@@ -961,7 +961,7 @@ def check_incremental_area_outlier(
         return CheckResult(
             check_id="F013",
             name="incremental_area_outlier",
-            severity=Severity.WARNING,
+            severity=Severity.INFO,
             passed=True,
             total_checked=0,
             issues_found=0,
@@ -988,7 +988,7 @@ def check_incremental_area_outlier(
     return CheckResult(
         check_id="F013",
         name="incremental_area_outlier",
-        severity=Severity.WARNING,
+        severity=Severity.INFO,
         passed=len(issues) == 0,
         total_checked=len(df),
         issues_found=len(issues),
