@@ -82,9 +82,17 @@ The approach requires manual basin delineation, junction identification, and con
 
 Both approaches enforce conservation (downstream facc >= sum of upstream facc) and non-negativity (no negative incremental drainage). We achieve this via a topological-order single-pass algorithm that processes the entire global network without manual basin setup.
 
-### Five Phases
+### Pipeline Phases
 
-#### Phase 1 — Node-level denoise
+The pipeline has two correction phases plus a diagnostic step:
+
+- **Phase 1** — Topology-aware baseline correction (node initialization, topological pass, optional MERIT resampling)
+- **Phase 2** — Monotonicity enforcement (isotonic regression on 1:1 chains, junction floor re-enforcement)
+- **Diagnostics** — Outlier flagging (metadata only, no facc changes)
+
+#### Phase 1 — Topology-aware baseline correction
+
+##### Phase 1a — Baseline initialization
 
 Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the MERIT Hydro UPA raster. Normally we take `MAX(node facc)` as the reach's baseline facc, since drainage area is highest at the downstream end. But some nodes' sampling points land on an adjacent UPA flow path (a parallel tributary or different branch), returning a facc value that has nothing to do with the reach's actual river. We detect this by comparing `MAX(node facc)` to `MIN(node facc)` within each reach: on a ~2-10 km segment, facc should vary by a few percent at most, so `MAX/MIN > 2.0` indicates at least one node hit a wrong UPA cell. For these noisy reaches, we use the downstream-most node's facc (the most physically meaningful sample, since it sits at the reach's connection point to the next reach) instead of `MAX`. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
 
@@ -93,9 +101,9 @@ Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the 
 - A within-reach facc ratio > 2.0x indicates raster misalignment, not real drainage variation over a ~2-10 km segment.
 - v17b node-level data is the uncorrupted source (we read from v17b, not v17c, which may have been modified).
 
-#### Phase 2 — Topology-aware single pass
+##### Phase 1b — Topological single pass
 
-Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Phase 1, before any topology correction) and the **corrected** value (the output of this phase). Five cases:
+Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Phase 1a, before any topology correction) and the **corrected** value (the output of this phase). Five cases:
 
 **Headwaters** (no upstream neighbors): Keep the baseline facc. Nothing upstream to correct against.
 
@@ -126,7 +134,7 @@ When UPA cloning is present (D8 assigned the full parent drainage to both childr
   corrected = 200,000 + 0 = 200,000
 ```
 
-The tradeoff: in the clone case we lose the real ~10K lateral drainage (zeroed along with the inflation). Phase 4 (isotonic regression) can recover small losses like this.
+The tradeoff: in the clone case we lose the real ~10K lateral drainage (zeroed along with the inflation). Phase 2 (isotonic regression) can recover small losses like this.
 
 **Bifurcation children** (parent has 2+ downstream children): `corrected = corrected_parent * (width_child / sum_sibling_widths)`. Instead of every child getting 100% of the parent's facc (the UPA cloning error), each child gets its share proportional to channel width. If a child has no width data, children split equally as a fallback.
 
@@ -158,51 +166,23 @@ The lateral is zero here because Reach X's baseline (410K) is less than the pare
 - Negative lateral drainage is always a UPA artifact (from D8 cloning), never real physics.
 - Junction-floor raises should not propagate, because they reflect corrections to local accounting errors, not changes to actual upstream drainage.
 
-**After Phase 2**, bifurcation children have width-proportional shares instead of cloned UPA values, junctions satisfy conservation (facc >= sum of upstream), and lowered values have propagated through 1:1 chains. However, residual UPA noise remains: some 1:1 links still have downstream facc < upstream facc (monotonicity violations) from raster-vector misalignment that Phase 1 didn't catch, and some junctions may be over-floored by partially inflated upstream branches. Phases 3-5 address these residuals.
+**After Phase 1b**, bifurcation children have width-proportional shares instead of cloned UPA values, junctions satisfy conservation (facc >= sum of upstream), and lowered values have propagated through 1:1 chains. However, residual UPA noise remains: some 1:1 links still have downstream facc < upstream facc (monotonicity violations) from raster-vector misalignment that Phase 1a didn't catch, and some junctions may be over-floored by partially inflated upstream branches. Phase 1c (optional) and Phase 2 address these residuals.
 
-#### Phase 3 — Outlier detection
+##### Phase 1c — Optional: MERIT UPA resampling
 
-Flag remaining outliers after topology correction, using three independent criteria:
+When MERIT Hydro rasters are available, Phase 1c targets remaining T003 violations on 1:1 links — reaches where downstream facc < upstream facc after Phase 1b. For each violating downstream reach, the pipeline tries three strategies to find a better UPA value:
 
-1. **Neighborhood log-deviation**: For each reach, compute the log-space deviation between its corrected facc and the median of its neighbors' corrected facc. Flag reaches exceeding the Tukey IQR upper fence (Q3 + 1.5*IQR), with a floor of ~2.7x deviation.
-2. **Junction raises >2x**: Junctions where the corrected value is more than 2x the baseline — likely over-floored by inflated upstream branches.
-3. **1:1 drops >2x**: 1:1 links where the upstream reach has >2x the downstream reach's corrected facc — residual UPA misalignment that Phase 1 didn't catch.
+1. **D8 walk A** (primary): From the downstream reach's upstream endpoint, walk downstream along MERIT's D8 flow direction for up to 150 cells (~13.5 km at 90m resolution). This snaps to MERIT's actual thalweg, bypassing the offset between SWORD's junction point and MERIT's confluence cell.
+2. **D8 walk B** (secondary): Same walk from the upstream reach's downstream endpoint — covers the other side of the junction.
+3. **Radial buffer** (fallback): If neither D8 walk fixes monotonicity, sample UPA in a buffer (500m–5km, scaled to reach width) around the junction point.
 
-Flagged reaches are candidates for MERIT D8-walk re-sampling (if rasters are available) and are used as metadata for downstream users.
+The selection rule: pick the **minimum UPA >= corrected upstream** (fixes the violation with least distortion). If none exceeds the target, pick the maximum candidate (reduces the gap).
 
-**Assumptions:**
-- After Phase 2, remaining large deviations from neighbors are UPA noise rather than real drainage features.
-- The Tukey IQR method (robust to non-normal distributions) is appropriate for log-space facc deviations.
-- 2x thresholds for junction raises and 1:1 drops are conservative enough to avoid false positives on legitimate drainage variability.
+After resampling, the updated baseline values feed a **re-run of Phase 1b** on the affected downstream subgraph — all reaches downstream of any resampled reach are re-processed in topological order to propagate the improved values.
 
-#### Phase 4 — Bidirectional isotonic regression (PAVA)
+This phase is **optional**: it is skipped in dry-run mode or when MERIT raster paths are not provided. Globally, ~1,651 reaches are resampled (`upa_resample` correction type).
 
-After Phase 2, some 1:1 chains still have monotonicity violations (downstream facc < upstream facc) from residual UPA noise. Phase 4 smooths these out.
-
-First, extract **1:1 chains**: maximal sequences of reaches where each reach has exactly one upstream neighbor and that neighbor has exactly one downstream child. Chains start at headwaters, junction outputs, or bifurcation children, and end at the next junction, bifurcation, or outlet. These are the "simple pipe" segments between topology branch points.
-
-For each chain with violations, run the **Pool Adjacent Violators Algorithm (PAVA)** in log-space to find the closest non-decreasing sequence (minimizing sum-of-squared deviations). This adjusts values both up and down — unlike Phase 2 which only lowers or floors. Bifurcation children (chain heads that received a width-proportional share in Phase 2) are anchored at 1000x weight so isotonic regression preserves their corrected values. Junction feeders (chain tails feeding into a junction) are NOT anchored, enabling the regression to lower them if needed.
-
-This adjusts ~36,915 reaches globally.
-
-![Fig 5: Isotonic Regression (PAVA) Example](../output/facc_detection/figures/report_fig5.png)
-*Figure 5. PAVA in action on a 15-reach 1:1 chain in South America. The red line (Phase 2 output) has a clear violation zone where facc decreases from R8 to R14. PAVA (blue) creates a flat "pool" through the drop — the closest non-decreasing fit — then rises to meet the downstream values. The shaded regions mark where facc was decreasing (violations). PAVA adjusts values both up and down to minimize total distortion while guaranteeing monotonicity.*
-
-**Assumptions:**
-- Facc should be non-decreasing along any 1:1 chain (drainage area can only grow or stay constant going downstream on a non-bifurcating channel).
-- Log-space is the correct domain for isotonic regression on facc, because facc spans 5+ orders of magnitude and relative error is more meaningful than absolute error.
-- PAVA (which minimizes weighted least-squares deviation from the input) produces the least-distortion monotonic fit.
-- Bifurcation shares from Phase 2 are more trustworthy than UPA values, so they should be anchored.
-
-#### Phase 5 — Junction floor re-enforcement
-
-Isotonic regression in Phase 4 may shift chain values in ways that re-introduce junction conservation violations (a chain tail feeding a junction could be lowered below the junction's other inputs). Phase 5 re-runs the junction floor rule in topological order: `corrected = max(corrected, sum(corrected_upstream))` at every junction. This guarantees F006 = 0 (no junction conservation violations) in the final output.
-
-**Assumptions:**
-- Junction conservation (`facc >= sum(upstream facc)`) is a hard constraint that must hold everywhere, not a soft target.
-- Running in topological order ensures downstream junctions see already-fixed upstream values.
-
-### Key Innovation: Asymmetric Propagation
+#### Key Innovation: Asymmetric Propagation
 
 At 1:1 links, lowering from bifurcation splits propagates downstream (additive lateral), but raising from junction floors does NOT. This prevents the exponential inflation that destroyed earlier approaches:
 
@@ -211,6 +191,35 @@ At 1:1 links, lowering from bifurcation splits propagates downstream (additive l
 | v1 (additive all) | Propagate raises + lowers | 1.65 billion km^2 | 2.49M km^2 |
 | v2 (asymmetric) | Propagate lowers only | 7.42M km^2 | 2.49M km^2 |
 | v3 (+ isotonic) | Asymmetric + PAVA | ~7.4M km^2 | 2.49M km^2 |
+
+#### Phase 2 — Monotonicity enforcement
+
+##### Phase 2a — Isotonic regression on 1:1 chains (PAVA)
+
+After Phase 1, some 1:1 chains still have monotonicity violations (downstream facc < upstream facc) from residual UPA noise. Phase 2a smooths these out.
+
+First, extract **1:1 chains**: maximal sequences of reaches where each reach has exactly one upstream neighbor and that neighbor has exactly one downstream child. Chains start at headwaters, junction outputs, or bifurcation children, and end at the next junction, bifurcation, or outlet. These are the "simple pipe" segments between topology branch points.
+
+For each chain with violations, run the **Pool Adjacent Violators Algorithm (PAVA)** in log-space to find the closest non-decreasing sequence (minimizing sum-of-squared deviations). This adjusts values both up and down — unlike Phase 1b which only lowers or floors. Bifurcation children (chain heads that received a width-proportional share in Phase 1b) are anchored at 1000x weight so isotonic regression preserves their corrected values. Junction feeders (chain tails feeding into a junction) are NOT anchored, enabling the regression to lower them if needed.
+
+This adjusts ~36,915 reaches globally.
+
+![Fig 5: Isotonic Regression (PAVA) Example](../output/facc_detection/figures/report_fig5.png)
+*Figure 5. PAVA in action on a 15-reach 1:1 chain in South America. The red line (Phase 1 output) has a clear violation zone where facc decreases from R8 to R14. PAVA (blue) creates a flat "pool" through the drop — the closest non-decreasing fit — then rises to meet the downstream values. The shaded regions mark where facc was decreasing (violations). PAVA adjusts values both up and down to minimize total distortion while guaranteeing monotonicity.*
+
+**Assumptions:**
+- Facc should be non-decreasing along any 1:1 chain (drainage area can only grow or stay constant going downstream on a non-bifurcating channel).
+- Log-space is the correct domain for isotonic regression on facc, because facc spans 5+ orders of magnitude and relative error is more meaningful than absolute error.
+- PAVA (which minimizes weighted least-squares deviation from the input) produces the least-distortion monotonic fit.
+- Bifurcation shares from Phase 1b are more trustworthy than UPA values, so they should be anchored.
+
+##### Phase 2b — Junction floor re-enforcement
+
+Isotonic regression in Phase 2a may shift chain values in ways that re-introduce junction conservation violations (a chain tail feeding a junction could be lowered below the junction's other inputs). Phase 2b re-runs the junction floor rule in topological order: `corrected = max(corrected, sum(corrected_upstream))` at every junction. This guarantees F006 = 0 (no junction conservation violations) in the final output.
+
+**Assumptions:**
+- Junction conservation (`facc >= sum(upstream facc)`) is a hard constraint that must hold everywhere, not a soft target.
+- Running in topological order ensures downstream junctions see already-fixed upstream values.
 
 ### Scalability
 
@@ -264,16 +273,16 @@ Data from v3 summary JSONs (all regions applied):
 
 Correction type breakdown (global totals from summary JSONs):
 
-| Correction Type | Count | Description |
-|-----------------|-------|-------------|
-| isotonic_regression | 35,342 | PAVA adjustments on 1:1 chains |
-| junction_floor_post | 6,942 | Post-isotonic junction re-flooring |
-| junction_floor | 4,599 | Phase 2 junction conservation |
-| lateral_lower | 7,237 | Bifurcation-split cascade on 1:1 links |
-| bifurc_share | 4,458 | Width-proportional bifurcation splitting |
-| node_denoise | 282 | Within-reach node facc variability correction |
-| upa_resample | 1,651 | MERIT UPA re-sampling via D8-walk (where MERIT rasters available) |
-| t003_flagged_only | 164 | No facc change, flagged as metadata |
+| Correction Type | Phase | Count | Description |
+|-----------------|-------|-------|-------------|
+| node_denoise | 1a | 282 | Within-reach node facc variability correction |
+| junction_floor | 1b | 4,599 | Junction conservation enforcement |
+| bifurc_share | 1b | 4,458 | Width-proportional bifurcation splitting |
+| lateral_lower | 1b | 7,237 | Bifurcation-split cascade on 1:1 links |
+| upa_resample | 1c | 1,651 | MERIT UPA re-sampling via D8-walk (where MERIT rasters available) |
+| isotonic_regression | 2a | 35,342 | PAVA adjustments on 1:1 chains |
+| junction_floor_post | 2b | 6,942 | Post-isotonic junction re-flooring |
+| t003_flagged_only | — | 164 | No facc change, flagged as metadata |
 
 ---
 
@@ -286,7 +295,7 @@ Correction type breakdown (global totals from summary JSONs):
 
 ### F006 = 0 Globally
 
-Junction conservation is guaranteed: at every junction with 2+ upstream inputs, `corrected_facc >= sum(corrected_upstream_facc)`. This is enforced by Phase 5 (junction floor re-enforcement after isotonic regression) and verified by the F006 lint check across all 6 regions.
+Junction conservation is guaranteed: at every junction with 2+ upstream inputs, `corrected_facc >= sum(corrected_upstream_facc)`. This is enforced by Phase 2b (junction floor re-enforcement after isotonic regression) and verified by the F006 lint check across all 6 regions.
 
 ### T003 = 5,860 Flagged (Not Force-Corrected)
 
@@ -299,6 +308,19 @@ Junction conservation is guaranteed: at every junction with 2+ upstream inputs, 
 - A clone-aware variant (`max` instead of `sum` at clones) reduced inflation to +93% but did not solve the cascade
 
 **Conclusion**: These violations are inherent MERIT UPA noise (from D8 routing limitations). Force-correcting them overrides thousands of MERIT values and causes unacceptable inflation. They are flagged as metadata (`t003_flag`, `t003_reason`) for downstream users to filter as needed.
+
+### Diagnostic Flags
+
+After Phase 1, three independent criteria flag remaining outliers. **These flags are metadata for downstream users. They do not modify facc values.**
+
+1. **Neighborhood log-deviation**: For each reach, compute the log-space deviation between its corrected facc and the median of its neighbors' corrected facc. Flag reaches exceeding the Tukey IQR upper fence (Q3 + 1.5*IQR), with a floor of ~2.7x deviation.
+2. **Junction raises >2x**: Junctions where the corrected value is more than 2x the baseline — likely over-floored by inflated upstream branches.
+3. **1:1 drops >2x**: 1:1 links where the upstream reach has >2x the downstream reach's corrected facc — residual UPA misalignment that Phase 1a didn't catch.
+
+**Assumptions:**
+- After Phase 1, remaining large deviations from neighbors are UPA noise rather than real drainage features.
+- The Tukey IQR method (robust to non-normal distributions) is appropriate for log-space facc deviations.
+- 2x thresholds for junction raises and 1:1 drops are conservative enough to avoid false positives on legitimate drainage variability.
 
 ### Full Lint Suite
 
@@ -326,7 +348,7 @@ Junction conservation is guaranteed: at every junction with 2+ upstream inputs, 
 
 2. **~246 bifurcation imbalance (F007/F008)** — Bifurcations where child width data is missing or zero, causing equal-split fallback to produce children that don't sum precisely to the parent. Minor: affects <0.1% of reaches.
 
-3. **UPA-clone junction over-flooring** — ~226 junctions globally where MERIT UPA assigned identical facc to both upstream branches (because D8 routed the full drainage through both paths). Phase 5 uses naive `sum(upstream)` which slightly over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
+3. **UPA-clone junction over-flooring** — ~226 junctions globally where MERIT UPA assigned identical facc to both upstream branches (because D8 routed the full drainage through both paths). Phase 2b uses naive `sum(upstream)` which slightly over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
 
 ---
 
@@ -336,11 +358,11 @@ Junction conservation is guaranteed: at every junction with 2+ upstream inputs, 
 
 ```
 src/updates/sword_duckdb/facc_detection/
-  correct_facc_denoise.py       # v3 pipeline (6 phases)
+  correct_facc_denoise.py       # v3 pipeline (Phase 1a–2b + diagnostics)
   correct_conservation_single_pass.py  # v2 single-pass (superseded by v3)
   detect.py                     # Phase 0: anomaly detection rules
   correct.py                    # Phase 0: RF regressor correction
-  merit_search.py               # UPA re-sampling via D8-walk
+  merit_search.py               # UPA re-sampling via D8-walk (Phase 1c)
 ```
 
 ### Integrator (DrainageAreaFix)
@@ -358,12 +380,12 @@ output/facc_detection/
   facc_denoise_v3_{REGION}.csv          # Per-reach corrections (6 files)
   facc_denoise_v3_summary_{REGION}.json # Summary stats (6 files)
   remaining_t003_{REGION}.geojson       # Residual violations for visual audit
-  figures/report_fig{1-4}.png           # Report figures
+  figures/report_fig{1-5}.png           # Report figures
 ```
 
 ### Figure Generation
 
 ```bash
 python scripts/generate_facc_report_figures.py
-# Outputs: output/facc_detection/figures/report_fig{1-4}.png
+# Outputs: output/facc_detection/figures/report_fig{1-5}.png
 ```

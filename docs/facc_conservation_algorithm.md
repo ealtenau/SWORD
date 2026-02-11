@@ -364,9 +364,11 @@ v2 also produces 9,064 junction raises (some 48,000x) due to upstream sampling m
 
 ### v3 Algorithm
 
-v3 replaces v2 with a unified 6-phase pipeline:
+v3 replaces v2 with a unified pipeline: **Phase 1** (topology-aware baseline correction), **Phase 2** (monotonicity enforcement), plus diagnostics and validation.
 
-#### Phase 1: Node-based initialization
+#### Phase 1: Topology-aware baseline correction
+
+##### Phase 1a: Node-based initialization
 
 For each reach, use the downstream-most node's facc (minimum `dist_out`) instead of `MAX(node facc)`:
 
@@ -376,7 +378,7 @@ dn_node_facc[reach] = facc of node with min dist_out in reach
 
 For 99% of reaches this is identical to v17b. For the ~1% with high within-reach variability, it avoids grabbing stray values from wrong D8 flow paths. Falls back to v17b facc when node data is unavailable.
 
-#### Phase 2: Topology-aware correction
+##### Phase 1b: Topology-aware correction
 
 Same algorithm as v2 (single-pass, topological order) but using `dn_node_facc` as baseline instead of v17b:
 
@@ -392,17 +394,7 @@ for node in topological_order:
     1:1 raised:    base  (no propagation)
 ```
 
-#### Phase 3: Outlier detection (log-space, Tukey IQR)
-
-After Phase 2, detect remaining outliers using three methods:
-
-1. **Neighborhood log-deviation**: For each reach, compute `|log(corrected) - log(median_neighbors)|`. Flag if above Tukey upper fence (Q3 + 1.5*IQR) or fixed threshold (default: 1.0 ~ 2.7x).
-2. **Junction raises >2x**: Junctions where `corrected > base * 2`.
-3. **1:1 link drops >2x**: Links where `upstream / downstream > 2`.
-
-Expected: 5K-15K reaches flagged.
-
-#### Phase 4: T003-targeted MERIT re-sampling (D8 walk)
+##### Phase 1c: T003-targeted MERIT re-sampling (D8 walk) — optional
 
 For each 1:1 T003 violation (downstream facc < upstream on non-bifurcation edge):
 
@@ -411,22 +403,42 @@ For each 1:1 T003 violation (downstream facc < upstream on non-bifurcation edge)
 
 This "snaps" to MERIT's actual thalweg, solving structural offset between SWORD junctions and MERIT confluences. Walk A fixes ~770 violations; walk B adds ~3 more fixes and 145 gap reductions.
 
-#### Phase 5: Re-run correction on affected subgraph
+Selection rule: pick the **minimum UPA >= corrected upstream** (least distortion fix). If none exceeds the target, pick the maximum candidate (reduces the gap).
 
-Single additional topological-order pass on reaches downstream of re-sampled ones.
+After resampling, re-runs Phase 1b on all reaches downstream of resampled ones to propagate improved values.
 
-#### Phase 4b: Chain-wise isotonic regression (PAVA)
+This phase is **optional**: skipped in dry-run mode or when MERIT raster paths are not provided. Globally, ~1,651 reaches are resampled.
+
+#### Diagnostics: Outlier detection (log-space, Tukey IQR)
+
+After Phase 1, detect remaining outliers using three methods. **These flags are metadata for downstream users. They do not modify facc values.**
+
+1. **Neighborhood log-deviation**: For each reach, compute `|log(corrected) - log(median_neighbors)|`. Flag if above Tukey upper fence (Q3 + 1.5*IQR) or fixed threshold (default: 1.0 ~ 2.7x).
+2. **Junction raises >2x**: Junctions where `corrected > base * 2`.
+3. **1:1 link drops >2x**: Links where `upstream / downstream > 2`.
+
+Expected: 5K-15K reaches flagged.
+
+#### Phase 2: Monotonicity enforcement
+
+##### Phase 2a: Chain-wise isotonic regression (PAVA) — bidirectional
 
 For remaining T003 violations on 1:1 chains, runs isotonic regression (pool adjacent violators algorithm) in log-space. This finds the closest monotonically non-decreasing sequence to MERIT's actual values, adjusting values both **up and down** — no inflation bias.
 
 1. Extract maximal 1:1 chains (sequences between junctions/bifurcations)
 2. For each chain with violations, run PAVA (non-decreasing) in log-space
-3. Junction-feeder nodes are anchored (high weight) to prevent lowering values that feed into junctions, which would break conservation (F006)
+3. **Anchor policy — bifurcation children only** (relaxed from earlier versions):
+   - **Bifurcation children**: Pinned at 1000x PAVA weight. Preserves width-proportional shares from Phase 1b.
+   - **Junction feeders**: NOT anchored. This enables bidirectional correction — isotonic can lower upstream values that feed into junctions, not just raise downstream values. Phase 2b re-enforces junction conservation afterward.
 4. Back-transform from log-space and apply
 
-This adjusts ~6,000 reaches: ~3,700 raised and ~2,400 lowered, with a median delta of +177 km².
+This adjusts ~6,800 reaches: ~4,400 raised and ~2,500 lowered (bidirectional).
 
-#### Phase 4c: Junction floor (re-enforce conservation)
+**Why relax junction-feeder anchors?** The original policy hard-anchored junction feeders to prevent F006 violations. But this blocked bidirectional correction: isotonic could only raise downstream values, never lower upstream ones. Removing junction-feeder anchors lets isotonic freely adjust both directions, with Phase 2b's junction floor guaranteeing F006=0 afterward.
+
+**Why anchor bifurcation children?** Without anchoring, isotonic sees a chain like `[639K, 14.3]` and pools them in log-space to ~3,022. This undoes the width-proportional split from Phase 1b — a Mississippi delta branch that should get ~632K (proportional to its width) instead gets 3K. The anchor prevents this by making the bifurc share a high-confidence fixed point that isotonic must respect.
+
+##### Phase 2b: Junction floor (re-enforce conservation)
 
 After isotonic regression, re-run junction floor in topological order:
 ```
@@ -436,11 +448,42 @@ for each junction v (in_degree >= 2):
 
 This restores F006 = 0 after isotonic may have shifted chain values.
 
-#### Phase 6: Validation
+**Note on D8-clone junctions**: ~226 junctions in NA (8.3%) have two upstream branches with identical facc — D8 clones from MERIT island/braid re-merges. Phase 2b and F006 both use naive `sum(upstream)`, which slightly over-floors these junctions (double-counting the cloned drainage area). This is intentional: clone-aware flooring (`max` instead of `sum`) produces correct junction values but introduces new T003 drops on downstream 1:1 links, triggering the same cascade inflation rejected in the strict compliance investigation. The over-flooring contributes minimally to the +1.2% net inflation and keeps Phase 2b and F006 consistent.
+
+#### T003 Flag Collection (after Phase 2b)
+
+Remaining T003 violations (non-bifurcation edges where downstream facc < upstream) are **not force-corrected**. Instead, they are classified and flagged as metadata:
+
+- `t003_flag` (boolean) — True if this reach has a T003 violation
+- `t003_reason` — structural cause:
+  - `chain` — fixing would cascade to downstream reaches
+  - `junction_adjacent` — immediately feeds a junction (clamping could break F006)
+  - `non_isolated` — other structural disagreement between MERIT and SWORD topology
+
+These flags are included in the output CSV and written to the database alongside corrected facc values.
+
+#### Why not strict compliance? (tested and rejected)
+
+We tested iterative forward-max + junction floor to achieve T003=0 (zero remaining monotonicity violations). The algorithm repeats until convergence: (1) propagate `max(parent, child)` downstream on 1:1 links, (2) enforce junction floor `corrected >= sum(upstream)`.
+
+**Results on NA**: T003=0 achieved, but **+114% inflation** (2.6 billion km² added).
+
+**Root causes**:
+
+1. **D8-clone junctions** (226 in NA, 8.3% of all junctions): MERIT's D8 assigns identical facc to both upstream branches at island/braid re-merges. Summing these double-counts the drainage area. The top clone junctions are on Slave River (2.7M km²), Mackenzie (2.7M), Missouri (2.7M), Nelson (2.5M), St. Lawrence (2.1M).
+
+2. **1:1 D8 drops** (thousands): Forward-max raises every downstream value to match its upstream, but these raises cascade through the network. At non-clone junctions, inflated tributary values sum together, compounding the inflation. The cascade propagates through Mississippi (+434M km²), Missouri (+294M), Mackenzie (+250M), St. Lawrence (+163M), Nelson (+120M), Columbia (+107M), Colorado (+105M).
+
+**Clone-aware variant**: Using `max(clone_group)` instead of `sum` at D8-clone junctions reduced inflation to +93%, but the 1:1 cascade remains the dominant driver. 95.7% of inflation traces back to the 226 clone junctions and their downstream cascades.
+
+**Conclusion**: Remaining T003 violations are inherent MERIT D8 noise — not topology errors. Force-correcting them requires overriding thousands of MERIT values, causing unacceptable inflation. The defensible product is v3 (Phase 2a+2b): data-faithful, low inflation (+1.2%), conservation preserved (F006=0), with T003 flags as metadata.
+
+#### Validation
 
 Inline checks (no DB needed):
 - F006 (junction conservation) — must be 0
-- T003 (monotonicity) — report remaining (bifurcation-excluded)
+- T003 (monotonicity) — report remaining count (bifurcation-excluded)
+- T003 flagged count and breakdown by reason
 - Junction raise count
 - 1:1 link drop count
 - Remaining T003 exported as GeoJSON for visual audit
@@ -494,27 +537,49 @@ python -m src.updates.sword_duckdb.facc_detection.correct_facc_denoise \
 
 ### v3 Correction Types
 
-| Type | Meaning |
-|------|---------|
-| `junction_floor` | Junction set to sum(corrected upstream) + lateral (Phase 2) |
-| `bifurc_share` | Bifurcation child set to width-proportional share of parent (Phase 2) |
-| `lateral_lower` | 1:1 link lowered by cascade from upstream bifurcation split (Phase 2) |
-| `upa_resample` | Re-sampled from MERIT UPA via D8 walk or radial buffer (Phase 4) |
-| `isotonic_regression` | Adjusted by chain-wise PAVA to enforce monotonicity (Phase 4b) |
-| `junction_floor_post` | Junction re-floored after isotonic regression (Phase 4c) |
-| `node_denoise` | Switched from MAX(node facc) to downstream-node facc (Phase 1) |
+| Type | Phase | Meaning |
+|------|-------|---------|
+| `junction_floor` | 1b | Junction set to sum(corrected upstream) + lateral |
+| `bifurc_share` | 1b | Bifurcation child set to width-proportional share of parent |
+| `lateral_lower` | 1b | 1:1 link lowered by cascade from upstream bifurcation split |
+| `upa_resample` | 1c | Re-sampled from MERIT UPA via D8 walk or radial buffer |
+| `isotonic_regression` | 2a | Adjusted by chain-wise PAVA to enforce monotonicity |
+| `junction_floor_post` | 2b | Junction re-floored after isotonic regression |
+| `node_denoise` | 1a | Switched from MAX(node facc) to downstream-node facc |
+| `t003_flagged_only` | — | No facc change — reach included solely because it has a T003 flag |
 
-### v3 Results (NA)
+### v3 Results (NA, bidirectional isotonic)
 
-| Metric | v2 (single-pass) | v3 (denoise + isotonic) |
-|--------|-------------------|-------------------------|
+Results with relaxed anchors (bifurc-children only) and F012 bifurc-child exclusion:
+
+| Metric | v3 (original anchors) | v3 (bidirectional) |
+|--------|----------------------|-------------------|
 | F006 (junction conservation) | 0 | **0** |
-| T003 (non-bifurc monotonicity) | ~9,700 | **863** |
-| Net facc change | -0.83% | **-1.74%** |
-| Corrections | 3,302 | **8,725** |
-| Raised / Lowered | 1,732 / 1,570 | **5,932 / 2,793** |
-| D8 walk fixes | — | 862 |
-| Isotonic adjustments | — | 6,090 (3,721 up, 2,369 down) |
+| T003 (non-bifurc monotonicity) | 885 | **1,044** (flagged, not force-corrected) |
+| Net facc change | -1.2% | **+1.249%** |
+| Corrections | 8,803 | **9,235** |
+| Raised / Lowered | 6,064 / 2,729 | **6,129 / 3,013** |
+| Isotonic adjustments | ~5,300 | **5,927** |
+| Junction re-floors | — | **1,280** |
+
+T003 flag breakdown (NA):
+| Reason | Count |
+|--------|-------|
+| chain | 824 |
+| junction_adjacent | 132 |
+| non_isolated | 88 |
+
+### v3 NA Detail (vs v2)
+
+| Metric | v2 (single-pass) | v3 (bidirectional) |
+|--------|-------------------|--------------------|
+| F006 (junction conservation) | 0 | **0** |
+| T003 (non-bifurc monotonicity) | ~9,700 | **1,044** (flagged, not force-corrected) |
+| Net facc change | -0.83% | **+1.249%** |
+| Corrections | 3,302 | **9,235** |
+| Raised / Lowered | 1,732 / 1,570 | **6,129 / 3,013** |
+| D8 walk fixes | — | 862 (with MERIT) |
+| Isotonic adjustments | — | ~5,927 |
 
 ### Algorithm Evolution Summary
 
@@ -522,4 +587,17 @@ python -m src.updates.sword_duckdb.facc_detection.correct_facc_denoise \
 |---------|----------|------|-------------------|------------|-----------|
 | v1 | Additive propagation (all) | 0 | Unbounded | +88% to +3525% | 674x inflation in deltas |
 | v2 | Asymmetric (lower only) | 0 | ~9,700 | -0.8% to +6.7% | D8 sampling noise, no monotonicity fix |
-| v3 | Node init + D8 walk + isotonic | 0 | **863** (NA) | -1.7% | Remaining are MERIT-SWORD topology disagreements |
+| v3 | Node init + D8 walk + bidirectional isotonic | 0 | **~1,044** (NA, flagged) | +1.2% (NA) | Remaining are MERIT D8 noise (not force-correctable without +90-114% inflation) |
+
+### Key commits
+
+| Commit | Description |
+|--------|-------------|
+| `67d8c02` | Replace monotonic clamp with t003 flags for residual violations |
+| `2de8ed7` | Anchor bifurcation children in isotonic regression |
+
+### DB Application
+
+Applied to both:
+- **DuckDB** (`sword_v17c.duckdb`) — all 6 regions via `--apply` flag
+- **PostgreSQL** (`sword_v17c`) — 248,674 rows loaded via `load_from_duckdb.py`

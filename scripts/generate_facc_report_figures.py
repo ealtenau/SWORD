@@ -50,7 +50,7 @@ TYPE_COLORS = {
 # Friendly labels
 TYPE_LABELS = {
     "isotonic_regression": "Isotonic regression",
-    "junction_floor": "Junction floor (phase 2)",
+    "junction_floor": "Junction floor (Phase 1b)",
     "junction_floor_post": "Junction floor (post-isotonic)",
     "bifurc_share": "Bifurcation split",
     "lateral_lower": "Lateral lower (cascade)",
@@ -454,9 +454,9 @@ def fig5_pava_example() -> None:
             ax.axvspan(i, i + 1, alpha=0.10, color=V17B_COLOR, zorder=0)
 
     ax.plot(x, orig, "o-", color=V17B_COLOR, lw=2, markersize=7, alpha=0.85,
-            label="Before PAVA (Phase 2 output)", zorder=3)
+            label="Before PAVA (Phase 1 output)", zorder=3)
     ax.plot(x, corr, "s-", color=V17C_COLOR, lw=2.5, markersize=7, alpha=0.85,
-            label="After PAVA (Phase 4 output)", zorder=4)
+            label="After PAVA (Phase 2 output)", zorder=4)
 
     ax.annotate(
         "PAVA pool:\nclosest non-decreasing\nfit to this drop",
