@@ -193,16 +193,6 @@ After resampling, the updated baseline values feed a **re-run of Phase 1b** on t
 
 Globally, ~1,651 reaches are resampled (`upa_resample` correction type).
 
-#### Key Innovation: Asymmetric Propagation
-
-At 1:1 links, lowering from bifurcation splits propagates downstream (additive lateral), but raising from junction floors does NOT. This prevents the exponential inflation that destroyed earlier approaches:
-
-| Version | Approach | Lena Delta Max Facc | Real Basin |
-|---------|----------|-------------------|-----------|
-| v1 (additive all) | Propagate raises + lowers | 1.65 billion km^2 | 2.49M km^2 |
-| v2 (asymmetric) | Propagate lowers only | 7.42M km^2 | 2.49M km^2 |
-| v3 (+ isotonic) | Asymmetric + PAVA | ~7.4M km^2 | 2.49M km^2 |
-
 #### Phase 2 — Monotonicity enforcement
 
 ##### Phase 2a — Isotonic regression on 1:1 chains (PAVA)
