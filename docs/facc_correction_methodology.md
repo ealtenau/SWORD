@@ -336,13 +336,24 @@ Correction type breakdown (global totals from summary JSONs):
 
 ## 6. Validation
 
+### What is fixed vs. what remains
+
+| Constraint | Status | Count | Enforced by |
+|------------|--------|-------|-------------|
+| **Junction conservation** (F006): facc >= sum(upstream) at every junction | **Fully enforced** | 0 violations | Phase 2b junction floor |
+| **Non-negative incremental area** (F012): facc >= sum(upstream) at every reach | **Fully enforced** | 0 violations | Phase 1b lateral clamp + Phase 2b |
+| **Bifurcation partitioning**: children sum to parent facc | **Enforced** (width-proportional) | ~246 residual (missing width data, <0.1%) | Phase 1b bifurc split |
+| **1:1 monotonicity** (T003): downstream facc >= upstream on non-bifurcation edges | **Not enforced** | 5,860 flagged (2.4%) | Flagged as metadata only |
+
+**Neither our pipeline nor the integrator enforces 1:1 monotonicity.** The integrator's only constraint is `x >= 0` (non-negative incremental areas), which is equivalent to F006/F012 — it guarantees junction conservation but would also produce T003 violations on 1:1 links where MERIT's UPA raster has drops. Both approaches minimize deviation from observed UPA values, and if UPA says a downstream reach has less drainage area than its upstream neighbor, the solver preserves that.
+
 ### F006 = 0 Globally
 
 Junction conservation is guaranteed: at every junction with 2+ upstream inputs, `corrected_facc >= sum(corrected_upstream_facc)`. This is enforced by Phase 2b (junction floor re-enforcement after isotonic regression) and verified by the F006 lint check across all 6 regions.
 
 ### T003 = 5,860 Flagged (Not Force-Corrected)
 
-5,860 reaches (2.4% of total) have residual monotonicity violations on non-bifurcation edges where downstream facc < upstream facc. These are structural disagreements between MERIT's UPA raster and SWORD's vector topology — not topology errors.
+5,860 reaches (2.4% of total) have residual monotonicity violations on non-bifurcation edges where downstream facc < upstream facc. These are structural disagreements between MERIT's UPA raster and SWORD's vector topology — the UPA raster value at the downstream reach's sampling point genuinely reports less drainage area than the upstream reach, because SWORD's vector junction point doesn't coincide with MERIT's D8 confluence cell. These are raster-vector misalignments, not topology errors.
 
 **Why not force-correct?** We tested iterative forward-max + junction floor to achieve T003 = 0. Results on NA alone:
 
@@ -350,7 +361,7 @@ Junction conservation is guaranteed: at every junction with 2+ upstream inputs, 
 - 226 UPA-clone junctions (identical facc on both upstream branches, because D8 routed the same drainage through both) seed cascading double-counts through major rivers: Mississippi (+434M km^2), Missouri (+294M), Mackenzie (+250M), St. Lawrence (+163M), Nelson (+120M)
 - A clone-aware variant (`max` instead of `sum` at clones) reduced inflation to +93% but did not solve the cascade
 
-**Conclusion**: These violations are inherent MERIT UPA noise (from D8 routing limitations). Force-correcting them overrides thousands of MERIT values and causes unacceptable inflation. They are flagged as metadata (`t003_flag`, `t003_reason`) for downstream users to filter as needed.
+**Conclusion**: These violations are inherent MERIT UPA noise. Force-correcting them overrides thousands of MERIT values and causes unacceptable inflation. They are flagged as metadata (`t003_flag`, `t003_reason`) for downstream users to filter as needed. This is the same outcome the integrator would produce — neither approach can fix raster-vector misalignment without introducing new errors.
 
 ### Diagnostic Flags
 
@@ -367,14 +378,14 @@ After Phase 1, three independent criteria flag remaining outliers. **These flags
 
 ### Full Lint Suite
 
-47 lint checks pass at ERROR severity across all regions. Key checks:
+47 lint checks pass at ERROR severity across all regions. Key facc-related checks:
 
 | Check | Description | Result |
 |-------|-------------|--------|
 | F006 | Junction conservation (facc >= sum upstream) | **0 violations** |
 | F012 | Non-negative incremental area (facc >= sum upstream, all reaches) | **0 violations** |
-| T003 | Facc monotonicity (non-bifurcation edges) | 5,860 flagged (metadata) |
 | F007 | Bifurcation balance (children sum / parent) | ~246 (missing width data) |
+| T003 | Facc monotonicity (non-bifurcation edges) | 5,860 flagged (metadata) |
 | T001 | dist_out monotonicity | 0 violations |
 | T005 | Neighbor count consistency | 0 violations |
 
@@ -387,7 +398,7 @@ After Phase 1, three independent criteria flag remaining outliers. **These flags
 
 ## 7. Residual Issues
 
-1. **5,860 T003 flags (2.4%)** — Structural MERIT UPA noise on 1:1 links (from D8 routing limitations). Flagged as metadata with classification (`chain`, `junction_adjacent`, `non_isolated`). Not force-corrected because doing so causes +90-114% inflation.
+1. **5,860 T003 flags (2.4%)** — Structural MERIT UPA noise on 1:1 links where SWORD's vector junction doesn't coincide with MERIT's D8 confluence cell. Flagged as metadata with classification (`chain`, `junction_adjacent`, `non_isolated`). Not force-corrected because doing so causes +90-114% inflation. Neither the integrator nor our pipeline enforces 1:1 monotonicity — both would produce these violations from the same input data.
 
 2. **~246 bifurcation imbalance (F007/F008)** — Bifurcations where child width data is missing or zero, causing equal-split fallback to produce children that don't sum precisely to the parent. Minor: affects <0.1% of reaches.
 
