@@ -86,17 +86,17 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 **Phase 1 — Node-level denoise.** Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the MERIT D8 raster. Normally we take `MAX(node facc)` as the reach's baseline facc, since drainage area is highest at the downstream end. But some nodes' sampling points land on an adjacent D8 flow path (a parallel tributary or different branch), returning a facc value that has nothing to do with the reach's actual river. We detect this by comparing `MAX(node facc)` to `MIN(node facc)` within each reach: on a ~2-10 km segment, facc should vary by a few percent at most, so `MAX/MIN > 2.0` indicates at least one node hit a wrong raster cell. For these noisy reaches, we use the downstream-most node's facc (the most physically meaningful sample, since it sits at the reach's connection point to the next reach) instead of `MAX`. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
 
-**Phase 2 — Topology-aware single pass.** Process all reaches in topological order (headwaters to outlets):
+**Phase 2 — Topology-aware single pass.** Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Phase 1, before any topology correction) and the **corrected** value (the output of this phase). Five cases:
 
-| Node type | Rule |
-|-----------|------|
-| **Headwater** | Keep baseline facc |
-| **Junction** (2+ parents) | `sum(corrected_upstream) + max(base - sum(base_upstream), 0)` |
-| **Bifurcation child** | `corrected_parent * (width_child / sum_sibling_widths)` |
-| **1:1 link, parent lowered** | `corrected_parent + max(base - base_parent, 0)` |
-| **1:1 link, parent raised** | Keep baseline (no cascade) |
+**Headwaters** (no upstream neighbors): Keep the baseline facc. Nothing upstream to correct against.
 
-The junction lateral-increment rule isolates real local drainage from D8 clone inflation. The asymmetric 1:1 propagation (lowering cascades, raising does not) prevents exponential inflation in multi-bifurcation deltas.
+**Junctions** (2+ upstream parents): `corrected = sum(corrected_upstream) + lateral`, where the **lateral increment** captures how much new local drainage enters between the upstream reaches and this junction: `lateral = max(baseline - sum(baseline_upstream), 0)`. The `max(..., 0)` clamp is critical — if D8 cloned the parent facc into both upstream branches, `sum(baseline_upstream)` will be inflated and the lateral term goes to zero instead of negative. This isolates real local drainage from D8 clone inflation.
+
+**Bifurcation children** (parent has 2+ downstream children): `corrected = corrected_parent * (width_child / sum_sibling_widths)`. Instead of every child getting 100% of the parent's facc (the D8 cloning error), each child gets its share proportional to channel width. If a child has no width data, children split equally as a fallback.
+
+**1:1 links where the parent was lowered** (parent's corrected < parent's baseline, meaning a bifurcation split propagated down to it): `corrected = corrected_parent + max(baseline - baseline_parent, 0)`. Same lateral-increment logic as junctions — inherit the lowered parent value plus any real local drainage. **Lowering cascades downstream**: if a bifurcation split reduces a parent from 1M to 400K km², every downstream reach should reflect that reduction.
+
+**1:1 links where the parent was raised** (parent's corrected >= parent's baseline, meaning a junction floor pushed it up): Keep the baseline. **Raising does NOT cascade.** This asymmetry is the key innovation. If junction-floor raises cascaded downstream, a +50,000 km² raise would propagate to every downstream reach; when it hits the next junction, it doubles, then doubles again. This exponential inflation is what caused the Lena River delta to reach 1.65 billion km² in our v1 attempt (real basin: 2.49M km²).
 
 **Phase 3 — Outlier detection.** Flag remaining outliers via Tukey IQR in log-space on neighborhood deviations, plus junction raises >2x and 1:1 drops >2x.
 
