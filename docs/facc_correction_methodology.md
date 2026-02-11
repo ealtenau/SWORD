@@ -185,6 +185,9 @@ For each chain with violations, run the **Pool Adjacent Violators Algorithm (PAV
 
 This adjusts ~36,915 reaches globally.
 
+![Fig 5: Isotonic Regression (PAVA) Example](../output/facc_detection/figures/report_fig5.png)
+*Figure 5. PAVA in action on a 15-reach 1:1 chain in South America. The red line (Phase 2 output) has a clear violation zone where facc decreases from R8 to R14. PAVA (blue) creates a flat "pool" through the drop — the closest non-decreasing fit — then rises to meet the downstream values. The shaded regions mark where facc was decreasing (violations). PAVA adjusts values both up and down to minimize total distortion while guaranteeing monotonicity.*
+
 **Assumptions:**
 - Facc should be non-decreasing along any 1:1 chain (drainage area can only grow or stay constant going downstream on a non-bifurcating channel).
 - Log-space is the correct domain for isotonic regression on facc, because facc spans 5+ orders of magnitude and relative error is more meaningful than absolute error.

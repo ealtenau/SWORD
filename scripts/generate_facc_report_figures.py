@@ -435,6 +435,76 @@ def fig4_scalability(summaries: dict) -> None:
     print(f"  Saved {out}")
 
 
+def fig5_pava_example() -> None:
+    """Fig 5: PAVA in action on a real 1:1 chain (SA example)."""
+    # SA chain: 15 reaches with a clear drop from R8-R14 that PAVA pools through.
+    # Data from chain starting at reach 62266502361 in South America.
+    orig = [5589, 5630, 5670, 5754, 5836, 5919, 6000, 6673,
+            6242, 5805, 5367, 4924, 4493, 4054, 6776]
+    corr = [6265, 5666, 5670, 5754, 5836, 5919, 6000, 6448,
+            6448, 6448, 6448, 6523, 6626, 6681, 6776]
+    n = len(orig)
+    x = np.arange(n)
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+
+    # Shade violation zones
+    for i in range(n - 1):
+        if orig[i] > orig[i + 1] * 1.001:
+            ax.axvspan(i, i + 1, alpha=0.10, color=V17B_COLOR, zorder=0)
+
+    ax.plot(x, orig, "o-", color=V17B_COLOR, lw=2, markersize=7, alpha=0.85,
+            label="Before PAVA (Phase 2 output)", zorder=3)
+    ax.plot(x, corr, "s-", color=V17C_COLOR, lw=2.5, markersize=7, alpha=0.85,
+            label="After PAVA (Phase 4 output)", zorder=4)
+
+    ax.annotate(
+        "PAVA pool:\nclosest non-decreasing\nfit to this drop",
+        xy=(8.5, 6448), xytext=(10.5, 5500),
+        fontsize=8.5, color=V17C_COLOR, fontweight="bold",
+        arrowprops=dict(arrowstyle="->", color=V17C_COLOR, lw=1.5),
+        ha="center",
+    )
+    ax.annotate(
+        "violation:\ndownstream < upstream",
+        xy=(8, 6242), xytext=(5.5, 4300),
+        fontsize=8.5, color=V17B_COLOR,
+        arrowprops=dict(arrowstyle="->", color=V17B_COLOR, lw=1.5),
+        ha="center",
+    )
+
+    # Direction arrow
+    ax.annotate("", xy=(n - 1, 7100), xytext=(0, 7100),
+                arrowprops=dict(arrowstyle="->", color="gray", lw=1, ls="--"))
+    ax.text(n / 2, 7250, "facc should increase (downstream \u2192)",
+            ha="center", fontsize=9, color="gray", style="italic")
+
+    ax.set_xlabel("Reach position along 1:1 chain (upstream \u2192 downstream)", fontsize=11)
+    ax.set_ylabel("Flow accumulation (km\u00b2)", fontsize=11)
+    ax.set_title(
+        "Fig 5: Isotonic Regression (PAVA) on a 1:1 Chain \u2014 South America Example",
+        fontsize=12, fontweight="bold",
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"R{i + 1}" for i in x], fontsize=8)
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
+    ax.set_ylim(3500, 7600)
+    ax.grid(True, alpha=0.2)
+
+    import matplotlib.patches as mpatches
+    viol_patch = mpatches.Patch(color=V17B_COLOR, alpha=0.10,
+                                label="Violation zone (facc decreases)")
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles=handles + [viol_patch], fontsize=9,
+              loc="lower right", framealpha=0.9)
+
+    fig.tight_layout()
+    out = OUTPUT_DIR / "report_fig5.png"
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved {out}")
+
+
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -468,6 +538,7 @@ def main():
     fig2_stacked_bar(summaries)
     fig3_change_distribution(df)
     fig4_scalability(summaries)
+    fig5_pava_example()
 
     print("\nDone. Figures saved to", OUTPUT_DIR)
 
