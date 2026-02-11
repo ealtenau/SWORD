@@ -188,7 +188,8 @@ def check_facc_monotonicity(
             r2.facc as facc_down,
             r1.river_name,
             r1.x, r1.y,
-            r1.lakeflag
+            r1.lakeflag,
+            r1.n_rch_down
         FROM reaches r1
         JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
         JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
@@ -203,6 +204,7 @@ def check_facc_monotonicity(
         (facc_up - facc_down) as facc_decrease
     FROM reach_pairs
     WHERE facc_down < facc_up * 0.95  -- 5% tolerance
+        AND n_rch_down < 2  -- exclude bifurcation edges (expected facc drop)
     ORDER BY facc_decrease DESC
     """
 
@@ -690,4 +692,63 @@ def check_path_freq_zero(
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
         description="Connected reaches with path_freq=0 (traversal bug)",
+    )
+
+
+@register_check(
+    "T012",
+    Category.TOPOLOGY,
+    Severity.ERROR,
+    "Topology referential integrity (all neighbor_reach_ids exist in reaches)",
+)
+def check_topology_referential_integrity(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that all neighbor_reach_id values in reach_topology exist in reaches.
+
+    Derived from DrainageAreaFix/ ``ChecksPriorToAddingJunction()`` which
+    verifies all junction members exist in the reach file before adding a
+    junction. A dangling reference breaks both the CVXPY integrator and our
+    v3 conservation pipeline.
+
+    T005 checks counts match, T007 checks reciprocity, but neither checks
+    that referenced reach_ids actually exist in the reaches table.
+    """
+    where_clause = f"AND rt.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        rt.reach_id as source_reach_id,
+        rt.neighbor_reach_id as dangling_reach_id,
+        rt.region,
+        rt.direction,
+        rt.neighbor_rank
+    FROM reach_topology rt
+    LEFT JOIN reaches r ON rt.neighbor_reach_id = r.reach_id
+        AND rt.region = r.region
+    WHERE r.reach_id IS NULL
+        {where_clause}
+    ORDER BY rt.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reach_topology rt WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T012",
+        name="topology_referential_integrity",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Topology edges referencing non-existent reach_ids (dangling references)",
     )

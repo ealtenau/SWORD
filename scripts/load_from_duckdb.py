@@ -186,11 +186,11 @@ def export_table_to_postgres(
 
     # For geometry columns, we need to convert to WKB
     if has_geom and convert_geometry:
-        # Replace geom with ST_AsEWKB(geom) for proper PostGIS transfer
+        # Replace geom with ST_AsWKB(geom) for proper PostGIS transfer
         col_list = []
         for c in col_names:
             if c == 'geom':
-                col_list.append(f"ST_AsEWKB(geom) as geom")
+                col_list.append(f"ST_AsWKB(geom) as geom")
             else:
                 col_list.append(c)
         if has_region and region:
@@ -205,7 +205,7 @@ def export_table_to_postgres(
     placeholders = ', '.join(['%s'] * len(col_names))
     insert_sql = f"INSERT INTO {table_name} ({', '.join(col_names)}) VALUES ({placeholders})"
 
-    # For geometry, use ST_GeomFromEWKB
+    # For geometry, use ST_SetSRID(ST_GeomFromWKB(...), 4326)
     if has_geom and convert_geometry:
         # Find geometry column index
         geom_idx = col_names.index('geom')
@@ -213,7 +213,7 @@ def export_table_to_postgres(
         col_templates = []
         for i, c in enumerate(col_names):
             if c == 'geom':
-                col_templates.append('ST_GeomFromEWKB(%s)')
+                col_templates.append('ST_SetSRID(ST_GeomFromWKB(%s), 4326)')
             else:
                 col_templates.append('%s')
         insert_template = f"({', '.join(col_templates)})"
@@ -479,7 +479,7 @@ Examples:
 
     # Load spatial extension
     try:
-        duck_conn.execute("LOAD spatial;")
+        duck_conn.execute("INSTALL spatial; LOAD spatial;")
     except Exception:
         logger.warning("DuckDB spatial extension not available - geometry will use x,y coordinates")
 

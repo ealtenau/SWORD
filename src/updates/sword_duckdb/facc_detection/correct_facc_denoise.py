@@ -934,6 +934,20 @@ def _phase4c_junction_floor(
     return corrected, floored
 
 
+    # _phase4d_strict_compliance — REMOVED
+    #
+    # Attempted iterative forward-max + junction floor to achieve T003=0.
+    # Results: +90-114% facc inflation in NA (~2.6 billion km²).
+    # Root causes:
+    #   1. 226 D8-clone junctions (identical facc on both upstream branches)
+    #      double-count drainage area when naively summed. Clone-aware floor
+    #      (max instead of sum) reduces inflation to ~93% but doesn't solve it.
+    #   2. Thousands of 1:1 D8 drops cascade through forward-max, inflating
+    #      Mississippi (+434M), Missouri (+294M), Mackenzie (+250M), etc.
+    # Conclusion: remaining T003 violations are inherent MERIT D8 noise,
+    # not fixable topology errors. Flagged as metadata, not force-corrected.
+
+
 # ---------------------------------------------------------------------------
 # Collect remaining T003 flags
 # ---------------------------------------------------------------------------
@@ -1336,7 +1350,8 @@ def _clear_old_tags(
     old_quality = (
         "'conservation_corrected_p1','conservation_corrected_p2',"
         "'topology_derived','conservation_single_pass',"
-        "'conservation_corrected_p3','denoise_v3'"
+        "'conservation_corrected_p3','denoise_v3',"
+        "'traced','suspect'"
     )
     old_edit = (
         "'facc_conservation_p1','facc_conservation_p2',"
@@ -1473,26 +1488,21 @@ def correct_facc_denoise(
         else:
             print("    Phase 5 — SKIPPED (no re-sampled reaches)")
 
-        # ---- Phase 4b: Chain-wise isotonic regression ----
-        # Anchor chain-tail nodes that feed into junctions: isotonic must
-        # not lower them, or it would break junction conservation (F006).
+        # ---- Phase 4b: Chain-wise isotonic regression (PAVA) ----
+        # RELAXED ANCHORS: only bifurc children pinned.
+        # Junction feeders are NOT anchored — isotonic can lower them,
+        # enabling bidirectional correction on 1:1 chains.
         print("\n  Phase 4b: Chain-wise isotonic regression (PAVA)")
         anchors: Dict[int, float] = {}
-        n_anchor_jfeed = 0
         n_anchor_bifchild = 0
         for node in G.nodes():
-            succs = list(G.successors(node))
             preds = list(G.predecessors(node))
-            # Anchor junction feeders — don't lower or F006 breaks
-            if any(G.in_degree(s) >= 2 for s in succs):
-                anchors[node] = corrected[node]
-                n_anchor_jfeed += 1
             # Anchor bifurcation children — preserve width-proportional share
             if len(preds) == 1 and G.out_degree(preds[0]) >= 2:
                 anchors[node] = corrected[node]
                 n_anchor_bifchild += 1
         print(f"    Anchored {len(anchors)} nodes "
-              f"({n_anchor_jfeed} junction feeders, {n_anchor_bifchild} bifurc children)")
+              f"({n_anchor_bifchild} bifurc children)")
         corrected, adjusted = _phase4b_isotonic_chains(
             G, corrected, dn_node_facc, anchor_overrides=anchors,
         )
@@ -1504,6 +1514,16 @@ def correct_facc_denoise(
         print("\n  Phase 4c: Junction floor (re-enforce conservation)")
         corrected, floored = _phase4c_junction_floor(G, corrected)
         print(f"    {len(floored)} junctions re-floored")
+
+        # NOTE: Phase 4d (strict compliance) intentionally omitted.
+        # Iterative forward-max + junction floor achieves T003=0 but causes
+        # +90-114% facc inflation (2.1-2.6 billion km² in NA alone).
+        # Root causes: (1) ~226 D8-clone junctions where MERIT assigned
+        # identical facc to both upstream branches — summing double-counts;
+        # (2) thousands of 1:1 D8 drops that cascade through forward-max.
+        # Clone-aware floor reduces inflation to ~93% but doesn't solve it.
+        # The remaining 1:1 drops are inherent MERIT D8 noise, not topology
+        # errors. Flagged as T003 metadata instead of force-corrected.
 
         imputed = adjusted  # for downstream references (summary, tagging)
 

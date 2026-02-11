@@ -14,8 +14,11 @@ Checks:
   F008 - bifurcation surplus (child facc > parent facc)
   F009 - facc_quality tag coverage
   F010 - junction-raise drop (raised junction → unchanged downstream)
-
+  F012 - incremental area non-negativity (unified physical constraint) — ERROR
+  F013 - correction magnitude outlier (Tukey IQR on incremental area) — WARNING
 Removed:
+  F015 - junction surplus — removed because surplus = lateral drainage from
+         unmapped tributaries, not a violation.
   F003 - bifurcation divergence — removed because post-correction children
          SHOULD diverge (width-proportional split). Was only useful pre-correction.
   F005 - composite anomaly score — removed, was just a weighted average of
@@ -25,6 +28,7 @@ Removed:
 from typing import Optional
 
 import duckdb
+import numpy as np
 import pandas as pd
 
 from ..core import (
@@ -794,3 +798,208 @@ def check_junction_raise_drop(
             "raising downstream would cause inflation cascade)"
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Integrator-derived checks (F012, F013)
+#
+# Back-inferred from DrainageAreaFix/ CVXPY integrator constraints:
+#   x >= 0  →  F012 (incremental area non-negativity)
+#   Tukey IQR outlier downweighting  →  F013 (correction magnitude outlier)
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "F012",
+    Category.ATTRIBUTES,
+    Severity.ERROR,
+    "Incremental area non-negativity (facc >= sum upstream facc for all reaches)",
+    default_threshold=0.01,
+)
+def check_incremental_area_nonneg(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that incremental drainage area is non-negative for ALL reaches.
+
+    For every reach with upstream neighbors, compute:
+        incr_area = facc - sum(upstream facc)
+    Flag if incr_area < -epsilon.
+
+    This is the unified physical constraint equivalent to the CVXPY integrator's
+    ``x >= 0`` constraint. Unlike F006 (junctions only, 1 km² tolerance) and
+    T003 (edge monotonicity, 5% tolerance, excludes bifurcations), F012 applies
+    zero tolerance to all reach types.
+
+    Threshold (default 0.01 km²) absorbs floating-point noise only.
+    """
+    epsilon = threshold if threshold is not None else 0.01
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    WITH upstream_facc AS (
+        SELECT rt.reach_id, rt.region,
+               SUM(r_up.facc) as upstream_facc_sum,
+               COUNT(*) as n_upstream
+        FROM reach_topology rt
+        JOIN reaches r_up ON rt.neighbor_reach_id = r_up.reach_id
+            AND rt.region = r_up.region
+        WHERE rt.direction = 'up'
+          AND r_up.facc > 0 AND r_up.facc != -9999
+        GROUP BY rt.reach_id, rt.region
+    )
+    SELECT r.reach_id, r.region, r.river_name, r.x, r.y,
+           r.facc, uf.upstream_facc_sum,
+           r.facc - uf.upstream_facc_sum as incremental_area,
+           uf.n_upstream, r.width, r.stream_order,
+           r.n_rch_down
+    FROM reaches r
+    JOIN upstream_facc uf ON r.reach_id = uf.reach_id AND r.region = uf.region
+    WHERE r.facc > 0 AND r.facc != -9999
+      AND (r.facc - uf.upstream_facc_sum) < -{epsilon}
+      -- Exclude true bifurcation children (expected: child_facc < parent_facc)
+      AND NOT (
+          uf.n_upstream = 1
+          AND EXISTS (
+              SELECT 1 FROM reach_topology rt2
+              JOIN reaches r_parent ON rt2.neighbor_reach_id = r_parent.reach_id
+                  AND rt2.region = r_parent.region
+              WHERE rt2.reach_id = r.reach_id AND rt2.region = r.region
+                AND rt2.direction = 'up'
+                AND r_parent.n_rch_down >= 2
+          )
+      )
+      {where_clause}
+    ORDER BY (r.facc - uf.upstream_facc_sum) ASC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(DISTINCT rt.reach_id) FROM reach_topology rt
+    JOIN reaches r ON rt.reach_id = r.reach_id AND rt.region = r.region
+    WHERE rt.direction = 'up'
+        AND r.facc > 0 AND r.facc != -9999
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="F012",
+        name="incremental_area_nonneg",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=(
+            f"Reaches where facc < sum(upstream facc) - {epsilon} km² "
+            f"(negative incremental area, violates x >= 0 constraint)"
+        ),
+        threshold=epsilon,
+    )
+
+
+@register_check(
+    "F013",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "Incremental area Tukey IQR outlier (correction magnitude)",
+    default_threshold=1.5,
+)
+def check_incremental_area_outlier(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Flag reaches whose incremental area is a Tukey IQR outlier.
+
+    Mirrors the iterative Tukey IQR downweighting in the CVXPY integrator's
+    ``fix_drainage_area()`` — outliers in ``rel_change`` distribution get
+    epsilon weight.
+
+    Computes incremental_area = facc - sum(upstream facc) for all non-headwater
+    reaches (those with at least 1 upstream neighbor). Then applies log transform
+    and Tukey fences: Q1 - k*IQR .. Q3 + k*IQR where k = threshold (default 1.5).
+
+    Only checks reaches with positive incremental area (headwaters with 0
+    upstream are excluded since they have no meaningful incremental value).
+    """
+    k = threshold if threshold is not None else 1.5
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    # Step 1: compute incremental areas in SQL
+    incr_query = f"""
+    WITH upstream_facc AS (
+        SELECT rt.reach_id, rt.region,
+               SUM(r_up.facc) as upstream_facc_sum,
+               COUNT(*) as n_upstream
+        FROM reach_topology rt
+        JOIN reaches r_up ON rt.neighbor_reach_id = r_up.reach_id
+            AND rt.region = r_up.region
+        WHERE rt.direction = 'up'
+          AND r_up.facc > 0 AND r_up.facc != -9999
+        GROUP BY rt.reach_id, rt.region
+    )
+    SELECT r.reach_id, r.region, r.river_name, r.x, r.y,
+           r.facc, uf.upstream_facc_sum,
+           r.facc - uf.upstream_facc_sum as incremental_area,
+           uf.n_upstream, r.width, r.stream_order
+    FROM reaches r
+    JOIN upstream_facc uf ON r.reach_id = uf.reach_id AND r.region = uf.region
+    WHERE r.facc > 0 AND r.facc != -9999
+      AND (r.facc - uf.upstream_facc_sum) > 0
+      {where_clause}
+    """
+
+    df = conn.execute(incr_query).fetchdf()
+
+    if len(df) == 0:
+        return CheckResult(
+            check_id="F013",
+            name="incremental_area_outlier",
+            severity=Severity.WARNING,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0,
+            details=pd.DataFrame(),
+            description="No reaches with positive incremental area to check",
+            threshold=k,
+        )
+
+    # Step 2: Tukey IQR on log(incremental_area)
+    log_incr = np.log(df["incremental_area"].values)
+    q1 = np.percentile(log_incr, 25)
+    q3 = np.percentile(log_incr, 75)
+    iqr = q3 - q1
+    low_fence = q1 - k * iqr
+    high_fence = q3 + k * iqr
+
+    outlier_mask = (log_incr < low_fence) | (log_incr > high_fence)
+    issues = df[outlier_mask].copy()
+    issues["log_incremental_area"] = log_incr[outlier_mask]
+    issues["low_fence"] = low_fence
+    issues["high_fence"] = high_fence
+
+    return CheckResult(
+        check_id="F013",
+        name="incremental_area_outlier",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=len(df),
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / len(df) if len(df) > 0 else 0,
+        details=issues,
+        description=(
+            f"Reaches with log(incremental_area) outside Tukey fences "
+            f"[{low_fence:.2f}, {high_fence:.2f}] (k={k})"
+        ),
+        threshold=k,
+    )
+
+

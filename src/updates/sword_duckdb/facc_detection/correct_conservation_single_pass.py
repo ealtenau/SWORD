@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Facc Conservation — Single-Pass Correction
-===========================================
+Facc Conservation — Single-Pass Correction (v2: Asymmetric Propagation)
+=======================================================================
 
 Replaces the sequential P1/P2/P3 passes with a single topological-order walk
 from headwaters to outlets, starting from **v17b original facc**.
@@ -9,11 +9,18 @@ from headwaters to outlets, starting from **v17b original facc**.
 Algorithm (headwater → outlet, in topological order):
 
     1. Headwater (no predecessors): keep v17b value
-    2. Junction (2+ predecessors):  max(v17b, sum(corrected predecessors))
+    2. Junction (2+ predecessors):
+            sum(corrected upstream) + max(base - sum(baseline upstream), 0)
+       The lateral term isolates real local drainage from D8 clone inflation.
     3. Bifurcation child (1 pred, parent out_degree >= 2):
-                                    corrected_parent * (width_child / sum_sibling_widths)
+            corrected_parent * (width_child / sum_sibling_widths)
     4. 1:1 link (1 pred, parent out_degree == 1):
-                                    corrected_parent + max(v17b[node] - v17b[parent], 0)
+            - Parent lowered (bifurc split):  corrected_parent + max(base - base_parent, 0)
+            - Parent raised or unchanged:     base  (keep original D8 value)
+
+Key design choice: **lowering propagates, raising does not.** Junction raises are
+confined to the junction reach.  This prevents the exponential inflation that occurs
+in multi-bifurcation deltas (e.g. Lena: 674x under v1 additive → 2.95x under v2).
 
 See docs/facc_conservation_algorithm.md for full details.
 
@@ -170,11 +177,18 @@ def _run_single_pass(
             continue
 
         if len(preds) >= 2:
-            # JUNCTION: floor = sum of corrected upstream
+            # JUNCTION: lateral-increment approach (generalised 1:1 rule).
+            # corrected = sum(corrected upstream) + local lateral drainage
+            # where lateral = max(base - sum(baseline upstream), 0).
+            # This avoids recovering the inflated D8 clone at inner junctions
+            # of nested bifurcation-junction pairs.
             floor = sum(corrected.get(p, 0.0) for p in preds)
-            corrected[node] = max(base, floor)
-            if corrected[node] - base > 0.01:
-                _record(changes, counts, node, base, corrected[node],
+            sum_base_up = sum(max(baseline.get(p, 0.0), 0.0) for p in preds)
+            lateral = max(base - sum_base_up, 0.0)
+            new_val = floor + lateral
+            corrected[node] = new_val
+            if abs(new_val - base) > 0.01:
+                _record(changes, counts, node, base, new_val,
                         "junction_floor")
             continue
 
@@ -191,27 +205,33 @@ def _run_single_pass(
                 _record(changes, counts, node, base, new_val,
                         "bifurc_share")
         else:
-            # 1:1 LINK — additive lateral increment
-            # facc = upstream_facc + local_watershed.
-            # D8 lateral = baseline[node] - baseline[parent].
-            # Additive (not multiplicative) so it cannot compound
-            # exponentially. Absolute values inflate (~+300%) but
-            # conservation structure is correct everywhere — required
-            # for discharge algorithms that need non-negative lateral
-            # inflow at every link.
+            # 1:1 LINK — only propagate *lowering* (from bifurcation
+            # splits).  Junction raises must NOT cascade downstream or
+            # they compound exponentially in multi-bifurcation deltas.
             parent_base = max(baseline.get(parent, 0.0), 0.0)
             if parent_base == 0 and corrected[parent] == 0:
                 corrected[node] = 0.0
                 if base > 0.01:
                     _record(changes, counts, node, base, 0.0,
                             "cascade_zero")
-            else:
+            elif corrected[parent] < parent_base:
+                # Parent was LOWERED (bifurcation split) → additive lateral
+                # Take the parent's corrected value and add only the local
+                # drainage difference.  The lateral is real watershed area
+                # entering between parent and child — not scaled by the
+                # upstream split ratio.
                 lateral = max(base - parent_base, 0.0)
                 new_val = corrected[parent] + lateral
                 corrected[node] = new_val
                 if abs(new_val - base) > 0.01:
-                    ctype = "lateral_lower" if new_val < base else "lateral_raise"
-                    _record(changes, counts, node, base, new_val, ctype)
+                    _record(changes, counts, node, base, new_val,
+                            "lateral_lower")
+            else:
+                # Parent raised or unchanged → keep original D8 value.
+                # Equivalent to: base_parent + (base - base_parent) = base.
+                # The lateral difference is added on the parent's baseline,
+                # not on the inflated corrected value.
+                corrected[node] = base
 
     for ctype, n in sorted(counts.items()):
         if n > 0:

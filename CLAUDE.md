@@ -387,7 +387,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
     results = runner.run(region="NA", severity=Severity.ERROR)
 ```
 
-**Check IDs (44 total):**
+**Check IDs (47 total):**
 
 | ID | Name | Severity | Description |
 |----|------|----------|-------------|
@@ -402,6 +402,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | T009 | dist_out_zero_at_nonoutlet | ERROR | dist_out=0 only at outlets |
 | T010 | headwater_path_freq | ERROR | Headwaters have path_freq >= 1 |
 | T011 | path_freq_zero | WARNING | path_freq=0 only for disconnected |
+| T012 | topology_referential_integrity | ERROR | All neighbor_reach_ids exist in reaches |
 | A002 | slope_reasonableness | WARNING | No negative, <100 m/km |
 | A003 | width_trend | INFO | Width increases downstream |
 | A004 | attribute_completeness | INFO | Required attrs present |
@@ -411,6 +412,17 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | A008 | headwater_width | WARNING | Headwaters have narrow width |
 | A009 | outlet_facc | INFO | Outlets have high facc |
 | A010 | end_reach_consistency | WARNING | end_reach matches topology |
+| F001 | facc_width_ratio_anomaly | WARNING | facc/width > 5000 (MERIT corruption) |
+| F002 | facc_jump_ratio | WARNING | facc >> sum(upstream), entry points |
+| F004 | facc_reach_acc_ratio | WARNING | facc vs topology-based accumulation |
+| F006 | facc_junction_conservation | ERROR | facc < sum(upstream) at junctions |
+| F007 | bifurcation_balance | WARNING | sum(child facc) / parent ratio |
+| F008 | bifurcation_child_surplus | WARNING | child facc > parent facc |
+| F009 | facc_quality_coverage | INFO | facc_quality tag distribution |
+| F010 | junction_raise_drop | INFO | facc drop downstream of raised junction |
+| F011 | facc_link_monotonicity | INFO | 1:1 link facc drop (D8 artifact) |
+| F012 | incremental_area_nonneg | ERROR | facc >= sum(upstream) all reaches (x>=0) |
+| F013 | incremental_area_outlier | WARNING | Tukey IQR outlier on incremental area |
 | G001 | reach_length_bounds | INFO | 100m-50km, excl end_reach |
 | G002 | node_length_consistency | WARNING | Node sum ≈ reach length |
 | G003 | zero_length_reaches | INFO | Zero/negative length |
