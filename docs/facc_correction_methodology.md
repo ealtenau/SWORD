@@ -6,11 +6,11 @@
 
 ## 1. Problem: Why v17b Facc Has Errors
 
-SWORD's flow accumulation (`facc`, km^2) is extracted from MERIT Hydro, which uses a D8 (deterministic eight-neighbor) flow direction algorithm. D8 routes all flow from each raster cell to exactly one downhill neighbor. This single-flow-direction raster fundamentally conflicts with SWORD's multi-channel vector network topology, producing three systematic error modes.
+SWORD's flow accumulation (`facc`, km^2) is extracted from MERIT Hydro's **UPA (upstream area)** raster. UPA is derived from a **D8 (deterministic eight-neighbor)** flow direction algorithm, which routes all flow from each raster cell to exactly one downhill neighbor. The D8 directions determine the UPA values: each cell's UPA is the total area of all cells that drain through it under D8 routing. This single-flow-direction raster fundamentally conflicts with SWORD's multi-channel vector network topology, producing three systematic error modes in the UPA values that SWORD samples.
 
 ### 1.1 Bifurcation Cloning
 
-When a river splits into two or more channels, D8 has no mechanism to partition drainage area. Every child channel receives the full parent facc:
+When a river splits into two or more channels, D8 routes all flow to one neighbor, so UPA has no mechanism to partition drainage area. Every child channel's UPA value reflects the full parent drainage:
 
 ```
         Parent (facc = 1,089,000 km^2)
@@ -36,13 +36,13 @@ The junction should have ~1,089,000 km^2 plus any lateral drainage between the b
 
 ### 1.3 Raster-Vector Misalignment
 
-SWORD's vector reaches and MERIT's raster cells don't align perfectly. When a reach's sampling point falls on a neighboring D8 flow path, its facc can be 2-50% lower than the upstream reach's facc — a physical impossibility on a non-bifurcating channel. These are random drops on 1:1 links (single parent, single child), not topology errors.
+SWORD's vector reaches and MERIT's UPA raster cells don't align perfectly. When a reach's node sampling point falls on a neighboring UPA flow path, the sampled facc can be 2-50% lower than the upstream reach's facc — a physical impossibility on a non-bifurcating channel. These are random drops on 1:1 links (single parent, single child), not topology errors.
 
 **Scale**: ~8,000 1:1-link drops globally.
 
 ### 1.4 Concrete Example
 
-In the Ganges delta, D8 assigns 1,089,000 km^2 to every distributary child — the full upstream basin area. Width-proportional splitting would give the main channel ~650,000 km^2 and secondary channels proportionally less. Without correction, downstream junctions double-count, and the error cascades through hundreds of downstream reaches.
+In the Ganges delta, UPA assigns 1,089,000 km^2 to every distributary child — the full upstream basin area — because D8 cannot split flow. Width-proportional splitting would give the main channel ~650,000 km^2 and secondary channels proportionally less. Without correction, downstream junctions double-count, and the error cascades through hundreds of downstream reaches.
 
 ---
 
@@ -64,7 +64,7 @@ Where:
 - **L** = observed facc minus sum of independent (headwater) facc
 - **W** = diagonal weight matrix, iteratively downweighting Tukey IQR outliers
 
-The solver (OSQP/ECOS via CVXPY) minimizes weighted least-squares deviation from observed D8 values subject to non-negativity on incremental areas. Optional hard anchors pin specific reaches (e.g., gauged sites) to their observed values.
+The solver (OSQP/ECOS via CVXPY) minimizes weighted least-squares deviation from observed UPA values subject to non-negativity on incremental areas. Optional hard anchors pin specific reaches (e.g., gauged sites) to their observed values.
 
 ### Test Results
 
@@ -86,10 +86,10 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 #### Phase 1 — Node-level denoise
 
-Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the MERIT D8 raster. Normally we take `MAX(node facc)` as the reach's baseline facc, since drainage area is highest at the downstream end. But some nodes' sampling points land on an adjacent D8 flow path (a parallel tributary or different branch), returning a facc value that has nothing to do with the reach's actual river. We detect this by comparing `MAX(node facc)` to `MIN(node facc)` within each reach: on a ~2-10 km segment, facc should vary by a few percent at most, so `MAX/MIN > 2.0` indicates at least one node hit a wrong raster cell. For these noisy reaches, we use the downstream-most node's facc (the most physically meaningful sample, since it sits at the reach's connection point to the next reach) instead of `MAX`. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
+Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the MERIT Hydro UPA raster. Normally we take `MAX(node facc)` as the reach's baseline facc, since drainage area is highest at the downstream end. But some nodes' sampling points land on an adjacent UPA flow path (a parallel tributary or different branch), returning a facc value that has nothing to do with the reach's actual river. We detect this by comparing `MAX(node facc)` to `MIN(node facc)` within each reach: on a ~2-10 km segment, facc should vary by a few percent at most, so `MAX/MIN > 2.0` indicates at least one node hit a wrong UPA cell. For these noisy reaches, we use the downstream-most node's facc (the most physically meaningful sample, since it sits at the reach's connection point to the next reach) instead of `MAX`. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
 
 **Assumptions:**
-- The downstream-most node is the most reliable D8 sample, because it sits at the reach's physical connection to the next reach.
+- The downstream-most node is the most reliable UPA sample, because it sits at the reach's physical connection to the next reach.
 - A within-reach facc ratio > 2.0x indicates raster misalignment, not real drainage variation over a ~2-10 km segment.
 - v17b node-level data is the uncorrupted source (we read from v17b, not v17c, which may have been modified).
 
@@ -101,7 +101,7 @@ Process all reaches in topological order (headwaters first, outlets last). This 
 
 **Junctions** (2+ upstream parents): `corrected = sum(corrected_upstream) + lateral`. The **lateral increment** is the local drainage that enters between the upstream reaches and this junction — hillsides, small creeks, etc. not captured as separate SWORD reaches. It is computed as: `lateral = max(baseline - sum(baseline_upstream), 0)`.
 
-In the normal case (no D8 errors), the baseline junction value is slightly larger than the sum of the baseline upstream values, and the difference is real local drainage:
+In the normal case (no UPA errors), the baseline junction value is slightly larger than the sum of the baseline upstream values, and the difference is real local drainage:
 
 ```
   River A (baseline 100,000 km²)  ──┐
@@ -113,7 +113,7 @@ In the normal case (no D8 errors), the baseline junction value is slightly large
   corrected = sum(corrected_upstream) + 10,000
 ```
 
-When D8 cloning is present, the upstream baselines are inflated, and `sum(baseline_upstream)` exceeds the junction baseline. The lateral goes negative, which would mean "drainage leaves at this junction" — physically impossible. The `max(..., 0)` clamp catches this:
+When UPA cloning is present (D8 assigned the full parent drainage to both children), the upstream baselines are inflated, and `sum(baseline_upstream)` exceeds the junction baseline. The lateral goes negative, which would mean "drainage leaves at this junction" — physically impossible. The `max(..., 0)` clamp catches this:
 
 ```
   Channel A (baseline 200,000 km²)  ──┐  ← cloned, should be ~120K
@@ -128,16 +128,34 @@ When D8 cloning is present, the upstream baselines are inflated, and `sum(baseli
 
 The tradeoff: in the clone case we lose the real ~10K lateral drainage (zeroed along with the inflation). Phase 4 (isotonic regression) can recover small losses like this.
 
-**Bifurcation children** (parent has 2+ downstream children): `corrected = corrected_parent * (width_child / sum_sibling_widths)`. Instead of every child getting 100% of the parent's facc (the D8 cloning error), each child gets its share proportional to channel width. If a child has no width data, children split equally as a fallback.
+**Bifurcation children** (parent has 2+ downstream children): `corrected = corrected_parent * (width_child / sum_sibling_widths)`. Instead of every child getting 100% of the parent's facc (the UPA cloning error), each child gets its share proportional to channel width. If a child has no width data, children split equally as a fallback.
 
-**1:1 links where the parent was lowered** (parent's corrected < parent's baseline, meaning a bifurcation split propagated down to it): `corrected = corrected_parent + max(baseline - baseline_parent, 0)`. Same lateral-increment logic as junctions — inherit the lowered parent value plus any real local drainage. **Lowering cascades downstream**: if a bifurcation split reduces a parent from 1M to 400K km², every downstream reach should reflect that reduction.
+**1:1 links where the parent was lowered** (parent's corrected < parent's baseline, meaning a bifurcation split propagated down to it): `corrected = corrected_parent + max(baseline - baseline_parent, 0)`. This is the same lateral-increment logic as junctions, and it matters because bifurcation corrections need to propagate. When a bifurcation split lowers a parent's facc, the child on a 1:1 link should inherit that lower value — otherwise the correction stops at the first reach downstream and the rest of the river still carries the inflated UPA value.
+
+```
+  Bifurcation parent (baseline 1,000,000 km²)
+       |
+       ├── Child A (60% width share) → corrected to 600,000
+       └── Child B (40% width share) → corrected to 400,000
+              |
+              Reach X (1:1 link, baseline 410,000 km²)
+
+  Parent was lowered: corrected (400K) < baseline (1,000K)
+  baseline_parent = 1,000,000
+  lateral = max(410,000 - 1,000,000, 0) = 0  (child baseline < parent baseline)
+  corrected_X = 400,000 + 0 = 400,000
+```
+
+The lateral is zero here because Reach X's baseline (410K) is less than the parent's baseline (1M) — there's no evidence of new drainage entering. But if Reach X had a baseline of 1,050,000 (50K of real local drainage beyond the parent), the formula would preserve it: `corrected = 400,000 + max(1,050,000 - 1,000,000, 0) = 450,000`.
+
+**Lowering cascades downstream**: every subsequent 1:1 reach applies the same rule, so the bifurcation split propagates all the way down the chain until it hits a junction or another bifurcation.
 
 **1:1 links where the parent was raised** (parent's corrected >= parent's baseline, meaning a junction floor pushed it up): Keep the baseline. **Raising does NOT cascade.** This asymmetry is the key innovation. If junction-floor raises cascaded downstream, a +50,000 km² raise would propagate to every downstream reach; when it hits the next junction, it doubles, then doubles again. This exponential inflation is what caused the Lena River delta to reach 1.65 billion km² in our v1 attempt (real basin: 2.49M km²).
 
 **Assumptions:**
 - The SWORD topology graph is a DAG (directed acyclic graph) so topological sort is valid.
 - Channel width is a reasonable proxy for flow partitioning at bifurcations.
-- Negative lateral drainage is always a D8 artifact, never real physics.
+- Negative lateral drainage is always a UPA artifact (from D8 cloning), never real physics.
 - Junction-floor raises should not propagate, because they reflect corrections to local accounting errors, not changes to actual upstream drainage.
 
 #### Phase 3 — Outlier detection
@@ -146,18 +164,18 @@ Flag remaining outliers after topology correction, using three independent crite
 
 1. **Neighborhood log-deviation**: For each reach, compute the log-space deviation between its corrected facc and the median of its neighbors' corrected facc. Flag reaches exceeding the Tukey IQR upper fence (Q3 + 1.5*IQR), with a floor of ~2.7x deviation.
 2. **Junction raises >2x**: Junctions where the corrected value is more than 2x the baseline — likely over-floored by inflated upstream branches.
-3. **1:1 drops >2x**: 1:1 links where the upstream reach has >2x the downstream reach's corrected facc — residual D8 misalignment that Phase 1 didn't catch.
+3. **1:1 drops >2x**: 1:1 links where the upstream reach has >2x the downstream reach's corrected facc — residual UPA misalignment that Phase 1 didn't catch.
 
 Flagged reaches are candidates for MERIT D8-walk re-sampling (if rasters are available) and are used as metadata for downstream users.
 
 **Assumptions:**
-- After Phase 2, remaining large deviations from neighbors are D8 noise rather than real drainage features.
+- After Phase 2, remaining large deviations from neighbors are UPA noise rather than real drainage features.
 - The Tukey IQR method (robust to non-normal distributions) is appropriate for log-space facc deviations.
 - 2x thresholds for junction raises and 1:1 drops are conservative enough to avoid false positives on legitimate drainage variability.
 
 #### Phase 4 — Bidirectional isotonic regression (PAVA)
 
-After Phase 2, some 1:1 chains still have monotonicity violations (downstream facc < upstream facc) from residual D8 noise. Phase 4 smooths these out.
+After Phase 2, some 1:1 chains still have monotonicity violations (downstream facc < upstream facc) from residual UPA noise. Phase 4 smooths these out.
 
 First, extract **1:1 chains**: maximal sequences of reaches where each reach has exactly one upstream neighbor and that neighbor has exactly one downstream child. Chains start at headwaters, junction outputs, or bifurcation children, and end at the next junction, bifurcation, or outlet. These are the "simple pipe" segments between topology branch points.
 
@@ -169,7 +187,7 @@ This adjusts ~36,915 reaches globally.
 - Facc should be non-decreasing along any 1:1 chain (drainage area can only grow or stay constant going downstream on a non-bifurcating channel).
 - Log-space is the correct domain for isotonic regression on facc, because facc spans 5+ orders of magnitude and relative error is more meaningful than absolute error.
 - PAVA (which minimizes weighted least-squares deviation from the input) produces the least-distortion monotonic fit.
-- Bifurcation shares from Phase 2 are more trustworthy than D8 values, so they should be anchored.
+- Bifurcation shares from Phase 2 are more trustworthy than UPA values, so they should be anchored.
 
 #### Phase 5 — Junction floor re-enforcement
 
@@ -200,20 +218,20 @@ Topological sort is O(V + E). Isotonic regression is O(k) per chain. Total runti
 | Dimension | Integrator (CVXPY) | v3 Pipeline |
 |-----------|-------------------|-------------|
 | **Formulation** | Constrained QP: min \|\|W(Ax - L)\|\|^2 | Topological-order rules + isotonic regression |
-| **Objective** | Minimize weighted deviation from D8 | Conservation + data fidelity (same goal) |
+| **Objective** | Minimize weighted deviation from UPA | Conservation + data fidelity (same goal) |
 | **Constraints** | x >= 0, optional hard anchors | Junction floor, width-proportional splits |
 | **Scale tested** | 55 reaches (1 basin) | 248,674 reaches (6 regions, global) |
 | **Runtime** | <1s per basin | ~4 min global |
 | **Manual setup** | Basin delineation, constraint reach IDs | None (auto from topology) |
 | **Bifurcation handling** | Implicit in A matrix structure | Explicit width-proportional split |
 | **Monotonicity** | Not enforced | Isotonic regression on 1:1 chains |
-| **Outlier handling** | Tukey IQR + re-solve with downweighting | Tukey IQR + MERIT D8-walk re-sampling |
+| **Outlier handling** | Tukey IQR + re-solve with downweighting | Tukey IQR + MERIT UPA re-sampling |
 | **Output** | Incremental areas (x) -> total facc | Corrected total facc directly |
 | **Dependencies** | CVXPY, OSQP/ECOS solvers | NetworkX, NumPy |
 
 ### Mathematical Equivalence
 
-Both approaches minimize deviation from observed D8 values subject to non-negativity and conservation. The integrator achieves this via dense matrix factorization on incremental areas; we achieve it via graph traversal with closed-form rules at each node type.
+Both approaches minimize deviation from observed UPA values subject to non-negativity and conservation. The integrator achieves this via dense matrix factorization on incremental areas; we achieve it via graph traversal with closed-form rules at each node type.
 
 Our junction rule `corrected = sum(corrected_upstream) + max(base - sum(base_upstream), 0)` is equivalent to enforcing `incremental_area >= 0` at each junction — the `max(..., 0)` clamps the lateral term to non-negative, identical to the integrator's `x >= 0` constraint. At the single-basin level with uniform weights, the solutions are equivalent. The key difference is scalability: our formulation processes the entire global network in one pass without requiring basin-by-basin decomposition.
 
@@ -222,7 +240,7 @@ Our junction rule `corrected = sum(corrected_upstream) + max(base - sum(base_ups
 ## 5. Global Results
 
 ![Fig 1: Before/After Evidence](../output/facc_detection/figures/report_fig1.png)
-*Figure 1. Before/after evidence that v17c corrections fix real errors. Top row: junction conservation (facc / sum of upstream facc) — v17b has ~51% of junctions violating conservation (ratio < 1.0); v17c has effectively 0 violations. Bottom row: bifurcation child/parent ratio — v17b shows a D8 cloning peak at ratio ~1.0 (every child gets full parent facc); v17c shifts the median to ~0.47 (width-proportional splitting).*
+*Figure 1. Before/after evidence that v17c corrections fix real errors. Top row: junction conservation (facc / sum of upstream facc) — v17b has ~51% of junctions violating conservation (ratio < 1.0); v17c has effectively 0 violations. Bottom row: bifurcation child/parent ratio — v17b shows a UPA cloning peak at ratio ~1.0 (every child gets full parent facc); v17c shifts the median to ~0.47 (width-proportional splitting).*
 
 Data from v3 summary JSONs (all regions applied):
 
@@ -249,7 +267,7 @@ Correction type breakdown (global totals from summary JSONs):
 | lateral_lower | 7,237 | Bifurcation-split cascade on 1:1 links |
 | bifurc_share | 4,458 | Width-proportional bifurcation splitting |
 | node_denoise | 282 | Within-reach node facc variability correction |
-| upa_resample | 1,651 | MERIT D8-walk re-sampling (where MERIT rasters available) |
+| upa_resample | 1,651 | MERIT UPA re-sampling via D8-walk (where MERIT rasters available) |
 | t003_flagged_only | 164 | No facc change, flagged as metadata |
 
 ---
@@ -267,15 +285,15 @@ Junction conservation is guaranteed: at every junction with 2+ upstream inputs, 
 
 ### T003 = 5,860 Flagged (Not Force-Corrected)
 
-5,860 reaches (2.4% of total) have residual monotonicity violations on non-bifurcation edges where downstream facc < upstream facc. These are structural disagreements between MERIT's D8 raster and SWORD's vector topology — not topology errors.
+5,860 reaches (2.4% of total) have residual monotonicity violations on non-bifurcation edges where downstream facc < upstream facc. These are structural disagreements between MERIT's UPA raster and SWORD's vector topology — not topology errors.
 
 **Why not force-correct?** We tested iterative forward-max + junction floor to achieve T003 = 0. Results on NA alone:
 
 - **+114% facc inflation** (2.6 billion km^2 added to the region)
-- 226 D8-clone junctions (identical facc on both upstream branches) seed cascading double-counts through major rivers: Mississippi (+434M km^2), Missouri (+294M), Mackenzie (+250M), St. Lawrence (+163M), Nelson (+120M)
+- 226 UPA-clone junctions (identical facc on both upstream branches, because D8 routed the same drainage through both) seed cascading double-counts through major rivers: Mississippi (+434M km^2), Missouri (+294M), Mackenzie (+250M), St. Lawrence (+163M), Nelson (+120M)
 - A clone-aware variant (`max` instead of `sum` at clones) reduced inflation to +93% but did not solve the cascade
 
-**Conclusion**: These violations are inherent MERIT D8 noise. Force-correcting them overrides thousands of MERIT values and causes unacceptable inflation. They are flagged as metadata (`t003_flag`, `t003_reason`) for downstream users to filter as needed.
+**Conclusion**: These violations are inherent MERIT UPA noise (from D8 routing limitations). Force-correcting them overrides thousands of MERIT values and causes unacceptable inflation. They are flagged as metadata (`t003_flag`, `t003_reason`) for downstream users to filter as needed.
 
 ### Full Lint Suite
 
@@ -299,11 +317,11 @@ Junction conservation is guaranteed: at every junction with 2+ upstream inputs, 
 
 ## 7. Residual Issues
 
-1. **5,860 T003 flags (2.4%)** — Structural MERIT D8 noise on 1:1 links. Flagged as metadata with classification (`chain`, `junction_adjacent`, `non_isolated`). Not force-corrected because doing so causes +90-114% inflation.
+1. **5,860 T003 flags (2.4%)** — Structural MERIT UPA noise on 1:1 links (from D8 routing limitations). Flagged as metadata with classification (`chain`, `junction_adjacent`, `non_isolated`). Not force-corrected because doing so causes +90-114% inflation.
 
 2. **~246 bifurcation imbalance (F007/F008)** — Bifurcations where child width data is missing or zero, causing equal-split fallback to produce children that don't sum precisely to the parent. Minor: affects <0.1% of reaches.
 
-3. **D8-clone junction over-flooring** — ~226 junctions globally where MERIT assigned identical facc to both upstream branches. Phase 5 uses naive `sum(upstream)` which slightly over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
+3. **UPA-clone junction over-flooring** — ~226 junctions globally where MERIT UPA assigned identical facc to both upstream branches (because D8 routed the full drainage through both paths). Phase 5 uses naive `sum(upstream)` which slightly over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
 
 ---
 
@@ -317,7 +335,7 @@ src/updates/sword_duckdb/facc_detection/
   correct_conservation_single_pass.py  # v2 single-pass (superseded by v3)
   detect.py                     # Phase 0: anomaly detection rules
   correct.py                    # Phase 0: RF regressor correction
-  merit_search.py               # D8-walk MERIT re-sampling
+  merit_search.py               # UPA re-sampling via D8-walk
 ```
 
 ### Integrator (DrainageAreaFix)
