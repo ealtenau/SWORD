@@ -84,7 +84,7 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 ### Five Phases
 
-**Phase 1 — Node-level denoise.** For each reach, compare `MAX(node facc)` to `MIN(node facc)` within the reach. If MAX/MIN > 2.0 (indicating stray D8 samples from adjacent flow paths), use the downstream-most node's facc instead of MAX. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
+**Phase 1 — Node-level denoise.** Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the MERIT D8 raster. Normally we take `MAX(node facc)` as the reach's baseline facc, since drainage area is highest at the downstream end. But some nodes' sampling points land on an adjacent D8 flow path (a parallel tributary or different branch), returning a facc value that has nothing to do with the reach's actual river. We detect this by comparing `MAX(node facc)` to `MIN(node facc)` within each reach: on a ~2-10 km segment, facc should vary by a few percent at most, so `MAX/MIN > 2.0` indicates at least one node hit a wrong raster cell. For these noisy reaches, we use the downstream-most node's facc (the most physically meaningful sample, since it sits at the reach's connection point to the next reach) instead of `MAX`. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
 
 **Phase 2 — Topology-aware single pass.** Process all reaches in topological order (headwaters to outlets):
 
