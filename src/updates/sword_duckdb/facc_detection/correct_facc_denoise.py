@@ -935,6 +935,43 @@ def _phase4c_junction_floor(
 
 
 # ---------------------------------------------------------------------------
+# Collect remaining T003 flags
+# ---------------------------------------------------------------------------
+
+def _collect_t003_flags(
+    G: nx.DiGraph,
+    corrected: Dict[int, float],
+) -> Dict[int, str]:
+    """
+    Identify remaining non-bifurcation T003 violations and classify them.
+
+    Returns {downstream_reach_id: reason} where reason is one of:
+      chain, junction_adjacent, non_isolated.
+    """
+    flags: Dict[int, str] = {}
+    for u, v in G.edges():
+        if corrected.get(u, 0.0) <= corrected.get(v, 0.0) + 1.0:
+            continue
+        if G.out_degree(u) >= 2:
+            continue  # bifurcation — expected
+        # Classify
+        succs_v = list(G.successors(v))
+        feeds_junction = any(G.in_degree(w) >= 2 for w in succs_v)
+        would_break_dn = any(
+            corrected.get(u, 0.0) > corrected.get(w, 0.0) + 1.0
+            for w in succs_v
+        )
+        if feeds_junction:
+            reason = "junction_adjacent"
+        elif would_break_dn:
+            reason = "chain"
+        else:
+            reason = "non_isolated"
+        flags[v] = reason
+    return flags
+
+
+# ---------------------------------------------------------------------------
 # Export remaining T003 violations
 # ---------------------------------------------------------------------------
 
@@ -1461,6 +1498,13 @@ def correct_facc_denoise(
 
         imputed = adjusted  # for downstream references (summary, tagging)
 
+        # ---- Collect T003 flags (structural MERIT-SWORD disagreements) ----
+        t003_flags = _collect_t003_flags(G, corrected)
+        print(f"\n  T003 flags: {len(t003_flags)} remaining violations (metadata only)")
+        from collections import Counter
+        for reason, cnt in sorted(Counter(t003_flags.values()).items()):
+            print(f"    {reason:25s} {cnt:,}")
+
         # ---- Export remaining T003 violations as spatial layer ----
         _export_remaining_t003(
             conn, G, corrected, v17b_facc, region, out_path,
@@ -1470,8 +1514,10 @@ def correct_facc_denoise(
         print("\n  Phase 6: Validation")
         validation = _phase6_validate(G, corrected, v17b_facc)
         validation["imputed_reaches"] = len(imputed)
+        validation["t003_flagged"] = len(t003_flags)
         validation["floored_junctions"] = len(floored)
         print(f"      {'imputed_reaches':35s} {len(imputed):,}")
+        print(f"      {'t003_flagged':35s} {len(t003_flags):,}")
         print(f"      {'floored_junctions':35s} {len(floored):,}")
 
         # Build corrections DataFrame — compare corrected to v17b
@@ -1479,7 +1525,7 @@ def correct_facc_denoise(
         for rid in G.nodes():
             base_v17b = max(v17b_facc.get(rid, 0.0), 0.0)
             corr = corrected.get(rid, 0.0)
-            if abs(corr - base_v17b) > 0.01:
+            if abs(corr - base_v17b) > 0.01 or rid in t003_flags:
                 delta = corr - base_v17b
                 delta_pct = 100.0 * delta / base_v17b if base_v17b > 0 else (
                     float("inf") if delta > 0 else 0.0
@@ -1495,6 +1541,8 @@ def correct_facc_denoise(
                     ctype = "upa_resample"
                 elif rid in denoised_ids:
                     ctype = "node_denoise"
+                elif rid in t003_flags:
+                    ctype = "t003_flagged_only"
                 else:
                     ctype = "unknown"
                 diag = resample_diag.get(rid, {})
@@ -1507,6 +1555,8 @@ def correct_facc_denoise(
                     "delta": round(delta, 4),
                     "delta_pct": round(delta_pct, 2),
                     "correction_type": ctype,
+                    "t003_flag": rid in t003_flags,
+                    "t003_reason": t003_flags.get(rid),
                     "was_resampled": rid in resampled_ids,
                     "resample_reason": diag.get("reason"),
                     "resample_method": diag.get("method"),
@@ -1586,6 +1636,7 @@ def correct_facc_denoise(
             "t003_resample_stats": resample_stats,
             "actually_resampled": n_resampled,
             "imputed_count": len(imputed),
+            "t003_flagged": len(t003_flags),
             "floored_junctions": len(floored),
             "validation": validation,
             "by_type": {
