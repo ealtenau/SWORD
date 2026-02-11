@@ -84,13 +84,49 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 ### Five Phases
 
-**Phase 1 — Node-level denoise.** Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the MERIT D8 raster. Normally we take `MAX(node facc)` as the reach's baseline facc, since drainage area is highest at the downstream end. But some nodes' sampling points land on an adjacent D8 flow path (a parallel tributary or different branch), returning a facc value that has nothing to do with the reach's actual river. We detect this by comparing `MAX(node facc)` to `MIN(node facc)` within each reach: on a ~2-10 km segment, facc should vary by a few percent at most, so `MAX/MIN > 2.0` indicates at least one node hit a wrong raster cell. For these noisy reaches, we use the downstream-most node's facc (the most physically meaningful sample, since it sits at the reach's connection point to the next reach) instead of `MAX`. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
+#### Phase 1 — Node-level denoise
 
-**Phase 2 — Topology-aware single pass.** Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Phase 1, before any topology correction) and the **corrected** value (the output of this phase). Five cases:
+Each reach has ~10-50 nodes spaced ~200m apart, each independently sampling the MERIT D8 raster. Normally we take `MAX(node facc)` as the reach's baseline facc, since drainage area is highest at the downstream end. But some nodes' sampling points land on an adjacent D8 flow path (a parallel tributary or different branch), returning a facc value that has nothing to do with the reach's actual river. We detect this by comparing `MAX(node facc)` to `MIN(node facc)` within each reach: on a ~2-10 km segment, facc should vary by a few percent at most, so `MAX/MIN > 2.0` indicates at least one node hit a wrong raster cell. For these noisy reaches, we use the downstream-most node's facc (the most physically meaningful sample, since it sits at the reach's connection point to the next reach) instead of `MAX`. This affects ~7,345 reaches (3.0%) globally and removes the noise source before topology correction.
+
+**Assumptions:**
+- The downstream-most node is the most reliable D8 sample, because it sits at the reach's physical connection to the next reach.
+- A within-reach facc ratio > 2.0x indicates raster misalignment, not real drainage variation over a ~2-10 km segment.
+- v17b node-level data is the uncorrupted source (we read from v17b, not v17c, which may have been modified).
+
+#### Phase 2 — Topology-aware single pass
+
+Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Phase 1, before any topology correction) and the **corrected** value (the output of this phase). Five cases:
 
 **Headwaters** (no upstream neighbors): Keep the baseline facc. Nothing upstream to correct against.
 
-**Junctions** (2+ upstream parents): `corrected = sum(corrected_upstream) + lateral`, where the **lateral increment** captures how much new local drainage enters between the upstream reaches and this junction: `lateral = max(baseline - sum(baseline_upstream), 0)`. The `max(..., 0)` clamp is critical — if D8 cloned the parent facc into both upstream branches, `sum(baseline_upstream)` will be inflated and the lateral term goes to zero instead of negative. This isolates real local drainage from D8 clone inflation.
+**Junctions** (2+ upstream parents): `corrected = sum(corrected_upstream) + lateral`. The **lateral increment** is the local drainage that enters between the upstream reaches and this junction — hillsides, small creeks, etc. not captured as separate SWORD reaches. It is computed as: `lateral = max(baseline - sum(baseline_upstream), 0)`.
+
+In the normal case (no D8 errors), the baseline junction value is slightly larger than the sum of the baseline upstream values, and the difference is real local drainage:
+
+```
+  River A (baseline 100,000 km²)  ──┐
+                                     ├─→  Junction (baseline 160,000 km²)
+  River B (baseline  50,000 km²)  ──┘
+
+  sum(baseline_upstream) = 150,000
+  lateral = max(160,000 - 150,000, 0) = 10,000  (real local drainage)
+  corrected = sum(corrected_upstream) + 10,000
+```
+
+When D8 cloning is present, the upstream baselines are inflated, and `sum(baseline_upstream)` exceeds the junction baseline. The lateral goes negative, which would mean "drainage leaves at this junction" — physically impossible. The `max(..., 0)` clamp catches this:
+
+```
+  Channel A (baseline 200,000 km²)  ──┐  ← cloned, should be ~120K
+                                       ├─→  Junction (baseline 210,000 km²)
+  Channel B (baseline 200,000 km²)  ──┘  ← cloned, should be ~80K
+
+  After correcting bifurcation children: A=120K, B=80K
+  sum(baseline_upstream) = 400,000  (inflated)
+  lateral = max(210,000 - 400,000, 0) = 0  (clamp catches negative)
+  corrected = 200,000 + 0 = 200,000
+```
+
+The tradeoff: in the clone case we lose the real ~10K lateral drainage (zeroed along with the inflation). Phase 4 (isotonic regression) can recover small losses like this.
 
 **Bifurcation children** (parent has 2+ downstream children): `corrected = corrected_parent * (width_child / sum_sibling_widths)`. Instead of every child getting 100% of the parent's facc (the D8 cloning error), each child gets its share proportional to channel width. If a child has no width data, children split equally as a fallback.
 
@@ -98,11 +134,50 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 **1:1 links where the parent was raised** (parent's corrected >= parent's baseline, meaning a junction floor pushed it up): Keep the baseline. **Raising does NOT cascade.** This asymmetry is the key innovation. If junction-floor raises cascaded downstream, a +50,000 km² raise would propagate to every downstream reach; when it hits the next junction, it doubles, then doubles again. This exponential inflation is what caused the Lena River delta to reach 1.65 billion km² in our v1 attempt (real basin: 2.49M km²).
 
-**Phase 3 — Outlier detection.** Flag remaining outliers via Tukey IQR in log-space on neighborhood deviations, plus junction raises >2x and 1:1 drops >2x.
+**Assumptions:**
+- The SWORD topology graph is a DAG (directed acyclic graph) so topological sort is valid.
+- Channel width is a reasonable proxy for flow partitioning at bifurcations.
+- Negative lateral drainage is always a D8 artifact, never real physics.
+- Junction-floor raises should not propagate, because they reflect corrections to local accounting errors, not changes to actual upstream drainage.
 
-**Phase 4 — Bidirectional isotonic regression (PAVA).** Extract maximal 1:1 chains (sequences between junctions/bifurcations). For each chain with monotonicity violations, run the Pool Adjacent Violators Algorithm in log-space to find the closest non-decreasing sequence. Bifurcation children are anchored at 1000x weight to preserve width-proportional shares. Junction feeders are NOT anchored, enabling bidirectional correction (both raises and lowers). This adjusts ~36,915 reaches globally.
+#### Phase 3 — Outlier detection
 
-**Phase 5 — Junction floor re-enforcement.** After isotonic regression may have shifted chain values, re-run junction floor (`corrected >= sum(corrected_upstream)`) in topological order to guarantee F006 = 0.
+Flag remaining outliers after topology correction, using three independent criteria:
+
+1. **Neighborhood log-deviation**: For each reach, compute the log-space deviation between its corrected facc and the median of its neighbors' corrected facc. Flag reaches exceeding the Tukey IQR upper fence (Q3 + 1.5*IQR), with a floor of ~2.7x deviation.
+2. **Junction raises >2x**: Junctions where the corrected value is more than 2x the baseline — likely over-floored by inflated upstream branches.
+3. **1:1 drops >2x**: 1:1 links where the upstream reach has >2x the downstream reach's corrected facc — residual D8 misalignment that Phase 1 didn't catch.
+
+Flagged reaches are candidates for MERIT D8-walk re-sampling (if rasters are available) and are used as metadata for downstream users.
+
+**Assumptions:**
+- After Phase 2, remaining large deviations from neighbors are D8 noise rather than real drainage features.
+- The Tukey IQR method (robust to non-normal distributions) is appropriate for log-space facc deviations.
+- 2x thresholds for junction raises and 1:1 drops are conservative enough to avoid false positives on legitimate drainage variability.
+
+#### Phase 4 — Bidirectional isotonic regression (PAVA)
+
+After Phase 2, some 1:1 chains still have monotonicity violations (downstream facc < upstream facc) from residual D8 noise. Phase 4 smooths these out.
+
+First, extract **1:1 chains**: maximal sequences of reaches where each reach has exactly one upstream neighbor and that neighbor has exactly one downstream child. Chains start at headwaters, junction outputs, or bifurcation children, and end at the next junction, bifurcation, or outlet. These are the "simple pipe" segments between topology branch points.
+
+For each chain with violations, run the **Pool Adjacent Violators Algorithm (PAVA)** in log-space to find the closest non-decreasing sequence (minimizing sum-of-squared deviations). This adjusts values both up and down — unlike Phase 2 which only lowers or floors. Bifurcation children (chain heads that received a width-proportional share in Phase 2) are anchored at 1000x weight so isotonic regression preserves their corrected values. Junction feeders (chain tails feeding into a junction) are NOT anchored, enabling the regression to lower them if needed.
+
+This adjusts ~36,915 reaches globally.
+
+**Assumptions:**
+- Facc should be non-decreasing along any 1:1 chain (drainage area can only grow or stay constant going downstream on a non-bifurcating channel).
+- Log-space is the correct domain for isotonic regression on facc, because facc spans 5+ orders of magnitude and relative error is more meaningful than absolute error.
+- PAVA (which minimizes weighted least-squares deviation from the input) produces the least-distortion monotonic fit.
+- Bifurcation shares from Phase 2 are more trustworthy than D8 values, so they should be anchored.
+
+#### Phase 5 — Junction floor re-enforcement
+
+Isotonic regression in Phase 4 may shift chain values in ways that re-introduce junction conservation violations (a chain tail feeding a junction could be lowered below the junction's other inputs). Phase 5 re-runs the junction floor rule in topological order: `corrected = max(corrected, sum(corrected_upstream))` at every junction. This guarantees F006 = 0 (no junction conservation violations) in the final output.
+
+**Assumptions:**
+- Junction conservation (`facc >= sum(upstream facc)`) is a hard constraint that must hold everywhere, not a soft target.
+- Running in topological order ensures downstream junctions see already-fixed upstream values.
 
 ### Key Innovation: Asymmetric Propagation
 
