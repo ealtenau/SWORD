@@ -84,7 +84,7 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 ### Lint Checks Referenced
 
-The pipeline targets specific violations detected by our lint framework (see Section 6 for full results):
+The pipeline targets specific violations detected by our [lint framework](../src/updates/sword_duckdb/lint/CHECKS.md) (see Section 6 for full results):
 
 | Check | What it tests |
 |-------|---------------|
@@ -100,6 +100,47 @@ The pipeline has two correction phases plus a diagnostic step:
 - **Phase 1** — Topology-aware baseline correction (node initialization, topological pass, MERIT UPA resampling)
 - **Phase 2** — Monotonicity enforcement (isotonic regression on 1:1 chains, junction floor re-enforcement)
 - **Diagnostics** — Outlier flagging (metadata only, no facc changes)
+
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    [*] --> Phase1a: v17b node data
+
+    state "Phase 1 — Topology-aware baseline correction" as P1 {
+        Phase1a: 1a: Node denoise
+        Phase1b: 1b: Topological single pass
+        Phase1c: 1c: MERIT UPA resampling
+        Phase1b_rerun: 1b (re-run on affected subgraph)
+
+        Phase1a --> Phase1b: baseline facc per reach
+        Phase1b --> Phase1c: corrected facc + T003 violations
+        Phase1c --> Phase1b_rerun: resampled baselines
+    }
+
+    state "Diagnostics" as Diag {
+        Flags: Tukey IQR + junction raise + 1:1 drop flags
+        note right of Flags: Metadata only — no facc changes
+    }
+
+    state "Phase 2 — Monotonicity enforcement" as P2 {
+        Phase2a: 2a: Isotonic regression (PAVA)
+        Phase2b: 2b: Junction floor re-enforcement
+
+        Phase2a --> Phase2b: monotonic 1:1 chains
+    }
+
+    P1 --> Diag: corrected facc
+    Diag --> P2: flagged reaches (unchanged facc)
+    P2 --> Validation: F006=0 guaranteed
+
+    state "Validation" as Validation {
+        F006check: F006 junction conservation = 0
+        T003flag: T003 remaining → flagged as metadata
+    }
+
+    Validation --> [*]: corrected facc + flags written to DB
+```
 
 #### Phase 1 — Topology-aware baseline correction
 
