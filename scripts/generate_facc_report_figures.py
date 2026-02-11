@@ -2,14 +2,18 @@
 """
 Generate figures for the facc correction technical report.
 
-Reads v3 correction CSVs from output/facc_detection/ and produces 4 figures:
-  1. v17b vs v17c scatter (log-log, colored by correction type)
+Reads v3 correction CSVs, summary JSONs, and DuckDB databases to produce
+4 figures demonstrating why v17b facc is broken and how v17c fixes it.
+
+  1. Before/after: junction conservation + bifurcation cloning (the core evidence)
   2. Correction type breakdown (stacked bar by region)
   3. Per-reach relative change distribution (histogram by region)
   4. Scalability comparison (conceptual diagram)
 
 Usage:
     python scripts/generate_facc_report_figures.py
+
+Requires: DuckDB files at data/duckdb/sword_v17b.duckdb and sword_v17c.duckdb
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import duckdb
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
@@ -25,6 +30,8 @@ import pandas as pd
 REGIONS = ["NA", "SA", "EU", "AF", "AS", "OC"]
 INPUT_DIR = Path("output/facc_detection")
 OUTPUT_DIR = Path("output/facc_detection/figures")
+V17B_DB = Path("data/duckdb/sword_v17b.duckdb")
+V17C_DB = Path("data/duckdb/sword_v17c.duckdb")
 
 # Consistent color palette for correction types
 TYPE_COLORS = {
@@ -51,6 +58,9 @@ TYPE_LABELS = {
     "upa_resample": "UPA re-sample",
     "t003_flagged_only": "T003 flagged only",
 }
+
+V17B_COLOR = "#C44E52"  # red for broken
+V17C_COLOR = "#4C72B0"  # blue for fixed
 
 
 def load_all_csvs() -> pd.DataFrame:
@@ -82,66 +92,191 @@ def load_summaries() -> dict:
     return summaries
 
 
-def fig1_scatter(df: pd.DataFrame) -> None:
-    """Fig 1: v17b vs v17c scatter, log-log, colored by correction type."""
-    fig, ax = plt.subplots(figsize=(8, 7))
+def _query_junction_conservation(db_path: Path) -> pd.DataFrame:
+    """Query junction conservation ratios from a DuckDB database."""
+    con = duckdb.connect(str(db_path), read_only=True)
+    try:
+        df = con.execute("""
+            WITH junction_upstream AS (
+                SELECT
+                    t.reach_id,
+                    r.facc as junction_facc,
+                    r.region,
+                    SUM(r2.facc) as sum_upstream_facc,
+                    COUNT(*) as n_upstream
+                FROM reach_topology t
+                JOIN reaches r ON t.reach_id = r.reach_id AND t.region = r.region
+                JOIN reaches r2 ON t.neighbor_reach_id = r2.reach_id AND t.region = r2.region
+                WHERE t.direction = 'up'
+                GROUP BY t.reach_id, r.facc, r.region
+                HAVING COUNT(*) >= 2
+            )
+            SELECT
+                reach_id, region, junction_facc, sum_upstream_facc, n_upstream,
+                CASE WHEN sum_upstream_facc > 0
+                     THEN junction_facc / sum_upstream_facc
+                     ELSE NULL END as conservation_ratio
+            FROM junction_upstream
+            WHERE sum_upstream_facc > 0
+        """).fetchdf()
+    finally:
+        con.close()
+    return df
 
-    # Plot unchanged reaches (not in corrections) as background reference
-    # We only have corrected reaches in the CSV, so plot them by type
 
-    # Filter to reaches with positive values on both axes
-    mask = (df["original_facc"] > 0) & (df["corrected_facc"] > 0)
-    plot_df = df[mask].copy()
+def _query_bifurc_children(db_path: Path) -> pd.DataFrame:
+    """Query bifurcation child/parent ratios from a DuckDB database."""
+    con = duckdb.connect(str(db_path), read_only=True)
+    try:
+        df = con.execute("""
+            WITH bifurc_children AS (
+                SELECT
+                    t.reach_id as parent_id,
+                    t.neighbor_reach_id as child_id,
+                    r_parent.facc as parent_facc,
+                    r_child.facc as child_facc,
+                    r_child.width as child_width,
+                    r_parent.region
+                FROM reach_topology t
+                JOIN reaches r_parent ON t.reach_id = r_parent.reach_id
+                    AND t.region = r_parent.region
+                JOIN reaches r_child ON t.neighbor_reach_id = r_child.reach_id
+                    AND t.region = r_child.region
+                WHERE t.direction = 'down'
+                AND t.reach_id IN (
+                    SELECT reach_id
+                    FROM reach_topology
+                    WHERE direction = 'down'
+                    GROUP BY reach_id
+                    HAVING COUNT(*) >= 2
+                )
+            )
+            SELECT *,
+                CASE WHEN parent_facc > 0
+                     THEN child_facc / parent_facc
+                     ELSE NULL END as child_parent_ratio
+            FROM bifurc_children
+            WHERE parent_facc > 0
+        """).fetchdf()
+    finally:
+        con.close()
+    return df
 
-    # Major correction types to show (combine minor ones)
-    major_types = [
-        "isotonic_regression",
-        "bifurc_share",
-        "junction_floor",
-        "junction_floor_post",
-        "lateral_lower",
-        "upa_resample",
-    ]
 
-    # Plot minor types first (background)
-    minor_mask = ~plot_df["correction_type"].isin(major_types)
-    if minor_mask.any():
-        ax.scatter(
-            plot_df.loc[minor_mask, "original_facc"],
-            plot_df.loc[minor_mask, "corrected_facc"],
-            s=3, alpha=0.3, c="#CCCCCC", label="Other", zorder=1,
-            rasterized=True,
-        )
+def fig1_before_after(
+    junc_v17b: pd.DataFrame,
+    junc_v17c: pd.DataFrame,
+    bifurc_v17b: pd.DataFrame,
+    bifurc_v17c: pd.DataFrame,
+) -> None:
+    """Fig 1: Before/after evidence — junction conservation + bifurcation cloning."""
+    fig, axes = plt.subplots(2, 2, figsize=(13, 10))
 
-    # Plot major types
-    for ctype in major_types:
-        sub = plot_df[plot_df["correction_type"] == ctype]
-        if len(sub) == 0:
-            continue
-        ax.scatter(
-            sub["original_facc"],
-            sub["corrected_facc"],
-            s=4, alpha=0.4,
-            c=TYPE_COLORS.get(ctype, "#999999"),
-            label=TYPE_LABELS.get(ctype, ctype),
-            zorder=2,
-            rasterized=True,
-        )
+    # ---- Top left: Junction conservation ratio histogram (v17b) ----
+    ax = axes[0][0]
+    ratios_b = junc_v17b["conservation_ratio"].dropna().clip(0, 3)
+    n_viol_b = (junc_v17b["conservation_ratio"].dropna() < 1.0).sum()
+    n_total_b = len(junc_v17b["conservation_ratio"].dropna())
 
-    # 1:1 reference line
-    lims = [1, max(plot_df["original_facc"].max(), plot_df["corrected_facc"].max()) * 1.5]
-    ax.plot(lims, lims, "k--", lw=1, alpha=0.5, zorder=3, label="1:1 line")
+    ax.hist(ratios_b, bins=120, color=V17B_COLOR, alpha=0.8, edgecolor="none")
+    ax.axvline(1.0, color="k", ls="--", lw=1.5, alpha=0.7)
+    ax.fill_betweenx([0, ax.get_ylim()[1] * 1.5], 0, 1.0, alpha=0.08, color=V17B_COLOR)
+    ax.set_xlim(0, 3)
+    ax.set_xlabel("junction facc / sum(upstream facc)", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title(
+        f"v17b: Junction Conservation\n"
+        f"{n_viol_b:,} / {n_total_b:,} junctions violate conservation "
+        f"({100*n_viol_b/n_total_b:.0f}%)",
+        fontsize=11, color=V17B_COLOR, fontweight="bold",
+    )
+    ax.text(
+        0.5, 0.85, "VIOLATION\nZONE",
+        transform=ax.transAxes, fontsize=14, color=V17B_COLOR,
+        alpha=0.3, ha="left", fontweight="bold",
+    )
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlim(1, lims[1])
-    ax.set_ylim(1, lims[1])
-    ax.set_xlabel("v17b facc (km$^2$)", fontsize=12)
-    ax.set_ylabel("v17c facc (km$^2$)", fontsize=12)
-    ax.set_title("Fig 1: v17b vs v17c Flow Accumulation (Corrected Reaches)", fontsize=13)
-    ax.legend(fontsize=8, loc="upper left", markerscale=3, framealpha=0.9)
-    ax.set_aspect("equal")
+    # ---- Top right: Junction conservation ratio histogram (v17c) ----
+    ax = axes[0][1]
+    ratios_c = junc_v17c["conservation_ratio"].dropna().clip(0, 3)
+    n_viol_c = (junc_v17c["conservation_ratio"].dropna() < (1.0 - 1e-3)).sum()
+    n_total_c = len(junc_v17c["conservation_ratio"].dropna())
 
+    ax.hist(ratios_c, bins=120, color=V17C_COLOR, alpha=0.8, edgecolor="none")
+    ax.axvline(1.0, color="k", ls="--", lw=1.5, alpha=0.7)
+    ax.fill_betweenx([0, ax.get_ylim()[1] * 1.5], 0, 1.0, alpha=0.08, color=V17C_COLOR)
+    ax.set_xlim(0, 3)
+    ax.set_xlabel("junction facc / sum(upstream facc)", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title(
+        f"v17c: Junction Conservation\n"
+        f"{n_viol_c:,} / {n_total_c:,} junctions violate conservation "
+        f"({100*n_viol_c/n_total_c:.1f}%)",
+        fontsize=11, color=V17C_COLOR, fontweight="bold",
+    )
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+
+    # ---- Bottom left: Bifurcation child/parent ratio (v17b) ----
+    ax = axes[1][0]
+    ratios_b = bifurc_v17b["child_parent_ratio"].dropna().clip(0, 2)
+    n_cloned_b = (
+        (bifurc_v17b["child_parent_ratio"].dropna() > 0.9)
+        & (bifurc_v17b["child_parent_ratio"].dropna() < 1.1)
+    ).sum()
+    n_bif_b = len(bifurc_v17b["child_parent_ratio"].dropna())
+
+    ax.hist(ratios_b, bins=100, color=V17B_COLOR, alpha=0.8, edgecolor="none")
+    ax.axvline(1.0, color="k", ls="--", lw=1.5, alpha=0.7, label="Ratio = 1.0 (cloned)")
+    # Shade the cloning zone
+    ax.axvspan(0.9, 1.1, alpha=0.15, color=V17B_COLOR)
+    ax.set_xlim(0, 2)
+    ax.set_xlabel("child facc / parent facc", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title(
+        f"v17b: Bifurcation Child/Parent Ratio\n"
+        f"{n_cloned_b:,} / {n_bif_b:,} children cloned at ratio ~1.0 "
+        f"({100*n_cloned_b/n_bif_b:.0f}%)",
+        fontsize=11, color=V17B_COLOR, fontweight="bold",
+    )
+    ax.text(
+        1.0, 0.85, "D8 CLONING\nPEAK",
+        transform=ax.transAxes, fontsize=12, color=V17B_COLOR,
+        alpha=0.4, ha="right", fontweight="bold",
+    )
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+
+    # ---- Bottom right: Bifurcation child/parent ratio (v17c) ----
+    ax = axes[1][1]
+    ratios_c = bifurc_v17c["child_parent_ratio"].dropna().clip(0, 2)
+    n_cloned_c = (
+        (bifurc_v17c["child_parent_ratio"].dropna() > 0.9)
+        & (bifurc_v17c["child_parent_ratio"].dropna() < 1.1)
+    ).sum()
+    n_bif_c = len(bifurc_v17c["child_parent_ratio"].dropna())
+    median_c = bifurc_v17c["child_parent_ratio"].dropna().median()
+
+    ax.hist(ratios_c, bins=100, color=V17C_COLOR, alpha=0.8, edgecolor="none")
+    ax.axvline(1.0, color="k", ls="--", lw=1.5, alpha=0.7)
+    ax.axvline(median_c, color=V17C_COLOR, ls="-", lw=2, alpha=0.8,
+               label=f"Median = {median_c:.2f}")
+    ax.axvspan(0.9, 1.1, alpha=0.08, color="#AAAAAA")
+    ax.set_xlim(0, 2)
+    ax.set_xlabel("child facc / parent facc", fontsize=10)
+    ax.set_ylabel("Count", fontsize=10)
+    ax.set_title(
+        f"v17c: Bifurcation Child/Parent Ratio\n"
+        f"Median = {median_c:.2f} (width-proportional split), "
+        f"only {n_cloned_c:,} near 1.0 ({100*n_cloned_c/n_bif_c:.1f}%)",
+        fontsize=11, color=V17C_COLOR, fontweight="bold",
+    )
+    ax.legend(fontsize=9, loc="upper right")
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+
+    fig.suptitle(
+        "Fig 1: v17b Has Systematic Errors — v17c Fixes Them",
+        fontsize=14, fontweight="bold", y=1.01,
+    )
     fig.tight_layout()
     out = OUTPUT_DIR / "report_fig1.png"
     fig.savefig(out, dpi=200, bbox_inches="tight")
@@ -151,7 +286,6 @@ def fig1_scatter(df: pd.DataFrame) -> None:
 
 def fig2_stacked_bar(summaries: dict) -> None:
     """Fig 2: Correction type breakdown, stacked bar by region."""
-    # Extract by_type counts from summaries
     type_order = [
         "bifurc_share",
         "lateral_lower",
@@ -207,11 +341,8 @@ def fig2_stacked_bar(summaries: dict) -> None:
 
 def fig3_change_distribution(df: pd.DataFrame) -> None:
     """Fig 3: Per-reach relative change distribution, faceted by region."""
-    # Filter to reaches with meaningful changes
     mask = (df["original_facc"] > 0) & (df["delta_pct"].notna()) & (df["delta_pct"].abs() < 1e6)
     plot_df = df[mask].copy()
-
-    # Clip extreme values for visualization
     plot_df["delta_pct_clipped"] = plot_df["delta_pct"].clip(-200, 200)
 
     regions_present = [r for r in REGIONS if r in plot_df["region"].values]
@@ -237,7 +368,6 @@ def fig3_change_distribution(df: pd.DataFrame) -> None:
         ax.set_ylabel("Count", fontsize=9)
         ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
-    # Hide unused axes
     for i in range(n, nrows * ncols):
         row, col = divmod(i, ncols)
         axes[row][col].set_visible(False)
@@ -255,14 +385,11 @@ def fig4_scalability(summaries: dict) -> None:
     """Fig 4: Scalability comparison — runtime and reach count."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Left panel: conceptual complexity comparison
     basin_sizes = [10, 50, 100, 500, 1000, 5000]
-    # Integrator: O(m^3) per basin, need to process ~N/m basins
-    # Pipeline: O(N) total
     N = 248674
 
-    integrator_ops = [m ** 3 * (N / m) for m in basin_sizes]  # total ops ~ N * m^2
-    pipeline_ops = [N] * len(basin_sizes)  # constant
+    integrator_ops = [m ** 3 * (N / m) for m in basin_sizes]
+    pipeline_ops = [N] * len(basin_sizes)
 
     ax1.plot(basin_sizes, integrator_ops, "o-", color="#C44E52", lw=2,
              label="Integrator (O(N*m$^2$) total)", markersize=6)
@@ -277,19 +404,17 @@ def fig4_scalability(summaries: dict) -> None:
     ax1.legend(fontsize=9, framealpha=0.9)
     ax1.grid(True, alpha=0.3)
 
-    # Right panel: actual corrections per region with reach context
     regions_present = [r for r in REGIONS if r in summaries]
     total_reaches = [summaries[r]["total_reaches"] for r in regions_present]
     corrections = [summaries[r]["corrections"] for r in regions_present]
     pct_corrected = [100 * c / t for c, t in zip(corrections, total_reaches)]
 
     x = np.arange(len(regions_present))
-    bars1 = ax2.bar(x - 0.2, total_reaches, 0.35, label="Total reaches",
-                    color="#4C72B0", alpha=0.7)
-    bars2 = ax2.bar(x + 0.2, corrections, 0.35, label="Corrections",
-                    color="#C44E52", alpha=0.7)
+    ax2.bar(x - 0.2, total_reaches, 0.35, label="Total reaches",
+            color="#4C72B0", alpha=0.7)
+    ax2.bar(x + 0.2, corrections, 0.35, label="Corrections",
+            color="#C44E52", alpha=0.7)
 
-    # Annotate with percentage
     for i, (xi, pct) in enumerate(zip(x, pct_corrected)):
         ax2.text(xi + 0.2, corrections[i] + 500, f"{pct:.0f}%",
                  ha="center", va="bottom", fontsize=8, color="#C44E52")
@@ -321,8 +446,25 @@ def main():
     summaries = load_summaries()
     print(f"  {len(summaries)} region summaries loaded")
 
+    # Query DuckDB for before/after evidence
+    print("\nQuerying junction conservation from v17b...")
+    junc_v17b = _query_junction_conservation(V17B_DB)
+    print(f"  {len(junc_v17b):,} junctions")
+
+    print("Querying junction conservation from v17c...")
+    junc_v17c = _query_junction_conservation(V17C_DB)
+    print(f"  {len(junc_v17c):,} junctions")
+
+    print("Querying bifurcation children from v17b...")
+    bifurc_v17b = _query_bifurc_children(V17B_DB)
+    print(f"  {len(bifurc_v17b):,} children")
+
+    print("Querying bifurcation children from v17c...")
+    bifurc_v17c = _query_bifurc_children(V17C_DB)
+    print(f"  {len(bifurc_v17c):,} children")
+
     print("\nGenerating figures...")
-    fig1_scatter(df)
+    fig1_before_after(junc_v17b, junc_v17c, bifurc_v17b, bifurc_v17c)
     fig2_stacked_bar(summaries)
     fig3_change_distribution(df)
     fig4_scalability(summaries)

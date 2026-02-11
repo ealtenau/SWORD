@@ -146,8 +146,8 @@ Our junction rule `corrected = sum(corrected_upstream) + max(base - sum(base_ups
 
 ## 5. Global Results
 
-![Fig 1: v17b vs v17c Flow Accumulation](../output/facc_detection/figures/report_fig1.png)
-*Figure 1. v17b vs v17c facc for all corrected reaches (log-log). Most points cluster near the 1:1 line. Bifurcation children (red) fall below the line; junction floors (green/purple) rise above it. Isotonic regression adjustments (blue) span both directions.*
+![Fig 1: Before/After Evidence](../output/facc_detection/figures/report_fig1.png)
+*Figure 1. Before/after evidence that v17c corrections fix real errors. Top row: junction conservation (facc / sum of upstream facc) — v17b has ~51% of junctions violating conservation (ratio < 1.0); v17c has effectively 0 violations. Bottom row: bifurcation child/parent ratio — v17b shows a D8 cloning peak at ratio ~1.0 (every child gets full parent facc); v17c shifts the median to ~0.47 (width-proportional splitting).*
 
 Data from v3 summary JSONs (all regions applied):
 
