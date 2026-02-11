@@ -82,6 +82,17 @@ The approach requires manual basin delineation, junction identification, and con
 
 Both approaches enforce conservation (downstream facc >= sum of upstream facc) and non-negativity (no negative incremental drainage). We achieve this via a topological-order single-pass algorithm that processes the entire global network without manual basin setup.
 
+### Lint Checks Referenced
+
+The pipeline targets specific violations detected by our lint framework (see Section 6 for full results):
+
+| Check | What it tests |
+|-------|---------------|
+| **T003** | Facc monotonicity — downstream facc < upstream facc on non-bifurcation edges |
+| **F006** | Junction conservation — facc < sum(upstream facc) at junctions with 2+ inputs |
+| **F007** | Bifurcation balance — children facc don't sum to parent facc |
+| **F012** | Non-negative incremental area — facc < sum(upstream facc) at any reach |
+
 ### Pipeline Phases
 
 The pipeline has two correction phases plus a diagnostic step:
