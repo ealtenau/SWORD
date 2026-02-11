@@ -86,7 +86,7 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 The pipeline has two correction phases plus a diagnostic step:
 
-- **Phase 1** — Topology-aware baseline correction (node initialization, topological pass, optional MERIT resampling)
+- **Phase 1** — Topology-aware baseline correction (node initialization, topological pass, MERIT UPA resampling)
 - **Phase 2** — Monotonicity enforcement (isotonic regression on 1:1 chains, junction floor re-enforcement)
 - **Diagnostics** — Outlier flagging (metadata only, no facc changes)
 
@@ -168,19 +168,19 @@ The lateral is zero here because Reach X's baseline (410K) is less than the pare
 
 **After Phase 1b**, bifurcation children have width-proportional shares instead of cloned UPA values, junctions satisfy conservation (facc >= sum of upstream), and lowered values have propagated through 1:1 chains. However, residual UPA noise remains: some 1:1 links still have downstream facc < upstream facc (monotonicity violations) from raster-vector misalignment that Phase 1a didn't catch, and some junctions may be over-floored by partially inflated upstream branches. Phase 1c (optional) and Phase 2 address these residuals.
 
-##### Phase 1c — Optional: MERIT UPA resampling
+##### Phase 1c — MERIT UPA resampling
 
-When MERIT Hydro rasters are available, Phase 1c targets remaining T003 violations on 1:1 links — reaches where downstream facc < upstream facc after Phase 1b. For each violating downstream reach, the pipeline tries three strategies to find a better UPA value:
+Phase 1c targets remaining T003 violations on 1:1 links — reaches where downstream facc < upstream facc after Phase 1b. For each violating downstream reach, the pipeline tries three strategies to find a better UPA value:
 
-1. **D8 walk A** (primary): From the downstream reach's upstream endpoint, walk downstream along MERIT's D8 flow direction for up to 150 cells (~13.5 km at 90m resolution). This snaps to MERIT's actual thalweg, bypassing the offset between SWORD's junction point and MERIT's confluence cell.
-2. **D8 walk B** (secondary): Same walk from the upstream reach's downstream endpoint — covers the other side of the junction.
-3. **Radial buffer** (fallback): If neither D8 walk fixes monotonicity, sample UPA in a buffer (500m–5km, scaled to reach width) around the junction point.
+1. **UPA walk A** (primary): From the downstream reach's upstream endpoint, walk downstream along MERIT's D8 flow direction for up to 150 cells (~13.5 km at 90m resolution). This snaps to MERIT's actual thalweg, bypassing the offset between SWORD's junction point and MERIT's confluence cell.
+2. **UPA walk B** (secondary): Same walk from the upstream reach's downstream endpoint — covers the other side of the junction.
+3. **Radial buffer** (fallback): If neither UPA walk fixes monotonicity, sample UPA in a buffer (500m–5km, scaled to reach width) around the junction point.
 
 The selection rule: pick the **minimum UPA >= corrected upstream** (fixes the violation with least distortion). If none exceeds the target, pick the maximum candidate (reduces the gap).
 
 After resampling, the updated baseline values feed a **re-run of Phase 1b** on the affected downstream subgraph — all reaches downstream of any resampled reach are re-processed in topological order to propagate the improved values.
 
-This phase is **optional**: it is skipped in dry-run mode or when MERIT raster paths are not provided. Globally, ~1,651 reaches are resampled (`upa_resample` correction type).
+Globally, ~1,651 reaches are resampled (`upa_resample` correction type).
 
 #### Key Innovation: Asymmetric Propagation
 

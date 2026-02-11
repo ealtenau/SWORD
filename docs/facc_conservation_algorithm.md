@@ -394,20 +394,18 @@ for node in topological_order:
     1:1 raised:    base  (no propagation)
 ```
 
-##### Phase 1c: T003-targeted MERIT re-sampling (D8 walk) — optional
+##### Phase 1c: T003-targeted MERIT UPA re-sampling
 
 For each 1:1 T003 violation (downstream facc < upstream on non-bifurcation edge):
 
-1. **Dual-endpoint D8 walk** (primary): Walk downstream along MERIT's D8 flow direction from two starting points — the downstream reach's upstream endpoint (walk A) and the upstream reach's downstream endpoint (walk B). Up to 150 steps (~13.5km at 90m). Picks the first UPA value >= target, or the max found.
-2. **Radial buffer** (fallback): If neither D8 walk fixes the violation, sample UPA in a buffer around the junction point.
+1. **Dual-endpoint UPA walk** (primary): Walk downstream along MERIT's D8 flow direction from two starting points — the downstream reach's upstream endpoint (walk A) and the upstream reach's downstream endpoint (walk B). Up to 150 steps (~13.5km at 90m). Picks the first UPA value >= target, or the max found.
+2. **Radial buffer** (fallback): If neither UPA walk fixes the violation, sample UPA in a buffer around the junction point.
 
 This "snaps" to MERIT's actual thalweg, solving structural offset between SWORD junctions and MERIT confluences. Walk A fixes ~770 violations; walk B adds ~3 more fixes and 145 gap reductions.
 
 Selection rule: pick the **minimum UPA >= corrected upstream** (least distortion fix). If none exceeds the target, pick the maximum candidate (reduces the gap).
 
-After resampling, re-runs Phase 1b on all reaches downstream of resampled ones to propagate improved values.
-
-This phase is **optional**: skipped in dry-run mode or when MERIT raster paths are not provided. Globally, ~1,651 reaches are resampled.
+After resampling, re-runs Phase 1b on all reaches downstream of resampled ones to propagate improved values. Globally, ~1,651 reaches are resampled.
 
 #### Diagnostics: Outlier detection (log-space, Tukey IQR)
 
