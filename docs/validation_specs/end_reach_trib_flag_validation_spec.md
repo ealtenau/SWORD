@@ -18,10 +18,12 @@ This document provides a comprehensive audit of the `end_reach` (end_rch) and `t
 
 | Value | Meaning | Topological Implication |
 |-------|---------|------------------------|
-| 0 | Normal main stem reach | Has both upstream AND downstream neighbors |
+| 0 | Normal main stem reach | Has both upstream AND downstream neighbors, single in each direction |
 | 1 | Headwater | No upstream neighbors (n_rch_up = 0) |
 | 2 | Outlet | No downstream neighbors (n_rch_down = 0) |
-| 3 | Junction | Multiple upstream neighbors (n_rch_up > 1) |
+| 3 | Junction | Multiple upstream OR downstream neighbors (n_rch_up > 1 OR n_rch_down > 1) |
+
+> **v17c note:** In v17b, junction (3) included both confluences (n_rch_up > 1) and bifurcation points (n_rch_down > 1). See Section 1.10 for details.
 
 ### 1.3 Source and Derivation
 
@@ -116,10 +118,48 @@ Nodes inherit `end_reach` from their parent reach.
 | R2 | end_reach=2 implies n_rch_down=0 | Outlets have no downstream |
 | R3 | n_rch_up=0 implies end_reach=1 | All reaches with no upstream should be headwaters |
 | R4 | n_rch_down=0 implies end_reach=2 | All reaches with no downstream should be outlets |
-| R5 | n_rch_up > 1 implies end_reach=3 | Junctions have multiple upstream |
-| R6 | end_reach=0 implies n_rch_up >= 1 AND n_rch_down >= 1 | Main reaches have both neighbors |
+| R5 | n_rch_up > 1 OR n_rch_down > 1 implies end_reach=3 | Junctions have multiple upstream or downstream |
+| R6 | end_reach=0 implies n_rch_up = 1 AND n_rch_down = 1 | Main reaches have exactly one neighbor in each direction |
 
-### 1.8 Current Lint Check
+### 1.8 v17c Recomputation (2026-02-11)
+
+**What was done:** end_reach was recomputed from the `reach_topology` table for all 6 regions in v17c using:
+
+```
+headwater (1): n_rch_up = 0
+outlet    (2): n_rch_down = 0
+junction  (3): n_rch_up > 1 OR n_rch_down > 1
+main      (0): everything else
+```
+
+Priority: headwater/outlet override junction (a reach with no upstream is always headwater, even if n_down > 1).
+
+**Reaches excluded:** type IN (5, 6) — unreliable topology and ghost reaches.
+
+**What changed from v17b:**
+
+| Region | Total changed | Dominant transition |
+|--------|--------------|---------------------|
+| NA | ~4,600 | 3→0 (junction→main) |
+| SA | ~5,600 | 3→0 |
+| EU | ~3,000 | 3→0 |
+| AF | ~2,200 | 3→0 |
+| AS | ~13,800 | 3→0 |
+| OC | ~1,400 | 3→0 |
+
+**~63% of v17b's junctions were "phantom junctions"** — reaches labeled `end_reach=3` but with `n_rch_up=1, n_rch_down=1` in both the `reach_topology` table and the `n_rch_up`/`n_rch_down` columns. This ratio was consistent across all 6 regions (62.7–63.9%).
+
+**Analysis:** The `n_rch_up`/`n_rch_down` columns (imported from NetCDF) match the `reach_topology` table counts exactly — so the topology table is not missing connections. UNC's original `end_reach` computation used a criterion we don't have access to, possibly from the pre-SWORD river network or an intermediate topology representation. The `trib_flag` column does NOT explain the phantom junctions (only ~4% have `trib_flag=1`).
+
+**Decision:** We chose to make end_reach consistent with the topology table we have. The v17b phantom junction labels were opaque and not reproducible from any data in our possession. This is a known divergence from v17b.
+
+**Code inconsistency found:**
+- `reconstruction.py:_reconstruct_reach_end_reach` — uses `n_up > 1` only (misses bifurcations). **Bug — does not match v17c applied fix.**
+- `reactive.py:_recalc_reach_end_rch` — uses `n_up > 1 OR n_down > 1`. **Correct.**
+
+The reconstruction function should be updated to match the reactive version if it is ever used again.
+
+### 1.9 Current Lint Check
 
 **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py`
 
@@ -347,8 +387,8 @@ Ghost reaches should have trib_flag=0 since they are not real flow-carrying segm
 | FM2 | end_reach=2 but n_rch_down > 0 | Topology update without end_reach recalc | ERROR |
 | FM3 | end_reach=0 but n_rch_up=0 | Missing headwater classification | WARNING |
 | FM4 | end_reach=0 but n_rch_down=0 | Missing outlet classification | WARNING |
-| FM5 | end_reach=3 but n_rch_up <= 1 | Stale junction classification | WARNING |
-| FM6 | n_rch_up > 1 but end_reach != 3 | Missing junction classification | WARNING |
+| FM5 | end_reach=3 but n_rch_up <= 1 AND n_rch_down <= 1 | Phantom junction (v17b legacy, see Section 1.8) | INFO |
+| FM6 | n_rch_up > 1 or n_rch_down > 1 but end_reach != 3 | Missing junction classification | WARNING |
 | FM7 | trib_flag conflation | Using n_rch_up > 1 instead of MERIT Hydro | DATA_QUALITY |
 | FM8 | Ghost reach with end_reach != 0 | Ghost misclassification | INFO |
 
@@ -435,9 +475,10 @@ def check_ghost_reach_classification(conn, region=None, threshold=None):
 | Source | Computed from topology (n_rch_up, n_rch_down) |
 | Values | 0=main, 1=headwater, 2=outlet, 3=junction |
 | Derivation | Graph traversal of reach_topology table |
-| Code | `reconstruction.py:_reconstruct_reach_end_reach` (lines 2438-2491) |
-| Lint Check | A010 (WARNING) - partial coverage |
-| Gap | Missing junction (n_rch_up > 1) validation |
+| Code | `reconstruction.py:_reconstruct_reach_end_reach` (lines 2438-2491) — **has bug, uses n_up>1 only** |
+| Reactive | `reactive.py:_recalc_reach_end_rch` (lines 583-610) — **correct, uses n_up>1 OR n_down>1** |
+| Lint Check | A010 (WARNING) — checks headwater/outlet consistency |
+| v17c Status | Recomputed 2026-02-11, 0 A010 violations globally. ~30k labels changed from v17b (phantom junctions). |
 
 ### trib_flag
 

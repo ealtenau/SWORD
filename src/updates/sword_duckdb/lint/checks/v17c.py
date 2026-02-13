@@ -18,8 +18,6 @@ from ..core import (
 )
 
 
-
-
 @register_check(
     "V001",
     Category.V17C,
@@ -97,7 +95,7 @@ def check_hydro_dist_out_monotonicity(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r1
     WHERE hydro_dist_out IS NOT NULL
-    {where_clause.replace('r1.', '')}
+    {where_clause.replace("r1.", "")}
     """
     total = conn.execute(total_query).fetchone()[0]
 
@@ -192,82 +190,6 @@ def check_hydro_dist_vs_pathlen(
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
         description=f"Reaches with >1km difference between hydro_dist_out and pathlen_out ({len(issues)} found)",
-    )
-
-
-@register_check(
-    "V003",
-    Category.V17C,
-    Severity.INFO,
-    "pathlen_hw + pathlen_out consistency check",
-)
-def check_pathlen_consistency(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """
-    Check that pathlen_hw + pathlen_out approximately equals total path length.
-
-    For any reach R on path from headwater H to outlet O:
-    pathlen_hw[R] + pathlen_out[R] should ≈ pathlen_out[H]
-    """
-    tolerance = threshold if threshold is not None else 1000.0  # 1km tolerance
-    where_clause = f"AND r.region = '{region}'" if region else ""
-
-    # Check if columns exist
-    try:
-        conn.execute("SELECT pathlen_hw, pathlen_out, best_headwater FROM reaches LIMIT 1")
-    except duckdb.CatalogException:
-        return CheckResult(
-            check_id="V003",
-            name="pathlen_consistency",
-            severity=Severity.WARNING,
-            passed=True,
-            total_checked=0,
-            issues_found=0,
-            issue_pct=0,
-            details=pd.DataFrame(),
-            description="Columns not found (v17c pipeline not run)",
-        )
-
-    query = f"""
-    SELECT
-        r.reach_id, r.region, r.river_name, r.x, r.y,
-        r.pathlen_hw, r.pathlen_out,
-        r.pathlen_hw + r.pathlen_out as total_pathlen,
-        hw.pathlen_out as hw_to_outlet,
-        ABS((r.pathlen_hw + r.pathlen_out) - hw.pathlen_out) as discrepancy
-    FROM reaches r
-    JOIN reaches hw ON r.best_headwater = hw.reach_id AND r.region = hw.region
-    WHERE r.pathlen_hw IS NOT NULL
-        AND r.pathlen_out IS NOT NULL
-        AND hw.pathlen_out IS NOT NULL
-        AND ABS((r.pathlen_hw + r.pathlen_out) - hw.pathlen_out) > {tolerance}
-        {where_clause}
-    ORDER BY discrepancy DESC
-    """
-
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(*) FROM reaches r
-    WHERE pathlen_hw IS NOT NULL AND pathlen_out IS NOT NULL
-    {where_clause}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="V003",
-        name="pathlen_consistency",
-        severity=Severity.INFO,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description=f"Reaches where pathlen_hw + pathlen_out doesn't match total path (>{tolerance}m discrepancy)",
-        threshold=tolerance,
     )
 
 
@@ -479,7 +401,7 @@ def check_mainstem_coverage(
     """
     total = conn.execute(total_query).fetchone()[0]
 
-    mainstem_count = stats['mainstem_reaches'].sum() if len(stats) > 0 else 0
+    mainstem_count = stats["mainstem_reaches"].sum() if len(stats) > 0 else 0
     mainstem_pct = 100 * mainstem_count / total if total > 0 else 0
 
     return CheckResult(

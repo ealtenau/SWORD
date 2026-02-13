@@ -5,18 +5,28 @@ SWORD Lint - Facc Checks (F0xx)
 Validates flow accumulation (facc) values post-conservation-correction.
 
 Checks:
-  F001 - facc/width ratio anomaly (MERIT entry point corruption)
+  F001 - facc/width ratio anomaly — WARNING (threshold 50k post-propagation)
   F002 - facc jump ratio (entry point detection)
-  F004 - facc vs reach accumulation mismatch — INFO (structural D8/vector noise)
   F006 - junction conservation (facc < sum upstream at 2+ input junctions) — ERROR
-  F011 - 1:1 link monotonicity (facc drop on single-upstream links) — INFO
-  F007 - bifurcation balance (children sum / parent ratio) — INFO (expected post-correction)
-  F008 - bifurcation surplus (child facc > parent facc) — WARNING
   F009 - facc_quality tag coverage — INFO
   F010 - junction-raise drop (raised junction → unchanged downstream) — INFO
+  F011 - 1:1 link monotonicity (facc drop on single-upstream links) — INFO
   F012 - incremental area non-negativity (junctions only) — ERROR
-  F013 - incremental area Tukey IQR outlier — INFO (statistical, not a violation)
 Removed:
+  F013 - incremental area Tukey IQR outlier — removed because Tukey IQR on
+         fat-tailed drainage-area distribution flags 6% as "outliers" — just
+         the natural tail, not meaningful signal.
+  F004 - facc vs reach accumulation mismatch — removed because regional-median
+         heuristic is meaningless after topology-driven propagation rewrites
+         facc values network-wide.
+  F007 - bifurcation balance — removed because all flagged cases are junction
+         children that correctly receive additional tributary flow. Pure
+         bifurcations are perfectly balanced (0/2816 violated).
+  F008 - bifurcation child surplus — removed because all cases are junction
+         children (170/171) or FP rounding (1/171). Expected behavior.
+  F014 - facc vs node-level consistency — removed because topology-driven
+         propagation intentionally overrides raw D8 node samples. Comparing
+         reach facc against node MAX is circular after the denoise pipeline.
   F015 - junction surplus — removed because surplus = lateral drainage from
          unmapped tributaries, not a violation.
   F003 - bifurcation divergence — removed because post-correction children
@@ -28,7 +38,6 @@ Removed:
 from typing import Optional
 
 import duckdb
-import numpy as np
 import pandas as pd
 
 from ..core import (
@@ -44,7 +53,7 @@ from ..core import (
     Category.ATTRIBUTES,
     Severity.WARNING,
     "Facc/width ratio anomaly detection",
-    default_threshold=5000.0,
+    default_threshold=50000.0,
 )
 def check_facc_width_ratio_anomaly(
     conn: duckdb.DuckDBPyConnection,
@@ -54,10 +63,11 @@ def check_facc_width_ratio_anomaly(
     """
     Check for reaches with suspiciously high facc/width ratio.
 
-    Reaches with facc/width > 5000 are likely corrupted entry points
-    where bad facc enters the network from MERIT Hydro.
+    After topology-driven propagation, large downstream rivers normally have
+    high facc/width (~p99=21k, p99.5=39k). Threshold set to 50,000 to flag
+    only genuine outliers (0.4% of reaches) rather than normal big rivers.
     """
-    ratio_threshold = threshold if threshold is not None else 5000.0
+    ratio_threshold = threshold if threshold is not None else 50000.0
     where_clause = f"AND r.region = '{region}'" if region else ""
 
     query = f"""
@@ -165,7 +175,7 @@ def check_facc_jump_ratio(
     JOIN reaches r ON rt.reach_id = r.reach_id AND rt.region = r.region
     WHERE rt.direction = 'up'
         AND r.facc > 0 AND r.facc != -9999
-    {where_clause.replace('r.', 'rt.') if where_clause else ''}
+    {where_clause.replace("r.", "rt.") if where_clause else ""}
     """
     total = conn.execute(total_query).fetchone()[0]
 
@@ -180,94 +190,6 @@ def check_facc_jump_ratio(
         details=issues,
         description=f"Reaches where facc > {jump_threshold}x upstream sum (entry points)",
         threshold=jump_threshold,
-    )
-
-
-@register_check(
-    "F004",
-    Category.ATTRIBUTES,
-    Severity.INFO,
-    "Facc vs reach accumulation mismatch",
-    default_threshold=10.0,
-)
-def check_facc_reach_acc_ratio(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """
-    Check for reaches where facc doesn't match topology-based reach accumulation.
-
-    facc should scale with number of upstream reaches. If a reach has few
-    upstream reaches but huge facc (or vice versa), facc is likely corrupted.
-    """
-    ratio_threshold = threshold if threshold is not None else 10.0
-    where_clause = f"WHERE r.region = '{region}'" if region else ""
-    topo_where = f"WHERE rt.region = '{region}'" if region else ""
-
-    query = f"""
-    WITH upstream_counts AS (
-        SELECT
-            rt.reach_id,
-            rt.region,
-            COUNT(*) as n_upstream
-        FROM reach_topology rt
-        WHERE rt.direction = 'up' {topo_where.replace('WHERE', 'AND') if topo_where else ''}
-        GROUP BY rt.reach_id, rt.region
-    ),
-    regional_baseline AS (
-        SELECT
-            r.region,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY r.facc / GREATEST(COALESCE(uc.n_upstream, 0) + 1, 1)) as median_facc_per_upstream
-        FROM reaches r
-        LEFT JOIN upstream_counts uc ON r.reach_id = uc.reach_id AND r.region = uc.region
-        WHERE r.facc > 0 AND r.facc != -9999
-            AND r.facc / GREATEST(COALESCE(uc.n_upstream, 0) + 1, 1) < 1000000
-        GROUP BY r.region
-    )
-    SELECT
-        r.reach_id,
-        r.region,
-        r.river_name,
-        r.x, r.y,
-        r.facc,
-        COALESCE(uc.n_upstream, 0) + 1 as reach_count,
-        rb.median_facc_per_upstream * (COALESCE(uc.n_upstream, 0) + 1) as expected_facc,
-        r.facc / NULLIF(rb.median_facc_per_upstream * (COALESCE(uc.n_upstream, 0) + 1), 0) as facc_reach_ratio,
-        r.width,
-        r.stream_order
-    FROM reaches r
-    LEFT JOIN upstream_counts uc ON r.reach_id = uc.reach_id AND r.region = uc.region
-    JOIN regional_baseline rb ON r.region = rb.region
-    WHERE r.facc > 0 AND r.facc != -9999
-        AND r.facc / NULLIF(rb.median_facc_per_upstream * (COALESCE(uc.n_upstream, 0) + 1), 0) > {ratio_threshold}
-    {where_clause.replace('WHERE', 'AND') if where_clause else ''}
-    ORDER BY r.facc / NULLIF(rb.median_facc_per_upstream * (COALESCE(uc.n_upstream, 0) + 1), 0) DESC
-    """
-
-    try:
-        issues = conn.execute(query).fetchdf()
-    except Exception:
-        issues = pd.DataFrame()
-
-    total_query = f"""
-    SELECT COUNT(*) FROM reaches r
-    WHERE r.facc > 0 AND r.facc != -9999
-    {where_clause.replace('WHERE', 'AND') if where_clause else ''}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="F004",
-        name="facc_reach_acc_ratio",
-        severity=Severity.INFO,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description=f"Reaches where facc > {ratio_threshold}x expected from topology",
-        threshold=ratio_threshold,
     )
 
 
@@ -457,188 +379,6 @@ def check_facc_link_monotonicity(
 
 
 @register_check(
-    "F007",
-    Category.ATTRIBUTES,
-    Severity.INFO,
-    "Bifurcation balance (children sum vs parent)",
-    default_threshold=0.10,
-)
-def check_bifurcation_balance(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """
-    At bifurcations, children's facc should sum to approximately parent's facc.
-
-    After width-proportional splitting, sum(child_facc) / parent_facc should
-    be close to 1.0. Deviations indicate incomplete correction.
-
-    Threshold (default 0.10) controls how far from 1.0 is acceptable:
-    flags bifurcations where |ratio - 1.0| > threshold AND ratio > 1 + threshold
-    (only flags over-splits since under-splits are handled by local drainage).
-    """
-    tol = threshold if threshold is not None else 0.10
-    where_clause = f"AND r_parent.region = '{region}'" if region else ""
-
-    query = f"""
-    WITH bifurc_children AS (
-        SELECT
-            rt.reach_id as parent_id,
-            r_parent.region,
-            r_parent.facc as parent_facc,
-            r_parent.river_name,
-            r_parent.x, r_parent.y,
-            rt.neighbor_reach_id as child_id,
-            r_child.facc as child_facc,
-            r_child.width as child_width
-        FROM reach_topology rt
-        JOIN reaches r_parent ON rt.reach_id = r_parent.reach_id
-            AND rt.region = r_parent.region
-        JOIN reaches r_child ON rt.neighbor_reach_id = r_child.reach_id
-            AND rt.region = r_child.region
-        WHERE rt.direction = 'down'
-            AND r_parent.n_rch_down >= 2
-            AND r_parent.facc > 0 AND r_parent.facc != -9999
-            AND r_child.facc > 0 AND r_child.facc != -9999
-            {where_clause}
-    ),
-    bifurc_summary AS (
-        SELECT
-            parent_id,
-            region,
-            parent_facc,
-            river_name,
-            x, y,
-            SUM(child_facc) as child_sum_facc,
-            COUNT(*) as n_children,
-            SUM(child_facc) / parent_facc as balance_ratio
-        FROM bifurc_children
-        GROUP BY parent_id, region, parent_facc, river_name, x, y
-    )
-    SELECT
-        parent_id as reach_id,
-        region,
-        river_name,
-        x, y,
-        parent_facc,
-        child_sum_facc,
-        n_children,
-        ROUND(balance_ratio, 4) as balance_ratio
-    FROM bifurc_summary
-    WHERE balance_ratio > 1.0 + {tol}
-    ORDER BY balance_ratio DESC
-    """
-
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(*) FROM reaches r_parent
-    WHERE r_parent.n_rch_down >= 2
-        AND r_parent.facc > 0 AND r_parent.facc != -9999
-        {where_clause}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="F007",
-        name="bifurcation_balance",
-        severity=Severity.INFO,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description=(
-            f"Bifurcations where sum(child facc) / parent facc > {1.0 + tol:.2f} "
-            f"(D8 cloning not fully corrected)"
-        ),
-        threshold=tol,
-    )
-
-
-@register_check(
-    "F008",
-    Category.ATTRIBUTES,
-    Severity.WARNING,
-    "Bifurcation child facc exceeds parent",
-    default_threshold=1.05,
-)
-def check_bifurcation_child_surplus(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """
-    No bifurcation child should have facc > parent (D8 cloning artifact).
-
-    After conservation correction, every child at a bifurcation should have
-    facc <= parent_facc. A child with facc > parent means D8 cloned the
-    full parent value and the correction missed it.
-
-    Threshold (default 1.05) allows 5% tolerance for local drainage.
-    """
-    ratio_threshold = threshold if threshold is not None else 1.05
-    where_clause = f"AND r_parent.region = '{region}'" if region else ""
-
-    query = f"""
-    SELECT
-        r_child.reach_id,
-        r_child.region,
-        r_child.river_name,
-        r_child.x, r_child.y,
-        r_child.facc as child_facc,
-        r_parent.reach_id as parent_reach_id,
-        r_parent.facc as parent_facc,
-        r_child.facc / r_parent.facc as child_parent_ratio,
-        r_child.width as child_width,
-        r_parent.n_rch_down
-    FROM reach_topology rt
-    JOIN reaches r_parent ON rt.reach_id = r_parent.reach_id
-        AND rt.region = r_parent.region
-    JOIN reaches r_child ON rt.neighbor_reach_id = r_child.reach_id
-        AND rt.region = r_child.region
-    WHERE rt.direction = 'down'
-        AND r_parent.n_rch_down >= 2
-        AND r_parent.facc > 0 AND r_parent.facc != -9999
-        AND r_child.facc > 0 AND r_child.facc != -9999
-        AND r_child.facc / r_parent.facc > {ratio_threshold}
-        {where_clause}
-    ORDER BY r_child.facc / r_parent.facc DESC
-    """
-
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(*)
-    FROM reach_topology rt
-    JOIN reaches r_parent ON rt.reach_id = r_parent.reach_id
-        AND rt.region = r_parent.region
-    WHERE rt.direction = 'down'
-        AND r_parent.n_rch_down >= 2
-        AND r_parent.facc > 0 AND r_parent.facc != -9999
-        {where_clause}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="F008",
-        name="bifurcation_child_surplus",
-        severity=Severity.WARNING,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description=(
-            f"Bifurcation children where child_facc / parent_facc > {ratio_threshold} "
-            f"(uncorrected D8 clone)"
-        ),
-        threshold=ratio_threshold,
-    )
-
-
-@register_check(
     "F009",
     Category.ATTRIBUTES,
     Severity.INFO,
@@ -696,7 +436,11 @@ def check_facc_quality_coverage(
     total_query = f"SELECT COUNT(*) FROM reaches r {where_clause}"
     total = conn.execute(total_query).fetchone()[0]
 
-    tagged = total - int(details[details["facc_quality"] == "untagged"]["reach_count"].sum()) if "untagged" in details["facc_quality"].values else total
+    tagged = (
+        total - int(details[details["facc_quality"] == "untagged"]["reach_count"].sum())
+        if "untagged" in details["facc_quality"].values
+        else total
+    )
 
     return CheckResult(
         check_id="F009",
@@ -900,105 +644,3 @@ def check_incremental_area_nonneg(
         ),
         threshold=epsilon,
     )
-
-
-@register_check(
-    "F013",
-    Category.ATTRIBUTES,
-    Severity.INFO,
-    "Incremental area Tukey IQR outlier (correction magnitude)",
-    default_threshold=1.5,
-)
-def check_incremental_area_outlier(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """
-    Flag reaches whose incremental area is a Tukey IQR outlier.
-
-    Mirrors the iterative Tukey IQR downweighting in the CVXPY integrator's
-    ``fix_drainage_area()`` — outliers in ``rel_change`` distribution get
-    epsilon weight.
-
-    Computes incremental_area = facc - sum(upstream facc) for all non-headwater
-    reaches (those with at least 1 upstream neighbor). Then applies log transform
-    and Tukey fences: Q1 - k*IQR .. Q3 + k*IQR where k = threshold (default 1.5).
-
-    Only checks reaches with positive incremental area (headwaters with 0
-    upstream are excluded since they have no meaningful incremental value).
-    """
-    k = threshold if threshold is not None else 1.5
-    where_clause = f"AND r.region = '{region}'" if region else ""
-
-    # Step 1: compute incremental areas in SQL
-    incr_query = f"""
-    WITH upstream_facc AS (
-        SELECT rt.reach_id, rt.region,
-               SUM(r_up.facc) as upstream_facc_sum,
-               COUNT(*) as n_upstream
-        FROM reach_topology rt
-        JOIN reaches r_up ON rt.neighbor_reach_id = r_up.reach_id
-            AND rt.region = r_up.region
-        WHERE rt.direction = 'up'
-          AND r_up.facc > 0 AND r_up.facc != -9999
-        GROUP BY rt.reach_id, rt.region
-    )
-    SELECT r.reach_id, r.region, r.river_name, r.x, r.y,
-           r.facc, uf.upstream_facc_sum,
-           r.facc - uf.upstream_facc_sum as incremental_area,
-           uf.n_upstream, r.width, r.stream_order
-    FROM reaches r
-    JOIN upstream_facc uf ON r.reach_id = uf.reach_id AND r.region = uf.region
-    WHERE r.facc > 0 AND r.facc != -9999
-      AND (r.facc - uf.upstream_facc_sum) > 0
-      {where_clause}
-    """
-
-    df = conn.execute(incr_query).fetchdf()
-
-    if len(df) == 0:
-        return CheckResult(
-            check_id="F013",
-            name="incremental_area_outlier",
-            severity=Severity.INFO,
-            passed=True,
-            total_checked=0,
-            issues_found=0,
-            issue_pct=0,
-            details=pd.DataFrame(),
-            description="No reaches with positive incremental area to check",
-            threshold=k,
-        )
-
-    # Step 2: Tukey IQR on log(incremental_area)
-    log_incr = np.log(df["incremental_area"].values)
-    q1 = np.percentile(log_incr, 25)
-    q3 = np.percentile(log_incr, 75)
-    iqr = q3 - q1
-    low_fence = q1 - k * iqr
-    high_fence = q3 + k * iqr
-
-    outlier_mask = (log_incr < low_fence) | (log_incr > high_fence)
-    issues = df[outlier_mask].copy()
-    issues["log_incremental_area"] = log_incr[outlier_mask]
-    issues["low_fence"] = low_fence
-    issues["high_fence"] = high_fence
-
-    return CheckResult(
-        check_id="F013",
-        name="incremental_area_outlier",
-        severity=Severity.INFO,
-        passed=len(issues) == 0,
-        total_checked=len(df),
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / len(df) if len(df) > 0 else 0,
-        details=issues,
-        description=(
-            f"Reaches with log(incremental_area) outside Tukey fences "
-            f"[{low_fence:.2f}, {high_fence:.2f}] (k={k})"
-        ),
-        threshold=k,
-    )
-
-

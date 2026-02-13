@@ -212,4 +212,6 @@ test_*.py
 cookies.txt
 ml4floods_models/
 deepwatermap/
-*.npy
+*.npyHANDOVER.md
+SCRATCHPAD.md
+HANDOVER.md

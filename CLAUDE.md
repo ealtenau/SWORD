@@ -42,10 +42,14 @@ postgresql://user:password@host:port/database
 cp .env.example .env
 
 # Load all regions from DuckDB to PostgreSQL
+# (auto-overwrites reach geom with v17b originals for endpoint connectivity)
 python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --all
 
 # Load single region
 python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --region NA
+
+# Skip v17b geometry overwrite (if v17b PG table not available)
+python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --all --skip-v17b-geom
 
 # Verify load
 python load_from_duckdb.py --verify
@@ -55,6 +59,7 @@ python load_from_duckdb.py --verify
 - PostgreSQL enables multi-user access, web APIs, and spatial indexing via PostGIS
 - DuckDB remains the primary development backend (faster local queries)
 - Keep connection strings in `.env` - never commit credentials
+- Reach geometries in PostgreSQL come from v17b (`postgres.sword_reaches_v17b`) — they include endpoint overlap vertices so adjacent reaches connect visually. DuckDB geometries (from NetCDF) lack these overlap points.
 
 ## ⚠️ CRITICAL: Database Handling Rules
 
@@ -301,6 +306,10 @@ python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v
 | **Region case sensitivity** | DuckDB=uppercase (NA), pipeline=lowercase (na) |
 | **Lake sandwiches** | 1,252 corrected (wide + shorter than ≥1 lake neighbor) → lakeflag=1, tagged `edit_flag='lake_sandwich'`. ~1,755 remaining (narrow connecting channels, chains). See issues #18/#19 |
 | **DuckDB lock contention** | Only one write connection at a time. Kill Streamlit/other processes before UPDATE. |
+| **end_reach divergence from v17b** | v17c recomputed end_reach from topology: junction=3 when n_up>1 OR n_down>1. ~30k v17b "phantom junctions" (n_up=1, n_dn=1, end_reach=3) relabeled to 0. UNC's original junction criterion is unknown. See `docs/validation_specs/end_reach_trib_flag_validation_spec.md` Section 1.8. |
+| **reconstruction.py end_reach bug** | `_reconstruct_reach_end_reach` uses `n_up > 1` only (misses bifurcations). `reactive.py` has the correct logic (`n_up > 1 OR n_down > 1`). Don't use the reconstruction function without fixing it. |
+| **DuckDB reach geometry missing endpoint overlap** | DuckDB geometries (rebuilt from NetCDF) lack the overlap vertices at endpoints that make adjacent reaches visually connect. The v17b PostgreSQL table (`postgres.sword_reaches_v17b`) has the full-fidelity geometries. `load_from_duckdb.py` auto-copies v17b geometries to v17c PostgreSQL via dblink (`--skip-v17b-geom` to disable). |
+| **path_freq=0/-9999 on connected reaches** | 4,952 connected non-ghost reaches globally have invalid path_freq (34 with 0, 4,918 with -9999). 91% are 1:1 links (fixable by propagation), 9% are junctions (need full traversal). AS has 2,478. See issue #16. |
 
 ## Column Name Gotchas
 
@@ -351,7 +360,7 @@ Dependency graph auto-recalculates derived attributes:
 
 **Location:** `src/updates/sword_duckdb/lint/`
 
-Comprehensive linting framework with 44 checks across 5 categories (T=Topology, A=Attributes, G=Geometry, C=Classification, V=v17c).
+Comprehensive linting framework with 50 checks across 5 categories (T=Topology, A=Attributes, F=Facc, G=Geometry, C=Classification, V=v17c).
 
 **CLI Usage:**
 ```bash
@@ -387,7 +396,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
     results = runner.run(region="NA", severity=Severity.ERROR)
 ```
 
-**Check IDs (47 total):**
+**Check IDs (53 total):**
 
 | ID | Name | Severity | Description |
 |----|------|----------|-------------|
@@ -412,24 +421,19 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | A008 | headwater_width | WARNING | Headwaters have narrow width |
 | A009 | outlet_facc | INFO | Outlets have high facc |
 | A010 | end_reach_consistency | WARNING | end_reach matches topology |
-| F001 | facc_width_ratio_anomaly | WARNING | facc/width > 5000 (MERIT corruption) |
+| F001 | facc_width_ratio_anomaly | WARNING | facc/width > 50000 (extreme outliers) |
 | F002 | facc_jump_ratio | WARNING | facc >> sum(upstream), entry points |
-| F004 | facc_reach_acc_ratio | WARNING | facc vs topology-based accumulation |
 | F006 | facc_junction_conservation | ERROR | facc < sum(upstream) at junctions |
-| F007 | bifurcation_balance | WARNING | sum(child facc) / parent ratio |
-| F008 | bifurcation_child_surplus | WARNING | child facc > parent facc |
 | F009 | facc_quality_coverage | INFO | facc_quality tag distribution |
 | F010 | junction_raise_drop | INFO | facc drop downstream of raised junction |
 | F011 | facc_link_monotonicity | INFO | 1:1 link facc drop (D8 artifact) |
 | F012 | incremental_area_nonneg | ERROR | facc >= sum(upstream) all reaches (x>=0) |
-| F013 | incremental_area_outlier | WARNING | Tukey IQR outlier on incremental area |
 | G001 | reach_length_bounds | INFO | 100m-50km, excl end_reach |
 | G002 | node_length_consistency | WARNING | Node sum ≈ reach length |
 | G003 | zero_length_reaches | INFO | Zero/negative length |
 | G004 | self_intersection | WARNING | ST_IsSimple = FALSE |
 | G005 | reach_length_vs_geom_length | WARNING | reach_length vs ST_Length >20% diff |
 | G006 | excessive_sinuosity | INFO | sinuosity > 10 |
-| G007 | width_exceeds_length | WARNING | width > reach_length |
 | G008 | geom_not_null | ERROR | NULL geometry |
 | G009 | geom_is_valid | ERROR | ST_IsValid = FALSE |
 | G010 | geom_min_points | ERROR | ST_NPoints < 2 |
@@ -441,7 +445,6 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | C004 | lakeflag_type_consistency | INFO | Lakeflag/type cross-tab (needs investigation) |
 | V001 | hydro_dist_out_monotonicity | ERROR | hydro_dist_out decreases downstream |
 | V002 | hydro_dist_vs_pathlen | INFO | hydro_dist_out vs pathlen_out diff |
-| V003 | pathlen_consistency | WARNING | pathlen_hw + pathlen_out consistency |
 | V004 | mainstem_continuity | WARNING | is_mainstem_edge forms continuous path |
 | V005 | hydro_dist_out_coverage | ERROR | All connected reaches have hydro_dist_out |
 | V006 | mainstem_coverage | INFO | is_mainstem_edge coverage stats |
@@ -474,7 +477,7 @@ Test DB: `tests/sword_duckdb/fixtures/sword_test_minimal.duckdb` (100 reaches, 5
 | `src/updates/sword_duckdb/schema.py` | Table definitions |
 | `src/updates/sword_duckdb/reactive.py` | Dependency graph |
 | `src/updates/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
-| `src/updates/sword_duckdb/lint/` | Lint framework (44 checks) |
+| `src/updates/sword_duckdb/lint/` | Lint framework (50 checks) |
 | `run_v17c_topology.py` | Topology recalculation script |
 | `rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
 | `topology_reviewer.py` | Streamlit GUI for facc/topology fixes |

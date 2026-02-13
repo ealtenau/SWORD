@@ -361,6 +361,92 @@ def load_geometry_from_coordinates(
     return updated
 
 
+def overwrite_reach_geom_from_v17b(
+    pg_conn,
+    v17b_dsn: str = "dbname=postgres host=localhost",
+    v17b_table: str = "sword_reaches_v17b",
+    v17b_geom_col: str = "geometry",
+) -> int:
+    """
+    Replace reach geometries with the v17b originals (which include endpoint
+    overlap vertices so adjacent reaches visually connect in GIS tools).
+
+    The DuckDB→NetCDF rebuild strips those overlap points.  This step copies
+    the full-fidelity geometries from the authoritative v17b PostgreSQL table
+    via dblink, then recomputes bbox/centroid columns to match.
+
+    Parameters
+    ----------
+    pg_conn : psycopg2.connection
+        Connection to the **target** (v17c) database.
+    v17b_dsn : str
+        libpq connection string for the database hosting the v17b table.
+    v17b_table : str
+        Fully-qualified table name for v17b reaches.
+    v17b_geom_col : str
+        Geometry column name in the v17b table.
+
+    Returns
+    -------
+    int
+        Number of rows updated.
+    """
+    cur = pg_conn.cursor()
+
+    # Ensure dblink extension
+    cur.execute("CREATE EXTENSION IF NOT EXISTS dblink")
+    pg_conn.commit()
+
+    # Quick sanity check: does the remote table exist?
+    try:
+        cur.execute(
+            "SELECT COUNT(*) FROM dblink(%s, %s) AS t(cnt bigint)",
+            [v17b_dsn, f"SELECT COUNT(*) FROM {v17b_table} LIMIT 1"],
+        )
+        remote_cnt = cur.fetchone()[0]
+        logger.info(
+            f"v17b geometry source: {v17b_table} in '{v17b_dsn}' ({remote_cnt:,} rows)"
+        )
+    except Exception as e:
+        logger.warning(f"Cannot reach v17b geometry source ({e}) — skipping geometry overwrite")
+        pg_conn.rollback()
+        cur.close()
+        return 0
+
+    # Copy geometries
+    logger.info("Overwriting reach geometries with v17b originals (endpoint overlap)...")
+    cur.execute(
+        f"""
+        UPDATE reaches r
+        SET geom = sub.{v17b_geom_col}
+        FROM dblink(
+            %s,
+            $q$SELECT reach_id, {v17b_geom_col} FROM {v17b_table}$q$
+        ) AS sub(reach_id bigint, {v17b_geom_col} geometry)
+        WHERE r.reach_id = sub.reach_id
+        """,
+        [v17b_dsn],
+    )
+    updated = cur.rowcount
+    logger.info(f"Updated {updated:,} reach geometries from v17b")
+
+    # Recompute bbox / centroid
+    logger.info("Recomputing bbox/centroid columns...")
+    cur.execute("""
+        UPDATE reaches SET
+            x     = ST_X(ST_Centroid(geom)),
+            y     = ST_Y(ST_Centroid(geom)),
+            x_min = ST_XMin(geom),
+            x_max = ST_XMax(geom),
+            y_min = ST_YMin(geom),
+            y_max = ST_YMax(geom)
+    """)
+
+    pg_conn.commit()
+    cur.close()
+    return updated
+
+
 def truncate_table(pg_conn, table_name: str, region: Optional[str] = None):
     """Truncate a table or delete rows for a specific region."""
     pg_cursor = pg_conn.cursor()
@@ -425,6 +511,12 @@ Examples:
                         help='Do not truncate tables before loading')
     parser.add_argument('--skip-geometry', action='store_true',
                         help='Skip geometry generation (faster, no spatial queries)')
+    parser.add_argument('--skip-v17b-geom', action='store_true',
+                        help='Skip overwriting reach geometry from v17b source')
+    parser.add_argument('--v17b-dsn', default='dbname=postgres host=localhost',
+                        help='libpq DSN for database hosting v17b reaches (default: dbname=postgres host=localhost)')
+    parser.add_argument('--v17b-table', default='sword_reaches_v17b',
+                        help='v17b reaches table name (default: sword_reaches_v17b)')
     parser.add_argument('--batch-size', type=int,
                         help='Override default batch size')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -561,6 +653,21 @@ Examples:
                             load_geometry_from_coordinates(pg_conn, table_name, region)
                         except Exception as e:
                             logger.error(f"Error generating geometry for {table_name}: {e}")
+
+        # After all regions loaded: overwrite reach geometries with v17b originals
+        # (run once, not per-region, since it's a global UPDATE by reach_id)
+        if not args.dry_run and not args.skip_v17b_geom and 'reaches' in tables_to_load:
+            try:
+                overwrite_reach_geom_from_v17b(
+                    pg_conn,
+                    v17b_dsn=args.v17b_dsn,
+                    v17b_table=args.v17b_table,
+                )
+            except Exception as e:
+                logger.error(f"Error overwriting reach geometry from v17b: {e}")
+                if args.verbose:
+                    import traceback
+                    traceback.print_exc()
 
     finally:
         duck_conn.close()

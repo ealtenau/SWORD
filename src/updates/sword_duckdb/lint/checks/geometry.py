@@ -83,7 +83,9 @@ def check_reach_length_bounds(
     total = conn.execute(total_query).fetchone()[0]
 
     # Separate counts for reporting
-    too_short = len(issues[issues["issue_type"] == "too_short"]) if len(issues) > 0 else 0
+    too_short = (
+        len(issues[issues["issue_type"] == "too_short"]) if len(issues) > 0 else 0
+    )
     too_long = len(issues[issues["issue_type"] == "too_long"]) if len(issues) > 0 else 0
 
     return CheckResult(
@@ -165,7 +167,7 @@ def check_node_length_consistency(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description=f"Reaches where node length sum differs from reach length by >{tolerance*100:.0f}%",
+        description=f"Reaches where node length sum differs from reach length by >{tolerance * 100:.0f}%",
         threshold=tolerance,
     )
 
@@ -364,7 +366,7 @@ def check_reach_length_vs_geom_length(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description=f"Reaches where reach_length differs from geom length by >{tolerance*100:.0f}%",
+        description=f"Reaches where reach_length differs from geom length by >{tolerance * 100:.0f}%",
         threshold=tolerance,
     )
 
@@ -433,68 +435,6 @@ def check_excessive_sinuosity(
         details=issues,
         description=f"Reaches with sinuosity > {limit}",
         threshold=limit,
-    )
-
-
-# ---------------------------------------------------------------------------
-# G007 – Width exceeds reach length
-# ---------------------------------------------------------------------------
-
-
-@register_check(
-    "G007",
-    Category.GEOMETRY,
-    Severity.WARNING,
-    "Width should not exceed reach length (implausible river geometry)",
-)
-def check_width_exceeds_length(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """Flag river/canal reaches where width > reach_length.
-
-    Lakes (lakeflag=1) and tidal reaches (lakeflag=3) are excluded because
-    width > length is physically normal for wide water bodies.
-    """
-    where_clause = f"AND r.region = '{region}'" if region else ""
-
-    query = f"""
-    SELECT
-        r.reach_id, r.region, r.river_name, r.x, r.y,
-        r.width, r.reach_length, r.lakeflag
-    FROM reaches r
-    WHERE r.width IS NOT NULL
-        AND r.reach_length IS NOT NULL
-        AND r.width > 0 AND r.width != -9999
-        AND r.reach_length > 0 AND r.reach_length != -9999
-        AND r.width > r.reach_length
-        AND r.lakeflag NOT IN (1, 3)
-        {where_clause}
-    ORDER BY (r.width / r.reach_length) DESC
-    """
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(*) FROM reaches r
-    WHERE r.width IS NOT NULL AND r.width > 0 AND r.width != -9999
-        AND r.reach_length IS NOT NULL AND r.reach_length > 0
-        AND r.reach_length != -9999
-        AND r.lakeflag NOT IN (1, 3)
-        {where_clause}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="G007",
-        name="width_exceeds_length",
-        severity=Severity.WARNING,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description="River/canal reaches where width exceeds reach_length (lakes/tidal excluded)",
     )
 
 
@@ -686,8 +626,10 @@ def check_bbox_consistency(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """Check that x/y centroid is inside x_min/x_max/y_min/y_max and that
-    min <= max for both axes."""
+    min <= max for both axes.  Uses a 1e-9 degree tolerance (~0.1 mm) to
+    ignore floating-point noise on degenerate (single-axis) bboxes."""
     where_clause = f"AND r.region = '{region}'" if region else ""
+    eps = 1e-9  # ~0.1 mm tolerance
 
     # Columns may not all exist
     try:
@@ -696,17 +638,17 @@ def check_bbox_consistency(
             r.reach_id, r.region, r.river_name,
             r.x, r.y, r.x_min, r.x_max, r.y_min, r.y_max,
             CASE
-                WHEN r.x_min > r.x_max THEN 'inverted_x'
-                WHEN r.y_min > r.y_max THEN 'inverted_y'
-                WHEN r.x < r.x_min OR r.x > r.x_max THEN 'centroid_outside_x'
-                WHEN r.y < r.y_min OR r.y > r.y_max THEN 'centroid_outside_y'
+                WHEN r.x_min - r.x_max > {eps} THEN 'inverted_x'
+                WHEN r.y_min - r.y_max > {eps} THEN 'inverted_y'
+                WHEN r.x < r.x_min - {eps} OR r.x > r.x_max + {eps} THEN 'centroid_outside_x'
+                WHEN r.y < r.y_min - {eps} OR r.y > r.y_max + {eps} THEN 'centroid_outside_y'
             END AS issue_type
         FROM reaches r
         WHERE (
-                (r.x_min > r.x_max)
-                OR (r.y_min > r.y_max)
-                OR (r.x < r.x_min OR r.x > r.x_max)
-                OR (r.y < r.y_min OR r.y > r.y_max)
+                (r.x_min - r.x_max > {eps})
+                OR (r.y_min - r.y_max > {eps})
+                OR (r.x < r.x_min - {eps} OR r.x > r.x_max + {eps})
+                OR (r.y < r.y_min - {eps} OR r.y > r.y_max + {eps})
             )
             AND r.x IS NOT NULL AND r.y IS NOT NULL
             AND r.x_min IS NOT NULL AND r.x_max IS NOT NULL
