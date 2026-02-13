@@ -118,16 +118,10 @@ stateDiagram-v2
     }
 
     state "Stage B: Propagation + Refinement" as StageB {
-        state "B1 Topological pass" as B1
-        state "B2 Isotonic smoothing" as B2
-        state "B3 Junction floor" as B3
-        state "B4 Node validation" as B4
-        state "B5 Final consistency" as B5
+        state "Pass 1: Topology propagation" as P1
+        state "Pass 2: Consistency enforcement" as P2
 
-        B1 --> B2 : propagated facc
-        B2 --> B3 : smoothed chains
-        B3 --> B4 : floored junctions
-        B4 --> B5 : validated nodes
+        P1 --> P2 : gaps from blocked raises
     }
 
     state "Validation" as Validation {
@@ -174,11 +168,11 @@ A4 adjusts ~10,740 reaches globally (`baseline_isotonic` correction type in the 
 
 ### 3.4 Stage B — Propagation + Refinement
 
-Stage B takes the clean baseline from Stage A and propagates topology-aware corrections through the network.
+Stage B takes the clean baseline from Stage A and propagates topology-aware corrections through the network in two topological passes.
 
-#### B1 — Topological Single Pass
+#### Pass 1 — Topology propagation
 
-Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Stage A, before any topology correction) and the **corrected** value (the output of this step). Five cases:
+Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Stage A, before any topology correction) and the **corrected** value (the output of this step). Four cases:
 
 **Headwaters** (no upstream neighbors): Keep the baseline facc. Nothing upstream to correct against.
 
@@ -233,35 +227,22 @@ The lateral is zero here because Reach X's baseline (410K) is less than the pare
 
 **Lowering cascades downstream**: every subsequent 1:1 reach applies the same rule (`lateral_propagate` correction type), so the bifurcation split propagates all the way down the chain until it hits a junction or another bifurcation. This is the dominant correction type (64,784 reaches globally).
 
-**1:1 links where the parent was raised** (parent's corrected >= parent's baseline, meaning a junction floor pushed it up): Keep the baseline. **Raising does NOT cascade.** This asymmetry prevents exponential inflation — if junction-floor raises cascaded downstream, a +50,000 km² raise would propagate to every downstream reach; when it hits the next junction, it doubles, then doubles again. This is what caused the Lena River delta to reach 1.65 billion km² in our v1 attempt (real basin: 2.49M km²).
+**1:1 links where the parent was raised** (parent's corrected >= parent's baseline, meaning a junction floor pushed it up): Keep the baseline — raising does not cascade in Pass 1. If it did, a junction-floor raise would add to `sum(corrected_upstream)` at the next junction, compounding at every junction downstream. This exponential inflation is what caused the Lena River delta to reach 1.65 billion km² in our v1 attempt (real basin: 2.49M km²). Instead, Pass 2 handles the 1:1 gaps left by blocked raises (see below).
 
 **Assumptions:**
 - The SWORD topology graph is a DAG (directed acyclic graph) so topological sort is valid.
 - Channel width is a reasonable proxy for flow partitioning at bifurcations.
 - Negative lateral drainage is always a UPA artifact (from D8 cloning), never real physics.
-- Junction-floor raises should not propagate, because they reflect corrections to local accounting errors, not changes to actual upstream drainage.
 
-#### B2 — Isotonic Smoothing (with bifurcation anchors)
+#### Pass 2 — Consistency enforcement
 
-After B1, run PAVA on 1:1 chains to smooth any residual non-monotonic sequences. Bifurcation children (chain heads that received a width-proportional share in B1) are anchored at 1000x weight so isotonic regression preserves their corrected values.
+Pass 1 blocks raise cascading to prevent exponential inflation, but this leaves gaps: when a junction floor raises a reach, downstream 1:1 reaches still hold their (lower) baselines. Pass 2 fills these gaps with a raise-only topological walk: for each reach, ensure `corrected >= sum(corrected_upstream)`.
 
-In practice, B2 finds **0 violations** to fix because Stage A4 already cleaned the baseline chains before propagation. This step exists as a safety net.
+This does propagate raises through 1:1 chains, but it does **not** compound at junctions. By the time Pass 2 runs, Pass 1 has already set all junction values via `sum(corrected_upstream) + lateral`. Pass 2 only lifts reaches that are strictly below their upstream corrected values — it never re-sums at junctions, so there is no doubling.
 
-#### B3 — Junction Floor
+Pass 2 adjusts 6,086 reaches globally (3,717 on 1:1 links, 1,211 at bifurcations, 1,158 at junctions), producing the `final_1to1`, `final_bifurc`, and `final_junction` correction types.
 
-Re-run the junction floor rule in topological order: `corrected = max(corrected, sum(corrected_upstream))` at every junction. This guarantees F006 = 0 (no junction conservation violations) in the final output.
-
-In practice, B3 also finds **0 re-floors needed** because B1's topological pass already established consistent junctions.
-
-#### B4 — Node Validation
-
-Same logic as A2: cap extreme lows where corrected facc < 10% of `MAX(node facc)`. Safety net for any propagation artifacts.
-
-#### B5 — Final Consistency Pass
-
-A raise-only topological pass that catches edge cases missed by B1. Processes reaches in topological order and ensures each reach's corrected facc is at least `sum(corrected_upstream)`. Unlike B1, this pass only raises values (never lowers), producing the `final_1to1`, `final_bifurc`, and `final_junction` correction types. These are reaches where B1's asymmetric propagation rules (no raise cascade) left small gaps that the final pass fills.
-
-Globally: 3,717 `final_1to1` + 1,211 `final_bifurc` + 1,158 `final_junction` = 6,086 reaches adjusted.
+The code also includes safety-net steps between Pass 1 and Pass 2 (isotonic smoothing, junction re-flooring, node validation). In practice these find 0 violations because Stage A and Pass 1 already produce a consistent result.
 
 ### 3.5 Scalability
 
@@ -335,16 +316,16 @@ Correction type breakdown (global totals from summary JSONs):
 
 | Correction Type | Stage | Count | Description |
 |-----------------|-------|-------|-------------|
-| lateral_propagate | B1 | 64,784 | Bifurcation-split cascade on 1:1 links |
-| junction_floor | B1 | 13,107 | Junction conservation enforcement |
+| lateral_propagate | B Pass 1 | 64,784 | Bifurcation-split cascade on 1:1 links |
+| junction_floor | B Pass 1 | 13,107 | Junction conservation enforcement |
 | baseline_isotonic | A4 | 5,203 | Baseline PAVA smoothing on 1:1 chains |
-| bifurc_share | B1 | 4,453 | Width-proportional bifurcation splitting |
-| final_1to1 | B5 | 3,717 | Final consistency pass on 1:1 links |
-| final_bifurc | B5 | 1,211 | Final consistency pass at bifurcations |
-| final_junction | B5 | 1,158 | Final consistency pass at junctions |
+| bifurc_share | B Pass 1 | 4,453 | Width-proportional bifurcation splitting |
+| final_1to1 | B Pass 2 | 3,717 | Consistency enforcement on 1:1 links |
+| final_bifurc | B Pass 2 | 1,211 | Consistency enforcement at bifurcations |
+| final_junction | B Pass 2 | 1,158 | Consistency enforcement at junctions |
 | node_denoise | A1 | 86 | Within-reach node facc variability correction |
 | baseline_node_override | A2 | 3 | Extreme low baseline cap |
-| node_max_override | B4 | 1 | Post-propagation node cap |
+| node_max_override | B | 1 | Post-propagation node cap |
 
 **Why are net % changes so large?** The "Net % Change" column reports `(total_facc_after - total_facc_before) / total_facc_before` across all reaches in a region. Large values (e.g., +3,770% for AS) reflect the intended behavior of full lateral propagation: when a bifurcation split lowers one branch, the correction cascades through every downstream 1:1 reach. In Asia's large river systems (Ganges, Mekong, Yangtze deltas), a single bifurcation correction propagates through hundreds of downstream reaches. The old pipeline blocked these cascades, producing smaller net changes but leaving most downstream reaches with inflated UPA values. The net % metric is dominated by a few large rivers and does not indicate that typical reaches changed by thousands of percent — the median per-reach change is much smaller (see Fig 3).
 
@@ -361,20 +342,20 @@ Correction type breakdown (global totals from summary JSONs):
 
 | Constraint | Status | Count | Enforced by |
 |------------|--------|-------|-------------|
-| **Junction conservation** (F006): facc >= sum(upstream) at every junction | **Fully enforced** | 0 violations | Stage B1 + B5 |
-| **Non-negative incremental area** (F012): facc >= sum(upstream) at every reach | **Fully enforced** | 0 violations | Stage B1 lateral clamp + B5 |
-| **1:1 monotonicity** (T003): downstream facc >= upstream on non-bifurcation edges | **Fully enforced** | 0 violations | Stage A4 baseline isotonic + B1 propagation |
-| **Bifurcation partitioning**: children sum to parent facc | **Enforced** (width-proportional) | ~246 residual (missing width data, <0.1%) | Stage B1 bifurc split |
+| **Junction conservation** (F006): facc >= sum(upstream) at every junction | **Fully enforced** | 0 violations | Stage B Pass 1 + Pass 2 |
+| **Non-negative incremental area** (F012): facc >= sum(upstream) at every reach | **Fully enforced** | 0 violations | Stage B Pass 1 lateral clamp + Pass 2 |
+| **1:1 monotonicity** (T003): downstream facc >= upstream on non-bifurcation edges | **Fully enforced** | 0 violations | Stage A4 baseline isotonic + Stage B propagation |
+| **Bifurcation partitioning**: children sum to parent facc | **Enforced** (width-proportional) | ~246 residual (missing width data, <0.1%) | Stage B Pass 1 bifurc split |
 
 ### T003 = 0 Globally
 
-The previous pipeline left 5,804 T003 violations (2.3% of reaches) as residual MERIT UPA noise. The biphase architecture eliminates all of them by cleaning the baseline **before** propagation. Stage A4's isotonic regression smooths 1:1 chain drops in the raw MERIT data, and Stage B1's propagation preserves this monotonicity through the network.
+The previous pipeline left 5,804 T003 violations (2.3% of reaches) as residual MERIT UPA noise. The biphase architecture eliminates all of them by cleaning the baseline **before** propagation. Stage A4's isotonic regression smooths 1:1 chain drops in the raw MERIT data, and Stage B's propagation preserves this monotonicity through the network.
 
 This is a structural improvement, not a force-correction hack. The old pipeline ran isotonic regression **after** propagation (Phase 2), so MERIT noise in the baseline survived through the topology pass and reappeared as violations in the output. By cleaning first, we prevent noise from entering the propagation in the first place.
 
 ### F006 = 0 Globally
 
-Junction conservation is guaranteed: at every junction with 2+ upstream inputs, `corrected_facc >= sum(corrected_upstream_facc)`. This is enforced by Stage B1's junction floor rule and verified by the F006 lint check across all 6 regions.
+Junction conservation is guaranteed: at every junction with 2+ upstream inputs, `corrected_facc >= sum(corrected_upstream_facc)`. This is enforced by Stage B Pass 1's junction floor rule and verified by the F006 lint check across all 6 regions.
 
 ### Diagnostic Flags
 
@@ -413,7 +394,7 @@ After Stage A, three independent criteria flag remaining outliers. **These flags
 
 1. **~246 bifurcation imbalance (F007/F008)** — Bifurcations where child width data is missing or zero, causing equal-split fallback to produce children that don't sum precisely to the parent. Minor: affects <0.1% of reaches.
 
-2. **UPA-clone junction over-flooring** — ~226 junctions globally where both upstream branches have identical facc — both vector reaches sampled from the same D8 flow path, which carries the full parent drainage. Stage B1 uses `sum(upstream)` which over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
+2. **UPA-clone junction over-flooring** — ~226 junctions globally where both upstream branches have identical facc — both vector reaches sampled from the same D8 flow path, which carries the full parent drainage. Stage B Pass 1 uses `sum(upstream)` which over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
 
 3. **Large net % changes** — The biphase pipeline produces larger aggregate facc changes than the old pipeline because it fully propagates bifurcation splits through downstream 1:1 chains. This is correct behavior: the old pipeline under-corrected by blocking raise cascades. The per-reach median change remains small (see Fig 3), and the large net % is driven by a few major river systems where corrections cascade through hundreds of reaches.
 
