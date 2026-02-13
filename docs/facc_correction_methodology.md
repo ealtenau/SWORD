@@ -95,11 +95,10 @@ The pipeline targets specific violations detected by our [lint framework](../src
 
 ### 3.2 Pipeline Architecture Overview
 
-The pipeline has two main stages plus an optional third:
+The pipeline has two stages:
 
 - **Stage A** — Baseline Cleanup (clean MERIT noise from raw data, no propagation)
 - **Stage B** — Propagation + Refinement (topology-aware correction, consistency enforcement)
-- **Stage C** — Optional MERIT Resampling (not used in current run)
 
 ```mermaid
 stateDiagram-v2
@@ -264,11 +263,7 @@ A raise-only topological pass that catches edge cases missed by B1. Processes re
 
 Globally: 3,717 `final_1to1` + 1,211 `final_bifurc` + 1,158 `final_junction` = 6,086 reaches adjusted.
 
-### 3.5 Stage C — Optional MERIT Resampling (Not Used)
-
-Stage C targets remaining T003 violations by resampling MERIT UPA raster values via D8-walk from reach endpoints. It requires MERIT Hydro rasters on disk. Since Stage A4's baseline isotonic already achieves T003 = 0, Stage C was not needed in the current run and is disabled by default.
-
-### 3.6 Scalability
+### 3.5 Scalability
 
 Topological sort is O(V + E). Isotonic regression is O(k) per chain. Total runtime for all 248,674 reaches across 6 regions: **~48 seconds** on a single machine. No manual basin delineation or constraint setup required.
 
@@ -430,11 +425,10 @@ After Stage A, three independent criteria flag remaining outliers. **These flags
 
 ```
 src/updates/sword_duckdb/facc_detection/
-  correct_facc_denoise.py       # Biphase pipeline (Stage A + Stage B + optional Stage C)
+  correct_facc_denoise.py       # Biphase pipeline (Stage A + Stage B)
   correct_conservation_single_pass.py  # v2 single-pass (superseded)
   detect.py                     # Anomaly detection rules
   correct.py                    # RF regressor correction
-  merit_search.py               # UPA re-sampling via D8-walk (Stage C)
 ```
 
 ### Integrator (DrainageAreaFix)
