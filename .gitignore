@@ -222,6 +222,8 @@ SCRATCHPAD.md
 output/
 facc_anomalies*.geojson
 
-# Ad-hoc / one-off scripts in root
+# Local artifacts (not committed)
 DrainageAreaFix/
-netherlands_water_mask.npy
+*.qgz
+*.duckdb
+!tests/sword_duckdb/fixtures/sword_test_minimal.duckdb
