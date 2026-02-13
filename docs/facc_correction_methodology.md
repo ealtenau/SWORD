@@ -413,7 +413,7 @@ After Stage A, three independent criteria flag remaining outliers. **These flags
 
 1. **~246 bifurcation imbalance (F007/F008)** — Bifurcations where child width data is missing or zero, causing equal-split fallback to produce children that don't sum precisely to the parent. Minor: affects <0.1% of reaches.
 
-2. **UPA-clone junction over-flooring** — ~226 junctions globally where MERIT UPA assigned identical facc to both upstream branches (because D8 routed the full drainage through both paths). Stage B1 uses `sum(upstream)` which over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
+2. **UPA-clone junction over-flooring** — ~226 junctions globally where both upstream branches have identical facc — both vector reaches sampled from the same D8 flow path, which carries the full parent drainage. Stage B1 uses `sum(upstream)` which over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
 
 3. **Large net % changes** — The biphase pipeline produces larger aggregate facc changes than the old pipeline because it fully propagates bifurcation splits through downstream 1:1 chains. This is correct behavior: the old pipeline under-corrected by blocking raise cascades. The per-reach median change remains small (see Fig 3), and the large net % is driven by a few major river systems where corrections cascade through hundreds of reaches.
 
