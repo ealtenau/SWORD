@@ -195,15 +195,16 @@ def fig1_before_after(
         fontweight="bold",
     )
     ax.text(
-        0.5,
-        0.85,
-        "VIOLATION\nZONE",
+        0.25,
+        0.75,
+        "VIOLATION ZONE\n(ratio < 1.0)",
         transform=ax.transAxes,
-        fontsize=14,
+        fontsize=12,
         color=V17B_COLOR,
-        alpha=0.3,
-        ha="left",
+        alpha=0.7,
+        ha="center",
         fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=V17B_COLOR, alpha=0.8),
     )
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
@@ -254,15 +255,16 @@ def fig1_before_after(
         fontweight="bold",
     )
     ax.text(
-        1.0,
-        0.85,
-        "D8 CLONING\nPEAK",
+        0.75,
+        0.75,
+        "UPA CLONING\nPEAK",
         transform=ax.transAxes,
         fontsize=12,
         color=V17B_COLOR,
-        alpha=0.4,
-        ha="right",
+        alpha=0.7,
+        ha="center",
         fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=V17B_COLOR, alpha=0.8),
     )
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
