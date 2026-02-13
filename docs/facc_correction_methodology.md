@@ -272,24 +272,6 @@ Both approaches minimize deviation from observed UPA values subject to non-negat
 
 Our junction rule `corrected = sum(corrected_upstream) + max(base - sum(base_upstream), 0)` is equivalent to enforcing `incremental_area >= 0` at each junction — the `max(..., 0)` clamps the lateral term to non-negative, identical to the integrator's `x >= 0` constraint. At the single-basin level with uniform weights, the solutions are equivalent. The key difference is scalability: our formulation processes the entire global network in one pass without requiring basin-by-basin decomposition.
 
-### Willamette Basin Case Study (Basin 7822)
-
-To validate agreement between the two approaches, we ran both on the Willamette River basin: 55 reaches (52 dependent, 3 independent headwaters). The integrator was run **without anchors** (`constrain_rids=None`) for a fair comparison, since the biphase pipeline also uses no anchors.
-
-![Fig 6: Willamette Comparison](../output/facc_detection/figures/report_fig6.png)
-*Figure 6. Left: Integrator vs biphase pipeline corrected facc (log-log scatter). The two solutions are highly correlated (r = 0.993). Right: Per-reach % changes for reaches modified by at least one method.*
-
-**Key results:**
-
-| Metric | Integrator | Biphase Pipeline |
-|--------|-----------|-------------|
-| Reaches modified | 52 / 55 | 17 / 55 |
-| Mean absolute change | 974 km² | 3,915 km² (on changed reaches) |
-| Direction agreement | 10/17 (59%) where both changed |
-| Correlation (r) | 0.993 |
-
-The integrator redistributes incremental areas across all 52 dependent reaches (its optimization touches every variable), producing small adjustments even where v17b values were already reasonable. The biphase pipeline modifies 17 reaches that violate specific rules — primarily lateral propagation from bifurcation corrections and baseline isotonic smoothing. Both methods produce physically valid solutions. The higher per-reach magnitude from the biphase pipeline reflects its full propagation of bifurcation splits through downstream 1:1 chains, while the integrator spreads adjustments more evenly across the network.
-
 ---
 
 ## 5. Global Results
@@ -435,7 +417,4 @@ output/facc_detection/
 ```bash
 python scripts/generate_facc_report_figures.py
 # Outputs: output/facc_detection/figures/report_fig{1-5}.png
-
-python scripts/compare_willamette_integrator.py
-# Outputs: output/facc_detection/figures/report_fig6.png
 ```
