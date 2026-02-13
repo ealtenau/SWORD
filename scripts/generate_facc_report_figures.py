@@ -194,11 +194,11 @@ def fig1_before_after(
         color=V17B_COLOR,
         fontweight="bold",
     )
-    # Arrow pointing at the shaded violation-zone block (x=0..1.0)
+    # Label the shaded violation-zone block (x=0..1.0)
     ylim = ax.get_ylim()
     ax.annotate(
         "VIOLATION ZONE\n(ratio < 1.0)",
-        xy=(0.5, ylim[1] * 0.15),
+        xy=(0.3, ylim[1] * 0.85),
         xytext=(2.0, ylim[1] * 0.6),
         fontsize=10,
         color=V17B_COLOR,
@@ -255,11 +255,11 @@ def fig1_before_after(
         color=V17B_COLOR,
         fontweight="bold",
     )
-    # Arrow pointing at the shaded cloning band (axvspan 0.9..1.1)
+    # Label the shaded cloning band (axvspan 0.9..1.1)
     ylim_b = ax.get_ylim()
     ax.annotate(
         "UPA CLONING\nPEAK",
-        xy=(1.0, ylim_b[1] * 0.15),
+        xy=(1.0, ylim_b[1] * 0.85),
         xytext=(1.6, ylim_b[1] * 0.6),
         fontsize=10,
         color=V17B_COLOR,
