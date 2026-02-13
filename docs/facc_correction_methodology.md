@@ -163,8 +163,8 @@ By cleaning MERIT's D8 noise from the baseline, A4 ensures that when Stage B pro
 
 A4 adjusts ~10,740 reaches globally (`baseline_isotonic` correction type in the CSV, though most of these are small adjustments that get superseded by Stage B propagation — the final `baseline_isotonic` count in the output is 5,203 reaches whose A4 adjustment was the only correction they received).
 
-![Fig 5: Isotonic Regression (PAVA) Example](../output/facc_detection/figures/report_fig5.png)
-*Figure 5. PAVA in action on a 15-reach 1:1 chain in South America. The red line (Stage A baseline) has a clear violation zone where facc decreases from R8 to R14. PAVA (blue) creates a flat "pool" through the drop — the closest non-decreasing fit — then rises to meet the downstream values. The shaded regions mark where facc was decreasing (violations). PAVA adjusts values both up and down to minimize total distortion while guaranteeing monotonicity.*
+![Fig 4: Isotonic Regression (PAVA) Example](../output/facc_detection/figures/report_fig4.png)
+*Figure 4. PAVA in action on a 15-reach 1:1 chain in South America. The red line (Stage A baseline) has a clear violation zone where facc decreases from R8 to R14. PAVA (blue) creates a flat "pool" through the drop — the closest non-decreasing fit — then rises to meet the downstream values. The shaded regions mark where facc was decreasing (violations). PAVA adjusts values both up and down to minimize total distortion while guaranteeing monotonicity.*
 
 ### 3.4 Stage B — Propagation + Refinement
 
@@ -276,8 +276,8 @@ Our junction rule `corrected = sum(corrected_upstream) + max(base - sum(base_ups
 
 To validate agreement between the two approaches, we ran both on the Willamette River basin: 55 reaches (52 dependent, 3 independent headwaters). The integrator was run **without anchors** (`constrain_rids=None`) for a fair comparison, since the biphase pipeline also uses no anchors.
 
-![Fig 6: Willamette Comparison](../output/facc_detection/figures/report_fig6.png)
-*Figure 6. Left: Integrator vs biphase pipeline corrected facc (log-log scatter). The two solutions are highly correlated (r = 0.993). Right: Per-reach % changes for reaches modified by at least one method.*
+![Fig 5: Willamette Comparison](../output/facc_detection/figures/report_fig5.png)
+*Figure 5. Left: Integrator vs biphase pipeline corrected facc (log-log scatter). The two solutions are highly correlated (r = 0.993). Right: Per-reach % changes for reaches modified by at least one method.*
 
 **Key results:**
 
@@ -327,12 +327,7 @@ Correction type breakdown (global totals from summary JSONs):
 | baseline_node_override | A2 | 3 | Extreme low baseline cap |
 | node_max_override | B | 1 | Post-propagation node cap |
 
-**Why are net % changes so large?** The "Net % Change" column reports `(total_facc_after - total_facc_before) / total_facc_before` across all reaches in a region. Large values (e.g., +3,770% for AS) reflect the intended behavior of full lateral propagation: when a bifurcation split lowers one branch, the correction cascades through every downstream 1:1 reach. In Asia's large river systems (Ganges, Mekong, Yangtze deltas), a single bifurcation correction propagates through hundreds of downstream reaches. The old pipeline blocked these cascades, producing smaller net changes but leaving most downstream reaches with inflated UPA values. The net % metric is dominated by a few large rivers and does not indicate that typical reaches changed by thousands of percent — the median per-reach change is much smaller (see Fig 3).
-
----
-
-![Fig 3: Per-Reach Relative Change Distribution](../output/facc_detection/figures/report_fig3.png)
-*Figure 3. Distribution of per-reach relative changes from v17b, faceted by region (clipped to +/-500%). All regions show a tight central peak near zero with tails from propagation cascades. The red line marks the median.*
+**Why are net % changes so large?** The "Net % Change" column reports `(total_facc_after - total_facc_before) / total_facc_before` across all reaches in a region. Large values (e.g., +3,770% for AS) reflect the intended behavior of full lateral propagation: when a bifurcation split lowers one branch, the correction cascades through every downstream 1:1 reach. In Asia's large river systems (Ganges, Mekong, Yangtze deltas), a single bifurcation correction propagates through hundreds of downstream reaches. The old pipeline blocked these cascades, producing smaller net changes but leaving most downstream reaches with inflated UPA values. The net % metric is dominated by a few large rivers and does not indicate that typical reaches changed by thousands of percent.
 
 ---
 
@@ -385,8 +380,8 @@ After Stage A, three independent criteria flag remaining outliers. **These flags
 
 ---
 
-![Fig 4: Scalability Comparison](../output/facc_detection/figures/report_fig4.png)
-*Figure 4. Left: Computational complexity — the integrator scales as O(N*m^2) total operations (red) while the biphase pipeline is O(N) regardless of basin size (blue). Right: Reaches and corrections by region, showing a consistent ~37-40% correction rate across all regions.*
+![Fig 3: Scalability Comparison](../output/facc_detection/figures/report_fig3.png)
+*Figure 3. Left: Computational complexity — the integrator scales as O(N*m^2) total operations (red) while the biphase pipeline is O(N) regardless of basin size (blue). Right: Reaches and corrections by region, showing a consistent ~37-40% correction rate across all regions.*
 
 ---
 
@@ -396,7 +391,7 @@ After Stage A, three independent criteria flag remaining outliers. **These flags
 
 2. **UPA-clone junction over-flooring** — ~226 junctions globally where both upstream branches have identical facc — both vector reaches sampled from the same D8 flow path, which carries the full parent drainage. Stage B Pass 1 uses `sum(upstream)` which over-floors these junctions (double-counting the cloned drainage). This is intentional: clone-aware flooring introduces new T003 drops that trigger cascade inflation. The over-flooring contributes minimally to the per-region net change.
 
-3. **Large net % changes** — The biphase pipeline produces larger aggregate facc changes than the old pipeline because it fully propagates bifurcation splits through downstream 1:1 chains. This is correct behavior: the old pipeline under-corrected by blocking raise cascades. The per-reach median change remains small (see Fig 3), and the large net % is driven by a few major river systems where corrections cascade through hundreds of reaches.
+3. **Large net % changes** — The biphase pipeline produces larger aggregate facc changes than the old pipeline because it fully propagates bifurcation splits through downstream 1:1 chains. This is correct behavior: the old pipeline under-corrected by blocking raise cascades. The large net % is driven by a few major river systems where corrections cascade through hundreds of reaches.
 
 ---
 
@@ -427,15 +422,15 @@ output/facc_detection/
   facc_denoise_v3_{REGION}.csv          # Per-reach corrections (6 files)
   facc_denoise_v3_summary_{REGION}.json # Summary stats (6 files)
   remaining_t003_{REGION}.geojson       # Residual violations for visual audit
-  figures/report_fig{1-6}.png           # Report figures
+  figures/report_fig{1-5}.png           # Report figures
 ```
 
 ### Figure Generation
 
 ```bash
 python scripts/generate_facc_report_figures.py
-# Outputs: output/facc_detection/figures/report_fig{1-5}.png
+# Outputs: output/facc_detection/figures/report_fig{1-4}.png
 
 python scripts/compare_willamette_integrator.py
-# Outputs: output/facc_detection/figures/report_fig6.png
+# Outputs: output/facc_detection/figures/report_fig5.png
 ```
