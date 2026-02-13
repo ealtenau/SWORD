@@ -35,28 +35,30 @@ V17C_DB = Path("data/duckdb/sword_v17c.duckdb")
 
 # Consistent color palette for correction types
 TYPE_COLORS = {
-    "isotonic_regression": "#4C72B0",
+    "lateral_propagate": "#CCB974",
     "junction_floor": "#55A868",
-    "junction_floor_post": "#8172B2",
+    "baseline_isotonic": "#8172B2",
     "bifurc_share": "#C44E52",
-    "lateral_lower": "#CCB974",
-    "node_denoise": "#64B5CD",
-    "upa_resample": "#DD8452",
-    "t003_flagged_only": "#AAAAAA",
-    "cascade_zero": "#999999",
-    "unknown": "#DDDDDD",
+    "final_1to1": "#4C72B0",
+    "final_bifurc": "#DD8452",
+    "final_junction": "#64B5CD",
+    "node_denoise": "#999999",
+    "baseline_node_override": "#AAAAAA",
+    "node_max_override": "#DDDDDD",
 }
 
 # Friendly labels
 TYPE_LABELS = {
-    "isotonic_regression": "Isotonic regression",
-    "junction_floor": "Junction floor (Phase 1b)",
-    "junction_floor_post": "Junction floor (post-isotonic)",
-    "bifurc_share": "Bifurcation split",
-    "lateral_lower": "Lateral lower (cascade)",
-    "node_denoise": "Node denoise",
-    "upa_resample": "UPA re-sample",
-    "t003_flagged_only": "T003 flagged only",
+    "lateral_propagate": "Lateral propagate (Stage B)",
+    "junction_floor": "Junction floor (Stage B)",
+    "baseline_isotonic": "Baseline isotonic (Stage A)",
+    "bifurc_share": "Bifurcation split (Stage B)",
+    "final_1to1": "Final 1:1 consistency",
+    "final_bifurc": "Final bifurcation consistency",
+    "final_junction": "Final junction consistency",
+    "node_denoise": "Node denoise (Stage A)",
+    "baseline_node_override": "Baseline node override (Stage A)",
+    "node_max_override": "Node max override",
 }
 
 V17B_COLOR = "#C44E52"  # red for broken
@@ -187,13 +189,21 @@ def fig1_before_after(
     ax.set_title(
         f"v17b: Junction Conservation\n"
         f"{n_viol_b:,} / {n_total_b:,} junctions violate conservation "
-        f"({100*n_viol_b/n_total_b:.0f}%)",
-        fontsize=11, color=V17B_COLOR, fontweight="bold",
+        f"({100 * n_viol_b / n_total_b:.0f}%)",
+        fontsize=11,
+        color=V17B_COLOR,
+        fontweight="bold",
     )
     ax.text(
-        0.5, 0.85, "VIOLATION\nZONE",
-        transform=ax.transAxes, fontsize=14, color=V17B_COLOR,
-        alpha=0.3, ha="left", fontweight="bold",
+        0.5,
+        0.85,
+        "VIOLATION\nZONE",
+        transform=ax.transAxes,
+        fontsize=14,
+        color=V17B_COLOR,
+        alpha=0.3,
+        ha="left",
+        fontweight="bold",
     )
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
@@ -212,8 +222,10 @@ def fig1_before_after(
     ax.set_title(
         f"v17c: Junction Conservation\n"
         f"{n_viol_c:,} / {n_total_c:,} junctions violate conservation "
-        f"({100*n_viol_c/n_total_c:.1f}%)",
-        fontsize=11, color=V17C_COLOR, fontweight="bold",
+        f"({100 * n_viol_c / n_total_c:.1f}%)",
+        fontsize=11,
+        color=V17C_COLOR,
+        fontweight="bold",
     )
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
@@ -236,13 +248,21 @@ def fig1_before_after(
     ax.set_title(
         f"v17b: Bifurcation Child/Parent Ratio\n"
         f"{n_cloned_b:,} / {n_bif_b:,} children cloned at ratio ~1.0 "
-        f"({100*n_cloned_b/n_bif_b:.0f}%)",
-        fontsize=11, color=V17B_COLOR, fontweight="bold",
+        f"({100 * n_cloned_b / n_bif_b:.0f}%)",
+        fontsize=11,
+        color=V17B_COLOR,
+        fontweight="bold",
     )
     ax.text(
-        1.0, 0.85, "D8 CLONING\nPEAK",
-        transform=ax.transAxes, fontsize=12, color=V17B_COLOR,
-        alpha=0.4, ha="right", fontweight="bold",
+        1.0,
+        0.85,
+        "D8 CLONING\nPEAK",
+        transform=ax.transAxes,
+        fontsize=12,
+        color=V17B_COLOR,
+        alpha=0.4,
+        ha="right",
+        fontweight="bold",
     )
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
@@ -258,8 +278,14 @@ def fig1_before_after(
 
     ax.hist(ratios_c, bins=100, color=V17C_COLOR, alpha=0.8, edgecolor="none")
     ax.axvline(1.0, color="k", ls="--", lw=1.5, alpha=0.7)
-    ax.axvline(median_c, color=V17C_COLOR, ls="-", lw=2, alpha=0.8,
-               label=f"Median = {median_c:.2f}")
+    ax.axvline(
+        median_c,
+        color=V17C_COLOR,
+        ls="-",
+        lw=2,
+        alpha=0.8,
+        label=f"Median = {median_c:.2f}",
+    )
     ax.axvspan(0.9, 1.1, alpha=0.08, color="#AAAAAA")
     ax.set_xlim(0, 2)
     ax.set_xlabel("child facc / parent facc", fontsize=10)
@@ -267,15 +293,19 @@ def fig1_before_after(
     ax.set_title(
         f"v17c: Bifurcation Child/Parent Ratio\n"
         f"Median = {median_c:.2f} (width-proportional split), "
-        f"only {n_cloned_c:,} near 1.0 ({100*n_cloned_c/n_bif_c:.1f}%)",
-        fontsize=11, color=V17C_COLOR, fontweight="bold",
+        f"only {n_cloned_c:,} near 1.0 ({100 * n_cloned_c / n_bif_c:.1f}%)",
+        fontsize=11,
+        color=V17C_COLOR,
+        fontweight="bold",
     )
     ax.legend(fontsize=9, loc="upper right")
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
     fig.suptitle(
         "Fig 1: v17b Has Systematic Errors — v17c Fixes Them",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=14,
+        fontweight="bold",
+        y=1.01,
     )
     fig.tight_layout()
     out = OUTPUT_DIR / "report_fig1.png"
@@ -287,14 +317,16 @@ def fig1_before_after(
 def fig2_stacked_bar(summaries: dict) -> None:
     """Fig 2: Correction type breakdown, stacked bar by region."""
     type_order = [
-        "bifurc_share",
-        "lateral_lower",
+        "lateral_propagate",
         "junction_floor",
-        "junction_floor_post",
-        "isotonic_regression",
-        "upa_resample",
+        "baseline_isotonic",
+        "bifurc_share",
+        "final_1to1",
+        "final_bifurc",
+        "final_junction",
         "node_denoise",
-        "t003_flagged_only",
+        "baseline_node_override",
+        "node_max_override",
     ]
 
     data = {ctype: [] for ctype in type_order}
@@ -319,7 +351,10 @@ def fig2_stacked_bar(summaries: dict) -> None:
         if vals.sum() == 0:
             continue
         ax.bar(
-            x, vals, width, bottom=bottom,
+            x,
+            vals,
+            width,
+            bottom=bottom,
             label=TYPE_LABELS.get(ctype, ctype),
             color=TYPE_COLORS.get(ctype, "#999999"),
         )
@@ -341,9 +376,13 @@ def fig2_stacked_bar(summaries: dict) -> None:
 
 def fig3_change_distribution(df: pd.DataFrame) -> None:
     """Fig 3: Per-reach relative change distribution, faceted by region."""
-    mask = (df["original_facc"] > 0) & (df["delta_pct"].notna()) & (df["delta_pct"].abs() < 1e6)
+    mask = (
+        (df["original_facc"] > 0)
+        & (df["delta_pct"].notna())
+        & (df["delta_pct"].abs() < 1e6)
+    )
     plot_df = df[mask].copy()
-    plot_df["delta_pct_clipped"] = plot_df["delta_pct"].clip(-200, 200)
+    plot_df["delta_pct_clipped"] = plot_df["delta_pct"].clip(-500, 500)
 
     regions_present = [r for r in REGIONS if r in plot_df["region"].values]
     n = len(regions_present)
@@ -372,8 +411,11 @@ def fig3_change_distribution(df: pd.DataFrame) -> None:
         row, col = divmod(i, ncols)
         axes[row][col].set_visible(False)
 
-    fig.suptitle("Fig 3: Per-Reach Relative Change Distribution (clipped to +/-200%)",
-                 fontsize=13, y=1.02)
+    fig.suptitle(
+        "Fig 3: Per-Reach Relative Change Distribution (clipped to +/-500%)",
+        fontsize=13,
+        y=1.02,
+    )
     fig.tight_layout()
     out = OUTPUT_DIR / "report_fig3.png"
     fig.savefig(out, dpi=200, bbox_inches="tight")
@@ -388,13 +430,27 @@ def fig4_scalability(summaries: dict) -> None:
     basin_sizes = [10, 50, 100, 500, 1000, 5000]
     N = 248674
 
-    integrator_ops = [m ** 3 * (N / m) for m in basin_sizes]
+    integrator_ops = [m**3 * (N / m) for m in basin_sizes]
     pipeline_ops = [N] * len(basin_sizes)
 
-    ax1.plot(basin_sizes, integrator_ops, "o-", color="#C44E52", lw=2,
-             label="Integrator (O(N*m$^2$) total)", markersize=6)
-    ax1.plot(basin_sizes, pipeline_ops, "s-", color="#4C72B0", lw=2,
-             label="v3 Pipeline (O(N) total)", markersize=6)
+    ax1.plot(
+        basin_sizes,
+        integrator_ops,
+        "o-",
+        color="#C44E52",
+        lw=2,
+        label="Integrator (O(N*m$^2$) total)",
+        markersize=6,
+    )
+    ax1.plot(
+        basin_sizes,
+        pipeline_ops,
+        "s-",
+        color="#4C72B0",
+        lw=2,
+        label="v3 Pipeline (O(N) total)",
+        markersize=6,
+    )
 
     ax1.set_xscale("log")
     ax1.set_yscale("log")
@@ -410,14 +466,21 @@ def fig4_scalability(summaries: dict) -> None:
     pct_corrected = [100 * c / t for c, t in zip(corrections, total_reaches)]
 
     x = np.arange(len(regions_present))
-    ax2.bar(x - 0.2, total_reaches, 0.35, label="Total reaches",
-            color="#4C72B0", alpha=0.7)
-    ax2.bar(x + 0.2, corrections, 0.35, label="Corrections",
-            color="#C44E52", alpha=0.7)
+    ax2.bar(
+        x - 0.2, total_reaches, 0.35, label="Total reaches", color="#4C72B0", alpha=0.7
+    )
+    ax2.bar(x + 0.2, corrections, 0.35, label="Corrections", color="#C44E52", alpha=0.7)
 
     for i, (xi, pct) in enumerate(zip(x, pct_corrected)):
-        ax2.text(xi + 0.2, corrections[i] + 500, f"{pct:.0f}%",
-                 ha="center", va="bottom", fontsize=8, color="#C44E52")
+        ax2.text(
+            xi + 0.2,
+            corrections[i] + 500,
+            f"{pct:.0f}%",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            color="#C44E52",
+        )
 
     ax2.set_xticks(x)
     ax2.set_xticklabels(regions_present, fontsize=11)
@@ -426,8 +489,11 @@ def fig4_scalability(summaries: dict) -> None:
     ax2.legend(fontsize=9, framealpha=0.9)
     ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
-    fig.suptitle("Fig 4: Scalability — v3 Pipeline Processes 248K Reaches Globally",
-                 fontsize=13, y=1.02)
+    fig.suptitle(
+        "Fig 4: Scalability — v3 Pipeline Processes 248K Reaches Globally",
+        fontsize=13,
+        y=1.02,
+    )
     fig.tight_layout()
     out = OUTPUT_DIR / "report_fig4.png"
     fig.savefig(out, dpi=200, bbox_inches="tight")
@@ -439,10 +505,40 @@ def fig5_pava_example() -> None:
     """Fig 5: PAVA in action on a real 1:1 chain (SA example)."""
     # SA chain: 15 reaches with a clear drop from R8-R14 that PAVA pools through.
     # Data from chain starting at reach 62266502361 in South America.
-    orig = [5589, 5630, 5670, 5754, 5836, 5919, 6000, 6673,
-            6242, 5805, 5367, 4924, 4493, 4054, 6776]
-    corr = [6265, 5666, 5670, 5754, 5836, 5919, 6000, 6448,
-            6448, 6448, 6448, 6523, 6626, 6681, 6776]
+    orig = [
+        5589,
+        5630,
+        5670,
+        5754,
+        5836,
+        5919,
+        6000,
+        6673,
+        6242,
+        5805,
+        5367,
+        4924,
+        4493,
+        4054,
+        6776,
+    ]
+    corr = [
+        6265,
+        5666,
+        5670,
+        5754,
+        5836,
+        5919,
+        6000,
+        6448,
+        6448,
+        6448,
+        6448,
+        6523,
+        6626,
+        6681,
+        6776,
+    ]
     n = len(orig)
     x = np.arange(n)
 
@@ -453,37 +549,74 @@ def fig5_pava_example() -> None:
         if orig[i] > orig[i + 1] * 1.001:
             ax.axvspan(i, i + 1, alpha=0.10, color=V17B_COLOR, zorder=0)
 
-    ax.plot(x, orig, "o-", color=V17B_COLOR, lw=2, markersize=7, alpha=0.85,
-            label="Before PAVA (Phase 1 output)", zorder=3)
-    ax.plot(x, corr, "s-", color=V17C_COLOR, lw=2.5, markersize=7, alpha=0.85,
-            label="After PAVA (Phase 2 output)", zorder=4)
+    ax.plot(
+        x,
+        orig,
+        "o-",
+        color=V17B_COLOR,
+        lw=2,
+        markersize=7,
+        alpha=0.85,
+        label="Before PAVA (Stage A baseline)",
+        zorder=3,
+    )
+    ax.plot(
+        x,
+        corr,
+        "s-",
+        color=V17C_COLOR,
+        lw=2.5,
+        markersize=7,
+        alpha=0.85,
+        label="After PAVA (Stage A4 output)",
+        zorder=4,
+    )
 
     ax.annotate(
         "PAVA pool:\nclosest non-decreasing\nfit to this drop",
-        xy=(8.5, 6448), xytext=(10.5, 5500),
-        fontsize=8.5, color=V17C_COLOR, fontweight="bold",
+        xy=(8.5, 6448),
+        xytext=(10.5, 5500),
+        fontsize=8.5,
+        color=V17C_COLOR,
+        fontweight="bold",
         arrowprops=dict(arrowstyle="->", color=V17C_COLOR, lw=1.5),
         ha="center",
     )
     ax.annotate(
         "violation:\ndownstream < upstream",
-        xy=(8, 6242), xytext=(5.5, 4300),
-        fontsize=8.5, color=V17B_COLOR,
+        xy=(8, 6242),
+        xytext=(5.5, 4300),
+        fontsize=8.5,
+        color=V17B_COLOR,
         arrowprops=dict(arrowstyle="->", color=V17B_COLOR, lw=1.5),
         ha="center",
     )
 
     # Direction arrow
-    ax.annotate("", xy=(n - 1, 7100), xytext=(0, 7100),
-                arrowprops=dict(arrowstyle="->", color="gray", lw=1, ls="--"))
-    ax.text(n / 2, 7250, "facc should increase (downstream \u2192)",
-            ha="center", fontsize=9, color="gray", style="italic")
+    ax.annotate(
+        "",
+        xy=(n - 1, 7100),
+        xytext=(0, 7100),
+        arrowprops=dict(arrowstyle="->", color="gray", lw=1, ls="--"),
+    )
+    ax.text(
+        n / 2,
+        7250,
+        "facc should increase (downstream \u2192)",
+        ha="center",
+        fontsize=9,
+        color="gray",
+        style="italic",
+    )
 
-    ax.set_xlabel("Reach position along 1:1 chain (upstream \u2192 downstream)", fontsize=11)
+    ax.set_xlabel(
+        "Reach position along 1:1 chain (upstream \u2192 downstream)", fontsize=11
+    )
     ax.set_ylabel("Flow accumulation (km\u00b2)", fontsize=11)
     ax.set_title(
         "Fig 5: Isotonic Regression (PAVA) on a 1:1 Chain \u2014 South America Example",
-        fontsize=12, fontweight="bold",
+        fontsize=12,
+        fontweight="bold",
     )
     ax.set_xticks(x)
     ax.set_xticklabels([f"R{i + 1}" for i in x], fontsize=8)
@@ -492,11 +625,14 @@ def fig5_pava_example() -> None:
     ax.grid(True, alpha=0.2)
 
     import matplotlib.patches as mpatches
-    viol_patch = mpatches.Patch(color=V17B_COLOR, alpha=0.10,
-                                label="Violation zone (facc decreases)")
+
+    viol_patch = mpatches.Patch(
+        color=V17B_COLOR, alpha=0.10, label="Violation zone (facc decreases)"
+    )
     handles, labels = ax.get_legend_handles_labels()
-    ax.legend(handles=handles + [viol_patch], fontsize=9,
-              loc="lower right", framealpha=0.9)
+    ax.legend(
+        handles=handles + [viol_patch], fontsize=9, loc="lower right", framealpha=0.9
+    )
 
     fig.tight_layout()
     out = OUTPUT_DIR / "report_fig5.png"
@@ -510,7 +646,9 @@ def main():
 
     print("Loading v3 correction CSVs...")
     df = load_all_csvs()
-    print(f"  {len(df):,} total correction rows across {df['region'].nunique()} regions")
+    print(
+        f"  {len(df):,} total correction rows across {df['region'].nunique()} regions"
+    )
 
     print("Loading summary JSONs...")
     summaries = load_summaries()
