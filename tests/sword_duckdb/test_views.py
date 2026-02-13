@@ -8,6 +8,8 @@ Tests WritableArray, CenterlinesView, NodesView, and ReachesView.
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.db
+
 
 class TestWritableArrayBasics:
     """Tests for WritableArray basic functionality."""
@@ -63,8 +65,8 @@ class TestWritableArrayBasics:
         """Test __repr__ method."""
         arr = sword_readonly.reaches.dist_out
         repr_str = repr(arr)
-        assert 'WritableArray' in repr_str
-        assert 'dist_out' in repr_str
+        assert "WritableArray" in repr_str
+        assert "dist_out" in repr_str
 
 
 class TestWritableArrayComparison:
@@ -231,6 +233,7 @@ class TestWritableArrayPersistence:
         sword_writable.close()
 
         from src.updates.sword_duckdb import SWORD
+
         sword2 = SWORD(db_path, region, version)
         assert sword2.reaches.dist_out[0] == new_value
         sword2.close()
@@ -250,10 +253,9 @@ class TestWritableArrayPersistence:
         sword_writable.close()
 
         from src.updates.sword_duckdb import SWORD
+
         sword2 = SWORD(db_path, region, version)
-        np.testing.assert_array_almost_equal(
-            sword2.reaches.dist_out[:3], new_values
-        )
+        np.testing.assert_array_almost_equal(sword2.reaches.dist_out[:3], new_values)
         sword2.close()
 
     def test_setitem_fancy_indexing_persists(self, sword_writable):
@@ -271,6 +273,7 @@ class TestWritableArrayPersistence:
         sword_writable.close()
 
         from src.updates.sword_duckdb import SWORD
+
         sword2 = SWORD(db_path, region, version)
         for idx in indices:
             assert sword2.reaches.dist_out[idx] == new_value
@@ -289,6 +292,7 @@ class TestCenterlinesView:
     def test_x_y_are_writable(self, sword_readonly):
         """Test x and y return WritableArray."""
         from src.updates.sword_duckdb.views import WritableArray
+
         assert isinstance(sword_readonly.centerlines.x, WritableArray)
         assert isinstance(sword_readonly.centerlines.y, WritableArray)
 
@@ -321,6 +325,7 @@ class TestNodesView:
     def test_len_attribute(self, sword_readonly):
         """Test len attribute returns node lengths."""
         from src.updates.sword_duckdb.views import WritableArray
+
         lens = sword_readonly.nodes.len
         assert isinstance(lens, WritableArray)
         assert len(lens) == len(sword_readonly.nodes.id)
@@ -340,6 +345,7 @@ class TestNodesView:
     def test_renamed_attributes(self, sword_readonly):
         """Test renamed attributes work (id, len, wth, etc)."""
         from src.updates.sword_duckdb.views import WritableArray
+
         # id -> node_id
         assert isinstance(sword_readonly.nodes.id, np.ndarray)
         # len -> node_length
@@ -364,6 +370,7 @@ class TestReachesView:
     def test_len_attribute(self, sword_readonly):
         """Test len attribute returns reach lengths."""
         from src.updates.sword_duckdb.views import WritableArray
+
         lens = sword_readonly.reaches.len
         assert isinstance(lens, WritableArray)
         assert len(lens) == len(sword_readonly.reaches.id)
@@ -394,6 +401,7 @@ class TestReachesView:
     def test_renamed_attributes(self, sword_readonly):
         """Test renamed attributes work."""
         from src.updates.sword_duckdb.views import WritableArray
+
         # id -> reach_id
         assert isinstance(sword_readonly.reaches.id, np.ndarray)
         # len -> reach_length
@@ -430,7 +438,9 @@ class TestViewDataConsistency:
         reach_ids = set(sword_readonly.reaches.id)
         for rid in cl_reach_ids:
             if rid != 0:  # Skip null references
-                assert rid in reach_ids, f"Centerline references non-existent reach {rid}"
+                assert rid in reach_ids, (
+                    f"Centerline references non-existent reach {rid}"
+                )
 
     def test_centerline_node_ids_valid(self, sword_readonly):
         """Test all centerline node_ids exist in nodes."""
@@ -442,8 +452,11 @@ class TestViewDataConsistency:
 
     def test_reach_node_count_matches(self, sword_readonly):
         """Test reach rch_n_nodes matches actual node count."""
-        for idx, reach_id in enumerate(sword_readonly.reaches.id[:10]):  # Check first 10
+        for idx, reach_id in enumerate(
+            sword_readonly.reaches.id[:10]
+        ):  # Check first 10
             n_nodes_attr = sword_readonly.reaches.rch_n_nodes[idx]
             actual_count = np.sum(sword_readonly.nodes.reach_id == reach_id)
-            assert n_nodes_attr == actual_count, \
+            assert n_nodes_attr == actual_count, (
                 f"Reach {reach_id} claims {n_nodes_attr} nodes but has {actual_count}"
+            )

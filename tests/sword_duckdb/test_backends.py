@@ -18,6 +18,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+pytestmark = pytest.mark.db
+
 from src.updates.sword_duckdb.backends import (
     BackendType,
     DuckDBBackend,
@@ -25,18 +27,18 @@ from src.updates.sword_duckdb.backends import (
     detect_backend_type,
     get_backend,
 )
-from src.updates.sword_duckdb.backends.base import IsolationLevel
 
 
 # =============================================================================
 # FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
 def temp_duckdb():
     """Create a temporary DuckDB database."""
     # Use tempfile to get a unique path, then delete it so DuckDB can create fresh
-    with tempfile.NamedTemporaryFile(suffix='.duckdb', delete=True) as f:
+    with tempfile.NamedTemporaryFile(suffix=".duckdb", delete=True) as f:
         db_path = f.name
 
     # db_path now points to a non-existent file that DuckDB will create
@@ -70,7 +72,7 @@ def temp_duckdb():
 @pytest.fixture
 def memory_duckdb():
     """Create an in-memory DuckDB backend."""
-    backend = DuckDBBackend(':memory:')
+    backend = DuckDBBackend(":memory:")
     conn = backend.connect()
 
     # Create test table
@@ -91,33 +93,38 @@ def memory_duckdb():
 # BACKEND TYPE DETECTION TESTS
 # =============================================================================
 
+
 class TestBackendTypeDetection:
     """Tests for backend type detection."""
 
     def test_detect_duckdb_from_path(self):
         """DuckDB detected from .duckdb file path."""
-        assert detect_backend_type('data/sword.duckdb') == BackendType.DUCKDB
-        assert detect_backend_type('/absolute/path/db.duckdb') == BackendType.DUCKDB
-        assert detect_backend_type(Path('relative/db.duckdb')) == BackendType.DUCKDB
+        assert detect_backend_type("data/sword.duckdb") == BackendType.DUCKDB
+        assert detect_backend_type("/absolute/path/db.duckdb") == BackendType.DUCKDB
+        assert detect_backend_type(Path("relative/db.duckdb")) == BackendType.DUCKDB
 
     def test_detect_duckdb_from_memory(self):
         """DuckDB detected from :memory: path."""
-        assert detect_backend_type(':memory:') == BackendType.DUCKDB
+        assert detect_backend_type(":memory:") == BackendType.DUCKDB
 
     def test_detect_postgres_from_url(self):
         """PostgreSQL detected from connection URLs."""
-        assert detect_backend_type('postgresql://user:pass@host/db') == BackendType.POSTGRES
-        assert detect_backend_type('postgres://localhost/sword') == BackendType.POSTGRES
-        assert detect_backend_type('psql://host:5432/db') == BackendType.POSTGRES
+        assert (
+            detect_backend_type("postgresql://user:pass@host/db")
+            == BackendType.POSTGRES
+        )
+        assert detect_backend_type("postgres://localhost/sword") == BackendType.POSTGRES
+        assert detect_backend_type("psql://host:5432/db") == BackendType.POSTGRES
 
     def test_detect_default_to_duckdb(self):
         """Unknown paths default to DuckDB."""
-        assert detect_backend_type('unknown.db') == BackendType.DUCKDB
+        assert detect_backend_type("unknown.db") == BackendType.DUCKDB
 
 
 # =============================================================================
 # DUCKDB BACKEND TESTS
 # =============================================================================
+
 
 class TestDuckDBBackend:
     """Tests for DuckDB backend implementation."""
@@ -125,7 +132,7 @@ class TestDuckDBBackend:
     def test_properties(self, memory_duckdb):
         """Backend properties are correct."""
         assert memory_duckdb.backend_type == BackendType.DUCKDB
-        assert memory_duckdb.placeholder == '?'
+        assert memory_duckdb.placeholder == "?"
 
     def test_connect(self, memory_duckdb):
         """Connection is established."""
@@ -138,49 +145,42 @@ class TestDuckDBBackend:
         df = temp_duckdb.query("SELECT * FROM test_reaches")
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 3
-        assert 'reach_id' in df.columns
+        assert "reach_id" in df.columns
 
     def test_query_with_params(self, temp_duckdb):
         """Parameterized query works."""
-        df = temp_duckdb.query(
-            "SELECT * FROM test_reaches WHERE region = ?",
-            ['NA']
-        )
+        df = temp_duckdb.query("SELECT * FROM test_reaches WHERE region = ?", ["NA"])
         assert len(df) == 2
 
     def test_execute(self, memory_duckdb):
         """Execute inserts data."""
         memory_duckdb.execute(
-            "INSERT INTO test_data VALUES (?, ?, ?)",
-            [1, 'test', 123.45]
+            "INSERT INTO test_data VALUES (?, ?, ?)", [1, "test", 123.45]
         )
 
         df = memory_duckdb.query("SELECT * FROM test_data")
         assert len(df) == 1
-        assert df.iloc[0]['name'] == 'test'
+        assert df.iloc[0]["name"] == "test"
 
     def test_executemany(self, memory_duckdb):
         """Executemany inserts multiple rows."""
         data = [
-            (1, 'a', 1.0),
-            (2, 'b', 2.0),
-            (3, 'c', 3.0),
+            (1, "a", 1.0),
+            (2, "b", 2.0),
+            (3, "c", 3.0),
         ]
-        memory_duckdb.executemany(
-            "INSERT INTO test_data VALUES (?, ?, ?)",
-            data
-        )
+        memory_duckdb.executemany("INSERT INTO test_data VALUES (?, ?, ?)", data)
 
         df = memory_duckdb.query("SELECT COUNT(*) as cnt FROM test_data")
-        assert df.iloc[0]['cnt'] == 3
+        assert df.iloc[0]["cnt"] == 3
 
     def test_transaction_commit(self, temp_duckdb):
         """Transaction commits on success."""
         with temp_duckdb.transaction() as ctx:
             temp_duckdb.execute(
                 "INSERT INTO test_reaches VALUES (?, ?, ?, ?)",
-                [4, 'AS', 4000.0, 2000.0],
-                connection=ctx.connection
+                [4, "AS", 4000.0, 2000.0],
+                connection=ctx.connection,
             )
 
         df = temp_duckdb.query("SELECT * FROM test_reaches WHERE reach_id = 4")
@@ -192,8 +192,8 @@ class TestDuckDBBackend:
             with temp_duckdb.transaction() as ctx:
                 temp_duckdb.execute(
                     "INSERT INTO test_reaches VALUES (?, ?, ?, ?)",
-                    [5, 'AF', 5000.0, 2500.0],
-                    connection=ctx.connection
+                    [5, "AF", 5000.0, 2500.0],
+                    connection=ctx.connection,
                 )
                 raise ValueError("Simulated error")
         except ValueError:
@@ -204,20 +204,16 @@ class TestDuckDBBackend:
 
     def test_format_upsert(self, memory_duckdb):
         """UPSERT format is correct for DuckDB."""
-        sql = memory_duckdb.format_upsert(
-            'test_table',
-            ['id', 'name', 'value'],
-            ['id']
-        )
-        assert 'INSERT OR REPLACE' in sql
-        assert 'test_table' in sql
+        sql = memory_duckdb.format_upsert("test_table", ["id", "name", "value"], ["id"])
+        assert "INSERT OR REPLACE" in sql
+        assert "test_table" in sql
 
     def test_format_array_literal(self, memory_duckdb):
         """Array literal format is correct for DuckDB."""
         result = memory_duckdb.format_array_literal([1, 2, 3])
-        assert result == '[1, 2, 3]'
+        assert result == "[1, 2, 3]"
 
-        result = memory_duckdb.format_array_literal(['a', 'b'])
+        result = memory_duckdb.format_array_literal(["a", "b"])
         assert result == "['a', 'b']"
 
     def test_convert_placeholders(self, memory_duckdb):
@@ -230,9 +226,11 @@ class TestDuckDBBackend:
 # POSTGRES BACKEND TESTS (require running PostgreSQL)
 # =============================================================================
 
+
+@pytest.mark.postgres
 @pytest.mark.skipif(
-    not os.environ.get('SWORD_TEST_POSTGRES_URL'),
-    reason="SWORD_TEST_POSTGRES_URL not set"
+    not os.environ.get("SWORD_TEST_POSTGRES_URL"),
+    reason="SWORD_TEST_POSTGRES_URL not set",
 )
 class TestPostgresBackend:
     """Tests for PostgreSQL backend (requires live database)."""
@@ -241,7 +239,7 @@ class TestPostgresBackend:
     def pg_backend(self):
         """Create PostgreSQL backend from env."""
         backend = PostgresBackend(
-            os.environ['SWORD_TEST_POSTGRES_URL'],
+            os.environ["SWORD_TEST_POSTGRES_URL"],
             min_connections=1,
             max_connections=5,
         )
@@ -251,7 +249,7 @@ class TestPostgresBackend:
     def test_properties(self, pg_backend):
         """Backend properties are correct."""
         assert pg_backend.backend_type == BackendType.POSTGRES
-        assert pg_backend.placeholder == '%s'
+        assert pg_backend.placeholder == "%s"
 
     def test_connect(self, pg_backend):
         """Connection is established."""
@@ -267,24 +265,20 @@ class TestPostgresBackend:
 
     def test_format_upsert(self, pg_backend):
         """UPSERT format is correct for PostgreSQL."""
-        sql = pg_backend.format_upsert(
-            'test_table',
-            ['id', 'name', 'value'],
-            ['id']
-        )
-        assert 'ON CONFLICT' in sql
-        assert 'DO UPDATE SET' in sql
+        sql = pg_backend.format_upsert("test_table", ["id", "name", "value"], ["id"])
+        assert "ON CONFLICT" in sql
+        assert "DO UPDATE SET" in sql
 
     def test_format_array_literal(self, pg_backend):
         """Array literal format is correct for PostgreSQL."""
         result = pg_backend.format_array_literal([1, 2, 3])
-        assert 'ARRAY[' in result
+        assert "ARRAY[" in result
 
     def test_region_lock_id(self, pg_backend):
         """Region lock IDs are consistent."""
-        id1 = pg_backend._region_lock_id('NA')
-        id2 = pg_backend._region_lock_id('NA')
-        id3 = pg_backend._region_lock_id('EU')
+        id1 = pg_backend._region_lock_id("NA")
+        id2 = pg_backend._region_lock_id("NA")
+        id3 = pg_backend._region_lock_id("EU")
 
         assert id1 == id2  # Same region = same ID
         assert id1 != id3  # Different region = different ID
@@ -294,34 +288,35 @@ class TestPostgresBackend:
 # FACTORY TESTS
 # =============================================================================
 
+
 class TestBackendFactory:
     """Tests for backend factory functions."""
 
     def test_get_backend_duckdb(self):
         """Factory creates DuckDB backend from path."""
-        backend = get_backend(':memory:')
+        backend = get_backend(":memory:")
         assert isinstance(backend, DuckDBBackend)
         backend.close()
 
     def test_get_backend_duckdb_with_options(self):
         """Factory passes options to DuckDB backend."""
-        backend = get_backend(':memory:', read_only=False, spatial=False)
+        backend = get_backend(":memory:", read_only=False, spatial=False)
         assert isinstance(backend, DuckDBBackend)
         assert backend.spatial is False
         backend.close()
 
     def test_get_backend_explicit_type(self):
         """Factory respects explicit backend type."""
-        backend = get_backend(':memory:', backend_type=BackendType.DUCKDB)
+        backend = get_backend(":memory:", backend_type=BackendType.DUCKDB)
         assert isinstance(backend, DuckDBBackend)
         backend.close()
 
     @pytest.mark.skipif(
-        not os.environ.get('SWORD_TEST_POSTGRES_URL'),
-        reason="SWORD_TEST_POSTGRES_URL not set"
+        not os.environ.get("SWORD_TEST_POSTGRES_URL"),
+        reason="SWORD_TEST_POSTGRES_URL not set",
     )
     def test_get_backend_postgres(self):
         """Factory creates PostgreSQL backend from URL."""
-        backend = get_backend(os.environ['SWORD_TEST_POSTGRES_URL'])
+        backend = get_backend(os.environ["SWORD_TEST_POSTGRES_URL"])
         assert isinstance(backend, PostgresBackend)
         backend.close()

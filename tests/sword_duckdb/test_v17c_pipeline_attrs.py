@@ -23,10 +23,13 @@ from src.updates.sword_v17c_pipeline.v17c_pipeline import (
     load_reaches,
 )
 
+pytestmark = [pytest.mark.pipeline, pytest.mark.topology]
+
 
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def test_db_path():
@@ -84,6 +87,7 @@ def mainstem(reach_graph, hw_out_attrs):
 # Test Graph Construction
 # =============================================================================
 
+
 class TestBuildReachGraph:
     """Tests for build_reach_graph function."""
 
@@ -103,9 +107,9 @@ class TestBuildReachGraph:
         """Nodes should have reach attributes."""
         for node in list(reach_graph.nodes())[:5]:
             attrs = reach_graph.nodes[node]
-            assert 'reach_length' in attrs
-            assert 'width' in attrs
-            assert attrs['reach_length'] > 0
+            assert "reach_length" in attrs
+            assert "width" in attrs
+            assert attrs["reach_length"] > 0
 
     def test_graph_is_dag(self, reach_graph):
         """Graph should be a directed acyclic graph (DAG)."""
@@ -115,6 +119,7 @@ class TestBuildReachGraph:
 # =============================================================================
 # Test Hydrologic Distances
 # =============================================================================
+
 
 class TestComputeHydroDistances:
     """Tests for compute_hydro_distances function."""
@@ -126,8 +131,8 @@ class TestComputeHydroDistances:
     def test_contains_required_keys(self, hydro_distances):
         """Each result should have hydro_dist_out and hydro_dist_hw."""
         for node, attrs in hydro_distances.items():
-            assert 'hydro_dist_out' in attrs
-            assert 'hydro_dist_hw' in attrs
+            assert "hydro_dist_out" in attrs
+            assert "hydro_dist_hw" in attrs
 
     def test_hydro_dist_out_at_outlet_is_zero(self, reach_graph, hydro_distances):
         """hydro_dist_out should be 0 at outlets (no outgoing edges)."""
@@ -135,8 +140,10 @@ class TestComputeHydroDistances:
         assert len(outlets) > 0, "Should have at least one outlet"
 
         for outlet in outlets:
-            dist_out = hydro_distances[outlet]['hydro_dist_out']
-            assert dist_out == 0, f"Outlet {outlet} should have hydro_dist_out=0, got {dist_out}"
+            dist_out = hydro_distances[outlet]["hydro_dist_out"]
+            assert dist_out == 0, (
+                f"Outlet {outlet} should have hydro_dist_out=0, got {dist_out}"
+            )
 
     def test_hydro_dist_out_increases_upstream(self, reach_graph, hydro_distances):
         """hydro_dist_out should increase as we go upstream."""
@@ -144,9 +151,9 @@ class TestComputeHydroDistances:
         headwaters = [n for n in reach_graph.nodes() if reach_graph.in_degree(n) == 0]
 
         for outlet in outlets:
-            outlet_dist = hydro_distances[outlet]['hydro_dist_out']
+            outlet_dist = hydro_distances[outlet]["hydro_dist_out"]
             for hw in headwaters:
-                hw_dist = hydro_distances[hw]['hydro_dist_out']
+                hw_dist = hydro_distances[hw]["hydro_dist_out"]
                 # Headwater should have larger dist_out than outlet
                 # (unless they're the same node in a single-node network)
                 if hw != outlet:
@@ -160,8 +167,10 @@ class TestComputeHydroDistances:
         assert len(headwaters) > 0, "Should have at least one headwater"
 
         for hw in headwaters:
-            dist_hw = hydro_distances[hw]['hydro_dist_hw']
-            assert dist_hw == 0, f"Headwater {hw} should have hydro_dist_hw=0, got {dist_hw}"
+            dist_hw = hydro_distances[hw]["hydro_dist_hw"]
+            assert dist_hw == 0, (
+                f"Headwater {hw} should have hydro_dist_hw=0, got {dist_hw}"
+            )
 
     def test_hydro_dist_hw_increases_downstream(self, reach_graph, hydro_distances):
         """hydro_dist_hw should increase as we go downstream."""
@@ -169,9 +178,9 @@ class TestComputeHydroDistances:
         headwaters = [n for n in reach_graph.nodes() if reach_graph.in_degree(n) == 0]
 
         for hw in headwaters:
-            hw_dist = hydro_distances[hw]['hydro_dist_hw']
+            hw_dist = hydro_distances[hw]["hydro_dist_hw"]
             for outlet in outlets:
-                outlet_dist = hydro_distances[outlet]['hydro_dist_hw']
+                outlet_dist = hydro_distances[outlet]["hydro_dist_hw"]
                 # Outlet should have larger dist_hw than headwater
                 if outlet != hw:
                     assert outlet_dist > hw_dist, (
@@ -181,19 +190,22 @@ class TestComputeHydroDistances:
     def test_hydro_dist_values_are_non_negative(self, hydro_distances):
         """All distance values should be non-negative."""
         for node, attrs in hydro_distances.items():
-            dist_out = attrs['hydro_dist_out']
-            dist_hw = attrs['hydro_dist_hw']
+            dist_out = attrs["hydro_dist_out"]
+            dist_hw = attrs["hydro_dist_hw"]
 
             # dist_out can be inf for unreachable nodes, but should not be negative
-            assert dist_out >= 0 or dist_out == float('inf'), (
+            assert dist_out >= 0 or dist_out == float("inf"), (
                 f"Node {node}: hydro_dist_out should be >= 0, got {dist_out}"
             )
-            assert dist_hw >= 0, f"Node {node}: hydro_dist_hw should be >= 0, got {dist_hw}"
+            assert dist_hw >= 0, (
+                f"Node {node}: hydro_dist_hw should be >= 0, got {dist_hw}"
+            )
 
 
 # =============================================================================
 # Test Best Headwater/Outlet Computation
 # =============================================================================
+
 
 class TestComputeBestHeadwaterOutlet:
     """Tests for compute_best_headwater_outlet function."""
@@ -204,7 +216,13 @@ class TestComputeBestHeadwaterOutlet:
 
     def test_contains_required_keys(self, hw_out_attrs):
         """Each result should have required keys."""
-        required_keys = ['best_headwater', 'best_outlet', 'pathlen_hw', 'pathlen_out', 'path_freq']
+        required_keys = [
+            "best_headwater",
+            "best_outlet",
+            "pathlen_hw",
+            "pathlen_out",
+            "path_freq",
+        ]
         for node, attrs in hw_out_attrs.items():
             for key in required_keys:
                 assert key in attrs, f"Node {node} missing key: {key}"
@@ -213,7 +231,7 @@ class TestComputeBestHeadwaterOutlet:
         """best_headwater should be a valid node in the graph."""
         all_nodes = set(reach_graph.nodes())
         for node, attrs in hw_out_attrs.items():
-            hw = attrs['best_headwater']
+            hw = attrs["best_headwater"]
             if hw is not None:
                 assert hw in all_nodes, f"best_headwater {hw} not in graph nodes"
 
@@ -221,7 +239,7 @@ class TestComputeBestHeadwaterOutlet:
         """best_outlet should be a valid node in the graph."""
         all_nodes = set(reach_graph.nodes())
         for node, attrs in hw_out_attrs.items():
-            out = attrs['best_outlet']
+            out = attrs["best_outlet"]
             if out is not None:
                 assert out in all_nodes, f"best_outlet {out} not in graph nodes"
 
@@ -230,7 +248,7 @@ class TestComputeBestHeadwaterOutlet:
         headwaters = [n for n in reach_graph.nodes() if reach_graph.in_degree(n) == 0]
 
         for hw in headwaters:
-            assert hw_out_attrs[hw]['best_headwater'] == hw, (
+            assert hw_out_attrs[hw]["best_headwater"] == hw, (
                 f"Headwater {hw} should have best_headwater == itself"
             )
 
@@ -239,7 +257,7 @@ class TestComputeBestHeadwaterOutlet:
         outlets = [n for n in reach_graph.nodes() if reach_graph.out_degree(n) == 0]
 
         for outlet in outlets:
-            assert hw_out_attrs[outlet]['best_outlet'] == outlet, (
+            assert hw_out_attrs[outlet]["best_outlet"] == outlet, (
                 f"Outlet {outlet} should have best_outlet == itself"
             )
 
@@ -248,7 +266,7 @@ class TestComputeBestHeadwaterOutlet:
         headwaters = [n for n in reach_graph.nodes() if reach_graph.in_degree(n) == 0]
 
         for hw in headwaters:
-            assert hw_out_attrs[hw]['pathlen_hw'] == 0, (
+            assert hw_out_attrs[hw]["pathlen_hw"] == 0, (
                 f"Headwater {hw} should have pathlen_hw == 0"
             )
 
@@ -257,24 +275,24 @@ class TestComputeBestHeadwaterOutlet:
         outlets = [n for n in reach_graph.nodes() if reach_graph.out_degree(n) == 0]
 
         for outlet in outlets:
-            assert hw_out_attrs[outlet]['pathlen_out'] == 0, (
+            assert hw_out_attrs[outlet]["pathlen_out"] == 0, (
                 f"Outlet {outlet} should have pathlen_out == 0"
             )
 
     def test_pathlen_values_are_non_negative(self, hw_out_attrs):
         """All pathlen values should be non-negative."""
         for node, attrs in hw_out_attrs.items():
-            assert attrs['pathlen_hw'] >= 0, (
+            assert attrs["pathlen_hw"] >= 0, (
                 f"Node {node}: pathlen_hw should be >= 0, got {attrs['pathlen_hw']}"
             )
-            assert attrs['pathlen_out'] >= 0, (
+            assert attrs["pathlen_out"] >= 0, (
                 f"Node {node}: pathlen_out should be >= 0, got {attrs['pathlen_out']}"
             )
 
     def test_path_freq_is_positive(self, hw_out_attrs):
         """path_freq should be at least 1 for all nodes."""
         for node, attrs in hw_out_attrs.items():
-            assert attrs['path_freq'] >= 1, (
+            assert attrs["path_freq"] >= 1, (
                 f"Node {node}: path_freq should be >= 1, got {attrs['path_freq']}"
             )
 
@@ -282,6 +300,7 @@ class TestComputeBestHeadwaterOutlet:
 # =============================================================================
 # Test Mainstem Computation
 # =============================================================================
+
 
 class TestComputeMainstem:
     """Tests for compute_mainstem function."""
@@ -293,7 +312,9 @@ class TestComputeMainstem:
     def test_returns_boolean_values(self, mainstem):
         """All values should be boolean."""
         for node, is_main in mainstem.items():
-            assert isinstance(is_main, bool), f"Node {node}: is_mainstem should be bool, got {type(is_main)}"
+            assert isinstance(is_main, bool), (
+                f"Node {node}: is_mainstem should be bool, got {type(is_main)}"
+            )
 
     def test_at_least_one_mainstem_reach(self, mainstem):
         """At least one reach should be on the mainstem."""
@@ -339,10 +360,13 @@ class TestComputeMainstem:
 # Integration Tests
 # =============================================================================
 
+
 class TestIntegration:
     """Integration tests verifying consistency between computed attributes."""
 
-    def test_hydro_dist_sum_approximates_total_length(self, reach_graph, hydro_distances):
+    def test_hydro_dist_sum_approximates_total_length(
+        self, reach_graph, hydro_distances
+    ):
         """hydro_dist_out + hydro_dist_hw should approximate total path length."""
         # For nodes on a linear path, dist_out + dist_hw should be roughly constant
         # (equal to total path length from HW to outlet)
@@ -359,18 +383,20 @@ class TestIntegration:
 
         # For linear network, the sum should be the same for all nodes
         # We test that the headwater dist_out equals the outlet dist_hw
-        hw_dist_out = hydro_distances[hw]['hydro_dist_out']
-        outlet_dist_hw = hydro_distances[outlet]['hydro_dist_hw']
+        hw_dist_out = hydro_distances[hw]["hydro_dist_out"]
+        outlet_dist_hw = hydro_distances[outlet]["hydro_dist_hw"]
 
         # These should be approximately equal (both represent total path length)
         # Allow for floating point differences
-        if hw_dist_out < float('inf') and outlet_dist_hw > 0:
+        if hw_dist_out < float("inf") and outlet_dist_hw > 0:
             ratio = hw_dist_out / outlet_dist_hw if outlet_dist_hw > 0 else 0
             assert 0.9 <= ratio <= 1.1, (
                 f"Total path lengths should match: HW dist_out={hw_dist_out}, outlet dist_hw={outlet_dist_hw}"
             )
 
-    def test_mainstem_path_exists_between_best_hw_and_outlet(self, reach_graph, hw_out_attrs, mainstem):
+    def test_mainstem_path_exists_between_best_hw_and_outlet(
+        self, reach_graph, hw_out_attrs, mainstem
+    ):
         """The mainstem should form a valid path from best_headwater to best_outlet."""
         mainstem_nodes = [n for n, is_main in mainstem.items() if is_main]
 
@@ -378,7 +404,9 @@ class TestIntegration:
             pytest.skip("No mainstem nodes found")
 
         # Find the headwater and outlet on the mainstem
-        mainstem_headwaters = [n for n in mainstem_nodes if reach_graph.in_degree(n) == 0]
+        mainstem_headwaters = [
+            n for n in mainstem_nodes if reach_graph.in_degree(n) == 0
+        ]
         mainstem_outlets = [n for n in mainstem_nodes if reach_graph.out_degree(n) == 0]
 
         if not mainstem_headwaters or not mainstem_outlets:
@@ -393,11 +421,15 @@ class TestIntegration:
             path = nx.shortest_path(reach_graph, hw, outlet)
             # All nodes on this path should be on mainstem
             for node in path:
-                assert mainstem[node], f"Node {node} on HW-outlet path should be mainstem"
+                assert mainstem[node], (
+                    f"Node {node} on HW-outlet path should be mainstem"
+                )
         except nx.NetworkXNoPath:
             pytest.fail(f"No path found from mainstem HW {hw} to outlet {outlet}")
 
-    def test_consistency_across_linear_chain(self, reach_graph, hydro_distances, hw_out_attrs, mainstem):
+    def test_consistency_across_linear_chain(
+        self, reach_graph, hydro_distances, hw_out_attrs, mainstem
+    ):
         """For a linear chain, verify consistent attribute progression."""
         # Get topological order
         try:
@@ -409,10 +441,10 @@ class TestIntegration:
             return
 
         # hydro_dist_out should decrease along topological order (upstream to downstream)
-        prev_dist_out = float('inf')
+        prev_dist_out = float("inf")
         for node in topo_order:
-            curr_dist_out = hydro_distances[node]['hydro_dist_out']
-            if curr_dist_out < float('inf'):
+            curr_dist_out = hydro_distances[node]["hydro_dist_out"]
+            if curr_dist_out < float("inf"):
                 assert curr_dist_out <= prev_dist_out, (
                     f"hydro_dist_out should decrease downstream: {prev_dist_out} -> {curr_dist_out}"
                 )
@@ -421,7 +453,7 @@ class TestIntegration:
         # hydro_dist_hw should increase along topological order
         prev_dist_hw = -1
         for node in topo_order:
-            curr_dist_hw = hydro_distances[node]['hydro_dist_hw']
+            curr_dist_hw = hydro_distances[node]["hydro_dist_hw"]
             assert curr_dist_hw >= prev_dist_hw, (
                 f"hydro_dist_hw should increase downstream: {prev_dist_hw} -> {curr_dist_hw}"
             )
@@ -431,6 +463,7 @@ class TestIntegration:
 # =============================================================================
 # Edge Cases
 # =============================================================================
+
 
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
@@ -442,14 +475,14 @@ class TestEdgeCases:
 
         hydro_dist = compute_hydro_distances(G)
         assert 1 in hydro_dist
-        assert hydro_dist[1]['hydro_dist_out'] == 0
-        assert hydro_dist[1]['hydro_dist_hw'] == 0
+        assert hydro_dist[1]["hydro_dist_out"] == 0
+        assert hydro_dist[1]["hydro_dist_hw"] == 0
 
         hw_out = compute_best_headwater_outlet(G)
-        assert hw_out[1]['best_headwater'] == 1
-        assert hw_out[1]['best_outlet'] == 1
-        assert hw_out[1]['pathlen_hw'] == 0
-        assert hw_out[1]['pathlen_out'] == 0
+        assert hw_out[1]["best_headwater"] == 1
+        assert hw_out[1]["best_outlet"] == 1
+        assert hw_out[1]["pathlen_hw"] == 0
+        assert hw_out[1]["pathlen_out"] == 0
 
         mainstem = compute_mainstem(G, hw_out)
         assert mainstem[1] is True
@@ -463,12 +496,12 @@ class TestEdgeCases:
 
         hydro_dist = compute_hydro_distances(G)
         # Node 1 is headwater, node 2 is outlet
-        assert hydro_dist[1]['hydro_dist_hw'] == 0
-        assert hydro_dist[2]['hydro_dist_out'] == 0
+        assert hydro_dist[1]["hydro_dist_hw"] == 0
+        assert hydro_dist[2]["hydro_dist_out"] == 0
 
         hw_out = compute_best_headwater_outlet(G)
-        assert hw_out[1]['best_headwater'] == 1
-        assert hw_out[2]['best_outlet'] == 2
+        assert hw_out[1]["best_headwater"] == 1
+        assert hw_out[2]["best_outlet"] == 2
 
         mainstem = compute_mainstem(G, hw_out)
         assert mainstem[1] is True
@@ -489,16 +522,16 @@ class TestEdgeCases:
 
         hydro_dist = compute_hydro_distances(G)
         # Both headwaters should have hydro_dist_hw = 0
-        assert hydro_dist[1]['hydro_dist_hw'] == 0
-        assert hydro_dist[2]['hydro_dist_hw'] == 0
+        assert hydro_dist[1]["hydro_dist_hw"] == 0
+        assert hydro_dist[2]["hydro_dist_hw"] == 0
         # Outlet should have hydro_dist_out = 0
-        assert hydro_dist[4]['hydro_dist_out'] == 0
+        assert hydro_dist[4]["hydro_dist_out"] == 0
 
         hw_out = compute_best_headwater_outlet(G)
         # Node 3 should pick the wider tributary (node 2) as best_headwater
         # (width is used as tiebreaker)
-        assert hw_out[3]['best_headwater'] == 2
-        assert hw_out[4]['best_outlet'] == 4
+        assert hw_out[3]["best_headwater"] == 2
+        assert hw_out[4]["best_outlet"] == 4
 
         mainstem = compute_mainstem(G, hw_out)
         # At least nodes 3 and 4 should be on mainstem

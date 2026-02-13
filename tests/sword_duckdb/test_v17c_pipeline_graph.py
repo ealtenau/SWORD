@@ -19,10 +19,13 @@ from src.updates.sword_v17c_pipeline.v17c_pipeline import (
     load_reaches,
 )
 
+pytestmark = [pytest.mark.pipeline, pytest.mark.topology]
+
 
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def test_db_path():
@@ -77,33 +80,38 @@ def junctions(reach_graph):
 # Synthetic Test Data Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def simple_linear_topology():
     """Simple linear chain: 0 -> 1 -> 2 -> 3."""
-    return pd.DataFrame({
-        'reach_id': [0, 1, 1, 2, 2, 3],
-        'direction': ['down', 'down', 'up', 'down', 'up', 'up'],
-        'neighbor_rank': [0, 0, 0, 0, 0, 0],
-        'neighbor_reach_id': [1, 2, 0, 3, 1, 2],
-    })
+    return pd.DataFrame(
+        {
+            "reach_id": [0, 1, 1, 2, 2, 3],
+            "direction": ["down", "down", "up", "down", "up", "up"],
+            "neighbor_rank": [0, 0, 0, 0, 0, 0],
+            "neighbor_reach_id": [1, 2, 0, 3, 1, 2],
+        }
+    )
 
 
 @pytest.fixture
 def simple_linear_reaches():
     """Reaches for simple linear chain."""
-    return pd.DataFrame({
-        'reach_id': [0, 1, 2, 3],
-        'reach_length': [1000.0, 1000.0, 1000.0, 1000.0],
-        'width': [50.0, 55.0, 60.0, 65.0],
-        'slope': [0.001, 0.001, 0.001, 0.001],
-        'facc': [100, 200, 300, 400],
-        'n_rch_up': [0, 1, 1, 1],
-        'n_rch_down': [1, 1, 1, 0],
-        'dist_out': [3000.0, 2000.0, 1000.0, 0.0],
-        'path_freq': [1, 1, 1, 1],
-        'stream_order': [1, 1, 1, 1],
-        'lakeflag': [0, 0, 0, 0],
-    })
+    return pd.DataFrame(
+        {
+            "reach_id": [0, 1, 2, 3],
+            "reach_length": [1000.0, 1000.0, 1000.0, 1000.0],
+            "width": [50.0, 55.0, 60.0, 65.0],
+            "slope": [0.001, 0.001, 0.001, 0.001],
+            "facc": [100, 200, 300, 400],
+            "n_rch_up": [0, 1, 1, 1],
+            "n_rch_down": [1, 1, 1, 0],
+            "dist_out": [3000.0, 2000.0, 1000.0, 0.0],
+            "path_freq": [1, 1, 1, 1],
+            "stream_order": [1, 1, 1, 1],
+            "lakeflag": [0, 0, 0, 0],
+        }
+    )
 
 
 @pytest.fixture
@@ -115,30 +123,34 @@ def confluence_topology():
                +--> 2 --> 3
         1 -----+
     """
-    return pd.DataFrame({
-        'reach_id': [0, 1, 2, 2, 2, 3],
-        'direction': ['down', 'down', 'up', 'up', 'down', 'up'],
-        'neighbor_rank': [0, 0, 0, 1, 0, 0],
-        'neighbor_reach_id': [2, 2, 0, 1, 3, 2],
-    })
+    return pd.DataFrame(
+        {
+            "reach_id": [0, 1, 2, 2, 2, 3],
+            "direction": ["down", "down", "up", "up", "down", "up"],
+            "neighbor_rank": [0, 0, 0, 1, 0, 0],
+            "neighbor_reach_id": [2, 2, 0, 1, 3, 2],
+        }
+    )
 
 
 @pytest.fixture
 def confluence_reaches():
     """Reaches for confluence topology."""
-    return pd.DataFrame({
-        'reach_id': [0, 1, 2, 3],
-        'reach_length': [1000.0, 1200.0, 800.0, 1500.0],
-        'width': [40.0, 35.0, 80.0, 90.0],
-        'slope': [0.002, 0.0025, 0.001, 0.0008],
-        'facc': [100, 80, 200, 250],
-        'n_rch_up': [0, 0, 2, 1],
-        'n_rch_down': [1, 1, 1, 0],
-        'dist_out': [4000.0, 4200.0, 2000.0, 0.0],
-        'path_freq': [1, 1, 2, 2],
-        'stream_order': [1, 1, 2, 2],
-        'lakeflag': [0, 0, 0, 0],
-    })
+    return pd.DataFrame(
+        {
+            "reach_id": [0, 1, 2, 3],
+            "reach_length": [1000.0, 1200.0, 800.0, 1500.0],
+            "width": [40.0, 35.0, 80.0, 90.0],
+            "slope": [0.002, 0.0025, 0.001, 0.0008],
+            "facc": [100, 80, 200, 250],
+            "n_rch_up": [0, 0, 2, 1],
+            "n_rch_down": [1, 1, 1, 0],
+            "dist_out": [4000.0, 4200.0, 2000.0, 0.0],
+            "path_freq": [1, 1, 2, 2],
+            "stream_order": [1, 1, 2, 2],
+            "lakeflag": [0, 0, 0, 0],
+        }
+    )
 
 
 @pytest.fixture
@@ -150,83 +162,89 @@ def bifurcation_topology():
         0 -----+
                +--> 2
     """
-    return pd.DataFrame({
-        'reach_id': [0, 0, 1, 2],
-        'direction': ['down', 'down', 'up', 'up'],
-        'neighbor_rank': [0, 1, 0, 0],
-        'neighbor_reach_id': [1, 2, 0, 0],
-    })
+    return pd.DataFrame(
+        {
+            "reach_id": [0, 0, 1, 2],
+            "direction": ["down", "down", "up", "up"],
+            "neighbor_rank": [0, 1, 0, 0],
+            "neighbor_reach_id": [1, 2, 0, 0],
+        }
+    )
 
 
 @pytest.fixture
 def bifurcation_reaches():
     """Reaches for bifurcation topology."""
-    return pd.DataFrame({
-        'reach_id': [0, 1, 2],
-        'reach_length': [2000.0, 1000.0, 1500.0],
-        'width': [100.0, 60.0, 50.0],
-        'slope': [0.001, 0.0015, 0.002],
-        'facc': [500, 300, 200],
-        'n_rch_up': [0, 1, 1],
-        'n_rch_down': [2, 0, 0],
-        'dist_out': [2000.0, 0.0, 0.0],
-        'path_freq': [1, 1, 1],
-        'stream_order': [2, 1, 1],
-        'lakeflag': [0, 0, 0],
-    })
+    return pd.DataFrame(
+        {
+            "reach_id": [0, 1, 2],
+            "reach_length": [2000.0, 1000.0, 1500.0],
+            "width": [100.0, 60.0, 50.0],
+            "slope": [0.001, 0.0015, 0.002],
+            "facc": [500, 300, 200],
+            "n_rch_up": [0, 1, 1],
+            "n_rch_down": [2, 0, 0],
+            "dist_out": [2000.0, 0.0, 0.0],
+            "path_freq": [1, 1, 1],
+            "stream_order": [2, 1, 1],
+            "lakeflag": [0, 0, 0],
+        }
+    )
 
 
 # =============================================================================
 # Test: load_topology / load_reaches
 # =============================================================================
 
+
 class TestDataLoading:
     """Tests for data loading functions."""
 
     def test_load_topology_returns_dataframe(self, db_conn):
         """load_topology returns a pandas DataFrame."""
-        df = load_topology(db_conn, 'NA')
+        df = load_topology(db_conn, "NA")
         assert isinstance(df, pd.DataFrame)
 
     def test_load_topology_correct_row_count(self, db_conn):
         """load_topology returns expected number of rows."""
-        df = load_topology(db_conn, 'NA')
+        df = load_topology(db_conn, "NA")
         assert len(df) == 198
 
     def test_load_topology_required_columns(self, db_conn):
         """load_topology returns required columns."""
-        df = load_topology(db_conn, 'NA')
-        required_cols = ['reach_id', 'direction', 'neighbor_rank', 'neighbor_reach_id']
+        df = load_topology(db_conn, "NA")
+        required_cols = ["reach_id", "direction", "neighbor_rank", "neighbor_reach_id"]
         for col in required_cols:
             assert col in df.columns
 
     def test_load_reaches_returns_dataframe(self, db_conn):
         """load_reaches returns a pandas DataFrame."""
-        df = load_reaches(db_conn, 'NA')
+        df = load_reaches(db_conn, "NA")
         assert isinstance(df, pd.DataFrame)
 
     def test_load_reaches_correct_count(self, db_conn):
         """load_reaches returns expected number of rows."""
-        df = load_reaches(db_conn, 'NA')
+        df = load_reaches(db_conn, "NA")
         assert len(df) == 100
 
     def test_load_reaches_required_columns(self, db_conn):
         """load_reaches returns required columns."""
-        df = load_reaches(db_conn, 'NA')
-        required_cols = ['reach_id', 'region', 'reach_length', 'n_rch_up', 'n_rch_down']
+        df = load_reaches(db_conn, "NA")
+        required_cols = ["reach_id", "region", "reach_length", "n_rch_up", "n_rch_down"]
         for col in required_cols:
             assert col in df.columns
 
     def test_load_topology_case_insensitive_region(self, db_conn):
         """load_topology works with lowercase region."""
-        df_upper = load_topology(db_conn, 'NA')
-        df_lower = load_topology(db_conn, 'na')
+        df_upper = load_topology(db_conn, "NA")
+        df_lower = load_topology(db_conn, "na")
         assert len(df_upper) == len(df_lower)
 
 
 # =============================================================================
 # Test: build_reach_graph
 # =============================================================================
+
 
 class TestBuildReachGraph:
     """Tests for build_reach_graph function."""
@@ -254,9 +272,9 @@ class TestBuildReachGraph:
     def test_nodes_have_attributes(self, reach_graph):
         """Graph nodes have reach attributes."""
         node_data = reach_graph.nodes[11000000000]
-        assert 'reach_length' in node_data
-        assert 'width' in node_data
-        assert 'slope' in node_data
+        assert "reach_length" in node_data
+        assert "width" in node_data
+        assert "slope" in node_data
 
     def test_edges_have_direction(self, reach_graph):
         """Edges follow flow direction (smaller dist_out downstream)."""
@@ -300,13 +318,17 @@ class TestBuildReachGraph:
 
     def test_empty_topology(self):
         """Empty topology produces graph with nodes but no edges."""
-        topo = pd.DataFrame(columns=['reach_id', 'direction', 'neighbor_rank', 'neighbor_reach_id'])
-        reaches = pd.DataFrame({
-            'reach_id': [1, 2, 3],
-            'reach_length': [1000.0, 1000.0, 1000.0],
-            'width': [50.0, 50.0, 50.0],
-            'slope': [0.001, 0.001, 0.001],
-        })
+        topo = pd.DataFrame(
+            columns=["reach_id", "direction", "neighbor_rank", "neighbor_reach_id"]
+        )
+        reaches = pd.DataFrame(
+            {
+                "reach_id": [1, 2, 3],
+                "reach_length": [1000.0, 1000.0, 1000.0],
+                "width": [50.0, 50.0, 50.0],
+                "slope": [0.001, 0.001, 0.001],
+            }
+        )
 
         G = build_reach_graph(topo, reaches)
         assert G.number_of_nodes() == 3
@@ -316,6 +338,7 @@ class TestBuildReachGraph:
 # =============================================================================
 # Test: identify_junctions
 # =============================================================================
+
 
 class TestIdentifyJunctions:
     """Tests for identify_junctions function."""
@@ -404,6 +427,7 @@ class TestIdentifyJunctions:
 # Test: build_section_graph
 # =============================================================================
 
+
 class TestBuildSectionGraph:
     """Tests for build_section_graph function."""
 
@@ -443,34 +467,36 @@ class TestBuildSectionGraph:
         R, _ = build_section_graph(reach_graph, junctions)
 
         for u, v, data in R.edges(data=True):
-            assert 'reach_ids' in data
-            assert isinstance(data['reach_ids'], list)
-            assert len(data['reach_ids']) > 0
+            assert "reach_ids" in data
+            assert isinstance(data["reach_ids"], list)
+            assert len(data["reach_ids"]) > 0
 
     def test_section_has_distance(self, reach_graph, junctions):
         """Sections have cumulative distance attribute."""
         R, _ = build_section_graph(reach_graph, junctions)
 
         for u, v, data in R.edges(data=True):
-            assert 'distance' in data
-            assert data['distance'] > 0
+            assert "distance" in data
+            assert data["distance"] > 0
 
     def test_sections_df_columns(self, reach_graph, junctions):
         """Sections DataFrame has required columns."""
         _, sections_df = build_section_graph(reach_graph, junctions)
 
         required_cols = [
-            'section_id',
-            'upstream_junction',
-            'downstream_junction',
-            'reach_ids',
-            'distance',
-            'n_reaches',
+            "section_id",
+            "upstream_junction",
+            "downstream_junction",
+            "reach_ids",
+            "distance",
+            "n_reaches",
         ]
         for col in required_cols:
             assert col in sections_df.columns
 
-    def test_confluence_multiple_sections(self, confluence_topology, confluence_reaches):
+    def test_confluence_multiple_sections(
+        self, confluence_topology, confluence_reaches
+    ):
         """Confluence creates multiple sections."""
         G = build_reach_graph(confluence_topology, confluence_reaches)
         junctions = identify_junctions(G)
@@ -485,49 +511,50 @@ class TestBuildSectionGraph:
         R, _ = build_section_graph(reach_graph, junctions)
 
         for node in R.nodes():
-            assert 'node_type' in R.nodes[node]
-            assert R.nodes[node]['node_type'] in ['Head_water', 'Outlet', 'Junction']
+            assert "node_type" in R.nodes[node]
+            assert R.nodes[node]["node_type"] in ["Head_water", "Outlet", "Junction"]
 
     def test_headwater_node_type(self, reach_graph, junctions):
         """Headwater has node_type='Head_water'."""
         R, _ = build_section_graph(reach_graph, junctions)
 
         # 11000000000 is the headwater
-        assert R.nodes[11000000000]['node_type'] == 'Head_water'
+        assert R.nodes[11000000000]["node_type"] == "Head_water"
 
     def test_outlet_node_type(self, reach_graph, junctions):
         """Outlet has node_type='Outlet'."""
         R, _ = build_section_graph(reach_graph, junctions)
 
         # 11000000099 is the outlet
-        assert R.nodes[11000000099]['node_type'] == 'Outlet'
+        assert R.nodes[11000000099]["node_type"] == "Outlet"
 
     def test_section_includes_downstream_junction(self, reach_graph, junctions):
         """Section reach_ids includes the downstream junction reach."""
         _, sections_df = build_section_graph(reach_graph, junctions)
 
         for _, row in sections_df.iterrows():
-            downstream_j = row['downstream_junction']
-            reach_ids = row['reach_ids']
+            downstream_j = row["downstream_junction"]
+            reach_ids = row["reach_ids"]
             assert downstream_j in reach_ids
 
     def test_section_id_unique(self, reach_graph, junctions):
         """Each section has unique section_id."""
         _, sections_df = build_section_graph(reach_graph, junctions)
-        assert sections_df['section_id'].nunique() == len(sections_df)
+        assert sections_df["section_id"].nunique() == len(sections_df)
 
 
 # =============================================================================
 # Test: Integration / End-to-End
 # =============================================================================
 
+
 class TestGraphIntegration:
     """Integration tests for the full graph construction pipeline."""
 
     def test_full_pipeline_from_db(self, db_conn):
         """Full pipeline works with database data."""
-        topology_df = load_topology(db_conn, 'NA')
-        reaches_df = load_reaches(db_conn, 'NA')
+        topology_df = load_topology(db_conn, "NA")
+        reaches_df = load_reaches(db_conn, "NA")
         G = build_reach_graph(topology_df, reaches_df)
         junctions = identify_junctions(G)
         R, sections_df = build_section_graph(G, junctions)
@@ -570,7 +597,7 @@ class TestGraphIntegration:
         """Sum of reaches in sections excludes the upstream junction."""
         _, sections_df = build_section_graph(reach_graph, junctions)
 
-        total_in_sections = sections_df['n_reaches'].sum()
+        total_in_sections = sections_df["n_reaches"].sum()
         # In a linear chain from HW(0) to outlet(99), section traces from
         # first reach AFTER headwater (1) to outlet (99) = 99 reaches
         # The headwater junction itself is not included in the section

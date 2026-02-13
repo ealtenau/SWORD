@@ -7,15 +7,15 @@ Tests core functionality, check registration, runners, and formatters.
 import json
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pandas as pd
+
+pytestmark = pytest.mark.lint
 
 from src.updates.sword_duckdb.lint import (
     Severity,
     Category,
     CheckResult,
-    CheckSpec,
     LintRunner,
     get_registry,
     get_check,
@@ -34,6 +34,7 @@ from src.updates.sword_duckdb.lint.formatters import (
 # Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def test_db_path():
     """Path to test database."""
@@ -51,11 +52,13 @@ def sample_result():
         total_checked=100,
         issues_found=5,
         issue_pct=5.0,
-        details=pd.DataFrame({
-            "reach_id": [1, 2, 3, 4, 5],
-            "region": ["NA"] * 5,
-            "issue": ["a", "b", "c", "d", "e"],
-        }),
+        details=pd.DataFrame(
+            {
+                "reach_id": [1, 2, 3, 4, 5],
+                "region": ["NA"] * 5,
+                "issue": ["a", "b", "c", "d", "e"],
+            }
+        ),
         description="Test check description",
         threshold=10.0,
         elapsed_ms=123.45,
@@ -97,6 +100,7 @@ def sample_results(sample_result):
 # =============================================================================
 # Core Types Tests
 # =============================================================================
+
 
 class TestSeverity:
     """Tests for Severity enum."""
@@ -141,6 +145,7 @@ class TestCheckResult:
 # Registry Tests
 # =============================================================================
 
+
 class TestRegistry:
     """Tests for check registry."""
 
@@ -183,8 +188,17 @@ class TestRegistry:
     def test_required_checks_registered(self):
         """Verify all planned checks are registered."""
         required = [
-            "T001", "T002", "T003", "T004", "T005", "T006",
-            "A001", "A002", "A003", "A004", "A005",
+            "T001",
+            "T002",
+            "T003",
+            "T004",
+            "T005",
+            "T006",
+            "A001",
+            "A002",
+            "A003",
+            "A004",
+            "A005",
             "G001",
             "C001",
         ]
@@ -197,6 +211,8 @@ class TestRegistry:
 # Runner Tests
 # =============================================================================
 
+
+@pytest.mark.db
 class TestLintRunner:
     """Tests for LintRunner."""
 
@@ -206,7 +222,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_init_valid_db(self, test_db_path):
         runner = LintRunner(test_db_path)
@@ -215,7 +231,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_context_manager(self, test_db_path):
         with LintRunner(test_db_path) as runner:
@@ -223,7 +239,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_run_all_checks(self, test_db_path):
         with LintRunner(test_db_path) as runner:
@@ -234,7 +250,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_run_specific_checks(self, test_db_path):
         with LintRunner(test_db_path) as runner:
@@ -245,7 +261,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_run_category_prefix(self, test_db_path):
         with LintRunner(test_db_path) as runner:
@@ -255,7 +271,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_run_severity_filter(self, test_db_path):
         with LintRunner(test_db_path) as runner:
@@ -265,7 +281,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_threshold_override(self, test_db_path):
         with LintRunner(test_db_path) as runner:
@@ -282,7 +298,7 @@ class TestLintRunner:
 
     @pytest.mark.skipif(
         not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-        reason="Test database not found"
+        reason="Test database not found",
     )
     def test_runner_get_summary(self, test_db_path):
         with LintRunner(test_db_path) as runner:
@@ -297,6 +313,7 @@ class TestLintRunner:
 # =============================================================================
 # Formatter Tests
 # =============================================================================
+
 
 class TestConsoleFormatter:
     """Tests for ConsoleFormatter."""
@@ -393,9 +410,11 @@ class TestMarkdownFormatter:
 # Integration Tests
 # =============================================================================
 
+
+@pytest.mark.db
 @pytest.mark.skipif(
     not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
-    reason="Test database not found"
+    reason="Test database not found",
 )
 class TestIntegration:
     """Integration tests running real checks."""

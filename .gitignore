@@ -212,6 +212,16 @@ test_*.py
 cookies.txt
 ml4floods_models/
 deepwatermap/
-*.npyHANDOVER.md
-SCRATCHPAD.md
+*.npy
+
+# Session files
 HANDOVER.md
+SCRATCHPAD.md
+
+# Output artifacts
+output/
+facc_anomalies*.geojson
+
+# Ad-hoc / one-off scripts in root
+DrainageAreaFix/
+netherlands_water_mask.npy

@@ -6,10 +6,10 @@ Tests SWORDDatabase class and create_database function.
 """
 
 import pytest
-import tempfile
-from pathlib import Path
 
 import pandas as pd
+
+pytestmark = pytest.mark.db
 
 
 class TestSWORDDatabaseInit:
@@ -42,8 +42,8 @@ class TestSWORDDatabaseInit:
         """Test initialization with in-memory database."""
         from src.updates.sword_duckdb.sword_db import SWORDDatabase
 
-        db = SWORDDatabase(':memory:')
-        assert db.db_path == ':memory:'
+        db = SWORDDatabase(":memory:")
+        assert db.db_path == ":memory:"
         db.close()
 
     def test_init_read_only(self, sword_readonly):
@@ -182,17 +182,16 @@ class TestSWORDDatabaseQuery:
         df = sword_readonly._db.query("SELECT COUNT(*) as cnt FROM reaches")
 
         assert isinstance(df, pd.DataFrame)
-        assert 'cnt' in df.columns
+        assert "cnt" in df.columns
 
     def test_query_with_params(self, sword_readonly):
         """Test parameterized query."""
         df = sword_readonly._db.query(
-            "SELECT COUNT(*) as cnt FROM reaches WHERE region = ?",
-            ['NA']
+            "SELECT COUNT(*) as cnt FROM reaches WHERE region = ?", ["NA"]
         )
 
         assert isinstance(df, pd.DataFrame)
-        assert df['cnt'].iloc[0] > 0
+        assert df["cnt"].iloc[0] > 0
 
     def test_execute_returns_result(self, sword_readonly):
         """Test that execute() returns a result object."""
@@ -203,10 +202,7 @@ class TestSWORDDatabaseQuery:
 
     def test_execute_with_params(self, sword_readonly):
         """Test parameterized execute."""
-        result = sword_readonly._db.execute(
-            "SELECT ? as val",
-            [42]
-        )
+        result = sword_readonly._db.execute("SELECT ? as val", [42])
 
         assert result.fetchone()[0] == 42
 
@@ -228,10 +224,10 @@ class TestSWORDDatabaseSchema:
             WHERE table_schema = 'main'
         """)
 
-        tables = result['table_name'].tolist()
-        assert 'reaches' in tables
-        assert 'nodes' in tables
-        assert 'centerlines' in tables
+        tables = result["table_name"].tolist()
+        assert "reaches" in tables
+        assert "nodes" in tables
+        assert "centerlines" in tables
 
         db.close()
 
@@ -244,24 +240,24 @@ class TestSWORDDatabaseInfo:
         regions = sword_readonly._db.get_regions()
 
         assert isinstance(regions, list)
-        assert 'NA' in regions
+        assert "NA" in regions
 
     def test_count_records(self, sword_readonly):
         """Test count_records() returns dict with counts."""
         counts = sword_readonly._db.count_records()
 
         assert isinstance(counts, dict)
-        assert 'reaches' in counts
-        assert 'nodes' in counts
-        assert 'centerlines' in counts
+        assert "reaches" in counts
+        assert "nodes" in counts
+        assert "centerlines" in counts
         assert all(v >= 0 for v in counts.values())
 
     def test_count_records_with_region(self, sword_readonly):
         """Test count_records() with region filter."""
-        counts = sword_readonly._db.count_records(region='NA')
+        counts = sword_readonly._db.count_records(region="NA")
 
         assert isinstance(counts, dict)
-        assert counts['reaches'] > 0
+        assert counts["reaches"] > 0
 
     def test_spatial_available(self, sword_readonly):
         """Test spatial_available() returns boolean."""
@@ -318,8 +314,8 @@ class TestCreateDatabase:
         # Check that tables exist
         counts = db.count_records()
 
-        assert 'reaches' in counts
-        assert 'nodes' in counts
+        assert "reaches" in counts
+        assert "nodes" in counts
 
         db.close()
 
