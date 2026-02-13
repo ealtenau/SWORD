@@ -194,17 +194,18 @@ def fig1_before_after(
         color=V17B_COLOR,
         fontweight="bold",
     )
-    ax.text(
-        0.25,
-        0.75,
+    # Arrow pointing into the violation zone (left of x=1.0)
+    ylim = ax.get_ylim()
+    ax.annotate(
         "VIOLATION ZONE\n(ratio < 1.0)",
-        transform=ax.transAxes,
-        fontsize=12,
+        xy=(0.5, ylim[1] * 0.3),
+        xytext=(1.8, ylim[1] * 0.7),
+        fontsize=10,
         color=V17B_COLOR,
-        alpha=0.7,
-        ha="center",
         fontweight="bold",
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=V17B_COLOR, alpha=0.8),
+        ha="center",
+        arrowprops=dict(arrowstyle="->", color=V17B_COLOR, lw=2),
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=V17B_COLOR, alpha=0.9),
     )
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
@@ -254,17 +255,18 @@ def fig1_before_after(
         color=V17B_COLOR,
         fontweight="bold",
     )
-    ax.text(
-        0.75,
-        0.75,
+    # Arrow pointing at the cloning spike near ratio=1.0
+    ylim_b = ax.get_ylim()
+    ax.annotate(
         "UPA CLONING\nPEAK",
-        transform=ax.transAxes,
-        fontsize=12,
+        xy=(1.0, ylim_b[1] * 0.6),
+        xytext=(1.5, ylim_b[1] * 0.8),
+        fontsize=10,
         color=V17B_COLOR,
-        alpha=0.7,
-        ha="center",
         fontweight="bold",
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=V17B_COLOR, alpha=0.8),
+        ha="center",
+        arrowprops=dict(arrowstyle="->", color=V17B_COLOR, lw=2),
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=V17B_COLOR, alpha=0.9),
     )
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
