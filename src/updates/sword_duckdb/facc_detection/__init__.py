@@ -79,7 +79,19 @@ from .features import extract_facc_features, FaccFeatureExtractor
 from .detect import FaccDetector, detect_facc_anomalies, detect_hybrid
 from .evaluate import evaluate_detection, FaccEvaluator
 from .correct import FaccCorrector, correct_facc_anomalies, CorrectionResult
-from .merit_search import MeritGuidedSearch, create_merit_search
+
+
+# Lazy import — merit_search requires GDAL which may not be installed
+def __getattr__(name):
+    if name in ("MeritGuidedSearch", "create_merit_search"):
+        from .merit_search import MeritGuidedSearch, create_merit_search
+
+        globals()["MeritGuidedSearch"] = MeritGuidedSearch
+        globals()["create_merit_search"] = create_merit_search
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 from .rf_features import RFFeatureExtractor, extract_rf_features, load_anomaly_labels
 from .rf_classifier import RFClassifier, train_rf_classifier
 from .rf_evaluate import RFEvaluator, evaluate_rf_classifier

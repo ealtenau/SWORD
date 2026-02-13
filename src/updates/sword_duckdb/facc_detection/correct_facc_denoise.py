@@ -3,18 +3,27 @@
 Facc Denoising — Topology-Aware v3 Pipeline
 ============================================
 
-Replaces v2b (single-pass conservation) with a unified pipeline that:
-1. Uses downstream-node facc instead of MAX(node facc) to avoid sampling noise
-2. Applies the same topology-aware correction (v2b algorithm)
-3. Detects remaining outliers via Tukey IQR in log-space
-4. Re-samples flagged reaches from MERIT Hydro UPA rasters
-5. Re-runs topology correction on affected subgraphs
-6. Validates with lint checks
+Three-stage architecture that cleans baseline accuracy FIRST, then propagates:
 
-The key improvement over v2b: ~11,876 reaches (4.8%) have within-reach node
-facc variability >1.5x due to MERIT D8 sampling noise. MAX(node facc) grabs
-stray values from wrong D8 flow paths. Using the downstream-most node's facc
-avoids this, and outlier detection + UPA re-sampling catches remaining issues.
+  Stage A — Baseline Cleanup (internal data only, no propagation):
+    A1: Node denoising (dn-node for noisy reaches)
+    A2: Node validation on baseline (cap extreme lows)
+    A3: Outlier detection on baseline (diagnostics only)
+    A4: Isotonic regression on baseline chains (smooth 1:1 chains)
+
+  Stage B — Propagation + Refinement:
+    B1: Full topology propagation
+    B2: Isotonic smoothing (with bifurc anchors)
+    B3: Junction floor
+    B4: Node validation
+    B5: Final consistency pass
+
+  Stage C — Optional MERIT refinement (only if --merit provided):
+    C1: MERIT resample remaining T003 violations
+    C2: Re-run Stage B on updated baseline (if C1 changed anything)
+
+The key improvement: cleaning MERIT D8 noise from the baseline before
+propagation prevents error amplification through the network.
 
 Relationship to Yushan's Integrator:
     Both enforce conservation (sum upstream <= downstream) and non-negativity.
@@ -67,6 +76,7 @@ REGIONS = ["NA", "SA", "EU", "AF", "AS", "OC"]
 # Data loading
 # ---------------------------------------------------------------------------
 
+
 def _load_topology(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     return conn.execute(
         "SELECT reach_id, direction, neighbor_rank, neighbor_reach_id "
@@ -96,9 +106,7 @@ def _load_v17b_facc(v17b_path: str, region: str) -> Dict[int, float]:
     return dict(zip(df["reach_id"].astype(int), df["facc"].astype(float)))
 
 
-def _load_node_facc_stats(
-    v17b_path: str, region: str
-) -> pd.DataFrame:
+def _load_node_facc_stats(v17b_path: str, region: str) -> pd.DataFrame:
     """
     Load per-reach node facc statistics from v17b.
 
@@ -180,9 +188,8 @@ def _load_reach_geometries(
 # Graph building
 # ---------------------------------------------------------------------------
 
-def _build_graph(
-    topology_df: pd.DataFrame, reaches_df: pd.DataFrame
-) -> nx.DiGraph:
+
+def _build_graph(topology_df: pd.DataFrame, reaches_df: pd.DataFrame) -> nx.DiGraph:
     """Build DiGraph where edges follow flow (upstream -> downstream)."""
     G = nx.DiGraph()
     for _, row in reaches_df.iterrows():
@@ -209,6 +216,7 @@ def _build_graph(
 # ---------------------------------------------------------------------------
 # Phase 1: Node-based initialization
 # ---------------------------------------------------------------------------
+
 
 def _phase1_node_init(
     G: nx.DiGraph,
@@ -253,14 +261,17 @@ def _phase1_node_init(
             baseline[node] = v17b_val
             n_default += 1
 
-    print(f"    Phase 1: {n_denoised} denoised (var>{variability_threshold}x), "
-          f"{n_default} kept v17b MAX")
+    print(
+        f"    Phase 1: {n_denoised} denoised (var>{variability_threshold}x), "
+        f"{n_default} kept v17b MAX"
+    )
     return baseline, denoised_ids
 
 
 # ---------------------------------------------------------------------------
 # Phase 2: Topology-aware correction (single pass)
 # ---------------------------------------------------------------------------
+
 
 def _phase2_topo_correction(
     G: nx.DiGraph,
@@ -336,14 +347,12 @@ def _phase2_topo_correction(
                 corrected[node] = 0.0
                 if base > 0.01:
                     _record(changes, counts, node, base, 0.0, "cascade_zero")
-            elif corrected[parent] < parent_base:
+            else:
                 lateral = max(base - parent_base, 0.0)
                 new_val = corrected[parent] + lateral
                 corrected[node] = new_val
                 if abs(new_val - base) > 0.01:
-                    _record(changes, counts, node, base, new_val, "lateral_lower")
-            else:
-                corrected[node] = base
+                    _record(changes, counts, node, base, new_val, "lateral_propagate")
 
     print("    Phase 2 corrections:")
     for ctype, n in sorted(counts.items()):
@@ -369,6 +378,7 @@ def _record(
 # ---------------------------------------------------------------------------
 # Phase 3: Outlier detection (log-space, Tukey IQR)
 # ---------------------------------------------------------------------------
+
 
 def _phase3_outlier_detection(
     G: nx.DiGraph,
@@ -397,7 +407,9 @@ def _phase3_outlier_detection(
         if val <= 0:
             continue
         neighbors = list(G.predecessors(node)) + list(G.successors(node))
-        neighbor_vals = [corrected.get(n, 0.0) for n in neighbors if corrected.get(n, 0.0) > 0]
+        neighbor_vals = [
+            corrected.get(n, 0.0) for n in neighbors if corrected.get(n, 0.0) > 0
+        ]
         if not neighbor_vals:
             continue
         all_vals = neighbor_vals + [val]
@@ -418,8 +430,10 @@ def _phase3_outlier_detection(
                 flagged.add(node)
 
         n_log = sum(1 for _, d in log_devs if d > effective_threshold)
-        print(f"    Phase 3 — log-deviation outliers: {n_log} "
-              f"(threshold={effective_threshold:.2f}, IQR fence={upper_fence:.2f})")
+        print(
+            f"    Phase 3 — log-deviation outliers: {n_log} "
+            f"(threshold={effective_threshold:.2f}, IQR fence={upper_fence:.2f})"
+        )
 
     # Method 2: Junction raises > threshold
     n_junc_raise = 0
@@ -458,6 +472,7 @@ def _phase3_outlier_detection(
 # Phase 4: Re-sample flagged reaches from UPA rasters
 # ---------------------------------------------------------------------------
 
+
 def _phase4_resample_t003(
     conn: duckdb.DuckDBPyConnection,
     G: nx.DiGraph,
@@ -465,6 +480,7 @@ def _phase4_resample_t003(
     dn_node_facc: Dict[int, float],
     region: str,
     merit_searcher: Optional[MeritGuidedSearch],
+    node_max_lookup: Optional[Dict[int, float]] = None,
 ) -> Tuple[Dict[int, float], int, Dict[str, int], Dict[int, Dict]]:
     """
     T003-targeted MERIT re-sampling with dual-endpoint D8 flow-walk.
@@ -685,7 +701,8 @@ def _phase4_resample_t003(
 
             merit_values = merit_searcher._sample_in_polygon(buffered, region)
             candidates = [
-                val for val in merit_values
+                val
+                for val in merit_values
                 if val > 0 and target_min / 100 <= val <= target_min * 100
             ]
 
@@ -703,8 +720,31 @@ def _phase4_resample_t003(
                         method_used = "radial_gap"
                         stats["gap_reduced_via_radial"] += 1
 
-        # ---- Apply result ----
+        # ---- Apply result (with sanity guards) ----
         if best is not None and best > 0:
+            original_val = dn_node_facc.get(v_rid, 0.0)
+
+            # Guard 1: never lower the baseline — if D8 walk returned a
+            # value worse than what we already have, it followed a wrong
+            # tributary.  Skip entirely.
+            if best < original_val - 1.0:
+                diag["resample_rejected_lower"] = round(best, 2)
+                diag["kept_original"] = round(original_val, 2)
+                best = None
+                stats["downstream_no_candidates"] += 1
+                diag["reason"] = "resample_would_lower"
+                diagnostics[v_rid] = diag
+                continue
+
+            # Guard 2: if MERIT re-sample is wildly below node evidence,
+            # the D8 walk followed the wrong tributary. Use node MAX instead.
+            if node_max_lookup:
+                node_max = node_max_lookup.get(v_rid, 0.0)
+                if node_max > 0 and best < node_max * 0.1:
+                    diag["resample_before_guard"] = round(best, 2)
+                    diag["node_max_override"] = round(node_max, 2)
+                    best = node_max
+
             dn_node_facc[v_rid] = best
             n_resampled += 1
 
@@ -725,7 +765,7 @@ def _phase4_resample_t003(
         diagnostics[v_rid] = diag
 
     stats["downstream_resampled"] = n_resampled
-    print(f"    Phase 4 results:")
+    print("    Phase 4 results:")
     print(f"      Resampled: {n_resampled} / {n_targets}")
     print(f"      Fixed monotonicity: {stats['downstream_fixed_mono']}")
     print(f"        via D8 walk A: {stats['fixed_via_d8_walk']}")
@@ -744,6 +784,7 @@ def _phase4_resample_t003(
 # ---------------------------------------------------------------------------
 # Phase 4b: Chain-wise isotonic regression (PAVA)
 # ---------------------------------------------------------------------------
+
 
 def _pava_nondecreasing(
     values: List[float],
@@ -901,8 +942,10 @@ def _phase4b_isotonic_chains(
                 corrected[rid] = new_val
                 adjusted[rid] = (old_val, new_val)
 
-    print(f"    {len(chains)} chains extracted, "
-          f"{n_chains_with_violations} with violations")
+    print(
+        f"    {len(chains)} chains extracted, "
+        f"{n_chains_with_violations} with violations"
+    )
     return corrected, adjusted
 
 
@@ -934,23 +977,129 @@ def _phase4c_junction_floor(
     return corrected, floored
 
 
-    # _phase4d_strict_compliance — REMOVED
-    #
-    # Attempted iterative forward-max + junction floor to achieve T003=0.
-    # Results: +90-114% facc inflation in NA (~2.6 billion km²).
-    # Root causes:
-    #   1. 226 D8-clone junctions (identical facc on both upstream branches)
-    #      double-count drainage area when naively summed. Clone-aware floor
-    #      (max instead of sum) reduces inflation to ~93% but doesn't solve it.
-    #   2. Thousands of 1:1 D8 drops cascade through forward-max, inflating
-    #      Mississippi (+434M), Missouri (+294M), Mackenzie (+250M), etc.
-    # Conclusion: remaining T003 violations are inherent MERIT D8 noise,
-    # not fixable topology errors. Flagged as metadata, not force-corrected.
+def _phase_final_consistency(
+    G: nx.DiGraph,
+    corrected: Dict[int, float],
+    dn_node_facc: Dict[int, float],
+) -> Tuple[Dict[int, float], Dict[int, Tuple[float, float, str]]]:
+    """
+    Final topological pass after all correction phases.
+
+    Phases 4b (isotonic), 4c (junction floor), and 4d (node validation)
+    adjust values after Phase 2 but don't propagate downstream. This
+    pass re-enforces all three topology rules using final values:
+
+    1. Junctions: floor to sum(corrected upstream) + lateral (only raises)
+    2. Bifurcation children: width-proportional share of corrected parent
+    3. 1:1 links: corrected[parent] + lateral, guaranteed >= parent (only raises)
+
+    Single topological-order pass processes parents before children.
+    """
+    topo_order = list(nx.topological_sort(G))
+
+    # Precompute bifurc shares
+    bifurc_share: Dict[Tuple[int, int], float] = {}
+    for node in G.nodes():
+        succs = list(G.successors(node))
+        if len(succs) < 2:
+            continue
+        widths = [max(G.nodes[c].get("width", 0.0), 0.0) for c in succs]
+        total_w = sum(widths)
+        if total_w <= 0:
+            for c in succs:
+                bifurc_share[(node, c)] = 1.0 / len(succs)
+        else:
+            for c, w in zip(succs, widths):
+                bifurc_share[(node, c)] = w / total_w
+
+    changes: Dict[int, Tuple[float, float, str]] = {}
+
+    for node in topo_order:
+        base = max(dn_node_facc.get(node, 0.0), 0.0)
+        preds = list(G.predecessors(node))
+
+        if not preds:
+            continue
+
+        old_val = corrected[node]
+
+        if len(preds) >= 2:
+            # Junction: floor to sum(corrected upstream) + lateral
+            floor = sum(corrected.get(p, 0.0) for p in preds)
+            sum_base_up = sum(max(dn_node_facc.get(p, 0.0), 0.0) for p in preds)
+            lateral = max(base - sum_base_up, 0.0)
+            new_val = floor + lateral
+            if new_val > corrected[node] + 1.0:
+                corrected[node] = new_val
+        else:
+            parent = preds[0]
+            if G.out_degree(parent) >= 2:
+                # Bifurcation child: recompute width-proportional share
+                share = bifurc_share.get((parent, node), 1.0 / G.out_degree(parent))
+                new_val = corrected[parent] * share
+                corrected[node] = new_val
+            else:
+                # 1:1 link: propagate parent + lateral
+                parent_base = max(dn_node_facc.get(parent, 0.0), 0.0)
+                lateral = max(base - parent_base, 0.0)
+                new_val = corrected[parent] + lateral
+                if new_val > corrected[node] + 1.0:
+                    corrected[node] = new_val
+
+        if abs(corrected[node] - old_val) > 0.01:
+            if len(preds) >= 2:
+                tag = "final_junction"
+            elif G.out_degree(preds[0]) >= 2:
+                tag = "final_bifurc"
+            else:
+                tag = "final_1to1"
+            changes[node] = (old_val, corrected[node], tag)
+
+    return corrected, changes
+
+
+def _phase4d_node_validation(
+    G: nx.DiGraph,
+    corrected: Dict[int, float],
+    node_max_lookup: Dict[int, float],
+    ratio_threshold: float = 0.1,
+) -> Tuple[Dict[int, float], Dict[int, Tuple[float, float]]]:
+    """
+    Post-correction validation: compare corrected facc against node-level evidence.
+
+    If corrected facc is wildly below node MAX (< ratio_threshold * node_max),
+    the pipeline corrupted the value (e.g., Phase 4 re-sample followed wrong
+    tributary, then Phase 4b isotonic smoothed the chain DOWN to match).
+
+    Replace with node MAX — safe because node-level facc comes directly from
+    MERIT D8 sampling at the reach's actual location.
+
+    Parameters
+    ----------
+    G : reach graph
+    corrected : {reach_id: corrected_facc}
+    node_max_lookup : {reach_id: MAX(node_facc)} from v17b
+    ratio_threshold : flag if corrected < threshold * node_max (default 0.1 = 10%)
+
+    Returns
+    -------
+    corrected : updated dict
+    overrides : {reach_id: (old_corrected, node_max)} for overridden reaches
+    """
+    overrides: Dict[int, Tuple[float, float]] = {}
+    for rid in G.nodes():
+        node_max = node_max_lookup.get(rid, 0.0)
+        corr = corrected.get(rid, 0.0)
+        if node_max > 0 and corr < node_max * ratio_threshold:
+            overrides[rid] = (corr, node_max)
+            corrected[rid] = node_max
+    return corrected, overrides
 
 
 # ---------------------------------------------------------------------------
 # Collect remaining T003 flags
 # ---------------------------------------------------------------------------
+
 
 def _collect_t003_flags(
     G: nx.DiGraph,
@@ -972,8 +1121,7 @@ def _collect_t003_flags(
         succs_v = list(G.successors(v))
         feeds_junction = any(G.in_degree(w) >= 2 for w in succs_v)
         would_break_dn = any(
-            corrected.get(u, 0.0) > corrected.get(w, 0.0) + 1.0
-            for w in succs_v
+            corrected.get(u, 0.0) > corrected.get(w, 0.0) + 1.0 for w in succs_v
         )
         if feeds_junction:
             reason = "junction_adjacent"
@@ -988,6 +1136,7 @@ def _collect_t003_flags(
 # ---------------------------------------------------------------------------
 # Export remaining T003 violations
 # ---------------------------------------------------------------------------
+
 
 def _export_remaining_t003(
     conn: duckdb.DuckDBPyConnection,
@@ -1017,7 +1166,6 @@ def _export_remaining_t003(
 
     # Classify each violation
     downstream_ids = sorted(set(v for _, v in violations))
-    all_ids = sorted(set(rid for pair in violations for rid in pair))
 
     # Load geometries for the downstream reaches (the ones we'd display)
     geom_data = _load_reach_geometries(conn, downstream_ids, region)
@@ -1031,9 +1179,7 @@ def _export_remaining_t003(
 
         # Classify reason
         succs_v = list(G.successors(v))
-        would_break_dn = any(
-            corr_u > corrected.get(w, 0.0) + 1.0 for w in succs_v
-        )
+        would_break_dn = any(corr_u > corrected.get(w, 0.0) + 1.0 for w in succs_v)
         feeds_junction = any(G.in_degree(w) >= 2 for w in succs_v)
         is_chain = would_break_dn and not feeds_junction
 
@@ -1052,22 +1198,24 @@ def _export_remaining_t003(
                 ratio_dn = round(corr_v / cw, 3)
                 break
 
-        rows.append({
-            "reach_id": v,
-            "upstream_id": u,
-            "downstream_id": succs_v[0] if succs_v else None,
-            "facc_base": round(base_v, 2),
-            "facc_corrected": round(corr_v, 2),
-            "facc_upstream": round(corr_u, 2),
-            "delta": round(corr_v - base_v, 2),
-            "ratio_up": round(corr_u / corr_v, 3) if corr_v > 0 else None,
-            "ratio_dn": ratio_dn,
-            "reason": reason,
-            "is_junction_child": G.in_degree(v) >= 2,
-            "is_junction_parent": any(G.in_degree(w) >= 2 for w in succs_v),
-            "n_preds": G.in_degree(v),
-            "n_succs": G.out_degree(v),
-        })
+        rows.append(
+            {
+                "reach_id": v,
+                "upstream_id": u,
+                "downstream_id": succs_v[0] if succs_v else None,
+                "facc_base": round(base_v, 2),
+                "facc_corrected": round(corr_v, 2),
+                "facc_upstream": round(corr_u, 2),
+                "delta": round(corr_v - base_v, 2),
+                "ratio_up": round(corr_u / corr_v, 3) if corr_v > 0 else None,
+                "ratio_dn": ratio_dn,
+                "reason": reason,
+                "is_junction_child": G.in_degree(v) >= 2,
+                "is_junction_parent": any(G.in_degree(w) >= 2 for w in succs_v),
+                "n_preds": G.in_degree(v),
+                "n_succs": G.out_degree(v),
+            }
+        )
 
     df = pd.DataFrame(rows)
     reason_counts = df["reason"].value_counts()
@@ -1088,6 +1236,7 @@ def _export_remaining_t003(
         try:
             from shapely import wkt as shapely_wkt
             from shapely.geometry import mapping
+
             geom = shapely_wkt.loads(wkt)
             props = {k: v for k, v in row.items() if k != "reach_id"}
             props["reach_id"] = int(rid)
@@ -1100,11 +1249,13 @@ def _export_remaining_t003(
                     props[k] = float(val)
                 elif isinstance(val, (np.bool_,)):
                     props[k] = bool(val)
-            features.append({
-                "type": "Feature",
-                "geometry": mapping(geom),
-                "properties": props,
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": mapping(geom),
+                    "properties": props,
+                }
+            )
         except Exception:
             continue
 
@@ -1121,53 +1272,58 @@ def _export_remaining_t003(
 
 
 # ---------------------------------------------------------------------------
-# Phase 5: Re-run topology correction on affected subgraph
+# Stage B: Propagation + Refinement (reusable helper)
 # ---------------------------------------------------------------------------
 
-def _phase5_rerun(
+
+def _run_stage_b(
     G: nx.DiGraph,
     dn_node_facc: Dict[int, float],
-    corrected: Dict[int, float],
-    resampled_ids: Set[int],
-) -> Tuple[Dict[int, float], Dict[int, Tuple[float, float, str]]]:
+    node_max_lookup: Dict[int, float],
+) -> Tuple[
+    Dict[int, float],
+    Dict[int, Tuple[float, float, str]],
+    Dict[int, Tuple[float, float]],
+    Dict[int, Tuple[float, float]],
+    Dict[int, Tuple[float, float]],
+    Dict[int, Tuple[float, float, str]],
+]:
     """
-    Re-run Phase 2 correction, but only visiting reaches downstream of
-    re-sampled ones.
+    Propagation + refinement on a cleaned baseline.
 
-    If no reaches were re-sampled, returns existing corrected values.
+    Returns (corrected, changes, adjusted, floored, node_overrides, final_changes).
     """
-    if not resampled_ids:
-        print("    Phase 5 — SKIPPED (no re-sampled reaches)")
-        return corrected, {}
+    # B1: Full topology propagation
+    corrected, changes = _phase2_topo_correction(G, dn_node_facc)
 
-    # Find all downstream-affected reaches
-    affected: Set[int] = set(resampled_ids)
-    queue = list(resampled_ids)
-    while queue:
-        node = queue.pop(0)
-        for succ in G.successors(node):
-            if succ not in affected:
-                affected.add(succ)
-                queue.append(succ)
+    # B2: Isotonic smoothing with bifurc anchors
+    anchors: Dict[int, float] = {}
+    for node in G.nodes():
+        preds = list(G.predecessors(node))
+        if len(preds) == 1 and G.out_degree(preds[0]) >= 2:
+            anchors[node] = corrected[node]
+    corrected, adjusted = _phase4b_isotonic_chains(
+        G, corrected, dn_node_facc, anchor_overrides=anchors
+    )
 
-    print(f"    Phase 5 — re-running correction on {len(affected)} affected reaches")
+    # B3: Junction floor
+    corrected, floored = _phase4c_junction_floor(G, corrected)
 
-    # Full re-run is simpler and guarantees consistency
-    corrected_new, changes_new = _phase2_topo_correction(G, dn_node_facc)
+    # B4: Node validation
+    corrected, node_overrides = _phase4d_node_validation(
+        G, corrected, node_max_lookup, ratio_threshold=0.1
+    )
 
-    # Only report changes in affected reaches
-    affected_changes = {
-        rid: change for rid, change in changes_new.items()
-        if rid in affected
-    }
+    # B5: Final consistency pass
+    corrected, final_changes = _phase_final_consistency(G, corrected, dn_node_facc)
 
-    print(f"    Phase 5 — {len(affected_changes)} changes in affected subgraph")
-    return corrected_new, changes_new
+    return corrected, changes, adjusted, floored, node_overrides, final_changes
 
 
 # ---------------------------------------------------------------------------
 # Phase 6: Validation
 # ---------------------------------------------------------------------------
+
 
 def _phase6_validate(
     G: nx.DiGraph,
@@ -1237,6 +1393,7 @@ def _phase6_validate(
 # DB application (RTREE-safe pattern)
 # ---------------------------------------------------------------------------
 
+
 def _apply_to_db(
     conn: duckdb.DuckDBPyConnection,
     corrections_df: pd.DataFrame,
@@ -1255,13 +1412,14 @@ def _apply_to_db(
 
     conn.execute("DROP TABLE IF EXISTS _v3_facc")
     conn.execute(
-        "CREATE TEMP TABLE _v3_facc ("
-        "  reach_id BIGINT PRIMARY KEY, new_facc DOUBLE)"
+        "CREATE TEMP TABLE _v3_facc (  reach_id BIGINT PRIMARY KEY, new_facc DOUBLE)"
     )
-    data = list(zip(
-        corrections_df["reach_id"].astype(int),
-        corrections_df["corrected_facc"].astype(float),
-    ))
+    data = list(
+        zip(
+            corrections_df["reach_id"].astype(int),
+            corrections_df["corrected_facc"].astype(float),
+        )
+    )
     conn.executemany("INSERT INTO _v3_facc VALUES (?, ?)", data)
     conn.execute(
         "UPDATE reaches SET facc = t.new_facc "
@@ -1377,6 +1535,7 @@ def _clear_old_tags(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def correct_facc_denoise(
     db_path: str,
     v17b_path: str,
@@ -1390,13 +1549,19 @@ def correct_facc_denoise(
     """
     Run v3 facc denoising pipeline for one region.
 
+    Three-stage architecture:
+      Stage A: Baseline cleanup (node init, validation, outlier detection, isotonic)
+      Stage B: Propagation + refinement (topo correction, isotonic, junction floor,
+               node validation, final consistency)
+      Stage C: Optional MERIT refinement (resample T003 violations, re-run Stage B)
+
     Parameters
     ----------
     db_path : path to v17c DuckDB
     v17b_path : path to v17b DuckDB (read-only baseline)
     region : region code (NA, SA, EU, AF, AS, OC)
     dry_run : if True, don't modify DB
-    merit_path : path to MERIT Hydro base dir (enables Phase 4)
+    merit_path : path to MERIT Hydro base dir (enables Stage C)
     output_dir : where to write CSV + JSON
     log_threshold : min log-deviation for outlier flagging (default 1.0 ~ 2.7x)
     variability_threshold : min MAX/MIN ratio to trigger dn-node denoising (default 2.0)
@@ -1404,11 +1569,11 @@ def correct_facc_denoise(
     region = region.upper()
     out_path = Path(output_dir)
     mode_str = "DRY RUN" if dry_run else "APPLYING TO DB"
-    merit_str = f"+ MERIT re-sampling" if merit_path else "(no MERIT)"
+    merit_str = "+ MERIT re-sampling" if merit_path else "(no MERIT)"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Facc Denoising v3 — {region} [{mode_str}] {merit_str}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Load v17b baseline
     print("  Loading v17b baseline...")
@@ -1431,123 +1596,196 @@ def correct_facc_denoise(
         print("  Loading node-level facc stats from v17b...")
         node_stats = _load_node_facc_stats(v17b_path, region)
         n_noisy = int((node_stats["variability_ratio"] > variability_threshold).sum())
-        print(f"    {len(node_stats)} reaches, {n_noisy} with variability >{variability_threshold}x")
+        print(
+            f"    {len(node_stats)} reaches, {n_noisy} with variability >{variability_threshold}x"
+        )
+
+        # Build node MAX lookup for sanity guards (Phase 4 + Phase 4d)
+        node_max_lookup: Dict[int, float] = dict(
+            zip(
+                node_stats["reach_id"].astype(int),
+                node_stats["max_facc"].astype(float),
+            )
+        )
 
         # Build graph
         print("  Building graph...")
         G = _build_graph(topo_df, reaches_df)
         n_bifurc = sum(1 for n in G.nodes() if G.out_degree(n) >= 2)
-        print(f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, "
-              f"{n_bifurc} bifurcations")
-
-        # ---- Phase 1: Node-based initialization ----
-        print(f"\n  Phase 1: Node-based initialization (dn-node for var>{variability_threshold}x)")
-        dn_node_facc, denoised_ids = _phase1_node_init(
-            G, v17b_facc, node_stats, variability_threshold=variability_threshold,
+        print(
+            f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, "
+            f"{n_bifurc} bifurcations"
         )
 
+        # ==============================================================
+        # Stage A: Baseline Cleanup (internal data only, no propagation)
+        # ==============================================================
+
+        # A1: Node denoising (existing Phase 1)
+        print(
+            f"\n  A1: Node-based initialization (dn-node for var>{variability_threshold}x)"
+        )
+        dn_node_facc, denoised_ids = _phase1_node_init(
+            G,
+            v17b_facc,
+            node_stats,
+            variability_threshold=variability_threshold,
+        )
         n_node_diff = len(denoised_ids)
         print(f"    {n_node_diff} reaches denoised (switched from MAX to dn-node)")
 
-        # ---- Phase 2: Topology correction ----
-        print("\n  Phase 2: Topology-aware correction")
-        corrected, changes = _phase2_topo_correction(G, dn_node_facc)
+        # A2: Node validation on baseline — catch extreme denoising errors
+        print("\n  A2: Node validation on baseline")
+        dn_node_facc, baseline_overrides = _phase4d_node_validation(
+            G, dn_node_facc, node_max_lookup, ratio_threshold=0.1
+        )
+        print(f"    {len(baseline_overrides)} baseline reaches overridden by node MAX")
 
-        # ---- Phase 3: Outlier detection ----
-        print("\n  Phase 3: Outlier detection")
+        # A3: Outlier detection on baseline — diagnostics only
+        print("\n  A3: Outlier detection on baseline (diagnostics only)")
         flagged = _phase3_outlier_detection(
-            G, corrected, dn_node_facc,
+            G,
+            dn_node_facc,
+            dn_node_facc,
             log_threshold=log_threshold,
         )
 
-        # ---- Phase 4: T003-targeted UPA re-sampling ----
-        print("\n  Phase 4: T003-targeted UPA re-sampling")
+        # A4: Isotonic regression on baseline chains — smooth raw MERIT noise
+        print("\n  A4: Isotonic regression on baseline chains")
+        dn_node_facc, baseline_isotonic = _phase4b_isotonic_chains(
+            G, dn_node_facc, dn_node_facc, anchor_overrides=None
+        )
+        n_bl_raised = sum(1 for old, new in baseline_isotonic.values() if new > old)
+        n_bl_lowered = sum(1 for old, new in baseline_isotonic.values() if new < old)
+        print(
+            f"    {len(baseline_isotonic)} baseline reaches adjusted "
+            f"({n_bl_raised} raised, {n_bl_lowered} lowered)"
+        )
+
+        # ==============================================================
+        # Stage B: Propagation + Refinement
+        # ==============================================================
+
+        print("\n  Stage B: Propagation + Refinement")
+        corrected, changes, adjusted, floored, node_overrides, final_changes = (
+            _run_stage_b(G, dn_node_facc, node_max_lookup)
+        )
+        n_final_junc = sum(
+            1 for _, _, t in final_changes.values() if t == "final_junction"
+        )
+        n_final_bifurc = sum(
+            1 for _, _, t in final_changes.values() if t == "final_bifurc"
+        )
+        n_final_1to1 = sum(1 for _, _, t in final_changes.values() if t == "final_1to1")
+        print(f"    Phase 2 changes: {len(changes)}")
+        print(f"    Isotonic adjusted: {len(adjusted)}")
+        print(f"    Junctions re-floored: {len(floored)}")
+        print(f"    Node MAX overrides: {len(node_overrides)}")
+        print(
+            f"    Final consistency: {len(final_changes)} "
+            f"({n_final_junc} junc, {n_final_bifurc} bifurc, {n_final_1to1} 1:1)"
+        )
+
+        # ==============================================================
+        # Stage C: Optional MERIT refinement
+        # ==============================================================
+
+        print("\n  Stage C: Optional MERIT refinement")
         merit_searcher = create_merit_search(merit_path)
         resampled_ids: Set[int] = set()
         n_resampled = 0
         resample_stats: Dict[str, int] = {}
-
         resample_diag: Dict[int, Dict] = {}
+
         if merit_searcher:
-            dn_node_facc, n_resampled, resample_stats, resample_diag = _phase4_resample_t003(
-                conn, G, corrected, dn_node_facc, region, merit_searcher,
+            dn_node_facc, n_resampled, resample_stats, resample_diag = (
+                _phase4_resample_t003(
+                    conn,
+                    G,
+                    corrected,
+                    dn_node_facc,
+                    region,
+                    merit_searcher,
+                    node_max_lookup=node_max_lookup,
+                )
             )
-            # Track which reaches were actually resampled (changed from original)
+            # Track which reaches were actually resampled
             for rid in G.nodes():
                 base_val = max(v17b_facc.get(rid, 0.0), 0.0)
                 if abs(dn_node_facc.get(rid, 0.0) - base_val) > 0.01:
                     if rid not in denoised_ids:
                         resampled_ids.add(rid)
 
-        # ---- Phase 5: Re-run on affected subgraph ----
-        print("\n  Phase 5: Re-run correction on affected reaches")
-        if n_resampled > 0:
-            corrected, changes = _phase5_rerun(
-                G, dn_node_facc, corrected, resampled_ids,
-            )
+            if n_resampled > 0:
+                print("\n    Re-running Stage B on MERIT-updated baseline...")
+                (
+                    corrected,
+                    changes,
+                    adjusted,
+                    floored,
+                    node_overrides,
+                    final_changes,
+                ) = _run_stage_b(G, dn_node_facc, node_max_lookup)
+                n_final_junc = sum(
+                    1 for _, _, t in final_changes.values() if t == "final_junction"
+                )
+                n_final_bifurc = sum(
+                    1 for _, _, t in final_changes.values() if t == "final_bifurc"
+                )
+                n_final_1to1 = sum(
+                    1 for _, _, t in final_changes.values() if t == "final_1to1"
+                )
+                print(f"    Phase 2 changes: {len(changes)}")
+                print(f"    Isotonic adjusted: {len(adjusted)}")
+                print(f"    Junctions re-floored: {len(floored)}")
+                print(f"    Node MAX overrides: {len(node_overrides)}")
+                print(
+                    f"    Final consistency: {len(final_changes)} "
+                    f"({n_final_junc} junc, {n_final_bifurc} bifurc, "
+                    f"{n_final_1to1} 1:1)"
+                )
         else:
-            print("    Phase 5 — SKIPPED (no re-sampled reaches)")
+            print("    SKIPPED (no MERIT path provided)")
 
-        # ---- Phase 4b: Chain-wise isotonic regression (PAVA) ----
-        # RELAXED ANCHORS: only bifurc children pinned.
-        # Junction feeders are NOT anchored — isotonic can lower them,
-        # enabling bidirectional correction on 1:1 chains.
-        print("\n  Phase 4b: Chain-wise isotonic regression (PAVA)")
-        anchors: Dict[int, float] = {}
-        n_anchor_bifchild = 0
-        for node in G.nodes():
-            preds = list(G.predecessors(node))
-            # Anchor bifurcation children — preserve width-proportional share
-            if len(preds) == 1 and G.out_degree(preds[0]) >= 2:
-                anchors[node] = corrected[node]
-                n_anchor_bifchild += 1
-        print(f"    Anchored {len(anchors)} nodes "
-              f"({n_anchor_bifchild} bifurc children)")
-        corrected, adjusted = _phase4b_isotonic_chains(
-            G, corrected, dn_node_facc, anchor_overrides=anchors,
-        )
-        n_raised = sum(1 for old, new in adjusted.values() if new > old)
-        n_lowered = sum(1 for old, new in adjusted.values() if new < old)
-        print(f"    {len(adjusted)} reaches adjusted ({n_raised} raised, {n_lowered} lowered)")
+        # ==============================================================
+        # Post-pipeline: validation, export, summary
+        # ==============================================================
 
-        # ---- Phase 4c: Junction floor (re-enforce conservation) ----
-        print("\n  Phase 4c: Junction floor (re-enforce conservation)")
-        corrected, floored = _phase4c_junction_floor(G, corrected)
-        print(f"    {len(floored)} junctions re-floored")
+        baseline_override_ids = set(baseline_overrides.keys())
+        baseline_isotonic_ids = set(baseline_isotonic.keys())
+        node_override_ids = set(node_overrides.keys())
+        final_ids = set(final_changes.keys())
 
-        # NOTE: Phase 4d (strict compliance) intentionally omitted.
-        # Iterative forward-max + junction floor achieves T003=0 but causes
-        # +90-114% facc inflation (2.1-2.6 billion km² in NA alone).
-        # Root causes: (1) ~226 D8-clone junctions where MERIT assigned
-        # identical facc to both upstream branches — summing double-counts;
-        # (2) thousands of 1:1 D8 drops that cascade through forward-max.
-        # Clone-aware floor reduces inflation to ~93% but doesn't solve it.
-        # The remaining 1:1 drops are inherent MERIT D8 noise, not topology
-        # errors. Flagged as T003 metadata instead of force-corrected.
-
-        imputed = adjusted  # for downstream references (summary, tagging)
-
-        # ---- Collect T003 flags (structural MERIT-SWORD disagreements) ----
+        # ---- Collect T003 flags ----
         t003_flags = _collect_t003_flags(G, corrected)
         print(f"\n  T003 flags: {len(t003_flags)} remaining violations (metadata only)")
         from collections import Counter
+
         for reason, cnt in sorted(Counter(t003_flags.values()).items()):
             print(f"    {reason:25s} {cnt:,}")
 
-        # ---- Export remaining T003 violations as spatial layer ----
-        _export_remaining_t003(
-            conn, G, corrected, v17b_facc, region, out_path,
-        )
+        # ---- Export remaining T003 violations ----
+        _export_remaining_t003(conn, G, corrected, v17b_facc, region, out_path)
 
-        # ---- Phase 6: Validation ----
-        print("\n  Phase 6: Validation")
+        # ---- Validation ----
+        print("\n  Validation:")
         validation = _phase6_validate(G, corrected, v17b_facc)
-        validation["imputed_reaches"] = len(imputed)
+        validation["baseline_node_overrides"] = len(baseline_overrides)
+        validation["baseline_isotonic_adjusted"] = len(baseline_isotonic)
+        validation["phase3_flagged"] = len(flagged)
+        validation["isotonic_adjusted"] = len(adjusted)
         validation["t003_flagged"] = len(t003_flags)
         validation["floored_junctions"] = len(floored)
-        print(f"      {'imputed_reaches':35s} {len(imputed):,}")
+        validation["node_max_overrides"] = len(node_overrides)
+        validation["final_consistency_changes"] = len(final_changes)
+        print(f"      {'baseline_node_overrides':35s} {len(baseline_overrides):,}")
+        print(f"      {'baseline_isotonic_adjusted':35s} {len(baseline_isotonic):,}")
+        print(f"      {'phase3_flagged':35s} {len(flagged):,}")
+        print(f"      {'isotonic_adjusted':35s} {len(adjusted):,}")
         print(f"      {'t003_flagged':35s} {len(t003_flags):,}")
         print(f"      {'floored_junctions':35s} {len(floored):,}")
+        print(f"      {'node_max_overrides':35s} {len(node_overrides):,}")
+        print(f"      {'final_consistency_changes':35s} {len(final_changes):,}")
 
         # Build corrections DataFrame — compare corrected to v17b
         rows = []
@@ -1556,18 +1794,28 @@ def correct_facc_denoise(
             corr = corrected.get(rid, 0.0)
             if abs(corr - base_v17b) > 0.01 or rid in t003_flags:
                 delta = corr - base_v17b
-                delta_pct = 100.0 * delta / base_v17b if base_v17b > 0 else (
-                    float("inf") if delta > 0 else 0.0
+                delta_pct = (
+                    100.0 * delta / base_v17b
+                    if base_v17b > 0
+                    else (float("inf") if delta > 0 else 0.0)
                 )
                 # Determine correction type (last-write-wins order)
-                if rid in floored:
+                if rid in final_ids:
+                    ctype = final_changes[rid][2]
+                elif rid in node_override_ids:
+                    ctype = "node_max_override"
+                elif rid in floored:
                     ctype = "junction_floor_post"
-                elif rid in imputed:
+                elif rid in adjusted:
                     ctype = "isotonic_regression"
                 elif rid in changes:
                     ctype = changes[rid][2]
                 elif rid in resampled_ids:
                     ctype = "upa_resample"
+                elif rid in baseline_isotonic_ids:
+                    ctype = "baseline_isotonic"
+                elif rid in baseline_override_ids:
+                    ctype = "baseline_node_override"
                 elif rid in denoised_ids:
                     ctype = "node_denoise"
                 elif rid in t003_flags:
@@ -1575,25 +1823,27 @@ def correct_facc_denoise(
                 else:
                     ctype = "unknown"
                 diag = resample_diag.get(rid, {})
-                rows.append({
-                    "reach_id": rid,
-                    "region": region,
-                    "original_facc": round(base_v17b, 4),
-                    "dn_node_facc": round(dn_node_facc.get(rid, 0.0), 4),
-                    "corrected_facc": round(corr, 4),
-                    "delta": round(delta, 4),
-                    "delta_pct": round(delta_pct, 2),
-                    "correction_type": ctype,
-                    "t003_flag": rid in t003_flags,
-                    "t003_reason": t003_flags.get(rid),
-                    "was_resampled": rid in resampled_ids,
-                    "resample_reason": diag.get("reason"),
-                    "resample_method": diag.get("method"),
-                    "resample_target_min": diag.get("target_min"),
-                    "resample_best_candidate": diag.get("best_candidate"),
-                    "resample_delta_to_fix": diag.get("delta_to_fix"),
-                    "resample_d8_steps": diag.get("d8_steps"),
-                })
+                rows.append(
+                    {
+                        "reach_id": rid,
+                        "region": region,
+                        "original_facc": round(base_v17b, 4),
+                        "dn_node_facc": round(dn_node_facc.get(rid, 0.0), 4),
+                        "corrected_facc": round(corr, 4),
+                        "delta": round(delta, 4),
+                        "delta_pct": round(delta_pct, 2),
+                        "correction_type": ctype,
+                        "t003_flag": rid in t003_flags,
+                        "t003_reason": t003_flags.get(rid),
+                        "was_resampled": rid in resampled_ids,
+                        "resample_reason": diag.get("reason"),
+                        "resample_method": diag.get("method"),
+                        "resample_target_min": diag.get("target_min"),
+                        "resample_best_candidate": diag.get("best_candidate"),
+                        "resample_delta_to_fix": diag.get("delta_to_fix"),
+                        "resample_d8_steps": diag.get("d8_steps"),
+                    }
+                )
 
         corrections_df = pd.DataFrame(rows) if rows else pd.DataFrame()
 
@@ -1614,19 +1864,27 @@ def correct_facc_denoise(
             median_delta=("delta", "median"),
         )
 
-        print(f"\n  Summary:")
+        print("\n  Summary:")
         print(f"    Total corrections: {len(corrections_df)}")
         print(f"    Raised:  {n_raised}")
         print(f"    Lowered: {n_lowered}")
         print(f"    Net facc change: {total_delta:>+,.0f} km^2 ({pct:+.3f}%)")
         print(f"    Phase 3 flagged: {len(flagged)}")
+        print(f"    Baseline node overrides: {len(baseline_overrides)}")
+        print(f"    Baseline isotonic adjusted: {len(baseline_isotonic)}")
         print(f"    T003 targeted resampled: {n_resampled}")
         if resample_stats:
-            print(f"    T003 fixed monotonicity: {resample_stats.get('downstream_fixed_mono', 0)}")
-            print(f"    T003 reduced gap: {resample_stats.get('downstream_reduced_gap', 0)}")
+            print(
+                f"    T003 fixed monotonicity: {resample_stats.get('downstream_fixed_mono', 0)}"
+            )
+            print(
+                f"    T003 reduced gap: {resample_stats.get('downstream_reduced_gap', 0)}"
+            )
         for ctype, row in by_type.iterrows():
-            print(f"      {ctype:25s}  n={int(row['count']):>6,}  "
-                  f"med_delta={row['median_delta']:>+12,.1f} km^2")
+            print(
+                f"      {ctype:25s}  n={int(row['count']):>6,}  "
+                f"med_delta={row['median_delta']:>+12,.1f} km^2"
+            )
 
         # Apply to DB
         if not dry_run:
@@ -1661,12 +1919,17 @@ def correct_facc_denoise(
             "total_facc_before": total_before,
             "net_facc_change": total_delta,
             "pct_change": round(pct, 4),
+            "baseline_node_overrides": len(baseline_overrides),
+            "baseline_isotonic_adjusted": len(baseline_isotonic),
             "phase3_flagged": len(flagged),
             "t003_resample_stats": resample_stats,
-            "actually_resampled": n_resampled,
-            "imputed_count": len(imputed),
             "t003_flagged": len(t003_flags),
             "floored_junctions": len(floored),
+            "node_max_overrides": len(node_overrides),
+            "final_consistency_changes": len(final_changes),
+            "final_junctions": n_final_junc,
+            "final_bifurc": n_final_bifurc,
+            "final_1to1": n_final_1to1,
             "validation": validation,
             "by_type": {
                 ctype: {
@@ -1695,27 +1958,42 @@ def correct_facc_denoise(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Facc denoising v3 — topology-aware with UPA re-sampling"
     )
-    parser.add_argument("--db", required=True,
-                        help="v17c DuckDB path")
-    parser.add_argument("--v17b", default="data/duckdb/sword_v17b.duckdb",
-                        help="v17b DuckDB path (baseline)")
+    parser.add_argument("--db", required=True, help="v17c DuckDB path")
+    parser.add_argument(
+        "--v17b",
+        default="data/duckdb/sword_v17b.duckdb",
+        help="v17b DuckDB path (baseline)",
+    )
     parser.add_argument("--region", help="Single region")
-    parser.add_argument("--all", action="store_true",
-                        help="Process all regions")
-    parser.add_argument("--apply", action="store_true",
-                        help="Write corrections to DB (default: dry run)")
-    parser.add_argument("--merit",
-                        help="MERIT Hydro base path (enables Phase 4 re-sampling)")
-    parser.add_argument("--output-dir", default="output/facc_detection",
-                        help="Output directory")
-    parser.add_argument("--log-threshold", type=float, default=1.0,
-                        help="Log-deviation threshold for outlier detection (default: 1.0)")
-    parser.add_argument("--var-threshold", type=float, default=2.0,
-                        help="Variability threshold for node denoising (default: 2.0)")
+    parser.add_argument("--all", action="store_true", help="Process all regions")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write corrections to DB (default: dry run)",
+    )
+    parser.add_argument(
+        "--merit", help="MERIT Hydro base path (enables Phase 4 re-sampling)"
+    )
+    parser.add_argument(
+        "--output-dir", default="output/facc_detection", help="Output directory"
+    )
+    parser.add_argument(
+        "--log-threshold",
+        type=float,
+        default=1.0,
+        help="Log-deviation threshold for outlier detection (default: 1.0)",
+    )
+    parser.add_argument(
+        "--var-threshold",
+        type=float,
+        default=2.0,
+        help="Variability threshold for node denoising (default: 2.0)",
+    )
 
     args = parser.parse_args()
     if not args.region and not args.all:
@@ -1741,11 +2019,17 @@ def main():
         combined = pd.concat(all_corrections, ignore_index=True)
         n_up = int((combined["delta"] > 0).sum())
         n_dn = int((combined["delta"] < 0).sum())
-        n_resamp = int(combined["was_resampled"].sum()) if "was_resampled" in combined.columns else 0
-        print(f"\n{'='*60}")
-        print(f"GRAND TOTAL: {len(combined)} modifications "
-              f"({n_up} raised, {n_dn} lowered, {n_resamp} resampled)")
-        print(f"{'='*60}")
+        n_resamp = (
+            int(combined["was_resampled"].sum())
+            if "was_resampled" in combined.columns
+            else 0
+        )
+        print(f"\n{'=' * 60}")
+        print(
+            f"GRAND TOTAL: {len(combined)} modifications "
+            f"({n_up} raised, {n_dn} lowered, {n_resamp} resampled)"
+        )
+        print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
