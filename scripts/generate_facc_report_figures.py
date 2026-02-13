@@ -378,8 +378,57 @@ def fig2_stacked_bar(summaries: dict) -> None:
     print(f"  Saved {out}")
 
 
-def fig3_scalability(summaries: dict) -> None:
-    """Fig 3: Scalability comparison — runtime and reach count."""
+def fig3_change_distribution(df: pd.DataFrame) -> None:
+    """Fig 3: Per-reach relative change distribution, faceted by region."""
+    mask = (
+        (df["original_facc"] > 0)
+        & (df["delta_pct"].notna())
+        & (df["delta_pct"].abs() < 1e6)
+    )
+    plot_df = df[mask].copy()
+    plot_df["delta_pct_clipped"] = plot_df["delta_pct"].clip(-500, 500)
+
+    regions_present = [r for r in REGIONS if r in plot_df["region"].values]
+    n = len(regions_present)
+    ncols = 3
+    nrows = (n + ncols - 1) // ncols
+
+    fig, axes = plt.subplots(nrows, ncols, figsize=(12, 4 * nrows), squeeze=False)
+
+    for i, region in enumerate(regions_present):
+        row, col = divmod(i, ncols)
+        ax = axes[row][col]
+        sub = plot_df[plot_df["region"] == region]["delta_pct_clipped"]
+
+        ax.hist(sub, bins=80, color="#4C72B0", alpha=0.8, edgecolor="none")
+        ax.axvline(0, color="k", ls="--", lw=0.8, alpha=0.5)
+
+        median_val = sub.median()
+        ax.axvline(median_val, color="#C44E52", ls="-", lw=1.2, alpha=0.8)
+
+        ax.set_title(f"{region} (n={len(sub):,}, med={median_val:+.1f}%)", fontsize=11)
+        ax.set_xlabel("% change from v17b", fontsize=9)
+        ax.set_ylabel("Count", fontsize=9)
+        ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
+
+    for i in range(n, nrows * ncols):
+        row, col = divmod(i, ncols)
+        axes[row][col].set_visible(False)
+
+    fig.suptitle(
+        "Fig 3: Per-Reach Relative Change Distribution (clipped to +/-500%)",
+        fontsize=13,
+        y=1.02,
+    )
+    fig.tight_layout()
+    out = OUTPUT_DIR / "report_fig3.png"
+    fig.savefig(out, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved {out}")
+
+
+def fig4_scalability(summaries: dict) -> None:
+    """Fig 4: Scalability comparison — runtime and reach count."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
     basin_sizes = [10, 50, 100, 500, 1000, 5000]
@@ -445,19 +494,19 @@ def fig3_scalability(summaries: dict) -> None:
     ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:,.0f}"))
 
     fig.suptitle(
-        "Fig 3: Scalability — v3 Pipeline Processes 248K Reaches Globally",
+        "Fig 4: Scalability — v3 Pipeline Processes 248K Reaches Globally",
         fontsize=13,
         y=1.02,
     )
     fig.tight_layout()
-    out = OUTPUT_DIR / "report_fig3.png"
+    out = OUTPUT_DIR / "report_fig4.png"
     fig.savefig(out, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved {out}")
 
 
-def fig4_pava_example() -> None:
-    """Fig 4: PAVA in action on a real 1:1 chain (SA example)."""
+def fig5_pava_example() -> None:
+    """Fig 5: PAVA in action on a real 1:1 chain (SA example)."""
     # SA chain: 15 reaches with a clear drop from R8-R14 that PAVA pools through.
     # Data from chain starting at reach 62266502361 in South America.
     orig = [
@@ -569,7 +618,7 @@ def fig4_pava_example() -> None:
     )
     ax.set_ylabel("Flow accumulation (km\u00b2)", fontsize=11)
     ax.set_title(
-        "Fig 4: Isotonic Regression (PAVA) on a 1:1 Chain \u2014 South America Example",
+        "Fig 5: Isotonic Regression (PAVA) on a 1:1 Chain \u2014 South America Example",
         fontsize=12,
         fontweight="bold",
     )
@@ -590,7 +639,7 @@ def fig4_pava_example() -> None:
     )
 
     fig.tight_layout()
-    out = OUTPUT_DIR / "report_fig4.png"
+    out = OUTPUT_DIR / "report_fig5.png"
     fig.savefig(out, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved {out}")
@@ -598,6 +647,12 @@ def fig4_pava_example() -> None:
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("Loading v3 correction CSVs...")
+    df = load_all_csvs()
+    print(
+        f"  {len(df):,} total correction rows across {df['region'].nunique()} regions"
+    )
 
     print("Loading summary JSONs...")
     summaries = load_summaries()
@@ -623,8 +678,9 @@ def main():
     print("\nGenerating figures...")
     fig1_before_after(junc_v17b, junc_v17c, bifurc_v17b, bifurc_v17c)
     fig2_stacked_bar(summaries)
-    fig3_scalability(summaries)
-    fig4_pava_example()
+    fig3_change_distribution(df)
+    fig4_scalability(summaries)
+    fig5_pava_example()
 
     print("\nDone. Figures saved to", OUTPUT_DIR)
 
