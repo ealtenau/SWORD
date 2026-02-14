@@ -455,3 +455,151 @@ class TestIntegration:
             results = runner.run(checks=["T001"])
             assert len(results) == 1
             assert results[0].elapsed_ms > 0
+
+
+# =============================================================================
+# V011 OSM Name Continuity Tests
+# =============================================================================
+
+
+def _create_v011_test_data(conn, rows):
+    """Create minimal reaches table for V011 testing.
+
+    rows: list of (reach_id, region, x, y, river_name_osm, rch_id_dn_main, n_rch_down, n_rch_up)
+    """
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reaches (
+            reach_id BIGINT,
+            region VARCHAR,
+            x DOUBLE,
+            y DOUBLE,
+            river_name_osm VARCHAR,
+            rch_id_dn_main BIGINT,
+            n_rch_down INTEGER,
+            n_rch_up INTEGER
+        )
+    """)
+    for row in rows:
+        conn.execute(
+            "INSERT INTO reaches VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            list(row),
+        )
+
+
+@pytest.mark.db
+@pytest.mark.skipif(
+    not (Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb").exists(),
+    reason="Test database not found",
+)
+class TestV011OsmNameContinuity:
+    """Tests for V011 osm_name_continuity check."""
+
+    def test_v011_registered(self):
+        """V011 should be in the registry."""
+        check = get_check("V011")
+        assert check is not None
+        assert check.name == "osm_name_continuity"
+        assert check.category == Category.V17C
+        assert check.severity == Severity.WARNING
+
+    def test_v011_missing_columns_passes(self, test_db_path):
+        """V011 should pass gracefully when columns don't exist."""
+        with LintRunner(test_db_path) as runner:
+            results = runner.run(checks=["V011"])
+            assert len(results) == 1
+            r = results[0]
+            assert r.check_id == "V011"
+            assert r.passed is True
+            assert r.total_checked == 0
+
+    def test_v011_same_name_no_flag(self, tmp_path):
+        """Same river_name_osm on 1:1 link should not be flagged."""
+        import duckdb as _duckdb  # noqa: F811
+
+        db_path = tmp_path / "v011_test.duckdb"
+        conn = _duckdb.connect(str(db_path))
+        _create_v011_test_data(
+            conn,
+            [
+                # reach_id, region, x, y, river_name_osm, rch_id_dn_main, n_rch_down, n_rch_up
+                (1001, "NA", -75.0, 45.0, "St. Lawrence", 1002, 1, 0),
+                (1002, "NA", -75.1, 45.1, "St. Lawrence", None, 0, 1),
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+
+        result = check_osm_name_continuity(conn, region="NA")
+        assert result.passed is True
+        assert result.issues_found == 0
+        conn.close()
+
+    def test_v011_different_name_1to1_flags(self, tmp_path):
+        """Different river_name_osm on 1:1 link should be flagged."""
+        import duckdb as _duckdb  # noqa: F811
+
+        db_path = tmp_path / "v011_test.duckdb"
+        conn = _duckdb.connect(str(db_path))
+        _create_v011_test_data(
+            conn,
+            [
+                (1001, "NA", -75.0, 45.0, "St. Lawrence", 1002, 1, 0),
+                (1002, "NA", -75.1, 45.1, "Ottawa River", None, 0, 1),
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+
+        result = check_osm_name_continuity(conn, region="NA")
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+    def test_v011_junction_not_flagged(self, tmp_path):
+        """Different name at junction (n_rch_up > 1) should NOT be flagged."""
+        import duckdb as _duckdb  # noqa: F811
+
+        db_path = tmp_path / "v011_test.duckdb"
+        conn = _duckdb.connect(str(db_path))
+        _create_v011_test_data(
+            conn,
+            [
+                (1001, "NA", -75.0, 45.0, "St. Lawrence", 1003, 1, 0),
+                (1002, "NA", -74.9, 45.0, "Ottawa River", 1003, 1, 0),
+                (
+                    1003,
+                    "NA",
+                    -75.1,
+                    45.1,
+                    "St. Lawrence",
+                    None,
+                    0,
+                    2,
+                ),  # junction: n_rch_up=2
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+
+        result = check_osm_name_continuity(conn, region="NA")
+        assert result.passed is True
+        assert result.issues_found == 0
+        conn.close()
+
+    def test_v011_null_name_skipped(self, tmp_path):
+        """NULL river_name_osm should not be flagged."""
+        import duckdb as _duckdb  # noqa: F811
+
+        db_path = tmp_path / "v011_test.duckdb"
+        conn = _duckdb.connect(str(db_path))
+        _create_v011_test_data(
+            conn,
+            [
+                (1001, "NA", -75.0, 45.0, None, 1002, 1, 0),
+                (1002, "NA", -75.1, 45.1, "St. Lawrence", None, 0, 1),
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+
+        result = check_osm_name_continuity(conn, region="NA")
+        assert result.passed is True
+        assert result.issues_found == 0
+        conn.close()
