@@ -40,11 +40,14 @@ def match_osm_names(
     conn.execute("INSTALL spatial; LOAD spatial;")
 
     # Load OSM waterways into temp table
+    # ogr2ogr puts extended tags (including name:en) into the hstore-format
+    # "other_tags" column, so we extract it with a regex rather than a direct
+    # column reference.
     conn.execute(f"""
         CREATE OR REPLACE TEMP TABLE osm_waterways AS
         SELECT
             name,
-            "name:en" AS name_en,
+            regexp_extract(other_tags, '"name:en"=>"([^"]*)"', 1) AS name_en,
             geom
         FROM ST_Read('{gpkg_path}')
         WHERE name IS NOT NULL
