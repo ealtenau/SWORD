@@ -17,6 +17,32 @@ from ..core import (
 )
 
 
+def _column_exists(conn: duckdb.DuckDBPyConnection, column: str) -> bool:
+    """Check if a column exists in the reaches table."""
+    try:
+        conn.execute(f"SELECT {column} FROM reaches LIMIT 0")
+        return True
+    except duckdb.BinderException:
+        return False
+
+
+def _skip_result(
+    check_id: str, name: str, severity: Severity, column: str
+) -> CheckResult:
+    """Return a PASS result when a required column is missing."""
+    return CheckResult(
+        check_id=check_id,
+        name=name,
+        severity=severity,
+        passed=True,
+        total_checked=0,
+        issues_found=0,
+        issue_pct=0,
+        details=pd.DataFrame(),
+        description=f"Skipped: column '{column}' not found in reaches table",
+    )
+
+
 @register_check(
     "A002",
     Category.ATTRIBUTES,
@@ -136,7 +162,7 @@ def check_width_trend(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r1
     WHERE width > 100 AND width != -9999 AND lakeflag = 0
-    {where_clause.replace('r1.', '')}
+    {where_clause.replace("r1.", "")}
     """
     total = conn.execute(total_query).fetchone()[0]
 
@@ -149,7 +175,7 @@ def check_width_trend(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description=f"Reaches where downstream width < {ratio_threshold*100:.0f}% of upstream width",
+        description=f"Reaches where downstream width < {ratio_threshold * 100:.0f}% of upstream width",
         threshold=ratio_threshold,
     )
 
@@ -173,8 +199,15 @@ def check_attribute_completeness(
     where_clause = f"AND region = '{region}'" if region else ""
 
     required_attrs = [
-        "dist_out", "facc", "wse", "width", "slope",
-        "reach_length", "lakeflag", "n_rch_up", "n_rch_down"
+        "dist_out",
+        "facc",
+        "wse",
+        "width",
+        "slope",
+        "reach_length",
+        "lakeflag",
+        "n_rch_up",
+        "n_rch_down",
     ]
 
     # Build completeness query
@@ -187,7 +220,7 @@ def check_attribute_completeness(
 
     query = f"""
     SELECT
-        {', '.join(select_parts)}
+        {", ".join(select_parts)}
     FROM reaches
     WHERE 1=1 {where_clause}
     """
@@ -201,12 +234,14 @@ def check_attribute_completeness(
         missing = result[idx]
         total = result[idx + 1]
         pct_missing = 100 * missing / total if total > 0 else 0
-        rows.append({
-            "attribute": attr,
-            "missing_count": missing,
-            "total_count": total,
-            "pct_missing": round(pct_missing, 2),
-        })
+        rows.append(
+            {
+                "attribute": attr,
+                "missing_count": missing,
+                "total_count": total,
+                "pct_missing": round(pct_missing, 2),
+            }
+        )
         idx += 2
 
     details = pd.DataFrame(rows)
@@ -278,8 +313,8 @@ def check_trib_flag_distribution(
 
     # Count reaches with unmapped tributaries
     unmapped_count = 0
-    if len(stats) > 0 and 1 in stats['trib_flag'].values:
-        unmapped_count = int(stats[stats['trib_flag'] == 1]['reach_count'].values[0])
+    if len(stats) > 0 and 1 in stats["trib_flag"].values:
+        unmapped_count = int(stats[stats["trib_flag"] == 1]["reach_count"].values[0])
 
     return CheckResult(
         check_id="A005",
@@ -290,7 +325,9 @@ def check_trib_flag_distribution(
         issues_found=unmapped_count,
         issue_pct=100 * unmapped_count / total if total > 0 else 0,
         details=stats,
-        description=f"Reaches with unmapped tributaries (trib_flag=1): {unmapped_count} ({100*unmapped_count/total:.1f}%)" if total > 0 else "No data",
+        description=f"Reaches with unmapped tributaries (trib_flag=1): {unmapped_count} ({100 * unmapped_count / total:.1f}%)"
+        if total > 0
+        else "No data",
     )
 
 
@@ -523,6 +560,260 @@ def check_outlet_facc(
         details=issues,
         description=f"Outlets with low facc (<{min_facc} km²) - minor outlets or isolated features",
         threshold=min_facc,
+    )
+
+
+@register_check(
+    "A021",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "wse_obs_median should be close to wse",
+    default_threshold=10.0,  # meters
+)
+def check_wse_obs_vs_wse(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that SWOT-observed WSE median is close to the reference WSE.
+
+    Large differences suggest measurement issues or temporal variability.
+    """
+    if not _column_exists(conn, "wse_obs_median"):
+        return _skip_result(
+            "A021", "wse_obs_vs_wse", Severity.WARNING, "wse_obs_median"
+        )
+
+    max_diff = threshold if threshold is not None else 10.0
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.wse, r.wse_obs_median,
+        ROUND(ABS(r.wse_obs_median - r.wse), 3) as wse_diff,
+        r.lakeflag
+    FROM reaches r
+    WHERE r.wse IS NOT NULL AND r.wse != -9999
+        AND r.wse_obs_median IS NOT NULL AND r.wse_obs_median != -9999
+        AND ABS(r.wse_obs_median - r.wse) > {max_diff}
+        AND r.lakeflag = 0
+        {where_clause}
+    ORDER BY ABS(r.wse_obs_median - r.wse) DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE wse IS NOT NULL AND wse != -9999
+        AND wse_obs_median IS NOT NULL AND wse_obs_median != -9999
+        AND lakeflag = 0
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A021",
+        name="wse_obs_vs_wse",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Reaches where |wse_obs_median - wse| > {max_diff}m",
+        threshold=max_diff,
+    )
+
+
+@register_check(
+    "A024",
+    Category.ATTRIBUTES,
+    Severity.INFO,
+    "width_obs_median should be reasonable vs width",
+    default_threshold=3.0,  # ratio
+)
+def check_width_obs_vs_width(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that SWOT-observed width median is reasonable vs reference width.
+
+    Flags reaches where the ratio width_obs_median/width is very large or
+    very small, suggesting measurement or classification issues.
+    """
+    if not _column_exists(conn, "width_obs_median"):
+        return _skip_result(
+            "A024", "width_obs_vs_width", Severity.INFO, "width_obs_median"
+        )
+
+    max_ratio = threshold if threshold is not None else 3.0
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.width, r.width_obs_median,
+        ROUND(r.width_obs_median / r.width, 3) as width_ratio,
+        r.lakeflag
+    FROM reaches r
+    WHERE r.width IS NOT NULL AND r.width > 0 AND r.width != -9999
+        AND r.width_obs_median IS NOT NULL AND r.width_obs_median > 0
+            AND r.width_obs_median != -9999
+        AND r.lakeflag = 0
+        AND (r.width_obs_median / r.width > {max_ratio}
+             OR r.width_obs_median / r.width < 1.0 / {max_ratio})
+        {where_clause}
+    ORDER BY ABS(LN(r.width_obs_median / r.width)) DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE width IS NOT NULL AND width > 0 AND width != -9999
+        AND width_obs_median IS NOT NULL AND width_obs_median > 0
+            AND width_obs_median != -9999
+        AND lakeflag = 0
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A024",
+        name="width_obs_vs_width",
+        severity=Severity.INFO,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Reaches where width_obs_median/width ratio outside [1/{max_ratio:.0f}, {max_ratio:.0f}]",
+        threshold=max_ratio,
+    )
+
+
+@register_check(
+    "A026",
+    Category.ATTRIBUTES,
+    Severity.ERROR,
+    "slope_obs_mean must be non-negative",
+)
+def check_slope_obs_nonneg(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that SWOT-observed slope mean is non-negative.
+
+    Negative observed slopes indicate measurement artifacts or processing
+    errors in SWOT data aggregation.
+    """
+    if not _column_exists(conn, "slope_obs_mean"):
+        return _skip_result(
+            "A026", "slope_obs_nonneg", Severity.ERROR, "slope_obs_mean"
+        )
+
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.slope_obs_mean, r.slope, r.wse, r.lakeflag
+    FROM reaches r
+    WHERE r.slope_obs_mean IS NOT NULL
+        AND r.slope_obs_mean != -9999
+        AND r.slope_obs_mean < 0
+        {where_clause}
+    ORDER BY r.slope_obs_mean ASC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE slope_obs_mean IS NOT NULL AND slope_obs_mean != -9999
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A026",
+        name="slope_obs_nonneg",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reaches with negative slope_obs_mean",
+    )
+
+
+@register_check(
+    "A027",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "slope_obs_mean should be < 50 m/km",
+    default_threshold=50.0,  # m/km
+)
+def check_slope_obs_extreme(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check that SWOT-observed slope mean is not unreasonably high.
+
+    Slopes >50 m/km are extremely rare for rivers and likely indicate
+    measurement error or reach geometry issues.
+    """
+    if not _column_exists(conn, "slope_obs_mean"):
+        return _skip_result(
+            "A027", "slope_obs_extreme", Severity.WARNING, "slope_obs_mean"
+        )
+
+    max_slope = threshold if threshold is not None else 50.0
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.slope_obs_mean, r.slope, r.reach_length, r.lakeflag
+    FROM reaches r
+    WHERE r.slope_obs_mean IS NOT NULL
+        AND r.slope_obs_mean != -9999
+        AND r.slope_obs_mean > {max_slope}
+        AND r.lakeflag = 0
+        {where_clause}
+    ORDER BY r.slope_obs_mean DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE slope_obs_mean IS NOT NULL AND slope_obs_mean != -9999 AND lakeflag = 0
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A027",
+        name="slope_obs_extreme",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Reaches with slope_obs_mean > {max_slope} m/km",
+        threshold=max_slope,
     )
 
 

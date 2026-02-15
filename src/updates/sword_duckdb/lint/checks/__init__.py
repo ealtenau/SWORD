@@ -11,6 +11,8 @@ from . import geometry
 from . import classification
 from . import v17c
 from . import facc
+from . import flags
+from . import network
 
 __all__ = [
     "topology",
@@ -19,4 +21,6 @@ __all__ = [
     "classification",
     "v17c",
     "facc",
+    "flags",
+    "network",
 ]

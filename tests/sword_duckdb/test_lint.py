@@ -159,11 +159,14 @@ class TestRegistry:
         assert len(ids) == len(set(ids))
 
     def test_check_id_format(self):
-        """Check IDs should follow pattern: letter + digits."""
+        """Check IDs should follow pattern: letter(s) + digits (e.g. T001, FL001)."""
+        import re
+
         for check_id in list_check_ids():
             assert len(check_id) >= 2
-            assert check_id[0].isalpha()
-            assert check_id[1:].isdigit()
+            assert re.match(r"^[A-Z]+\d+$", check_id), (
+                f"Invalid check ID format: {check_id}"
+            )
 
     def test_get_check(self):
         spec = get_check("T001")
@@ -194,13 +197,22 @@ class TestRegistry:
             "T004",
             "T005",
             "T006",
-            "A001",
             "A002",
             "A003",
             "A004",
             "A005",
+            "A021",
+            "A024",
+            "A026",
+            "A027",
             "G001",
             "C001",
+            "FL001",
+            "FL002",
+            "FL003",
+            "FL004",
+            "N001",
+            "N002",
         ]
         registry = get_registry()
         for check_id in required:
