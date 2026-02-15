@@ -555,3 +555,88 @@ def check_best_outlet_validity(
         details=issues,
         description="Reaches where best_outlet is not an actual outlet (n_rch_down > 0)",
     )
+
+
+@register_check(
+    "V011",
+    Category.V17C,
+    Severity.WARNING,
+    "Unexpected river_name_local change along rch_id_dn_main chain on 1:1 links",
+)
+def check_osm_name_continuity(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Flag reaches where river_name_local changes along rch_id_dn_main on 1:1 links.
+
+    Name changes at junctions are expected — only flags 1:1 links where
+    n_rch_down = 1 AND the downstream reach has n_rch_up = 1.
+    """
+    where_clause = f"AND r1.region = '{region}'" if region else ""
+
+    # Column existence guard
+    try:
+        conn.execute("SELECT river_name_local, rch_id_dn_main FROM reaches LIMIT 1")
+    except (duckdb.CatalogException, duckdb.BinderException):
+        return CheckResult(
+            check_id="V011",
+            name="osm_name_continuity",
+            severity=Severity.WARNING,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0,
+            details=pd.DataFrame(),
+            description="Column river_name_local or rch_id_dn_main not found (OSM enrichment or v17c pipeline not run)",
+        )
+
+    query = f"""
+    SELECT
+        r1.reach_id,
+        r1.region,
+        r1.x,
+        r1.y,
+        r1.river_name_local AS name_up,
+        r2.river_name_local AS name_down,
+        r1.rch_id_dn_main
+    FROM reaches r1
+    JOIN reaches r2
+        ON r1.rch_id_dn_main = r2.reach_id
+        AND r1.region = r2.region
+    WHERE r1.river_name_local IS NOT NULL
+        AND r2.river_name_local IS NOT NULL
+        AND r1.river_name_local != r2.river_name_local
+        AND r1.n_rch_down = 1
+        AND r2.n_rch_up = 1
+        {where_clause}
+    ORDER BY r1.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r1
+    JOIN reaches r2
+        ON r1.rch_id_dn_main = r2.reach_id
+        AND r1.region = r2.region
+    WHERE r1.river_name_local IS NOT NULL
+        AND r2.river_name_local IS NOT NULL
+        AND r1.n_rch_down = 1
+        AND r2.n_rch_up = 1
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="V011",
+        name="osm_name_continuity",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reaches where river_name_local changes on 1:1 link (not at junction)",
+    )

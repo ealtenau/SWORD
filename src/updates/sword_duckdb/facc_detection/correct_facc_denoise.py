@@ -110,10 +110,10 @@ def _load_node_facc_stats(v17b_path: str, region: str) -> pd.DataFrame:
     """
     Load per-reach node facc statistics from v17b.
 
-    Returns DataFrame with reach_id, max_facc, dn_facc, variability_ratio.
-    variability_ratio = max_facc / min_facc within each reach.
-    Reaches with high variability_ratio (>1.5) are noisy — MAX grabbed stray
-    D8 values from adjacent flow paths.
+    Returns DataFrame with reach_id, max_facc, min_facc, dn_facc, n_nodes,
+    variability_ratio.  variability_ratio = max_facc / min_facc within each
+    reach.  Reaches with high variability_ratio (>1.5) are noisy — MAX grabbed
+    stray D8 values from adjacent flow paths.
 
     Uses v17b (not v17c) because v17c node facc values may have been modified.
     """
@@ -131,7 +131,7 @@ def _load_node_facc_stats(v17b_path: str, region: str) -> pd.DataFrame:
                 WHERE region = ? AND facc > 0 AND dist_out >= 0
                 GROUP BY reach_id
             )
-            SELECT reach_id, max_facc, dn_facc, n_nodes,
+            SELECT reach_id, max_facc, min_facc, dn_facc, n_nodes,
                    CASE WHEN min_facc > 0 THEN max_facc / min_facc ELSE 1.0 END as variability_ratio
             FROM stats
             """,
@@ -1462,6 +1462,164 @@ def _apply_to_db(
     return n
 
 
+# ---------------------------------------------------------------------------
+# Node-level facc ramp (propagate corrected reach facc down to nodes)
+# ---------------------------------------------------------------------------
+
+
+def _compute_node_ramps(
+    conn: duckdb.DuckDBPyConnection,
+    region: str,
+    corrected: Dict[int, float],
+    G: nx.DiGraph,
+    node_stats: pd.DataFrame,
+) -> List[Tuple[int, float]]:
+    """
+    Compute per-node facc values by linearly ramping between boundary anchors.
+
+    For each reach, nodes are ordered by dist_out DESC (upstream first).
+    ramp_end = corrected_facc[this_reach] (downstream boundary).
+    ramp_start depends on topology (headwater / 1:1 / junction / bifurc child).
+    Always clamp ramp_start <= ramp_end.
+
+    Returns list of (node_id, new_facc) pairs.
+    """
+    # Load all nodes for region
+    nodes_df = conn.execute(
+        "SELECT node_id, reach_id, dist_out FROM nodes "
+        "WHERE region = ? ORDER BY reach_id, dist_out DESC",
+        [region.upper()],
+    ).fetchdf()
+    if len(nodes_df) == 0:
+        return []
+
+    # Build v17b min/max lookup for headwater ratio
+    min_facc_lookup: Dict[int, float] = {}
+    max_facc_lookup: Dict[int, float] = {}
+    for _, row in node_stats.iterrows():
+        rid = int(row["reach_id"])
+        min_facc_lookup[rid] = float(row["min_facc"])
+        max_facc_lookup[rid] = float(row["max_facc"])
+
+    # Width lookup from graph for bifurcation share
+    width_lookup: Dict[int, float] = {}
+    for n in G.nodes():
+        width_lookup[n] = G.nodes[n].get("width", 0.0)
+
+    results: List[Tuple[int, float]] = []
+    n_flat = 0
+    n_clamped = 0
+
+    for reach_id, grp in nodes_df.groupby("reach_id", sort=False):
+        reach_id = int(reach_id)
+        rch_facc = corrected.get(reach_id)
+        if rch_facc is None:
+            # Ghost/orphan reach not in corrected dict — skip
+            continue
+
+        node_ids = grp["node_id"].values
+        n_nodes = len(node_ids)
+
+        if n_nodes == 0:
+            continue
+
+        # Single node: flat value
+        if n_nodes == 1:
+            results.append((int(node_ids[0]), rch_facc))
+            n_flat += 1
+            continue
+
+        ramp_end = rch_facc  # downstream boundary
+
+        # Determine ramp_start (upstream boundary)
+        if reach_id not in G:
+            # Not in graph — flat ramp
+            ramp_start = ramp_end
+        else:
+            preds = list(G.predecessors(reach_id))
+
+            if len(preds) == 0:
+                # Headwater: preserve original gradient ratio
+                v17b_max = max_facc_lookup.get(reach_id, 0.0)
+                v17b_min = min_facc_lookup.get(reach_id, 0.0)
+                if v17b_max > 0:
+                    ratio = v17b_min / v17b_max
+                else:
+                    ratio = 1.0
+                ramp_start = rch_facc * ratio
+
+            elif len(preds) == 1:
+                parent = preds[0]
+                parent_succs = list(G.successors(parent))
+                if len(parent_succs) <= 1:
+                    # 1:1 link
+                    ramp_start = corrected.get(parent, ramp_end)
+                else:
+                    # Bifurcation child: width-weighted share of parent
+                    my_w = max(width_lookup.get(reach_id, 0.0), 1.0)
+                    total_w = sum(
+                        max(width_lookup.get(s, 0.0), 1.0) for s in parent_succs
+                    )
+                    ramp_start = corrected.get(parent, ramp_end) * (my_w / total_w)
+            else:
+                # Junction: sum of upstream corrected values
+                ramp_start = sum(corrected.get(p, 0.0) for p in preds)
+
+        # Clamp: ramp_start must not exceed ramp_end
+        if ramp_start > ramp_end:
+            ramp_start = ramp_end
+            n_clamped += 1
+
+        # Linear ramp (nodes already ordered dist_out DESC = upstream first)
+        if abs(ramp_start - ramp_end) < 0.001:
+            ramp_values = np.full(n_nodes, ramp_end)
+            n_flat += 1
+        else:
+            ramp_values = np.linspace(ramp_start, ramp_end, n_nodes)
+
+        for nid, val in zip(node_ids, ramp_values):
+            results.append((int(nid), round(float(val), 4)))
+
+    logger.info(
+        "Node ramps: %d nodes, %d flat, %d clamped", len(results), n_flat, n_clamped
+    )
+    return results
+
+
+def _apply_node_corrections(
+    conn: duckdb.DuckDBPyConnection,
+    node_updates: List[Tuple[int, float]],
+) -> int:
+    """Write corrected node facc to DB using RTREE-safe pattern."""
+    if not node_updates:
+        return 0
+
+    conn.execute("INSTALL spatial; LOAD spatial;")
+    indexes = conn.execute(
+        "SELECT index_name, table_name, sql FROM duckdb_indexes() "
+        "WHERE sql LIKE '%RTREE%'"
+    ).fetchall()
+    for idx_name, tbl, sql in indexes:
+        conn.execute(f'DROP INDEX IF EXISTS "{idx_name}"')
+
+    conn.execute("DROP TABLE IF EXISTS _v3_node_facc")
+    conn.execute(
+        "CREATE TEMP TABLE _v3_node_facc (node_id BIGINT PRIMARY KEY, new_facc DOUBLE)"
+    )
+    conn.executemany("INSERT INTO _v3_node_facc VALUES (?, ?)", node_updates)
+    conn.execute(
+        "UPDATE nodes SET facc = t.new_facc "
+        "FROM _v3_node_facc t WHERE nodes.node_id = t.node_id"
+    )
+    n = len(node_updates)
+    conn.execute("DROP TABLE IF EXISTS _v3_node_facc")
+
+    for idx_name, tbl, sql in indexes:
+        conn.execute(sql)
+
+    return n
+
+
 def _restore_v17b(
     conn: duckdb.DuckDBPyConnection,
     v17b_facc: Dict[int, float],
@@ -1892,9 +2050,20 @@ def correct_facc_denoise(
             _restore_v17b(conn, v17b_facc, region)
             print("  Clearing old tags...")
             _clear_old_tags(conn, region)
-            print("  Applying v3 corrections...")
+            print("  Applying v3 reach corrections...")
             _apply_to_db(conn, corrections_df)
+            print("  Computing node facc ramps...")
+            node_updates = _compute_node_ramps(conn, region, corrected, G, node_stats)
+            if node_updates:
+                print(f"    {len(node_updates)} node values to write")
+                n_node_written = _apply_node_corrections(conn, node_updates)
+                print(f"    {n_node_written} nodes updated")
+            else:
+                n_node_written = 0
+                print("    No node updates")
             print("  Done.")
+        else:
+            n_node_written = 0
 
         # Save outputs
         out_path.mkdir(parents=True, exist_ok=True)
@@ -1930,6 +2099,7 @@ def correct_facc_denoise(
             "final_junctions": n_final_junc,
             "final_bifurc": n_final_bifurc,
             "final_1to1": n_final_1to1,
+            "node_facc_updated": n_node_written,
             "validation": validation,
             "by_type": {
                 ctype: {

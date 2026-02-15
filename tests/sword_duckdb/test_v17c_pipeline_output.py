@@ -11,7 +11,6 @@ import pytest
 import duckdb
 import shutil
 import pandas as pd
-import numpy as np
 from pathlib import Path
 
 from src.updates.sword_v17c_pipeline.v17c_pipeline import (
@@ -19,6 +18,8 @@ from src.updates.sword_v17c_pipeline.v17c_pipeline import (
     save_to_duckdb,
     save_sections_to_duckdb,
 )
+
+pytestmark = [pytest.mark.pipeline, pytest.mark.db]
 
 
 @pytest.fixture
@@ -85,7 +86,9 @@ class TestCreateV17cTables:
             ("n_reaches", "INTEGER"),
         ]
 
-        for (col_name, col_type), (exp_name, exp_type) in zip(columns, expected_columns):
+        for (col_name, col_type), (exp_name, exp_type) in zip(
+            columns, expected_columns
+        ):
             assert col_name == exp_name
             assert col_type == exp_type
 
@@ -107,7 +110,9 @@ class TestCreateV17cTables:
             ("likely_cause", "VARCHAR"),
         ]
 
-        for (col_name, col_type), (exp_name, exp_type) in zip(columns, expected_columns):
+        for (col_name, col_type), (exp_name, exp_type) in zip(
+            columns, expected_columns
+        ):
             assert col_name == exp_name
             assert col_type == exp_type
 
@@ -145,7 +150,9 @@ class TestSaveToDuckDB:
         ]
         for col_name, col_type in v17c_columns:
             try:
-                writable_db.execute(f"ALTER TABLE reaches ADD COLUMN {col_name} {col_type}")
+                writable_db.execute(
+                    f"ALTER TABLE reaches ADD COLUMN {col_name} {col_type}"
+                )
             except duckdb.CatalogException:
                 # Column already exists
                 pass
@@ -156,9 +163,7 @@ class TestSaveToDuckDB:
         conn = db_with_v17c_columns
         reach_id = sample_reach_ids[0]
 
-        hydro_dist = {
-            reach_id: {"hydro_dist_out": 1000.5, "hydro_dist_hw": 500.25}
-        }
+        hydro_dist = {reach_id: {"hydro_dist_out": 1000.5, "hydro_dist_hw": 500.25}}
         hw_out = {
             reach_id: {
                 "best_headwater": 11000000099,
@@ -400,7 +405,11 @@ class TestSaveSectionsToDuckDB:
                     "section_id": 0,
                     "upstream_junction": sample_reach_ids[0],
                     "downstream_junction": sample_reach_ids[2],
-                    "reach_ids": [sample_reach_ids[0], sample_reach_ids[1], sample_reach_ids[2]],
+                    "reach_ids": [
+                        sample_reach_ids[0],
+                        sample_reach_ids[1],
+                        sample_reach_ids[2],
+                    ],
                     "distance": 1000.0,
                     "n_reaches": 3,
                 }
@@ -419,7 +428,11 @@ class TestSaveSectionsToDuckDB:
         import json
 
         reach_ids = json.loads(reach_ids_str)
-        assert reach_ids == [sample_reach_ids[0], sample_reach_ids[1], sample_reach_ids[2]]
+        assert reach_ids == [
+            sample_reach_ids[0],
+            sample_reach_ids[1],
+            sample_reach_ids[2],
+        ]
 
     def test_region_stored_uppercase(self, db_with_tables, sample_reach_ids):
         """Test that region is stored in uppercase."""

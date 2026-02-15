@@ -22,7 +22,7 @@ Tables:
 SCHEMA_VERSION = "1.5.0"  # Updated for SWOT observation statistics
 
 # Valid region codes (uppercase)
-VALID_REGIONS = frozenset(['NA', 'SA', 'EU', 'AF', 'AS', 'OC'])
+VALID_REGIONS = frozenset(["NA", "SA", "EU", "AF", "AS", "OC"])
 
 
 def normalize_region(region: str) -> str:
@@ -46,8 +46,11 @@ def normalize_region(region: str) -> str:
     """
     r = region.upper()
     if r not in VALID_REGIONS:
-        raise ValueError(f"Invalid region '{region}'. Must be one of: {sorted(VALID_REGIONS)}")
+        raise ValueError(
+            f"Invalid region '{region}'. Must be one of: {sorted(VALID_REGIONS)}"
+        )
     return r
+
 
 # Core table definitions
 # NOTE: cl_id and node_id are only unique within a region, so we use composite keys
@@ -517,32 +520,26 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_centerlines_geom ON centerlines USING RTREE (geom);",
     "CREATE INDEX IF NOT EXISTS idx_nodes_geom ON nodes USING RTREE (geom);",
     "CREATE INDEX IF NOT EXISTS idx_reaches_geom ON reaches USING RTREE (geom);",
-
     # Foreign key lookups (most common query patterns)
     "CREATE INDEX IF NOT EXISTS idx_centerlines_reach ON centerlines(reach_id);",
     "CREATE INDEX IF NOT EXISTS idx_centerlines_node ON centerlines(node_id);",
     "CREATE INDEX IF NOT EXISTS idx_nodes_reach ON nodes(reach_id);",
-
     # Regional partitioning queries
     "CREATE INDEX IF NOT EXISTS idx_centerlines_region ON centerlines(region);",
     "CREATE INDEX IF NOT EXISTS idx_nodes_region ON nodes(region);",
     "CREATE INDEX IF NOT EXISTS idx_reaches_region ON reaches(region);",
-
     # Topology traversal
     "CREATE INDEX IF NOT EXISTS idx_topology_reach ON reach_topology(reach_id);",
     "CREATE INDEX IF NOT EXISTS idx_topology_neighbor ON reach_topology(neighbor_reach_id);",
     "CREATE INDEX IF NOT EXISTS idx_topology_direction ON reach_topology(reach_id, direction);",
-
     # Common analytical queries
     "CREATE INDEX IF NOT EXISTS idx_reaches_dist_out ON reaches(dist_out);",
     "CREATE INDEX IF NOT EXISTS idx_reaches_facc ON reaches(facc);",
     "CREATE INDEX IF NOT EXISTS idx_reaches_stream_order ON reaches(stream_order);",
     "CREATE INDEX IF NOT EXISTS idx_reaches_network ON reaches(network);",
     "CREATE INDEX IF NOT EXISTS idx_nodes_stream_order ON nodes(stream_order);",
-
     # SWOT orbits lookup
     "CREATE INDEX IF NOT EXISTS idx_swot_orbits_reach ON reach_swot_orbits(reach_id);",
-
     # Provenance indexes
     "CREATE INDEX IF NOT EXISTS idx_operations_type ON sword_operations(operation_type);",
     "CREATE INDEX IF NOT EXISTS idx_operations_table ON sword_operations(table_name);",
@@ -554,7 +551,6 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_snapshots_entity ON sword_value_snapshots(table_name, entity_id);",
     "CREATE INDEX IF NOT EXISTS idx_lineage_entity ON sword_source_lineage(entity_type, entity_id, region);",
     "CREATE INDEX IF NOT EXISTS idx_lineage_source ON sword_source_lineage(source_dataset);",
-
     # Snapshot versioning indexes
     "CREATE INDEX IF NOT EXISTS idx_snapshots_name ON sword_snapshots(name);",
     "CREATE INDEX IF NOT EXISTS idx_snapshots_created ON sword_snapshots(created_at);",
@@ -705,10 +701,13 @@ def create_schema(conn) -> None:
             conn.execute(view_sql)
 
     # Record schema version
-    conn.execute("""
+    conn.execute(
+        """
         INSERT OR REPLACE INTO sword_versions (version, schema_version, notes)
         VALUES ('schema', ?, 'Initial schema creation')
-    """, [SCHEMA_VERSION])
+    """,
+        [SCHEMA_VERSION],
+    )
 
 
 def drop_schema(conn) -> None:
@@ -724,12 +723,24 @@ def drop_schema(conn) -> None:
     """
     # Drop views first
     views = [
-        'na_centerlines', 'na_nodes', 'na_reaches',
-        'sa_centerlines', 'sa_nodes', 'sa_reaches',
-        'eu_centerlines', 'eu_nodes', 'eu_reaches',
-        'af_centerlines', 'af_nodes', 'af_reaches',
-        'oc_centerlines', 'oc_nodes', 'oc_reaches',
-        'as_centerlines', 'as_nodes', 'as_reaches',
+        "na_centerlines",
+        "na_nodes",
+        "na_reaches",
+        "sa_centerlines",
+        "sa_nodes",
+        "sa_reaches",
+        "eu_centerlines",
+        "eu_nodes",
+        "eu_reaches",
+        "af_centerlines",
+        "af_nodes",
+        "af_reaches",
+        "oc_centerlines",
+        "oc_nodes",
+        "oc_reaches",
+        "as_centerlines",
+        "as_nodes",
+        "as_reaches",
     ]
 
     for view in views:
@@ -737,11 +748,11 @@ def drop_schema(conn) -> None:
 
     # Drop provenance tables first (they have no dependencies)
     provenance_tables = [
-        'sword_snapshots',
-        'sword_value_snapshots',
-        'sword_operations',
-        'sword_source_lineage',
-        'sword_reconstruction_recipes',
+        "sword_snapshots",
+        "sword_value_snapshots",
+        "sword_operations",
+        "sword_source_lineage",
+        "sword_reconstruction_recipes",
     ]
 
     for table in provenance_tables:
@@ -749,14 +760,14 @@ def drop_schema(conn) -> None:
 
     # Drop core tables in reverse dependency order
     core_tables = [
-        'reach_ice_flags',
-        'reach_swot_orbits',
-        'reach_topology',
-        'centerline_neighbors',
-        'nodes',
-        'centerlines',
-        'reaches',
-        'sword_versions',
+        "reach_ice_flags",
+        "reach_swot_orbits",
+        "reach_topology",
+        "centerline_neighbors",
+        "nodes",
+        "centerlines",
+        "reaches",
+        "sword_versions",
     ]
 
     for table in core_tables:
@@ -932,7 +943,10 @@ def add_swot_obs_columns(conn) -> bool:
         ("slope_obs_std", "DOUBLE"),
         ("slope_obs_range", "DOUBLE"),
         ("slope_obs_adj", "DOUBLE"),
-        ("slope_obs_slopeF", "DOUBLE"),  # Weighted sign fraction (-1 to +1) for consistency
+        (
+            "slope_obs_slopeF",
+            "DOUBLE",
+        ),  # Weighted sign fraction (-1 to +1) for consistency
         ("slope_obs_reliable", "BOOLEAN"),
         ("slope_obs_quality", "VARCHAR"),
         ("n_obs", "INTEGER"),
@@ -949,7 +963,9 @@ def add_swot_obs_columns(conn) -> bool:
 
         for col_name, col_type in columns:
             if col_name.lower() not in existing:
-                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+                conn.execute(
+                    f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
+                )
                 added = True
 
         return added
@@ -966,6 +982,45 @@ def add_swot_obs_columns(conn) -> bool:
         _add_columns_to_table("reaches", reaches_swot_columns)
     except Exception:
         # Table may not exist yet
+        pass
+
+    return added
+
+
+def add_osm_name_columns(conn) -> bool:
+    """
+    Add OSM river name columns to reaches table.
+
+    Safe to call multiple times - checks if columns already exist.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active DuckDB connection.
+
+    Returns
+    -------
+    bool
+        True if any columns were added, False if all already existed.
+    """
+    added = False
+
+    osm_columns = [
+        ("river_name_local", "VARCHAR"),
+        ("river_name_en", "VARCHAR"),
+    ]
+
+    try:
+        result = conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'reaches'"
+        ).fetchall()
+        existing = {row[0].lower() for row in result}
+
+        for col_name, col_type in osm_columns:
+            if col_name.lower() not in existing:
+                conn.execute(f"ALTER TABLE reaches ADD COLUMN {col_name} {col_type}")
+                added = True
+    except Exception:
         pass
 
     return added

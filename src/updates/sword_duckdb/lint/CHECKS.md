@@ -30,6 +30,19 @@ This document provides detailed documentation for each lint check in the SWORD l
   - [C002: lakeflag_distribution](#c002-lakeflag_distribution)
   - [C003: type_distribution](#c003-type_distribution)
   - [C004: lakeflag_type_consistency](#c004-lakeflag_type_consistency)
+- [Flag Checks (FLxxx)](#flag-checks-flxxx)
+  - [FL001: swot_obs_coverage](#fl001-swot_obs_coverage)
+  - [FL002: iceflag_values](#fl002-iceflag_values)
+  - [FL003: low_slope_flag_consistency](#fl003-low_slope_flag_consistency)
+  - [FL004: edit_flag_format](#fl004-edit_flag_format)
+- [Network Checks (Nxxx)](#network-checks-nxxx)
+  - [N001: main_side_values](#n001-main_side_values)
+  - [N002: main_side_stream_order](#n002-main_side_stream_order)
+- [SWOT Attribute Checks (A02x)](#swot-attribute-checks-a02x)
+  - [A021: wse_obs_vs_wse](#a021-wse_obs_vs_wse)
+  - [A024: width_obs_vs_width](#a024-width_obs_vs_width)
+  - [A026: slope_obs_nonneg](#a026-slope_obs_nonneg)
+  - [A027: slope_obs_extreme](#a027-slope_obs_extreme)
 
 ---
 
@@ -825,14 +838,136 @@ This check gracefully handles databases where the `type` column doesn't exist.
 
 ---
 
+## Flag Checks (FLxxx)
+
+Flag checks validate iceflag, low_slope_flag, edit_flag, and SWOT observation coverage.
+
+### FL001: swot_obs_coverage
+
+| Property | Value |
+|----------|-------|
+| **Severity** | INFO |
+| **Category** | Flags |
+
+Reports SWOT observation coverage — how many reaches have satellite observations.
+
+### FL002: iceflag_values
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Category** | Flags |
+
+Validates iceflag is in {-9999, 0, 1, 2}:
+- -9999: no data
+- 0: no ice
+- 1: seasonal ice
+- 2: permanent ice
+
+### FL003: low_slope_flag_consistency
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Default Threshold** | 1e-4 (m/m) |
+| **Category** | Flags |
+
+Checks that low_slope_flag agrees with actual slope values. Flags cases where the flag is set but slope isn't low, or the flag is unset but slope is extremely low (<1e-6 m/m).
+
+### FL004: edit_flag_format
+
+| Property | Value |
+|----------|-------|
+| **Severity** | INFO |
+| **Category** | Flags |
+
+Reports edit_flag distribution. edit_flag is a comma-separated string of edit tags (e.g. 'facc_denoise_v3', 'lake_sandwich').
+
+---
+
+## Network Checks (Nxxx)
+
+Network checks validate main_side and stream_order consistency.
+
+### N001: main_side_values
+
+| Property | Value |
+|----------|-------|
+| **Severity** | ERROR |
+| **Category** | Network |
+
+Validates main_side is in {0, 1, 2}:
+- 0: main channel (~95%)
+- 1: side channel (~3%)
+- 2: secondary outlet (~2%)
+
+### N002: main_side_stream_order
+
+| Property | Value |
+|----------|-------|
+| **Severity** | ERROR |
+| **Category** | Network |
+
+Checks that main channel reaches (main_side=0) have a valid stream_order (not -9999). Side channels and secondary outlets are expected to lack stream_order.
+
+---
+
+## SWOT Attribute Checks (A02x)
+
+These checks validate SWOT observation statistics against reference values. They gracefully skip when SWOT columns are not present in the database.
+
+### A021: wse_obs_vs_wse
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Default Threshold** | 10.0 (meters) |
+| **Category** | Attributes |
+
+Checks that SWOT-observed WSE median is close to reference WSE. Large differences suggest measurement issues or temporal variability.
+
+### A024: width_obs_vs_width
+
+| Property | Value |
+|----------|-------|
+| **Severity** | INFO |
+| **Default Threshold** | 3.0 (ratio) |
+| **Category** | Attributes |
+
+Checks that SWOT-observed width median is reasonable compared to reference width. Flags reaches where the ratio is outside [1/3, 3].
+
+### A026: slope_obs_nonneg
+
+| Property | Value |
+|----------|-------|
+| **Severity** | ERROR |
+| **Category** | Attributes |
+
+Checks that SWOT-observed slope mean is non-negative. Negative slopes indicate measurement artifacts or processing errors.
+
+### A027: slope_obs_extreme
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Default Threshold** | 50.0 (m/km) |
+| **Category** | Attributes |
+
+Checks that SWOT-observed slope mean is below 50 m/km. Extremely high slopes are rare for rivers and likely indicate measurement error.
+
+---
+
 ## Threshold Reference
 
 | Check | Parameter | Default | Unit | Description |
 |-------|-----------|---------|------|-------------|
 | T001 | threshold | 100.0 | meters | Tolerance for dist_out increase |
-| A001 | threshold | 0.5 | meters | Tolerance for WSE increase |
 | A002 | threshold | 100.0 | m/km | Maximum reasonable slope |
 | A003 | threshold | 0.3 | ratio | Minimum downstream/upstream width |
+| A021 | threshold | 10.0 | meters | Max |wse_obs_median - wse| |
+| A024 | threshold | 3.0 | ratio | Max width_obs_median/width ratio |
+| A027 | threshold | 50.0 | m/km | Maximum reasonable observed slope |
+| FL003 | threshold | 1e-4 | m/m | Slope threshold for low_slope_flag |
 | G002 | threshold | 0.1 | ratio | Max difference in node sum vs reach length |
 
 Override thresholds via CLI:

@@ -21,12 +21,12 @@ import numpy as np
 main_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, main_dir)
 
-from src.updates.sword_duckdb import SWORD
 
+pytestmark = pytest.mark.db
 
 # Test configuration (used by conftest.py)
-TEST_REGION = 'NA'
-TEST_VERSION = 'v17b'
+TEST_REGION = "NA"
+TEST_VERSION = "v17b"
 
 
 # Fixtures are now provided by conftest.py:
@@ -46,23 +46,23 @@ class TestSWORDLoading:
     def test_centerlines_loaded(self, sword):
         """Test centerlines data is loaded."""
         assert len(sword.centerlines) > 0
-        assert hasattr(sword.centerlines, 'cl_id')
-        assert hasattr(sword.centerlines, 'x')
-        assert hasattr(sword.centerlines, 'y')
+        assert hasattr(sword.centerlines, "cl_id")
+        assert hasattr(sword.centerlines, "x")
+        assert hasattr(sword.centerlines, "y")
 
     def test_nodes_loaded(self, sword):
         """Test nodes data is loaded."""
         assert len(sword.nodes) > 0
-        assert hasattr(sword.nodes, 'id')
-        assert hasattr(sword.nodes, 'x')
-        assert hasattr(sword.nodes, 'y')
+        assert hasattr(sword.nodes, "id")
+        assert hasattr(sword.nodes, "x")
+        assert hasattr(sword.nodes, "y")
 
     def test_reaches_loaded(self, sword):
         """Test reaches data is loaded."""
         assert len(sword.reaches) > 0
-        assert hasattr(sword.reaches, 'id')
-        assert hasattr(sword.reaches, 'x')
-        assert hasattr(sword.reaches, 'y')
+        assert hasattr(sword.reaches, "id")
+        assert hasattr(sword.reaches, "x")
+        assert hasattr(sword.reaches, "y")
 
 
 class TestCenterlinesView:
@@ -175,17 +175,27 @@ class TestPathsProperty:
         """Test all required path keys exist."""
         paths = sword.paths
         required_keys = [
-            'shp_dir', 'gpkg_dir', 'nc_dir', 'geom_dir',
-            'update_dir', 'topo_dir', 'version_dir', 'pts_gpkg_dir',
-            'nc_fn', 'gpkg_rch_fn', 'gpkg_node_fn',
-            'shp_rch_fn', 'shp_node_fn', 'geom_fn'
+            "shp_dir",
+            "gpkg_dir",
+            "nc_dir",
+            "geom_dir",
+            "update_dir",
+            "topo_dir",
+            "version_dir",
+            "pts_gpkg_dir",
+            "nc_fn",
+            "gpkg_rch_fn",
+            "gpkg_node_fn",
+            "shp_rch_fn",
+            "shp_node_fn",
+            "geom_fn",
         ]
         for key in required_keys:
             assert key in paths, f"Missing path key: {key}"
 
     def test_nc_filename_format(self, sword):
         """Test NetCDF filename has correct format."""
-        nc_fn = sword.paths['nc_fn']
+        nc_fn = sword.paths["nc_fn"]
         assert nc_fn == f"{TEST_REGION.lower()}_sword_{TEST_VERSION}.nc"
 
 
@@ -288,5 +298,5 @@ class TestDimensionConsistency:
         assert max_len == 11, f"Max reach ID length is {max_len}, expected 11"
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

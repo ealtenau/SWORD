@@ -212,6 +212,18 @@ test_*.py
 cookies.txt
 ml4floods_models/
 deepwatermap/
-*.npyHANDOVER.md
-SCRATCHPAD.md
+*.npy
+
+# Session files
 HANDOVER.md
+SCRATCHPAD.md
+
+# Output artifacts
+output/
+facc_anomalies*.geojson
+
+# Local artifacts (not committed)
+DrainageAreaFix/
+*.qgz
+*.duckdb
+!tests/sword_duckdb/fixtures/sword_test_minimal.duckdb

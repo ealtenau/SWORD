@@ -1,0 +1,2 @@
+*.duckdb
+export_slim.py

@@ -360,7 +360,7 @@ Dependency graph auto-recalculates derived attributes:
 
 **Location:** `src/updates/sword_duckdb/lint/`
 
-Comprehensive linting framework with 50 checks across 5 categories (T=Topology, A=Attributes, F=Facc, G=Geometry, C=Classification, V=v17c).
+Comprehensive linting framework with 61 checks across 8 categories (T=Topology, A=Attributes, F=Facc, G=Geometry, C=Classification, V=v17c, FL=Flags, N=Network).
 
 **CLI Usage:**
 ```bash
@@ -396,7 +396,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
     results = runner.run(region="NA", severity=Severity.ERROR)
 ```
 
-**Check IDs (53 total):**
+**Check IDs (61 total):**
 
 | ID | Name | Severity | Description |
 |----|------|----------|-------------|
@@ -450,6 +450,16 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | V006 | mainstem_coverage | INFO | is_mainstem_edge coverage stats |
 | V007 | best_headwater_validity | WARNING | best_headwater is actual headwater |
 | V008 | best_outlet_validity | WARNING | best_outlet is actual outlet |
+| FL001 | swot_obs_coverage | INFO | SWOT observation coverage statistics |
+| FL002 | iceflag_values | WARNING | iceflag in {-9999, 0, 1, 2} |
+| FL003 | low_slope_flag_consistency | WARNING | low_slope_flag consistent with slope |
+| FL004 | edit_flag_format | INFO | edit_flag distribution |
+| N001 | main_side_values | ERROR | main_side in {0, 1, 2} |
+| N002 | main_side_stream_order | ERROR | main_side=0 implies valid stream_order |
+| A021 | wse_obs_vs_wse | WARNING | wse_obs_median close to wse |
+| A024 | width_obs_vs_width | INFO | width_obs_median reasonable vs width |
+| A026 | slope_obs_nonneg | ERROR | slope_obs_mean >= 0 |
+| A027 | slope_obs_extreme | WARNING | slope_obs_mean < 50 m/km |
 
 **Validation Specs:** 23 deep-dive documents in `docs/validation_specs/` covering every variable. Each spec includes:
 - Official definition (from PDD)

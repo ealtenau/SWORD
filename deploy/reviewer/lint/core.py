@@ -10,43 +10,38 @@ Provides foundational types for the linting framework:
 """
 
 from enum import Enum
-from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Optional, Any
 import pandas as pd
 
 
 class Severity(Enum):
     """Severity levels for lint checks."""
-
-    ERROR = "error"  # Must fix before release
+    ERROR = "error"      # Must fix before release
     WARNING = "warning"  # Should investigate
-    INFO = "info"  # Expected/acceptable
+    INFO = "info"        # Expected/acceptable
 
 
 class Category(Enum):
     """Categories for organizing lint checks."""
-
     TOPOLOGY = "topology"
     ATTRIBUTES = "attributes"
     GEOMETRY = "geometry"
     CLASSIFICATION = "classification"
     V17C = "v17c"  # v17c-specific checks for new attributes
-    FLAGS = "flags"  # iceflag, low_slope_flag, edit_flag, swot_obs
-    NETWORK = "network"  # main_side, stream_order consistency
 
 
 @dataclass
 class CheckResult:
     """Result of a lint check execution."""
-
-    check_id: str  # e.g., "T001"
-    name: str  # e.g., "dist_out_monotonicity"
+    check_id: str           # e.g., "T001"
+    name: str               # e.g., "dist_out_monotonicity"
     severity: Severity
     passed: bool
     total_checked: int
     issues_found: int
     issue_pct: float
-    details: pd.DataFrame  # DataFrame of issue rows
+    details: pd.DataFrame   # DataFrame of issue rows
     description: str
     threshold: Optional[float] = None
     elapsed_ms: float = 0.0
@@ -59,7 +54,6 @@ class CheckResult:
 @dataclass
 class CheckSpec:
     """Specification for a registered lint check."""
-
     check_id: str
     name: str
     category: Category
@@ -102,7 +96,6 @@ def register_check(
     Returns:
         Decorated function
     """
-
     def decorator(fn: Callable) -> Callable:
         # Extract name from function name (remove check_ prefix if present)
         name = fn.__name__

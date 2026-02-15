@@ -58,6 +58,7 @@ BASE_REACH_ID = 11000000000
 # Data Generators
 # ==============================================================================
 
+
 def generate_reach_data(num_reaches: int, region: str, version: str) -> list:
     """Generate synthetic reach data."""
     reaches = []
@@ -72,7 +73,7 @@ def generate_reach_data(num_reaches: int, region: str, version: str) -> list:
 
         # Position (spread across NA region)
         x = -100.0 + (i % 10) * 2.0  # Longitude
-        y = 40.0 + (i // 10) * 1.0   # Latitude
+        y = 40.0 + (i // 10) * 1.0  # Latitude
 
         # Bounding box
         x_min = x - 0.1
@@ -94,7 +95,7 @@ def generate_reach_data(num_reaches: int, region: str, version: str) -> list:
 
         # Network attributes
         stream_order = max(1, 5 - (i // 20))  # Higher order near outlet
-        path_freq = 10 ** stream_order
+        path_freq = 10**stream_order
         path_order = i + 1
         path_segs = (i // 10) + 1
         network = 1  # All in same network
@@ -113,52 +114,54 @@ def generate_reach_data(num_reaches: int, region: str, version: str) -> list:
         n_rch_up = 0
         n_rch_down = 0
 
-        reaches.append({
-            'reach_id': reach_id,
-            'region': region,
-            'x': x,
-            'y': y,
-            'x_min': x_min,
-            'x_max': x_max,
-            'y_min': y_min,
-            'y_max': y_max,
-            'geom': None,
-            'cl_id_min': i * CENTERLINES_PER_REACH + 1,
-            'cl_id_max': (i + 1) * CENTERLINES_PER_REACH,
-            'reach_length': reach_length,
-            'n_nodes': n_nodes,
-            'wse': wse,
-            'wse_var': wse_var,
-            'width': width,
-            'width_var': width_var,
-            'slope': slope,
-            'max_width': max_width,
-            'facc': facc,
-            'dist_out': dist_out,
-            'lakeflag': 0,
-            'obstr_type': 0,
-            'grod_id': None,
-            'hfalls_id': None,
-            'n_chan_max': 1,
-            'n_chan_mod': 1,
-            'n_rch_up': n_rch_up,
-            'n_rch_down': n_rch_down,
-            'swot_obs': 8,
-            'iceflag': 0,
-            'low_slope_flag': 0,
-            'river_name': f"Test River {i}",
-            'edit_flag': None,
-            'trib_flag': 0,
-            'path_freq': path_freq,
-            'path_order': path_order,
-            'path_segs': path_segs,
-            'stream_order': stream_order,
-            'main_side': 0,
-            'end_reach': end_reach,
-            'network': network,
-            'add_flag': 0,
-            'version': version,
-        })
+        reaches.append(
+            {
+                "reach_id": reach_id,
+                "region": region,
+                "x": x,
+                "y": y,
+                "x_min": x_min,
+                "x_max": x_max,
+                "y_min": y_min,
+                "y_max": y_max,
+                "geom": None,
+                "cl_id_min": i * CENTERLINES_PER_REACH + 1,
+                "cl_id_max": (i + 1) * CENTERLINES_PER_REACH,
+                "reach_length": reach_length,
+                "n_nodes": n_nodes,
+                "wse": wse,
+                "wse_var": wse_var,
+                "width": width,
+                "width_var": width_var,
+                "slope": slope,
+                "max_width": max_width,
+                "facc": facc,
+                "dist_out": dist_out,
+                "lakeflag": 0,
+                "obstr_type": 0,
+                "grod_id": None,
+                "hfalls_id": None,
+                "n_chan_max": 1,
+                "n_chan_mod": 1,
+                "n_rch_up": n_rch_up,
+                "n_rch_down": n_rch_down,
+                "swot_obs": 8,
+                "iceflag": 0,
+                "low_slope_flag": 0,
+                "river_name": f"Test River {i}",
+                "edit_flag": None,
+                "trib_flag": 0,
+                "path_freq": path_freq,
+                "path_order": path_order,
+                "path_segs": path_segs,
+                "stream_order": stream_order,
+                "main_side": 0,
+                "end_reach": end_reach,
+                "network": network,
+                "add_flag": 0,
+                "version": version,
+            }
+        )
 
     return reaches
 
@@ -169,9 +172,9 @@ def generate_node_data(reaches: list, region: str, version: str) -> list:
     node_counter = 0
 
     for reach in reaches:
-        reach_id = reach['reach_id']
-        base_x = reach['x']
-        base_y = reach['y']
+        reach_id = reach["reach_id"]
+        base_x = reach["x"]
+        base_y = reach["y"]
 
         for j in range(NODES_PER_REACH):
             # 14-digit node ID: unique sequential ID padded to 14 digits
@@ -184,73 +187,80 @@ def generate_node_data(reaches: list, region: str, version: str) -> list:
             y = base_y + (j - NODES_PER_REACH // 2) * 0.005
 
             # Centerline range
-            cl_id_min = reach['cl_id_min'] + j * (CENTERLINES_PER_REACH // NODES_PER_REACH)
+            cl_id_min = reach["cl_id_min"] + j * (
+                CENTERLINES_PER_REACH // NODES_PER_REACH
+            )
             cl_id_max = cl_id_min + (CENTERLINES_PER_REACH // NODES_PER_REACH) - 1
 
             # Node metrics (derived from reach)
-            node_length = reach['reach_length'] / NODES_PER_REACH
-            wse = reach['wse'] + (NODES_PER_REACH // 2 - j) * 0.1
-            width = reach['width'] * (0.9 + np.random.uniform(0, 0.2))
+            node_length = reach["reach_length"] / NODES_PER_REACH
+            wse = reach["wse"] + (NODES_PER_REACH // 2 - j) * 0.1
+            width = reach["width"] * (0.9 + np.random.uniform(0, 0.2))
 
-            nodes.append({
-                'node_id': node_id,
-                'region': region,
-                'x': x,
-                'y': y,
-                'geom': None,
-                'cl_id_min': cl_id_min,
-                'cl_id_max': cl_id_max,
-                'reach_id': reach_id,
-                'node_length': node_length,
-                'wse': wse,
-                'wse_var': reach['wse_var'],
-                'width': width,
-                'width_var': reach['width_var'],
-                'max_width': reach['max_width'],
-                'facc': reach['facc'],
-                'dist_out': reach['dist_out'] + (NODES_PER_REACH - j - 1) * node_length,
-                'lakeflag': reach['lakeflag'],
-                'obstr_type': reach['obstr_type'],
-                'grod_id': None,
-                'hfalls_id': None,
-                'n_chan_max': 1,
-                'n_chan_mod': 1,
-                'wth_coef': 1.0,
-                'ext_dist_coef': 1.0,
-                'meander_length': None,
-                'sinuosity': 1.1 + np.random.uniform(0, 0.3),
-                'river_name': reach['river_name'],
-                'manual_add': 0,
-                'edit_flag': None,
-                'trib_flag': 0,
-                'path_freq': reach['path_freq'],
-                'path_order': reach['path_order'],
-                'path_segs': reach['path_segs'],
-                'stream_order': reach['stream_order'],
-                'main_side': 0,
-                'end_reach': 0,
-                'network': reach['network'],
-                'add_flag': 0,
-                'version': version,
-            })
+            nodes.append(
+                {
+                    "node_id": node_id,
+                    "region": region,
+                    "x": x,
+                    "y": y,
+                    "geom": None,
+                    "cl_id_min": cl_id_min,
+                    "cl_id_max": cl_id_max,
+                    "reach_id": reach_id,
+                    "node_length": node_length,
+                    "wse": wse,
+                    "wse_var": reach["wse_var"],
+                    "width": width,
+                    "width_var": reach["width_var"],
+                    "max_width": reach["max_width"],
+                    "facc": reach["facc"],
+                    "dist_out": reach["dist_out"]
+                    + (NODES_PER_REACH - j - 1) * node_length,
+                    "lakeflag": reach["lakeflag"],
+                    "obstr_type": reach["obstr_type"],
+                    "grod_id": None,
+                    "hfalls_id": None,
+                    "n_chan_max": 1,
+                    "n_chan_mod": 1,
+                    "wth_coef": 1.0,
+                    "ext_dist_coef": 1.0,
+                    "meander_length": None,
+                    "sinuosity": 1.1 + np.random.uniform(0, 0.3),
+                    "river_name": reach["river_name"],
+                    "manual_add": 0,
+                    "edit_flag": None,
+                    "trib_flag": 0,
+                    "path_freq": reach["path_freq"],
+                    "path_order": reach["path_order"],
+                    "path_segs": reach["path_segs"],
+                    "stream_order": reach["stream_order"],
+                    "main_side": 0,
+                    "end_reach": 0,
+                    "network": reach["network"],
+                    "add_flag": 0,
+                    "version": version,
+                }
+            )
 
             node_counter += 1
 
     return nodes
 
 
-def generate_centerline_data(reaches: list, nodes: list, region: str, version: str) -> list:
+def generate_centerline_data(
+    reaches: list, nodes: list, region: str, version: str
+) -> list:
     """Generate synthetic centerline data."""
     centerlines = []
     cl_id = 1
 
     for reach in reaches:
-        reach_id = reach['reach_id']
-        base_x = reach['x']
-        base_y = reach['y']
+        reach_id = reach["reach_id"]
+        base_x = reach["x"]
+        base_y = reach["y"]
 
         # Get nodes for this reach
-        reach_nodes = [n for n in nodes if n['reach_id'] == reach_id]
+        reach_nodes = [n for n in nodes if n["reach_id"] == reach_id]
 
         for j in range(CENTERLINES_PER_REACH):
             # Position along reach centerline
@@ -258,19 +268,23 @@ def generate_centerline_data(reaches: list, nodes: list, region: str, version: s
             y = base_y + (j - CENTERLINES_PER_REACH // 2) * 0.001
 
             # Assign to closest node
-            node_idx = min(j * NODES_PER_REACH // CENTERLINES_PER_REACH, NODES_PER_REACH - 1)
-            node_id = reach_nodes[node_idx]['node_id']
+            node_idx = min(
+                j * NODES_PER_REACH // CENTERLINES_PER_REACH, NODES_PER_REACH - 1
+            )
+            node_id = reach_nodes[node_idx]["node_id"]
 
-            centerlines.append({
-                'cl_id': cl_id,
-                'region': region,
-                'x': x,
-                'y': y,
-                'geom': None,
-                'reach_id': reach_id,
-                'node_id': node_id,
-                'version': version,
-            })
+            centerlines.append(
+                {
+                    "cl_id": cl_id,
+                    "region": region,
+                    "x": x,
+                    "y": y,
+                    "geom": None,
+                    "reach_id": reach_id,
+                    "node_id": node_id,
+                    "version": version,
+                }
+            )
 
             cl_id += 1
 
@@ -290,29 +304,33 @@ def generate_topology(reaches: list, region: str) -> list:
 
     # Build adjacency: reach i flows to reach i+1 (except outlet)
     for i, reach in enumerate(reaches):
-        reach_id = reach['reach_id']
+        reach_id = reach["reach_id"]
 
         # Downstream connections
         if i < 99:  # Not outlet
             downstream_id = BASE_REACH_ID + i + 1
-            topology.append({
-                'reach_id': reach_id,
-                'region': region,
-                'direction': 'down',
-                'neighbor_rank': 0,
-                'neighbor_reach_id': downstream_id,
-            })
+            topology.append(
+                {
+                    "reach_id": reach_id,
+                    "region": region,
+                    "direction": "down",
+                    "neighbor_rank": 0,
+                    "neighbor_reach_id": downstream_id,
+                }
+            )
 
         # Upstream connections (inverse of downstream)
         if i > 0:  # Not first reach
             upstream_id = BASE_REACH_ID + i - 1
-            topology.append({
-                'reach_id': reach_id,
-                'region': region,
-                'direction': 'up',
-                'neighbor_rank': 0,
-                'neighbor_reach_id': upstream_id,
-            })
+            topology.append(
+                {
+                    "reach_id": reach_id,
+                    "region": region,
+                    "direction": "up",
+                    "neighbor_rank": 0,
+                    "neighbor_reach_id": upstream_id,
+                }
+            )
 
     return topology
 
@@ -322,18 +340,20 @@ def generate_swot_orbits(reaches: list, region: str) -> list:
     orbits = []
 
     for reach in reaches:
-        reach_id = reach['reach_id']
+        reach_id = reach["reach_id"]
 
         for rank in range(ORBITS_PER_REACH):
             # Generate orbit IDs (realistic pattern)
             orbit_id = 100000000 + reach_id % 1000 + rank * 1000
 
-            orbits.append({
-                'reach_id': reach_id,
-                'region': region,
-                'orbit_rank': rank,
-                'orbit_id': orbit_id,
-            })
+            orbits.append(
+                {
+                    "reach_id": reach_id,
+                    "region": region,
+                    "orbit_rank": rank,
+                    "orbit_id": orbit_id,
+                }
+            )
 
     return orbits
 
@@ -343,7 +363,7 @@ def generate_ice_flags(reaches: list) -> list:
     ice_flags = []
 
     for reach in reaches:
-        reach_id = reach['reach_id']
+        reach_id = reach["reach_id"]
 
         # Simple seasonal pattern: ice from day 1-60 and 305-366
         for day in range(1, 367):
@@ -352,11 +372,13 @@ def generate_ice_flags(reaches: list) -> list:
             else:
                 iceflag = 0  # No ice
 
-            ice_flags.append({
-                'reach_id': reach_id,
-                'julian_day': day,
-                'iceflag': iceflag,
-            })
+            ice_flags.append(
+                {
+                    "reach_id": reach_id,
+                    "julian_day": day,
+                    "iceflag": iceflag,
+                }
+            )
 
     return ice_flags
 
@@ -364,6 +386,7 @@ def generate_ice_flags(reaches: list) -> list:
 # ==============================================================================
 # Database Creation
 # ==============================================================================
+
 
 def create_minimal_test_db(db_path: str, region: str = "NA", version: str = "v17b"):
     """
@@ -419,7 +442,8 @@ def create_minimal_test_db(db_path: str, region: str = "NA", version: str = "v17
     # Insert data
     print("  Inserting reaches...")
     for r in reaches:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO reaches (
                 reach_id, region, x, y, x_min, x_max, y_min, y_max, geom,
                 cl_id_min, cl_id_max, reach_length, n_nodes, wse, wse_var,
@@ -432,11 +456,14 @@ def create_minimal_test_db(db_path: str, region: str = "NA", version: str = "v17
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                      ?, ?, ?, ?, ?, ?)
-        """, list(r.values()))
+        """,
+            list(r.values()),
+        )
 
     print("  Inserting nodes...")
     for n in nodes:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO nodes (
                 node_id, region, x, y, geom, cl_id_min, cl_id_max, reach_id,
                 node_length, wse, wse_var, width, width_var, max_width, facc,
@@ -447,35 +474,49 @@ def create_minimal_test_db(db_path: str, region: str = "NA", version: str = "v17
                 network, add_flag, version
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, list(n.values()))
+        """,
+            list(n.values()),
+        )
 
     print("  Inserting centerlines...")
     for c in centerlines:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO centerlines (cl_id, region, x, y, geom, reach_id, node_id, version)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, list(c.values()))
+        """,
+            list(c.values()),
+        )
 
     print("  Inserting topology...")
     for t in topology:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
             VALUES (?, ?, ?, ?, ?)
-        """, list(t.values()))
+        """,
+            list(t.values()),
+        )
 
     print("  Inserting SWOT orbits...")
     for o in orbits:
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO reach_swot_orbits (reach_id, region, orbit_rank, orbit_id)
             VALUES (?, ?, ?, ?)
-        """, list(o.values()))
+        """,
+            list(o.values()),
+        )
 
     print("  Inserting ice flags...")
     # Batch insert for ice flags (36,600 rows)
-    conn.executemany("""
+    conn.executemany(
+        """
         INSERT INTO reach_ice_flags (reach_id, julian_day, iceflag)
         VALUES (?, ?, ?)
-    """, [(f['reach_id'], f['julian_day'], f['iceflag']) for f in ice_flags])
+    """,
+        [(f["reach_id"], f["julian_day"], f["iceflag"]) for f in ice_flags],
+    )
 
     # Update topology counts on reaches
     print("  Updating topology counts...")
@@ -497,10 +538,13 @@ def create_minimal_test_db(db_path: str, region: str = "NA", version: str = "v17
     """)
 
     # Record version
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO sword_versions (version, schema_version, notes)
         VALUES (?, '1.2.0', 'Minimal test database fixture')
-    """, [version])
+    """,
+        [version],
+    )
 
     conn.commit()
     conn.close()

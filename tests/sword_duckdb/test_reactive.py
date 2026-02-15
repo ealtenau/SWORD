@@ -18,6 +18,8 @@ import numpy as np
 main_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, main_dir)
 
+pytestmark = pytest.mark.reactive
+
 
 class TestDependencyGraph:
     """Test dependency graph construction."""
@@ -29,30 +31,30 @@ class TestDependencyGraph:
         graph = DependencyGraph()
 
         # Verify key nodes exist
-        assert 'centerline.geometry' in graph.nodes
-        assert 'reach.len' in graph.nodes
-        assert 'reach.dist_out' in graph.nodes
-        assert 'node.dist_out' in graph.nodes
-        assert 'reach.end_rch' in graph.nodes
-        assert 'node.end_rch' in graph.nodes
+        assert "centerline.geometry" in graph.nodes
+        assert "reach.len" in graph.nodes
+        assert "reach.dist_out" in graph.nodes
+        assert "node.dist_out" in graph.nodes
+        assert "reach.end_rch" in graph.nodes
+        assert "node.end_rch" in graph.nodes
 
     def test_reach_len_depends_on_geometry(self):
         """Test that reach.len depends on centerline.geometry."""
         from src.updates.sword_duckdb.reactive import DependencyGraph
 
         graph = DependencyGraph()
-        reach_len_node = graph.nodes['reach.len']
+        reach_len_node = graph.nodes["reach.len"]
 
-        assert 'centerline.geometry' in reach_len_node.depends_on
+        assert "centerline.geometry" in reach_len_node.depends_on
 
     def test_node_dist_out_depends_on_reach_dist_out(self):
         """Test that node.dist_out depends on reach.dist_out."""
         from src.updates.sword_duckdb.reactive import DependencyGraph
 
         graph = DependencyGraph()
-        node_dist_out = graph.nodes['node.dist_out']
+        node_dist_out = graph.nodes["node.dist_out"]
 
-        assert 'reach.dist_out' in node_dist_out.depends_on
+        assert "reach.dist_out" in node_dist_out.depends_on
 
     def test_get_downstream_deps(self):
         """Test getting downstream dependencies."""
@@ -61,12 +63,12 @@ class TestDependencyGraph:
         graph = DependencyGraph()
 
         # centerline.geometry should trigger many downstream updates
-        deps = graph.get_downstream_deps('centerline.geometry')
+        deps = graph.get_downstream_deps("centerline.geometry")
 
-        assert 'reach.len' in deps
-        assert 'reach.bounds' in deps
-        assert 'node.len' in deps
-        assert 'node.xy' in deps
+        assert "reach.len" in deps
+        assert "reach.bounds" in deps
+        assert "node.len" in deps
+        assert "node.xy" in deps
 
     def test_topological_sort_order(self):
         """Test that topological sort produces correct order."""
@@ -75,14 +77,16 @@ class TestDependencyGraph:
         graph = DependencyGraph()
 
         # Mark geometry as dirty
-        dirty_attrs = {'centerline.geometry'}
+        dirty_attrs = {"centerline.geometry"}
         sorted_attrs = graph.topological_sort(dirty_attrs)
 
         # reach.len should come before reach.dist_out
-        if 'reach.len' in sorted_attrs and 'reach.dist_out' in sorted_attrs:
-            len_idx = sorted_attrs.index('reach.len')
-            dist_out_idx = sorted_attrs.index('reach.dist_out')
-            assert len_idx < dist_out_idx, "reach.len should be recalculated before reach.dist_out"
+        if "reach.len" in sorted_attrs and "reach.dist_out" in sorted_attrs:
+            len_idx = sorted_attrs.index("reach.len")
+            dist_out_idx = sorted_attrs.index("reach.dist_out")
+            assert len_idx < dist_out_idx, (
+                "reach.len should be recalculated before reach.dist_out"
+            )
 
 
 class TestDirtySet:
@@ -110,133 +114,86 @@ class TestDirtySet:
         assert 789 in dirty.reach_ids
 
 
+@pytest.mark.db
 class TestSWORDReactive:
     """Test SWORDReactive class."""
 
-    def test_mark_dirty(self):
+    def test_mark_dirty(self, sword_readonly):
         """Test marking attributes as dirty."""
-        # This test requires a SWORD instance, so we skip if database not available
-        from src.updates.sword_duckdb import SWORD
-
-        db_path = os.path.join(main_dir, 'data/duckdb/sword_v17b.duckdb')
-        if not os.path.exists(db_path):
-            pytest.skip(f"Test database not found: {db_path}")
-
         from src.updates.sword_duckdb.reactive import SWORDReactive, ChangeType
 
-        sword = SWORD(db_path, 'NA', 'v17b')
-        reactive = SWORDReactive(sword)
+        reactive = SWORDReactive(sword_readonly)
 
-        # Mark geometry as changed
         reactive.mark_dirty(
-            'centerline.geometry',
+            "centerline.geometry",
             ChangeType.GEOMETRY,
-            reach_ids=[sword.reaches.id[0]]
+            reach_ids=[sword_readonly.reaches.id[0]],
         )
 
-        assert 'centerline.geometry' in reactive._dirty_attrs
-        assert sword.reaches.id[0] in reactive.dirty.reach_ids
+        assert "centerline.geometry" in reactive._dirty_attrs
+        assert sword_readonly.reaches.id[0] in reactive.dirty.reach_ids
 
-        sword.close()
-
-    def test_get_recalc_plan(self):
+    def test_get_recalc_plan(self, sword_readonly):
         """Test getting recalculation plan."""
-        from src.updates.sword_duckdb import SWORD
-
-        db_path = os.path.join(main_dir, 'data/duckdb/sword_v17b.duckdb')
-        if not os.path.exists(db_path):
-            pytest.skip(f"Test database not found: {db_path}")
-
         from src.updates.sword_duckdb.reactive import SWORDReactive, ChangeType
 
-        sword = SWORD(db_path, 'NA', 'v17b')
-        reactive = SWORDReactive(sword)
+        reactive = SWORDReactive(sword_readonly)
 
-        # Mark geometry as changed
-        reactive.mark_dirty('centerline.geometry', ChangeType.GEOMETRY, all_entities=True)
+        reactive.mark_dirty(
+            "centerline.geometry", ChangeType.GEOMETRY, all_entities=True
+        )
 
         plan = reactive.get_recalc_plan()
 
-        # Plan should include functions to recalculate
         assert len(plan) > 0
         attr_names = [attr for attr, _ in plan]
 
-        # reach.len should be in the plan (depends on geometry)
-        assert 'reach.len' in attr_names
+        assert "reach.len" in attr_names
 
-        sword.close()
-
-    def test_dry_run_recalculate(self):
+    def test_dry_run_recalculate(self, sword_readonly):
         """Test dry run of recalculation."""
-        from src.updates.sword_duckdb import SWORD
-
-        db_path = os.path.join(main_dir, 'data/duckdb/sword_v17b.duckdb')
-        if not os.path.exists(db_path):
-            pytest.skip(f"Test database not found: {db_path}")
-
         from src.updates.sword_duckdb.reactive import SWORDReactive, ChangeType
 
-        sword = SWORD(db_path, 'NA', 'v17b')
-        reactive = SWORDReactive(sword)
+        reactive = SWORDReactive(sword_readonly)
 
-        reactive.mark_dirty('reach.topology', ChangeType.TOPOLOGY, all_entities=True)
+        reactive.mark_dirty("reach.topology", ChangeType.TOPOLOGY, all_entities=True)
 
-        # Dry run should not actually change anything
         recalculated = reactive.recalculate(dry_run=True)
 
         assert len(recalculated) > 0
-        assert 'reach.end_rch' in recalculated
-
-        sword.close()
+        assert "reach.end_rch" in recalculated
 
 
+@pytest.mark.db
 class TestConvenienceFunctions:
     """Test convenience functions."""
 
-    def test_mark_geometry_changed(self):
+    def test_mark_geometry_changed(self, sword_readonly):
         """Test mark_geometry_changed function."""
-        from src.updates.sword_duckdb import SWORD
-
-        db_path = os.path.join(main_dir, 'data/duckdb/sword_v17b.duckdb')
-        if not os.path.exists(db_path):
-            pytest.skip(f"Test database not found: {db_path}")
-
         from src.updates.sword_duckdb.reactive import (
             SWORDReactive,
             mark_geometry_changed,
         )
 
-        sword = SWORD(db_path, 'NA', 'v17b')
-        reactive = SWORDReactive(sword)
+        reactive = SWORDReactive(sword_readonly)
 
-        mark_geometry_changed(reactive, reach_ids=[sword.reaches.id[0]])
+        mark_geometry_changed(reactive, reach_ids=[sword_readonly.reaches.id[0]])
 
-        assert 'centerline.geometry' in reactive._dirty_attrs
+        assert "centerline.geometry" in reactive._dirty_attrs
 
-        sword.close()
-
-    def test_mark_topology_changed(self):
+    def test_mark_topology_changed(self, sword_readonly):
         """Test mark_topology_changed function."""
-        from src.updates.sword_duckdb import SWORD
-
-        db_path = os.path.join(main_dir, 'data/duckdb/sword_v17b.duckdb')
-        if not os.path.exists(db_path):
-            pytest.skip(f"Test database not found: {db_path}")
-
         from src.updates.sword_duckdb.reactive import (
             SWORDReactive,
             mark_topology_changed,
         )
 
-        sword = SWORD(db_path, 'NA', 'v17b')
-        reactive = SWORDReactive(sword)
+        reactive = SWORDReactive(sword_readonly)
 
         mark_topology_changed(reactive, all_reaches=True)
 
-        assert 'reach.topology' in reactive._dirty_attrs
+        assert "reach.topology" in reactive._dirty_attrs
         assert reactive.dirty.all_reaches is True
-
-        sword.close()
 
 
 class TestGeodesicDistance:
@@ -287,11 +244,11 @@ class TestChangeType:
         """Test that all change types exist."""
         from src.updates.sword_duckdb.reactive import ChangeType
 
-        assert hasattr(ChangeType, 'GEOMETRY')
-        assert hasattr(ChangeType, 'TOPOLOGY')
-        assert hasattr(ChangeType, 'ATTRIBUTE')
-        assert hasattr(ChangeType, 'STRUCTURE')
+        assert hasattr(ChangeType, "GEOMETRY")
+        assert hasattr(ChangeType, "TOPOLOGY")
+        assert hasattr(ChangeType, "ATTRIBUTE")
+        assert hasattr(ChangeType, "STRUCTURE")
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
