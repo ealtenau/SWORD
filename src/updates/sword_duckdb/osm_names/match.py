@@ -180,6 +180,93 @@ def save_osm_names(
     return updated
 
 
+def infill_name_gaps(
+    conn: duckdb.DuckDBPyConnection,
+    max_passes: int = 10,
+) -> dict[str, int]:
+    """
+    Fill unnamed 1:1 reaches where upstream and downstream names agree.
+
+    Iteratively propagates names inward from both ends of gaps on 1:1 chains
+    (no junctions). Converges when no more fills are possible or max_passes
+    is reached, whichever comes first.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active connection to SWORD DuckDB.
+    max_passes : int
+        Maximum iterations. Gap length N requires ceil(N/2) passes.
+
+    Returns
+    -------
+    dict
+        {"river_name_local": int, "river_name_en": int} — counts filled.
+    """
+    for col in ("river_name_local", "river_name_en"):
+        for _ in range(max_passes):
+            prev = conn.execute(
+                f"SELECT COUNT(*) FROM reaches WHERE {col} IS NOT NULL"
+            ).fetchone()[0]
+
+            conn.execute(f"""
+                UPDATE reaches r
+                SET {col} = up.{col}
+                FROM reaches dn, reaches up
+                WHERE r.{col} IS NULL
+                    AND r.n_rch_down = 1
+                    AND r.n_rch_up = 1
+                    AND r.rch_id_dn_main = dn.reach_id
+                    AND r.rch_id_up_main = up.reach_id
+                    AND dn.{col} IS NOT NULL
+                    AND up.{col} IS NOT NULL
+                    AND dn.{col} = up.{col}
+            """)
+
+            cur = conn.execute(
+                f"SELECT COUNT(*) FROM reaches WHERE {col} IS NOT NULL"
+            ).fetchone()[0]
+            if cur == prev:
+                break
+
+
+def infill_name_gaps_with_rtree(
+    conn: duckdb.DuckDBPyConnection,
+    max_passes: int = 10,
+) -> dict[str, int]:
+    """
+    infill_name_gaps wrapped with RTREE drop/recreate pattern.
+
+    Returns counts of reaches filled per column.
+    """
+    conn.execute("INSTALL spatial; LOAD spatial;")
+
+    indexes = conn.execute(
+        "SELECT index_name, table_name, sql FROM duckdb_indexes() WHERE sql LIKE '%RTREE%'"
+    ).fetchall()
+    for idx_name, _tbl, _sql in indexes:
+        conn.execute(f'DROP INDEX "{idx_name}"')
+
+    before = {}
+    for col in ("river_name_local", "river_name_en"):
+        before[col] = conn.execute(
+            f"SELECT COUNT(*) FROM reaches WHERE {col} IS NOT NULL"
+        ).fetchone()[0]
+
+    infill_name_gaps(conn, max_passes)
+
+    after = {}
+    for col in ("river_name_local", "river_name_en"):
+        after[col] = conn.execute(
+            f"SELECT COUNT(*) FROM reaches WHERE {col} IS NOT NULL"
+        ).fetchone()[0]
+
+    for _idx_name, _tbl, sql in indexes:
+        conn.execute(sql)
+
+    return {col: after[col] - before[col] for col in before}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Match OSM waterways to SWORD reaches")
     parser.add_argument("--db", required=True, help="Path to SWORD DuckDB")
