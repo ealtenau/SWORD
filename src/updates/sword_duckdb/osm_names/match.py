@@ -32,22 +32,33 @@ def match_osm_names(
     Returns
     -------
     pd.DataFrame
-        Columns: [reach_id, river_name_osm, river_name_osm_en]
+        Columns: [reach_id, river_name_local, river_name_en]
     """
     gpkg_path = str(Path(gpkg_path).resolve())
     region = region.upper()
 
     conn.execute("INSTALL spatial; LOAD spatial;")
 
-    # Load OSM waterways into temp table
-    # ogr2ogr puts extended tags (including name:en) into the hstore-format
-    # "other_tags" column, so we extract it with a regex rather than a direct
-    # column reference.
+    # Load OSM waterways into temp table.
+    # Real ogr2ogr output stores extended tags (including name:en) in the
+    # hstore-format "other_tags" column. Synthetic test fixtures may have
+    # "name:en" as a direct column instead.
+    cols = [
+        d[0]
+        for d in conn.execute(
+            f"SELECT * FROM ST_Read('{gpkg_path}') LIMIT 0"
+        ).description
+    ]
+    if "other_tags" in cols:
+        name_en_expr = """regexp_extract(other_tags, '"name:en"=>"([^"]*)"', 1)"""
+    else:
+        name_en_expr = '"name:en"'
+
     conn.execute(f"""
         CREATE OR REPLACE TEMP TABLE osm_waterways AS
         SELECT
             name,
-            regexp_extract(other_tags, '"name:en"=>"([^"]*)"', 1) AS name_en,
+            {name_en_expr} AS name_en,
             geom
         FROM ST_Read('{gpkg_path}')
         WHERE name IS NOT NULL
@@ -83,8 +94,8 @@ def match_osm_names(
     )
     SELECT
         reach_id,
-        STRING_AGG(name, '; ' ORDER BY overlap_len DESC) AS river_name_osm,
-        STRING_AGG(name_en, '; ' ORDER BY overlap_len DESC) AS river_name_osm_en
+        STRING_AGG(name, '; ' ORDER BY overlap_len DESC) AS river_name_local,
+        STRING_AGG(name_en, '; ' ORDER BY overlap_len DESC) AS river_name_en
     FROM deduped
     GROUP BY reach_id
     """
@@ -114,7 +125,7 @@ def save_osm_names(
     region : str
         SWORD region code.
     matches_df : pd.DataFrame
-        From match_osm_names(): [reach_id, river_name_osm, river_name_osm_en]
+        From match_osm_names(): [reach_id, river_name_local, river_name_en]
 
     Returns
     -------
@@ -141,15 +152,15 @@ def save_osm_names(
     # Clear existing OSM names for this region, then update
     conn.execute(f"""
         UPDATE reaches
-        SET river_name_osm = NULL, river_name_osm_en = NULL
+        SET river_name_local = NULL, river_name_en = NULL
         WHERE region = '{region}'
     """)
 
     conn.execute(f"""
         UPDATE reaches
         SET
-            river_name_osm = m.river_name_osm,
-            river_name_osm_en = m.river_name_osm_en
+            river_name_local = m.river_name_local,
+            river_name_en = m.river_name_en
         FROM _osm_matches m
         WHERE reaches.reach_id = m.reach_id
             AND reaches.region = '{region}'
@@ -157,7 +168,7 @@ def save_osm_names(
 
     updated = conn.execute(f"""
         SELECT COUNT(*) FROM reaches
-        WHERE region = '{region}' AND river_name_osm IS NOT NULL
+        WHERE region = '{region}' AND river_name_local IS NOT NULL
     """).fetchone()[0]
 
     # Recreate RTREE indexes

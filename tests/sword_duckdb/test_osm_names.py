@@ -63,8 +63,8 @@ class TestSchemaMigration:
             "SELECT column_name FROM information_schema.columns WHERE table_name = 'reaches'"
         ).fetchall()
         col_names = {r[0].lower() for r in cols}
-        assert "river_name_osm" in col_names
-        assert "river_name_osm_en" in col_names
+        assert "river_name_local" in col_names
+        assert "river_name_en" in col_names
 
     def test_add_columns_idempotent(self, test_db):
         # Call again - should not error and should return False
@@ -81,8 +81,8 @@ class TestSpatialMatching:
     def test_match_returns_dataframe(self, test_db, osm_gpkg):
         df = match_osm_names(test_db, osm_gpkg, "NA")
         assert "reach_id" in df.columns
-        assert "river_name_osm" in df.columns
-        assert "river_name_osm_en" in df.columns
+        assert "river_name_local" in df.columns
+        assert "river_name_en" in df.columns
 
     def test_match_finds_overlaps(self, test_db, osm_gpkg):
         df = match_osm_names(test_db, osm_gpkg, "NA")
@@ -91,10 +91,10 @@ class TestSpatialMatching:
     def test_semicolon_delimited_multi_match(self, test_db, osm_gpkg):
         df = match_osm_names(test_db, osm_gpkg, "NA")
         # Reach 5 (x=-90) and reach 10 (x=-100, y=41) each have two overlapping OSM lines
-        multi = df[df["river_name_osm"].str.contains(";", na=False)]
+        multi = df[df["river_name_local"].str.contains(";", na=False)]
         assert len(multi) > 0, "Should have at least one multi-name match"
         for _, row in multi.iterrows():
-            names = row["river_name_osm"].split("; ")
+            names = row["river_name_local"].split("; ")
             assert len(names) > 1
 
     def test_null_name_en_preserved(self, test_db, osm_gpkg):
@@ -104,7 +104,7 @@ class TestSpatialMatching:
         reach_10 = df[df["reach_id"] == 11000000010]
         if not reach_10.empty:
             # At least one of the OSM lines had a name_en
-            assert reach_10.iloc[0]["river_name_osm"] is not None
+            assert reach_10.iloc[0]["river_name_local"] is not None
 
     def test_save_updates_reaches(self, test_db, osm_gpkg):
         df = match_osm_names(test_db, osm_gpkg, "NA")
@@ -112,7 +112,7 @@ class TestSpatialMatching:
         assert n > 0
         # Verify in DB
         row = test_db.execute(
-            "SELECT river_name_osm FROM reaches WHERE region='NA' AND river_name_osm IS NOT NULL LIMIT 1"
+            "SELECT river_name_local FROM reaches WHERE region='NA' AND river_name_local IS NOT NULL LIMIT 1"
         ).fetchone()
         assert row is not None
 
@@ -127,14 +127,12 @@ class TestSpatialMatching:
 
         # Count should match original, not double
         total = test_db.execute(
-            "SELECT COUNT(*) FROM reaches WHERE region='NA' AND river_name_osm IS NOT NULL"
+            "SELECT COUNT(*) FROM reaches WHERE region='NA' AND river_name_local IS NOT NULL"
         ).fetchone()[0]
         assert total == n
 
     def test_save_empty_df(self, test_db):
-        empty = pd.DataFrame(
-            columns=["reach_id", "river_name_osm", "river_name_osm_en"]
-        )
+        empty = pd.DataFrame(columns=["reach_id", "river_name_local", "river_name_en"])
         n = save_osm_names(test_db, "NA", empty)
         assert n == 0
 

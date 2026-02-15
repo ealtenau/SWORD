@@ -561,7 +561,7 @@ def check_best_outlet_validity(
     "V011",
     Category.V17C,
     Severity.WARNING,
-    "Unexpected river_name_osm change along rch_id_dn_main chain on 1:1 links",
+    "Unexpected river_name_local change along rch_id_dn_main chain on 1:1 links",
 )
 def check_osm_name_continuity(
     conn: duckdb.DuckDBPyConnection,
@@ -569,7 +569,7 @@ def check_osm_name_continuity(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """
-    Flag reaches where river_name_osm changes along rch_id_dn_main on 1:1 links.
+    Flag reaches where river_name_local changes along rch_id_dn_main on 1:1 links.
 
     Name changes at junctions are expected — only flags 1:1 links where
     n_rch_down = 1 AND the downstream reach has n_rch_up = 1.
@@ -578,7 +578,7 @@ def check_osm_name_continuity(
 
     # Column existence guard
     try:
-        conn.execute("SELECT river_name_osm, rch_id_dn_main FROM reaches LIMIT 1")
+        conn.execute("SELECT river_name_local, rch_id_dn_main FROM reaches LIMIT 1")
     except (duckdb.CatalogException, duckdb.BinderException):
         return CheckResult(
             check_id="V011",
@@ -589,7 +589,7 @@ def check_osm_name_continuity(
             issues_found=0,
             issue_pct=0,
             details=pd.DataFrame(),
-            description="Column river_name_osm or rch_id_dn_main not found (OSM enrichment or v17c pipeline not run)",
+            description="Column river_name_local or rch_id_dn_main not found (OSM enrichment or v17c pipeline not run)",
         )
 
     query = f"""
@@ -598,16 +598,16 @@ def check_osm_name_continuity(
         r1.region,
         r1.x,
         r1.y,
-        r1.river_name_osm AS name_up,
-        r2.river_name_osm AS name_down,
+        r1.river_name_local AS name_up,
+        r2.river_name_local AS name_down,
         r1.rch_id_dn_main
     FROM reaches r1
     JOIN reaches r2
         ON r1.rch_id_dn_main = r2.reach_id
         AND r1.region = r2.region
-    WHERE r1.river_name_osm IS NOT NULL
-        AND r2.river_name_osm IS NOT NULL
-        AND r1.river_name_osm != r2.river_name_osm
+    WHERE r1.river_name_local IS NOT NULL
+        AND r2.river_name_local IS NOT NULL
+        AND r1.river_name_local != r2.river_name_local
         AND r1.n_rch_down = 1
         AND r2.n_rch_up = 1
         {where_clause}
@@ -621,8 +621,8 @@ def check_osm_name_continuity(
     JOIN reaches r2
         ON r1.rch_id_dn_main = r2.reach_id
         AND r1.region = r2.region
-    WHERE r1.river_name_osm IS NOT NULL
-        AND r2.river_name_osm IS NOT NULL
+    WHERE r1.river_name_local IS NOT NULL
+        AND r2.river_name_local IS NOT NULL
         AND r1.n_rch_down = 1
         AND r2.n_rch_up = 1
         {where_clause}
@@ -638,5 +638,5 @@ def check_osm_name_continuity(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description="Reaches where river_name_osm changes on 1:1 link (not at junction)",
+        description="Reaches where river_name_local changes on 1:1 link (not at junction)",
     )

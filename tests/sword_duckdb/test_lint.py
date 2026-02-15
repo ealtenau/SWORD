@@ -465,7 +465,7 @@ class TestIntegration:
 def _create_v011_test_data(conn, rows):
     """Create minimal reaches table for V011 testing.
 
-    rows: list of (reach_id, region, x, y, river_name_osm, rch_id_dn_main, n_rch_down, n_rch_up)
+    rows: list of (reach_id, region, x, y, river_name_local, rch_id_dn_main, n_rch_down, n_rch_up)
     """
 
     conn.execute("""
@@ -474,7 +474,7 @@ def _create_v011_test_data(conn, rows):
             region VARCHAR,
             x DOUBLE,
             y DOUBLE,
-            river_name_osm VARCHAR,
+            river_name_local VARCHAR,
             rch_id_dn_main BIGINT,
             n_rch_down INTEGER,
             n_rch_up INTEGER
@@ -514,7 +514,7 @@ class TestV011OsmNameContinuity:
             assert r.total_checked == 0
 
     def test_v011_same_name_no_flag(self, tmp_path):
-        """Same river_name_osm on 1:1 link should not be flagged."""
+        """Same river_name_local on 1:1 link should not be flagged."""
         import duckdb as _duckdb  # noqa: F811
 
         db_path = tmp_path / "v011_test.duckdb"
@@ -522,7 +522,7 @@ class TestV011OsmNameContinuity:
         _create_v011_test_data(
             conn,
             [
-                # reach_id, region, x, y, river_name_osm, rch_id_dn_main, n_rch_down, n_rch_up
+                # reach_id, region, x, y, river_name_local, rch_id_dn_main, n_rch_down, n_rch_up
                 (1001, "NA", -75.0, 45.0, "St. Lawrence", 1002, 1, 0),
                 (1002, "NA", -75.1, 45.1, "St. Lawrence", None, 0, 1),
             ],
@@ -535,7 +535,7 @@ class TestV011OsmNameContinuity:
         conn.close()
 
     def test_v011_different_name_1to1_flags(self, tmp_path):
-        """Different river_name_osm on 1:1 link should be flagged."""
+        """Different river_name_local on 1:1 link should be flagged."""
         import duckdb as _duckdb  # noqa: F811
 
         db_path = tmp_path / "v011_test.duckdb"
@@ -585,7 +585,7 @@ class TestV011OsmNameContinuity:
         conn.close()
 
     def test_v011_null_name_skipped(self, tmp_path):
-        """NULL river_name_osm should not be flagged."""
+        """NULL river_name_local should not be flagged."""
         import duckdb as _duckdb  # noqa: F811
 
         db_path = tmp_path / "v011_test.duckdb"

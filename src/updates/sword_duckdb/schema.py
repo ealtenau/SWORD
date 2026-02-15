@@ -1006,8 +1006,8 @@ def add_osm_name_columns(conn) -> bool:
     added = False
 
     osm_columns = [
-        ("river_name_osm", "VARCHAR"),
-        ("river_name_osm_en", "VARCHAR"),
+        ("river_name_local", "VARCHAR"),
+        ("river_name_en", "VARCHAR"),
     ]
 
     try:
