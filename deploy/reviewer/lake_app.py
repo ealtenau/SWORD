@@ -761,17 +761,19 @@ with tab_c004:
                     SELECT reach_id, region, river_name, x, y, lakeflag, type,
                         CASE
                             WHEN lakeflag = 1 AND type = 1 THEN 'lake_labeled_as_river_type'
-                            WHEN lakeflag = 0 AND type = 3 THEN 'river_labeled_as_lake_type'
+                            WHEN lakeflag = 1 AND type = 3 THEN 'lake_labeled_as_tidal_type'
+                            WHEN lakeflag = 0 AND type = 2 THEN 'river_labeled_as_lake_type'
                             WHEN lakeflag = 2 AND type NOT IN (1, 4, 5, 6) THEN 'canal_type_mismatch'
-                            WHEN lakeflag = 3 AND type NOT IN (5, 6) THEN 'tidal_type_mismatch'
+                            WHEN lakeflag = 3 AND type NOT IN (3, 5, 6) THEN 'tidal_type_mismatch'
                             ELSE 'other_mismatch'
                         END as issue_type
                     FROM reaches
                     WHERE region = ? AND lakeflag IS NOT NULL AND type IS NOT NULL
                         AND NOT (
-                            (lakeflag = 0 AND type IN (1, 4))
-                            OR (lakeflag = 1 AND type IN (3, 4))
+                            (lakeflag = 0 AND type IN (1, 3, 4))
+                            OR (lakeflag = 1 AND type IN (2, 4))
                             OR (lakeflag = 2 AND type IN (1, 4))
+                            OR (lakeflag = 3 AND type IN (3))
                             OR type IN (5, 6)
                         )
                     ORDER BY reach_id
@@ -832,76 +834,49 @@ with tab_c004:
                 st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
                 st.markdown("---")
                 st.markdown("### Fix the mismatch")
-                if "lake" in issue["issue_type"]:
-                    if st.button(
-                        "Set type=2 (lake)",
-                        key=f"c004_fix_{selected}",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        conn.execute(
-                            "UPDATE reaches SET type = 2 WHERE reach_id = ? AND region = ?",
-                            [selected, region],
-                        )
-                        conn.commit()
-                        log_skip(conn, selected, region, "C004", "Fixed: type->2")
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
-                elif "river" in issue["issue_type"]:
-                    if st.button(
-                        "Set type=1 (river)",
-                        key=f"c004_fix_{selected}",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        conn.execute(
-                            "UPDATE reaches SET type = 1 WHERE reach_id = ? AND region = ?",
-                            [selected, region],
-                        )
-                        conn.commit()
-                        log_skip(conn, selected, region, "C004", "Fixed: type->1")
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
-                elif "canal" in issue["issue_type"]:
-                    if st.button(
-                        "Set type=4 (artificial)",
-                        key=f"c004_fix_{selected}",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        conn.execute(
-                            "UPDATE reaches SET type = 4 WHERE reach_id = ? AND region = ?",
-                            [selected, region],
-                        )
-                        conn.commit()
-                        log_skip(conn, selected, region, "C004", "Fixed: type->4")
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
-                elif "tidal" in issue["issue_type"]:
-                    if st.button(
-                        "Set lakeflag=0 (river)",
-                        key=f"c004_fix_lf_{selected}",
-                        type="primary",
-                        use_container_width=True,
-                    ):
-                        conn.execute(
-                            "UPDATE reaches SET lakeflag = 0 WHERE reach_id = ? AND region = ?",
-                            [selected, region],
-                        )
-                        conn.commit()
-                        log_skip(
-                            conn,
-                            selected,
-                            region,
-                            "C004",
-                            "Fixed: lakeflag->0 (was tidal)",
-                        )
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
+                it = issue["issue_type"]
+                if it == "lake_labeled_as_river_type":
+                    fix_label = "Set type=2 (lake)"
+                    fix_sql = (
+                        "UPDATE reaches SET type = 2 WHERE reach_id = ? AND region = ?"
+                    )
+                    fix_log = "Fixed: type->2"
+                elif it == "lake_labeled_as_tidal_type":
+                    fix_label = "Set type=2 (lake)"
+                    fix_sql = (
+                        "UPDATE reaches SET type = 2 WHERE reach_id = ? AND region = ?"
+                    )
+                    fix_log = "Fixed: type->2 (was tidal)"
+                elif it == "river_labeled_as_lake_type":
+                    fix_label = "Set type=1 (river)"
+                    fix_sql = (
+                        "UPDATE reaches SET type = 1 WHERE reach_id = ? AND region = ?"
+                    )
+                    fix_log = "Fixed: type->1"
+                elif it == "canal_type_mismatch":
+                    fix_label = "Set type=4 (artificial)"
+                    fix_sql = (
+                        "UPDATE reaches SET type = 4 WHERE reach_id = ? AND region = ?"
+                    )
+                    fix_log = "Fixed: type->4"
+                elif it == "tidal_type_mismatch":
+                    fix_label = "Set lakeflag=0 (river)"
+                    fix_sql = "UPDATE reaches SET lakeflag = 0 WHERE reach_id = ? AND region = ?"
+                    fix_log = "Fixed: lakeflag->0 (was tidal)"
+                else:
+                    fix_label = None
+                if fix_label and st.button(
+                    fix_label,
+                    key=f"c004_fix_{selected}",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    conn.execute(fix_sql, [selected, region])
+                    conn.commit()
+                    log_skip(conn, selected, region, "C004", fix_log)
+                    st.session_state.c004_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
                     if st.button(
                         "Set type=1 (river)",
                         key=f"c004_fix_tp_{selected}",
