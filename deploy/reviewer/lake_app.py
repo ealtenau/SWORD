@@ -12,7 +12,6 @@ Cannot run both simultaneously (DuckDB single-writer lock).
 """
 
 import json
-import math
 import os
 import re
 from datetime import datetime
@@ -320,6 +319,56 @@ def apply_lakeflag_fix(conn, reach_id, region, new_lakeflag):
     return old_lakeflag
 
 
+def apply_column_fix(conn, reach_id, region, check_id, column, new_value, notes=""):
+    old = conn.execute(
+        f"SELECT {column} FROM reaches WHERE reach_id = ? AND region = ?",
+        [reach_id, region],
+    ).fetchone()
+    old_value = old[0] if old else None
+    max_id = conn.execute(
+        "SELECT COALESCE(MAX(fix_id), 0) FROM lint_fix_log"
+    ).fetchone()[0]
+    new_id = max_id + 1
+    timestamp = datetime.now().isoformat()
+    conn.execute(
+        f"UPDATE reaches SET {column} = ? WHERE reach_id = ? AND region = ?",
+        [new_value, reach_id, region],
+    )
+    conn.execute(
+        """
+        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
+        VALUES (?, ?, ?, ?, 'fix', ?, ?, ?, ?)
+    """,
+        [
+            new_id,
+            check_id,
+            reach_id,
+            region,
+            column,
+            str(old_value),
+            str(new_value),
+            notes,
+        ],
+    )
+    conn.commit()
+    append_fix_to_session(
+        region,
+        {
+            "fix_id": new_id,
+            "timestamp": timestamp,
+            "check_id": check_id,
+            "reach_id": int(reach_id),
+            "region": region,
+            "column_changed": column,
+            "old_value": old_value,
+            "new_value": new_value,
+            "undone": False,
+        },
+        check_id=check_id,
+    )
+    return old_value
+
+
 def log_skip(conn, reach_id, region, check_id, notes):
     max_id = conn.execute(
         "SELECT COALESCE(MAX(fix_id), 0) FROM lint_fix_log"
@@ -349,21 +398,32 @@ def log_skip(conn, reach_id, region, check_id, notes):
     )
 
 
-def undo_last_fix(conn, region):
-    last = conn.execute(
-        """
-        SELECT fix_id, reach_id, old_value FROM lint_fix_log
-        WHERE region = ? AND action = 'fix' AND NOT undone ORDER BY timestamp DESC LIMIT 1
-    """,
-        [region],
-    ).fetchone()
+def undo_last_fix(conn, region, check_id=None):
+    if check_id:
+        last = conn.execute(
+            """
+            SELECT fix_id, reach_id, old_value, column_changed, check_id FROM lint_fix_log
+            WHERE region = ? AND check_id = ? AND action = 'fix' AND NOT undone ORDER BY timestamp DESC LIMIT 1
+        """,
+            [region, check_id],
+        ).fetchone()
+    else:
+        last = conn.execute(
+            """
+            SELECT fix_id, reach_id, old_value, column_changed, check_id FROM lint_fix_log
+            WHERE region = ? AND action = 'fix' AND NOT undone ORDER BY timestamp DESC LIMIT 1
+        """,
+            [region],
+        ).fetchone()
     if not last:
         return None
-    fix_id, reach_id, old_value = last
+    fix_id, reach_id, old_value, column_changed, orig_check_id = last
+    column = column_changed or "lakeflag"
     if old_value is not None:
+        cast = int if column in ("lakeflag", "type") else str
         conn.execute(
-            "UPDATE reaches SET lakeflag = ? WHERE reach_id = ? AND region = ?",
-            [int(old_value), reach_id, region],
+            f"UPDATE reaches SET {column} = ? WHERE reach_id = ? AND region = ?",
+            [cast(old_value), reach_id, region],
         )
     conn.execute("UPDATE lint_fix_log SET undone = TRUE WHERE fix_id = ?", [fix_id])
     max_id = conn.execute(
@@ -372,12 +432,20 @@ def undo_last_fix(conn, region):
     conn.execute(
         """
         INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
-        VALUES (?, 'C001', ?, ?, 'undo', 'lakeflag', NULL, ?, ?)
+        VALUES (?, ?, ?, ?, 'undo', ?, NULL, ?, ?)
     """,
-        [max_id + 1, reach_id, region, old_value, f"Undo of fix_id={fix_id}"],
+        [
+            max_id + 1,
+            orig_check_id,
+            reach_id,
+            region,
+            column,
+            old_value,
+            f"Undo of fix_id={fix_id}",
+        ],
     )
     conn.commit()
-    session = load_session_fixes(region, check_id="C001")
+    session = load_session_fixes(region, check_id=orig_check_id)
     for fix in session["fixes"]:
         if fix.get("fix_id") == fix_id:
             fix["undone"] = True
@@ -387,7 +455,7 @@ def undo_last_fix(conn, region):
         session["fixes"],
         session["skips"],
         session.get("pending", []),
-        check_id="C001",
+        check_id=orig_check_id,
     )
     return reach_id
 
@@ -422,48 +490,27 @@ def get_nearby_reaches(
     ).fetchdf()
 
 
-def add_flow_arrows(m, coords, color, num_arrows=2, size=0.001):
-    """Add vector arrows along a polyline to show flow direction.
-
-    coords are [lat, lon] pairs in upstream-to-downstream order.
-    """
+def add_flow_line(m, coords, color, weight=3, opacity=0.9, tooltip=None, animate=True):
+    """Draw a reach line with optional animated flow direction via AntPath."""
     if len(coords) < 2:
         return
-    for i in range(num_arrows):
-        frac = (i + 1) / (num_arrows + 1)
-        idx = int(frac * (len(coords) - 1))
-        idx = max(0, min(idx, len(coords) - 2))
-        p1, p2 = coords[idx], coords[idx + 1]
-        # coords are [lat, lon]
-        dlat = p2[0] - p1[0]
-        dlon = p2[1] - p1[1]
-        length = math.sqrt(dlat * dlat + dlon * dlon)
-        if length == 0:
-            continue
-        dlat /= length
-        dlon /= length
-        mid_lat = (p1[0] + p2[0]) / 2
-        mid_lon = (p1[1] + p2[1]) / 2
-        tail_lat, tail_lon = mid_lat - dlat * size, mid_lon - dlon * size
-        tip_lat, tip_lon = mid_lat + dlat * size, mid_lon + dlon * size
-        head_size = size * 0.6
-        angle = math.atan2(dlon, dlat)
-        angle1 = angle + math.radians(150)
-        angle2 = angle - math.radians(150)
-        v1_lat = tip_lat + math.cos(angle1) * head_size
-        v1_lon = tip_lon + math.sin(angle1) * head_size
-        v2_lat = tip_lat + math.cos(angle2) * head_size
-        v2_lon = tip_lon + math.sin(angle2) * head_size
-        for c, w in [("black", 3), (color, 2)]:
-            folium.PolyLine(
-                [[tail_lat, tail_lon], [tip_lat, tip_lon]], color=c, weight=w, opacity=1
-            ).add_to(m)
-            folium.PolyLine(
-                [[v1_lat, v1_lon], [tip_lat, tip_lon], [v2_lat, v2_lon]],
-                color=c,
-                weight=w,
-                opacity=1,
-            ).add_to(m)
+    if animate:
+        from folium.plugins import AntPath
+
+        AntPath(
+            coords,
+            color=color,
+            weight=weight,
+            opacity=opacity,
+            tooltip=tooltip,
+            delay=800,
+            dash_array=[10, 20],
+            pulse_color="#000000",
+        ).add_to(m)
+    else:
+        folium.PolyLine(
+            coords, color=color, weight=weight, opacity=opacity, tooltip=tooltip
+        ).add_to(m)
 
 
 def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=False):
@@ -553,23 +600,24 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=
                 tn = type_names.get(lf, "?")
                 clr = type_colors.get(lf, "#ffffff")
                 if highlight_id and int(rid) == int(highlight_id):
-                    folium.PolyLine(
+                    add_flow_line(
+                        m,
                         coords,
-                        color="#00ff00",
+                        "#00ff00",
                         weight=6,
                         opacity=1.0,
                         tooltip=f"SELECTED: {rid} ({tn}, facc={facc:,.0f}, w={w:.0f}m)",
-                    ).add_to(m)
-                    add_flow_arrows(m, coords, "#00ff00", num_arrows=2)
+                    )
                 else:
-                    folium.PolyLine(
+                    add_flow_line(
+                        m,
                         coords,
-                        color=clr,
+                        clr,
                         weight=3,
                         opacity=0.9,
                         tooltip=f"{tn}: {rid} (facc={facc:,.0f}, w={w:.0f}m)",
-                    ).add_to(m)
-                    add_flow_arrows(m, coords, clr, num_arrows=1)
+                        animate=False,
+                    )
     connected_lakeflags = {}
     if color_by_type:
         all_connected = [rid for _, _, rid in up_geoms] + [
@@ -591,67 +639,55 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=
         opacity = max(0.4, 1.0 - (i / max(hops, 1)) * 0.6)
         if color_by_type:
             lf = connected_lakeflags.get(rid, 0)
-            folium.PolyLine(
+            add_flow_line(
+                m,
                 coords,
-                color=tc.get(lf, "#ffffff"),
+                tc.get(lf, "#ffffff"),
                 weight=4,
                 opacity=opacity,
                 tooltip=f"Up {i + 1}: {rid} ({tn_map.get(lf, '?')})",
-            ).add_to(m)
+            )
         else:
-            folium.PolyLine(
+            add_flow_line(
+                m,
                 coords,
-                color="orange",
+                "orange",
                 weight=4,
                 opacity=opacity,
                 tooltip=f"Upstream {i + 1}: {rid}",
-            ).add_to(m)
-        add_flow_arrows(
-            m,
-            coords,
-            tc.get(connected_lakeflags.get(rid, 0), "orange")
-            if color_by_type
-            else "orange",
-            num_arrows=2,
-        )
+            )
     for dg, i, rid in dn_geoms:
         coords = [[c[1], c[0]] for c in dg]
         opacity = max(0.4, 1.0 - (i / max(hops, 1)) * 0.6)
         if color_by_type:
             lf = connected_lakeflags.get(rid, 0)
-            folium.PolyLine(
+            add_flow_line(
+                m,
                 coords,
-                color=tc.get(lf, "#ffffff"),
+                tc.get(lf, "#ffffff"),
                 weight=4,
                 opacity=opacity,
                 tooltip=f"Down {i + 1}: {rid} ({tn_map.get(lf, '?')})",
-            ).add_to(m)
+            )
         else:
-            folium.PolyLine(
+            add_flow_line(
+                m,
                 coords,
-                color="#0066ff",
+                "#0066ff",
                 weight=4,
                 opacity=opacity,
                 tooltip=f"Downstream {i + 1}: {rid}",
-            ).add_to(m)
-        add_flow_arrows(
-            m,
-            coords,
-            tc.get(connected_lakeflags.get(rid, 0), "#0066ff")
-            if color_by_type
-            else "#0066ff",
-            num_arrows=2,
-        )
+            )
     main_coords = [[c[1], c[0]] for c in geom]
     folium.PolyLine(main_coords, color="black", weight=12, opacity=1.0).add_to(m)
-    folium.PolyLine(
+    add_flow_line(
+        m,
         main_coords,
-        color="#FFFF00",
+        "#FFFF00",
         weight=8,
         opacity=1.0,
         tooltip=f"SELECTED: {reach_id}",
-    ).add_to(m)
-    add_flow_arrows(m, main_coords, "#FFFF00", num_arrows=2)
+    )
     if len(main_coords) > 0:
         center = main_coords[len(main_coords) // 2]
         folium.CircleMarker(
@@ -664,7 +700,7 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=
             weight=3,
             tooltip=f"SELECTED: {reach_id}",
         ).add_to(m)
-    padding = view_radius * 0.2
+    padding = view_radius * 0.05
     m.fit_bounds(
         [
             [min(lats) - padding, min(lons) - padding],
@@ -687,29 +723,33 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=
             clicked_id = int(match.group(1))
             if clicked_id in st.session_state.get("nearby_reach_ids", []):
                 st.session_state.clicked_reach = clicked_id
+    parts = [
+        f"Yellow=Selected | Orange=Up ({len(up_geoms)}) | Blue=Down ({len(dn_geoms)})"
+    ]
     if show_all and nearby_unconnected:
         type_counts = {}
-        for _, rid, lf in nearby_unconnected:
+        for _, _rid, lf in nearby_unconnected:
             type_counts[lf] = type_counts.get(lf, 0) + 1
-        legend = f"SELECTED | Up ({len(up_geoms)}) | Down ({len(dn_geoms)})"
-        legend += f" | River ({type_counts.get(0, 0)}) | Lake ({type_counts.get(1, 0)})"
-        legend += (
-            f" | Canal ({type_counts.get(2, 0)}) | Tidal ({type_counts.get(3, 0)})"
-        )
-        st.caption(legend)
-    else:
-        st.caption(
-            f"SELECTED | Upstream ({len(up_geoms)}) | Downstream ({len(dn_geoms)})"
-        )
+        type_labels = {
+            0: "White=River",
+            1: "Cyan=Lake",
+            2: "Yellow=Canal",
+            3: "Magenta=Tidal",
+        }
+        for lf_val in (0, 1, 2, 3):
+            cnt = type_counts.get(lf_val, 0)
+            if cnt > 0:
+                parts.append(f"{type_labels[lf_val]} ({cnt})")
+    st.caption(" | ".join(parts))
 
 
 # =============================================================================
 # MAIN APP
 # =============================================================================
 st.title("SWORD Lake QA Reviewer")
-st.session_state.map_hops = 30
-st.session_state.map_radius = 4.0
-st.session_state.max_reaches = 15000
+st.session_state.map_hops = 10
+st.session_state.map_radius = 0.5
+st.session_state.max_reaches = 5000
 st.session_state.show_all_reaches = True
 
 st.sidebar.header("Settings")
@@ -845,58 +885,35 @@ with tab_c004:
                 st.markdown("---")
                 st.markdown("### Fix the mismatch")
                 it = issue["issue_type"]
-                if it == "lake_labeled_as_river_type":
-                    fix_label = "Set type=3 (lake_on_river)"
-                    fix_sql = (
-                        "UPDATE reaches SET type = 3 WHERE reach_id = ? AND region = ?"
-                    )
-                    fix_log = "Fixed: type->3 (lake_on_river)"
-                elif it == "river_labeled_as_lake_type":
-                    fix_label = "Set type=1 (river)"
-                    fix_sql = (
-                        "UPDATE reaches SET type = 1 WHERE reach_id = ? AND region = ?"
-                    )
-                    fix_log = "Fixed: type->1"
-                elif it == "canal_type_mismatch":
-                    fix_label = "Set type=4 (artificial)"
-                    fix_sql = (
-                        "UPDATE reaches SET type = 4 WHERE reach_id = ? AND region = ?"
-                    )
-                    fix_log = "Fixed: type->4"
-                elif it == "tidal_type_mismatch":
-                    fix_label = "Set lakeflag=0 (river)"
-                    fix_sql = "UPDATE reaches SET lakeflag = 0 WHERE reach_id = ? AND region = ?"
-                    fix_log = "Fixed: lakeflag->0 (was tidal)"
-                else:
-                    fix_label = None
-                if fix_label and st.button(
-                    fix_label,
+                c004_fixes = {
+                    "lake_labeled_as_river_type": (
+                        "Set type=3 (lake_on_river)",
+                        "type",
+                        3,
+                    ),
+                    "river_labeled_as_lake_type": ("Set type=1 (river)", "type", 1),
+                    "canal_type_mismatch": ("Set type=4 (artificial)", "type", 4),
+                    "tidal_type_mismatch": ("Set lakeflag=0 (river)", "lakeflag", 0),
+                }
+                fix_info = c004_fixes.get(it)
+                if fix_info and st.button(
+                    fix_info[0],
                     key=f"c004_fix_{selected}",
                     type="primary",
                     use_container_width=True,
                 ):
-                    conn.execute(fix_sql, [selected, region])
-                    conn.commit()
-                    log_skip(conn, selected, region, "C004", fix_log)
+                    apply_column_fix(
+                        conn,
+                        selected,
+                        region,
+                        "C004",
+                        fix_info[1],
+                        fix_info[2],
+                        f"Fixed: {fix_info[1]}->{fix_info[2]}",
+                    )
                     st.session_state.c004_pending.append(selected)
                     st.cache_data.clear()
                     st.rerun()
-                    if st.button(
-                        "Set type=1 (river)",
-                        key=f"c004_fix_tp_{selected}",
-                        use_container_width=True,
-                    ):
-                        conn.execute(
-                            "UPDATE reaches SET type = 1 WHERE reach_id = ? AND region = ?",
-                            [selected, region],
-                        )
-                        conn.commit()
-                        log_skip(
-                            conn, selected, region, "C004", "Fixed: type->1 (was tidal)"
-                        )
-                        st.session_state.c004_pending.append(selected)
-                        st.cache_data.clear()
-                        st.rerun()
                 if st.button(
                     "Skip (correct as-is)",
                     key=f"c004_skip_{selected}",
