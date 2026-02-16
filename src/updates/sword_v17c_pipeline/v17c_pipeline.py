@@ -1363,6 +1363,7 @@ def process_region(
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
     skip_path_vars: bool = False,
+    skip_flow_correction: bool = False,
 ) -> Dict:
     """
     Process a single region through the v17c pipeline.
@@ -1462,6 +1463,38 @@ def process_region(
     if has_wse:
         validation_df = compute_junction_slopes(G, sections_df, reaches_df)
 
+    # Flow direction correction (auto-flip high-confidence wrong-direction sections)
+    flow_correction_stats = {}
+    if has_wse and not skip_flow_correction and not validation_df.empty:
+        from .flow_direction import correct_flow_directions
+
+        def _rebuild(c, r):
+            tdf = load_topology(c, r)
+            rdf = load_reaches(c, r)
+            g = build_reach_graph(tdf, rdf)
+            j = identify_junctions(g)
+            _, sdf = build_section_graph(g, j)
+            vdf = compute_junction_slopes(g, sdf, rdf)
+            return g, sdf, vdf
+
+        flow_correction_stats = correct_flow_directions(
+            conn,
+            region,
+            G,
+            sections_df,
+            validation_df,
+            reaches_df,
+            rebuild_fn=_rebuild,
+        )
+
+        # If any flips happened, rebuild graph/sections for downstream computations
+        if flow_correction_stats.get("n_flipped", 0) > 0:
+            topology_df = load_topology(conn, region)
+            G = build_reach_graph(topology_df, reaches_df)
+            junctions = identify_junctions(G)
+            R, sections_df = build_section_graph(G, junctions)
+            validation_df = compute_junction_slopes(G, sections_df, reaches_df)
+
     # Load existing best_headwater/best_outlet for change tracking
     old_hw_out = {}
     try:
@@ -1546,6 +1579,10 @@ def process_region(
             (validation_df["direction_valid"] == False).sum()
         )
 
+    if flow_correction_stats:
+        stats["flow_flipped"] = flow_correction_stats.get("n_flipped", 0)
+        stats["flow_manual_review"] = flow_correction_stats.get("n_manual_review", 0)
+
     log(f"\nRegion {region} complete: {n_updated:,} reaches updated")
     return stats
 
@@ -1577,6 +1614,10 @@ def create_v17c_tables(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
 
+    from .flow_direction import create_flow_corrections_table
+
+    create_flow_corrections_table(conn)
+
 
 def run_pipeline(
     db_path: str,
@@ -1588,6 +1629,7 @@ def run_pipeline(
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
     skip_path_vars: bool = False,
+    skip_flow_correction: bool = False,
 ) -> List[Dict]:
     """
     Run the v17c pipeline for multiple regions.
@@ -1621,6 +1663,7 @@ def run_pipeline(
     log(f"Skip SWOT: {skip_swot}")
     log(f"Skip FACC: {skip_facc}")
     log(f"Skip path vars: {skip_path_vars}")
+    log(f"Skip flow correction: {skip_flow_correction}")
     if swot_path:
         log(f"SWOT path: {swot_path}")
 
@@ -1638,6 +1681,7 @@ def run_pipeline(
                 nofacc_model_path=nofacc_model_path,
                 standard_model_path=standard_model_path,
                 skip_path_vars=skip_path_vars,
+                skip_flow_correction=skip_flow_correction,
             )
             all_stats.append(stats)
         except Exception as e:
@@ -1725,6 +1769,16 @@ def main():
         default=DEFAULT_STANDARD_MODEL,
         help=f"Path to standard RF model for propagation (default: {DEFAULT_STANDARD_MODEL})",
     )
+    parser.add_argument(
+        "--skip-flow-correction",
+        action="store_true",
+        help="Skip flow direction correction (auto-flip wrong-direction sections)",
+    )
+    parser.add_argument(
+        "--rollback-flow-corrections",
+        metavar="RUN_ID",
+        help="Rollback flow corrections for the given run_id, then exit",
+    )
 
     args = parser.parse_args()
 
@@ -1741,6 +1795,16 @@ def main():
         print(f"ERROR: Database not found: {args.db}")
         sys.exit(1)
 
+    # Handle rollback mode
+    if args.rollback_flow_corrections:
+        from .flow_direction import rollback_flow_corrections
+
+        conn = duckdb.connect(args.db)
+        for region in regions:
+            rollback_flow_corrections(conn, region, args.rollback_flow_corrections)
+        conn.close()
+        sys.exit(0)
+
     # Run pipeline
     stats = run_pipeline(
         db_path=args.db,
@@ -1752,6 +1816,7 @@ def main():
         nofacc_model_path=args.nofacc_model,
         standard_model_path=args.standard_model,
         skip_path_vars=args.skip_path_vars,
+        skip_flow_correction=args.skip_flow_correction,
     )
 
     # Exit with error if any region failed
