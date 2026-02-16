@@ -115,7 +115,17 @@ def load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     ]
 
     # Optional columns (v17c additions)
-    optional_cols = ["wse_obs_mean", "wse_obs_std", "width_obs_median", "n_obs"]
+    optional_cols = [
+        "wse_obs_mean",
+        "wse_obs_std",
+        "width_obs_median",
+        "n_obs",
+        "main_side",
+        "type",
+        "end_reach",
+        "path_order",
+        "path_segs",
+    ]
 
     # Build column list
     select_cols = [c for c in core_cols if c.lower() in available_cols]
@@ -294,6 +304,9 @@ def build_reach_graph(
             "path_freq": row.get("path_freq", 1),
             "stream_order": row.get("stream_order", 1),
             "lakeflag": row.get("lakeflag", 0),
+            "main_side": row.get("main_side", 0),
+            "type": row.get("type", 1),
+            "end_reach": row.get("end_reach", 0),
             "wse_obs_mean": row.get("wse_obs_mean"),
             "width_obs_median": row.get("width_obs_median"),
             "n_obs": row.get("n_obs", 0),
@@ -458,6 +471,223 @@ def build_section_graph(
 # =============================================================================
 # New Attribute Computation
 # =============================================================================
+
+
+def compute_path_variables(G: nx.DiGraph, sections_df: pd.DataFrame) -> Dict[int, Dict]:
+    """
+    Compute path_freq, stream_order, path_segs, and path_order for every reach.
+
+    Parameters
+    ----------
+    G : nx.DiGraph
+        Reach-level directed graph (nodes = reaches, edges = flow direction).
+        Node attributes must include ``dist_out``.  ``main_side`` and ``type``
+        are read with safe defaults (0 and 1 respectively).
+    sections_df : pd.DataFrame
+        Output of ``build_section_graph`` with columns
+        ``section_id``, ``reach_ids``, etc.
+
+    Returns
+    -------
+    Dict[int, Dict]
+        Mapping reach_id -> {"path_freq": int, "stream_order": int,
+        "path_segs": int, "path_order": int}.
+    """
+    import math
+    from collections import deque
+
+    log("Computing path variables (path_freq, stream_order, path_segs, path_order)...")
+
+    if G.number_of_nodes() == 0:
+        log("Empty graph, returning empty results")
+        return {}
+
+    # ------------------------------------------------------------------
+    # 1. path_freq  (topological summation)
+    # ------------------------------------------------------------------
+    pf: Dict[int, Optional[int]] = {}
+
+    # Determine which nodes are excluded (side channels, ghost reaches)
+    excluded: Set[int] = set()
+    for node in G.nodes():
+        main_side = G.nodes[node].get("main_side", 0)
+        node_type = G.nodes[node].get("type", 1)
+        if main_side in (1, 2) or node_type == 6:
+            excluded.add(node)
+            pf[node] = None
+
+    is_dag = nx.is_directed_acyclic_graph(G)
+
+    if is_dag:
+        # Fast path: topological sort
+        for node in nx.topological_sort(G):
+            if node in excluded:
+                continue
+            in_deg = G.in_degree(node)
+            if in_deg == 0:
+                pf[node] = 1
+            else:
+                total = sum(
+                    pf[pred]
+                    for pred in G.predecessors(node)
+                    if pf.get(pred) is not None and pf[pred] > 0
+                )
+                pf[node] = total if total > 0 else 1
+    else:
+        # Fallback: iterative worklist propagation for graphs with cycles.
+        # Initialise headwaters to 1, then propagate downstream until stable.
+        log("WARNING: Graph has cycles, using iterative worklist for path_freq")
+        for node in G.nodes():
+            if node in excluded:
+                continue
+            if G.in_degree(node) == 0:
+                pf[node] = 1
+            else:
+                pf[node] = 0
+
+        # BFS from headwaters downstream
+        queue: deque[int] = deque()
+        for node in G.nodes():
+            if node not in excluded and G.in_degree(node) == 0:
+                queue.append(node)
+
+        visited_count: Dict[int, int] = defaultdict(int)
+        max_iterations = G.number_of_nodes() * 4  # safety bound
+        iterations = 0
+
+        while queue and iterations < max_iterations:
+            node = queue.popleft()
+            iterations += 1
+            if node in excluded:
+                continue
+
+            # Recompute pf from predecessors
+            if G.in_degree(node) == 0:
+                new_pf = 1
+            else:
+                total = sum(
+                    pf[pred]
+                    for pred in G.predecessors(node)
+                    if pf.get(pred) is not None and pf[pred] > 0
+                )
+                new_pf = total if total > 0 else 1
+
+            if new_pf != pf.get(node, 0):
+                pf[node] = new_pf
+                for succ in G.successors(node):
+                    if succ not in excluded:
+                        visited_count[succ] += 1
+                        if visited_count[succ] < max_iterations:
+                            queue.append(succ)
+
+        # Any node still at 0 gets fallback 1
+        for node in G.nodes():
+            if node not in excluded and pf.get(node, 0) <= 0:
+                pf[node] = 1
+
+    # ------------------------------------------------------------------
+    # 2. stream_order  = round(ln(path_freq)) + 1
+    # ------------------------------------------------------------------
+    so: Dict[int, Optional[int]] = {}
+    for node in G.nodes():
+        freq = pf.get(node)
+        if freq is not None and freq > 0:
+            so[node] = int(round(math.log(freq))) + 1
+        else:
+            so[node] = None
+
+    # ------------------------------------------------------------------
+    # 3. path_segs  (section-based segment identifier)
+    # ------------------------------------------------------------------
+    ps: Dict[int, int] = {}
+    reach_to_section: Dict[int, int] = {}
+
+    if sections_df is not None and len(sections_df) > 0:
+        for _, row in sections_df.iterrows():
+            sid = int(row["section_id"]) + 1  # 1-based
+            for rid in row["reach_ids"]:
+                rid = int(rid)
+                reach_to_section[rid] = sid
+                ps[rid] = sid
+
+    # Junction reaches not in any section get unique IDs
+    max_seg = max(ps.values()) if ps else 0
+    next_seg = max_seg + 1
+    for node in G.nodes():
+        if node not in ps:
+            ps[node] = next_seg
+            next_seg += 1
+
+    # ------------------------------------------------------------------
+    # 4. path_order  (rank by dist_out ASC within path_freq groups)
+    # ------------------------------------------------------------------
+    po: Dict[int, int] = {}
+
+    # Group nodes by path_freq
+    freq_groups: Dict[Optional[int], List[Tuple[float, int]]] = defaultdict(list)
+    for node in G.nodes():
+        freq = pf.get(node)
+        dist = G.nodes[node].get("dist_out", 0)
+        if pd.isna(dist):
+            dist = 0
+        freq_groups[freq].append((dist, node))
+
+    for freq, members in freq_groups.items():
+        # Sort by dist_out ascending, assign 1-based rank
+        members.sort(key=lambda x: x[0])
+        for rank, (_, node) in enumerate(members, start=1):
+            po[node] = rank
+
+    # ------------------------------------------------------------------
+    # 5. Assemble results
+    # ------------------------------------------------------------------
+    results: Dict[int, Dict] = {}
+    for node in G.nodes():
+        results[node] = {
+            "path_freq": pf.get(node),
+            "stream_order": so.get(node),
+            "path_segs": ps.get(node),
+            "path_order": po.get(node),
+        }
+
+    # ------------------------------------------------------------------
+    # 6. Validation logging
+    # ------------------------------------------------------------------
+    n_valid = sum(1 for v in pf.values() if v is not None and v > 0)
+    n_excluded = sum(1 for v in pf.values() if v is None)
+    log(f"path_freq: {n_valid:,} valid (>0), {n_excluded:,} excluded (NULL)")
+
+    # T002 monotonicity check (log-only)
+    mono_violations = 0
+    for u, v in G.edges():
+        pf_u = pf.get(u)
+        pf_v = pf.get(v)
+        if (
+            pf_u is not None
+            and pf_u > 0
+            and pf_v is not None
+            and pf_v > 0
+            and pf_v < pf_u
+        ):
+            mono_violations += 1
+    if mono_violations > 0:
+        log(f"WARNING: T002 path_freq monotonicity violations: {mono_violations:,}")
+    else:
+        log("T002 path_freq monotonicity: OK")
+
+    # T010 headwater check (log-only)
+    hw_violations = 0
+    for node in G.nodes():
+        if G.in_degree(node) == 0 and node not in excluded:
+            if pf.get(node, 0) < 1:
+                hw_violations += 1
+    if hw_violations > 0:
+        log(f"WARNING: T010 headwater path_freq violations: {hw_violations:,}")
+    else:
+        log("T010 headwater path_freq: OK")
+
+    log("Path variables computed")
+    return results
 
 
 def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
@@ -860,6 +1090,7 @@ def save_to_duckdb(
     hw_out: Dict[int, Dict],
     is_mainstem: Dict[int, bool],
     main_neighbors: Optional[Dict[int, Dict]] = None,
+    path_vars: Optional[Dict[int, Dict]] = None,
 ) -> int:
     """
     Save computed v17c attributes to DuckDB reaches table.
@@ -872,26 +1103,32 @@ def save_to_duckdb(
     # Build update dataframe
     rows = []
     mn = main_neighbors or {}
+    pv = path_vars or {}
     for reach_id in hydro_dist.keys():
         hd = hydro_dist.get(reach_id, {})
         ho = hw_out.get(reach_id, {})
         ms = is_mainstem.get(reach_id, False)
         nb = mn.get(reach_id, {})
+        pvar = pv.get(reach_id, {})
 
-        rows.append(
-            {
-                "reach_id": reach_id,
-                "hydro_dist_out": hd.get("hydro_dist_out"),
-                "hydro_dist_hw": hd.get("hydro_dist_hw"),
-                "best_headwater": ho.get("best_headwater"),
-                "best_outlet": ho.get("best_outlet"),
-                "pathlen_hw": ho.get("pathlen_hw"),
-                "pathlen_out": ho.get("pathlen_out"),
-                "is_mainstem_edge": ms,
-                "rch_id_up_main": nb.get("rch_id_up_main"),
-                "rch_id_dn_main": nb.get("rch_id_dn_main"),
-            }
-        )
+        row = {
+            "reach_id": reach_id,
+            "hydro_dist_out": hd.get("hydro_dist_out"),
+            "hydro_dist_hw": hd.get("hydro_dist_hw"),
+            "best_headwater": ho.get("best_headwater"),
+            "best_outlet": ho.get("best_outlet"),
+            "pathlen_hw": ho.get("pathlen_hw"),
+            "pathlen_out": ho.get("pathlen_out"),
+            "is_mainstem_edge": ms,
+            "rch_id_up_main": nb.get("rch_id_up_main"),
+            "rch_id_dn_main": nb.get("rch_id_dn_main"),
+        }
+        if pvar:
+            row["path_freq"] = pvar.get("path_freq")
+            row["stream_order"] = pvar.get("stream_order")
+            row["path_segs"] = pvar.get("path_segs")
+            row["path_order"] = pvar.get("path_order")
+        rows.append(row)
 
     if not rows:
         log("No rows to update")
@@ -911,18 +1148,32 @@ def save_to_duckdb(
     except Exception:
         pass  # Extension may already be loaded or not needed
 
+    # Build SET clause - always include base v17c columns
+    set_clauses = [
+        "hydro_dist_out = u.hydro_dist_out",
+        "hydro_dist_hw = u.hydro_dist_hw",
+        "best_headwater = u.best_headwater",
+        "best_outlet = u.best_outlet",
+        "pathlen_hw = u.pathlen_hw",
+        "pathlen_out = u.pathlen_out",
+        "is_mainstem_edge = u.is_mainstem_edge",
+        "rch_id_up_main = u.rch_id_up_main",
+        "rch_id_dn_main = u.rch_id_dn_main",
+    ]
+    if path_vars:
+        set_clauses.extend(
+            [
+                "path_freq = u.path_freq",
+                "stream_order = u.stream_order",
+                "path_segs = u.path_segs",
+                "path_order = u.path_order",
+            ]
+        )
+
     # Update reaches table
     conn.execute(f"""
         UPDATE reaches SET
-            hydro_dist_out = u.hydro_dist_out,
-            hydro_dist_hw = u.hydro_dist_hw,
-            best_headwater = u.best_headwater,
-            best_outlet = u.best_outlet,
-            pathlen_hw = u.pathlen_hw,
-            pathlen_out = u.pathlen_out,
-            is_mainstem_edge = u.is_mainstem_edge,
-            rch_id_up_main = u.rch_id_up_main,
-            rch_id_dn_main = u.rch_id_dn_main
+            {", ".join(set_clauses)}
         FROM v17c_updates u
         WHERE reaches.reach_id = u.reach_id
         AND reaches.region = '{region.upper()}'
@@ -1098,6 +1349,7 @@ def process_region(
     skip_facc: bool = False,
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
+    skip_path_vars: bool = False,
 ) -> Dict:
     """
     Process a single region through the v17c pipeline.
@@ -1181,6 +1433,11 @@ def process_region(
     junctions = identify_junctions(G)
     R, sections_df = build_section_graph(G, junctions)
 
+    # Compute path variables (path_freq, stream_order, path_segs, path_order)
+    path_vars = None
+    if not skip_path_vars:
+        path_vars = compute_path_variables(G, sections_df)
+
     # Compute junction-level validation (uses WSE data)
     has_wse = (
         reaches_df["wse_obs_mean"].notna().any()
@@ -1236,7 +1493,13 @@ def process_region(
     # Save to DuckDB with provenance
     with workflow.transaction(f"v17c attributes for {region}"):
         n_updated = save_to_duckdb(
-            conn, region, hydro_dist, hw_out, is_mainstem, main_neighbors
+            conn,
+            region,
+            hydro_dist,
+            hw_out,
+            is_mainstem,
+            main_neighbors,
+            path_vars=path_vars,
         )
         save_sections_to_duckdb(conn, region, sections_df, validation_df)
 
@@ -1259,6 +1522,14 @@ def process_region(
         "mainstem_reaches": sum(is_mainstem.values()),
         "swot_updated": n_swot_updated,
     }
+    if path_vars:
+        n_valid_pf = sum(
+            1
+            for v in path_vars.values()
+            if v.get("path_freq") is not None and v["path_freq"] > 0
+        )
+        stats["path_freq_valid"] = n_valid_pf
+        stats["path_freq_excluded"] = len(path_vars) - n_valid_pf
 
     if not validation_df.empty:
         stats["validation_valid"] = int(validation_df["direction_valid"].sum())
@@ -1307,6 +1578,7 @@ def run_pipeline(
     skip_facc: bool = False,
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
+    skip_path_vars: bool = False,
 ) -> List[Dict]:
     """
     Run the v17c pipeline for multiple regions.
@@ -1339,6 +1611,7 @@ def run_pipeline(
     log(f"Database: {db_path}")
     log(f"Skip SWOT: {skip_swot}")
     log(f"Skip FACC: {skip_facc}")
+    log(f"Skip path vars: {skip_path_vars}")
     if swot_path:
         log(f"SWOT path: {swot_path}")
 
@@ -1355,6 +1628,7 @@ def run_pipeline(
                 skip_facc=skip_facc,
                 nofacc_model_path=nofacc_model_path,
                 standard_model_path=standard_model_path,
+                skip_path_vars=skip_path_vars,
             )
             all_stats.append(stats)
         except Exception as e:
@@ -1384,10 +1658,15 @@ def run_pipeline(
                 if stats.get("facc_corrections")
                 else ""
             )
+            pf_str = (
+                f", {stats['path_freq_valid']:,} valid pf"
+                if stats.get("path_freq_valid")
+                else ""
+            )
             log(
                 f"{stats['region']}: {stats['reaches_updated']:,} reaches, "
                 f"{stats['sections']:,} sections, "
-                f"{stats['mainstem_reaches']:,} mainstem{facc_str}"
+                f"{stats['mainstem_reaches']:,} mainstem{facc_str}{pf_str}"
             )
             total_updated += stats.get("reaches_updated", 0)
 
@@ -1421,6 +1700,11 @@ def main():
         "--skip-facc",
         action="store_true",
         help="Skip facc anomaly correction (default: run corrections before v17c computation)",
+    )
+    parser.add_argument(
+        "--skip-path-vars",
+        action="store_true",
+        help="Skip path variable recomputation (path_freq, stream_order, path_segs, path_order)",
     )
     parser.add_argument(
         "--nofacc-model",
@@ -1458,6 +1742,7 @@ def main():
         skip_facc=args.skip_facc,
         nofacc_model_path=args.nofacc_model,
         standard_model_path=args.standard_model,
+        skip_path_vars=args.skip_path_vars,
     )
 
     # Exit with error if any region failed

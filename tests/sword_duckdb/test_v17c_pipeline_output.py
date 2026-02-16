@@ -504,3 +504,97 @@ class TestSaveSectionsToDuckDB:
         assert row[1] == pytest.approx(0.00456)
         assert row[2] is True
         assert row[3] is None
+
+
+class TestSaveToDuckdbWithPathVars:
+    """Tests for save_to_duckdb with path_vars parameter."""
+
+    @pytest.fixture
+    def db_with_v17c_columns(self, writable_db):
+        """Add v17c columns to reaches table."""
+        v17c_columns = [
+            ("hydro_dist_out", "DOUBLE"),
+            ("hydro_dist_hw", "DOUBLE"),
+            ("best_headwater", "BIGINT"),
+            ("best_outlet", "BIGINT"),
+            ("pathlen_hw", "DOUBLE"),
+            ("pathlen_out", "DOUBLE"),
+            ("is_mainstem_edge", "BOOLEAN"),
+            ("rch_id_up_main", "BIGINT"),
+            ("rch_id_dn_main", "BIGINT"),
+        ]
+        for col_name, col_type in v17c_columns:
+            try:
+                writable_db.execute(
+                    f"ALTER TABLE reaches ADD COLUMN {col_name} {col_type}"
+                )
+            except duckdb.CatalogException:
+                pass
+        return writable_db
+
+    def test_path_vars_written_to_db(self, db_with_v17c_columns, sample_reach_ids):
+        """Test that path_freq, stream_order, path_segs, path_order are written."""
+        conn = db_with_v17c_columns
+        rid = sample_reach_ids[0]
+
+        hydro_dist = {rid: {"hydro_dist_out": 1000.0, "hydro_dist_hw": 500.0}}
+        hw_out = {
+            rid: {
+                "best_headwater": None,
+                "best_outlet": None,
+                "pathlen_hw": 0,
+                "pathlen_out": 0,
+            }
+        }
+        is_mainstem = {rid: True}
+        path_vars = {
+            rid: {
+                "path_freq": 5,
+                "stream_order": 3,
+                "path_segs": 42,
+                "path_order": 7,
+            }
+        }
+
+        n_updated = save_to_duckdb(
+            conn, "NA", hydro_dist, hw_out, is_mainstem, path_vars=path_vars
+        )
+        assert n_updated == 1
+
+        row = conn.execute(
+            "SELECT path_freq, stream_order, path_segs, path_order "
+            "FROM reaches WHERE reach_id = ?",
+            [rid],
+        ).fetchone()
+        assert row[0] == 5
+        assert row[1] == 3
+        assert row[2] == 42
+        assert row[3] == 7
+
+    def test_no_path_vars_leaves_existing(self, db_with_v17c_columns, sample_reach_ids):
+        """Test that omitting path_vars doesn't overwrite existing values."""
+        conn = db_with_v17c_columns
+        rid = sample_reach_ids[0]
+
+        # Get original path_freq
+        orig = conn.execute(
+            "SELECT path_freq FROM reaches WHERE reach_id = ?", [rid]
+        ).fetchone()[0]
+
+        hydro_dist = {rid: {"hydro_dist_out": 999.0, "hydro_dist_hw": 111.0}}
+        hw_out = {
+            rid: {
+                "best_headwater": None,
+                "best_outlet": None,
+                "pathlen_hw": 0,
+                "pathlen_out": 0,
+            }
+        }
+        is_mainstem = {rid: False}
+
+        save_to_duckdb(conn, "NA", hydro_dist, hw_out, is_mainstem)
+
+        after = conn.execute(
+            "SELECT path_freq FROM reaches WHERE reach_id = ?", [rid]
+        ).fetchone()[0]
+        assert after == orig
