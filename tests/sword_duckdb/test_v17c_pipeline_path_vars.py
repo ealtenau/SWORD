@@ -202,7 +202,7 @@ class TestPathFreqBifurcation:
 
 
 class TestPathFreqSideChannel:
-    """Side channel (main_side=1) excluded from sums."""
+    """Side channel (main_side=1) gets computed pf but excluded from sums."""
 
     @pytest.fixture
     def result(self):
@@ -218,22 +218,23 @@ class TestPathFreqSideChannel:
         _, sections_df = build_section_graph(G, junctions)
         return compute_path_variables(G, sections_df)
 
-    def test_side_channel_excluded(self, result):
-        assert result[1]["path_freq"] is None
+    def test_side_channel_gets_computed_pf(self, result):
+        """Side channels get real computed pf, not -9999."""
+        assert result[1]["path_freq"] == 1
 
-    def test_side_channel_stream_order(self, result):
-        assert result[1]["stream_order"] is None
+    def test_side_channel_gets_stream_order(self, result):
+        assert result[1]["stream_order"] == 1
 
     def test_headwater_valid(self, result):
         assert result[0]["path_freq"] == 1
 
-    def test_downstream_excludes_side(self, result):
-        """Downstream reach ignores excluded predecessor, falls back to 1."""
+    def test_downstream_excludes_side_from_sums(self, result):
+        """Downstream reach ignores side channel in sums, falls back to 1."""
         assert result[2]["path_freq"] == 1
 
 
 class TestPathFreqGhostType:
-    """Ghost reach (type=6) excluded like side channels."""
+    """Ghost reach (type=6) gets -9999 for all path variables."""
 
     @pytest.fixture
     def result(self):
@@ -249,9 +250,11 @@ class TestPathFreqGhostType:
         _, sections_df = build_section_graph(G, junctions)
         return compute_path_variables(G, sections_df)
 
-    def test_ghost_excluded(self, result):
-        assert result[1]["path_freq"] is None
-        assert result[1]["stream_order"] is None
+    def test_ghost_gets_sentinel(self, result):
+        assert result[1]["path_freq"] == -9999
+        assert result[1]["stream_order"] == -9999
+        assert result[1]["path_segs"] == -9999
+        assert result[1]["path_order"] == -9999
 
 
 # =============================================================================
@@ -278,7 +281,8 @@ class TestStreamOrder:
     def test_formula(self, pf, expected_so):
         assert int(round(math.log(pf))) + 1 == expected_so
 
-    def test_excluded_pf_gives_none(self):
+    def test_side_channel_gets_valid_so(self):
+        """Side channels get computed stream_order, not -9999."""
         G = nx.DiGraph()
         G.add_node(0, dist_out=0.0, main_side=1)
         sections_df = pd.DataFrame(
@@ -292,7 +296,24 @@ class TestStreamOrder:
             ]
         )
         result = compute_path_variables(G, sections_df)
-        assert result[0]["stream_order"] is None
+        assert result[0]["stream_order"] == 1
+
+    def test_ghost_gets_sentinel_so(self):
+        """Ghost reaches get -9999 stream_order."""
+        G = nx.DiGraph()
+        G.add_node(0, dist_out=0.0, type=6)
+        sections_df = pd.DataFrame(
+            columns=[
+                "section_id",
+                "upstream_junction",
+                "downstream_junction",
+                "reach_ids",
+                "distance",
+                "n_reaches",
+            ]
+        )
+        result = compute_path_variables(G, sections_df)
+        assert result[0]["stream_order"] == -9999
 
 
 # =============================================================================
@@ -476,7 +497,7 @@ class TestPathVarsIntegration:
             nid = int(row["neighbor_reach_id"])
             pf_up = result[rid]["path_freq"]
             pf_dn = result[nid]["path_freq"]
-            if pf_up is not None and pf_up > 0 and pf_dn is not None and pf_dn > 0:
+            if pf_up > 0 and pf_dn > 0:
                 assert pf_dn >= pf_up, f"T002: {rid}(pf={pf_up})->{nid}(pf={pf_dn})"
 
     def test_headwaters_have_pf_ge_one(self, result, db_conn):

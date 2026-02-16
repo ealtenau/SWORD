@@ -505,40 +505,57 @@ def compute_path_variables(G: nx.DiGraph, sections_df: pd.DataFrame) -> Dict[int
     # ------------------------------------------------------------------
     # 1. path_freq  (topological summation)
     # ------------------------------------------------------------------
-    pf: Dict[int, Optional[int]] = {}
+    pf: Dict[int, int] = {}
 
-    # Determine which nodes are excluded (side channels, ghost reaches)
-    excluded: Set[int] = set()
+    # Ghost reaches (type=6): unreliable topology, get -9999 and skip.
+    # Side channels (main_side 1,2): valid topology, get computed pf
+    # but are excluded from confluence sums to prevent double-counting
+    # at braid reconvergences. is_mainstem_edge handles routing downstream.
+    ghosts: Set[int] = set()
+    skip_in_sums: Set[int] = set()
     for node in G.nodes():
-        main_side = G.nodes[node].get("main_side", 0)
         node_type = G.nodes[node].get("type", 1)
-        if main_side in (1, 2) or node_type == 6:
-            excluded.add(node)
-            pf[node] = None
+        main_side = G.nodes[node].get("main_side", 0)
+        if node_type == 6:
+            ghosts.add(node)
+            skip_in_sums.add(node)
+            pf[node] = -9999
+        elif main_side in (1, 2):
+            skip_in_sums.add(node)
+
+    def _sum_predecessors(node: int) -> int:
+        """Sum pf from predecessors, excluding side channels and ghosts."""
+        total = sum(
+            pf[pred]
+            for pred in G.predecessors(node)
+            if pred not in skip_in_sums and pf.get(pred, 0) > 0
+        )
+        if total > 0:
+            return total
+        # All main predecessors excluded — inherit from any valid predecessor
+        fallback = sum(
+            pf[pred]
+            for pred in G.predecessors(node)
+            if pred not in ghosts and pf.get(pred, 0) > 0
+        )
+        return fallback if fallback > 0 else 1
 
     is_dag = nx.is_directed_acyclic_graph(G)
 
     if is_dag:
         # Fast path: topological sort
         for node in nx.topological_sort(G):
-            if node in excluded:
+            if node in ghosts:
                 continue
-            in_deg = G.in_degree(node)
-            if in_deg == 0:
+            if G.in_degree(node) == 0:
                 pf[node] = 1
             else:
-                total = sum(
-                    pf[pred]
-                    for pred in G.predecessors(node)
-                    if pf.get(pred) is not None and pf[pred] > 0
-                )
-                pf[node] = total if total > 0 else 1
+                pf[node] = _sum_predecessors(node)
     else:
         # Fallback: iterative worklist propagation for graphs with cycles.
-        # Initialise headwaters to 1, then propagate downstream until stable.
         log("WARNING: Graph has cycles, using iterative worklist for path_freq")
         for node in G.nodes():
-            if node in excluded:
+            if node in ghosts:
                 continue
             if G.in_degree(node) == 0:
                 pf[node] = 1
@@ -548,7 +565,7 @@ def compute_path_variables(G: nx.DiGraph, sections_df: pd.DataFrame) -> Dict[int
         # BFS from headwaters downstream
         queue: deque[int] = deque()
         for node in G.nodes():
-            if node not in excluded and G.in_degree(node) == 0:
+            if node not in ghosts and G.in_degree(node) == 0:
                 queue.append(node)
 
         visited_count: Dict[int, int] = defaultdict(int)
@@ -558,43 +575,37 @@ def compute_path_variables(G: nx.DiGraph, sections_df: pd.DataFrame) -> Dict[int
         while queue and iterations < max_iterations:
             node = queue.popleft()
             iterations += 1
-            if node in excluded:
+            if node in ghosts:
                 continue
 
-            # Recompute pf from predecessors
             if G.in_degree(node) == 0:
                 new_pf = 1
             else:
-                total = sum(
-                    pf[pred]
-                    for pred in G.predecessors(node)
-                    if pf.get(pred) is not None and pf[pred] > 0
-                )
-                new_pf = total if total > 0 else 1
+                new_pf = _sum_predecessors(node)
 
             if new_pf != pf.get(node, 0):
                 pf[node] = new_pf
                 for succ in G.successors(node):
-                    if succ not in excluded:
+                    if succ not in ghosts:
                         visited_count[succ] += 1
                         if visited_count[succ] < max_iterations:
                             queue.append(succ)
 
         # Any node still at 0 gets fallback 1
         for node in G.nodes():
-            if node not in excluded and pf.get(node, 0) <= 0:
+            if node not in ghosts and pf.get(node, 0) <= 0:
                 pf[node] = 1
 
     # ------------------------------------------------------------------
     # 2. stream_order  = round(ln(path_freq)) + 1
     # ------------------------------------------------------------------
-    so: Dict[int, Optional[int]] = {}
+    so: Dict[int, int] = {}
     for node in G.nodes():
-        freq = pf.get(node)
-        if freq is not None and freq > 0:
+        freq = pf.get(node, -9999)
+        if freq > 0:
             so[node] = int(round(math.log(freq))) + 1
         else:
-            so[node] = None
+            so[node] = -9999
 
     # ------------------------------------------------------------------
     # 3. path_segs  (section-based segment identifier)
@@ -624,7 +635,7 @@ def compute_path_variables(G: nx.DiGraph, sections_df: pd.DataFrame) -> Dict[int
     po: Dict[int, int] = {}
 
     # Group nodes by path_freq
-    freq_groups: Dict[Optional[int], List[Tuple[float, int]]] = defaultdict(list)
+    freq_groups: Dict[int, List[Tuple[float, int]]] = defaultdict(list)
     for node in G.nodes():
         freq = pf.get(node)
         dist = G.nodes[node].get("dist_out", 0)
@@ -643,32 +654,34 @@ def compute_path_variables(G: nx.DiGraph, sections_df: pd.DataFrame) -> Dict[int
     # ------------------------------------------------------------------
     results: Dict[int, Dict] = {}
     for node in G.nodes():
-        results[node] = {
-            "path_freq": pf.get(node),
-            "stream_order": so.get(node),
-            "path_segs": ps.get(node),
-            "path_order": po.get(node),
-        }
+        if node in ghosts:
+            results[node] = {
+                "path_freq": -9999,
+                "stream_order": -9999,
+                "path_segs": -9999,
+                "path_order": -9999,
+            }
+        else:
+            results[node] = {
+                "path_freq": pf.get(node, -9999),
+                "stream_order": so.get(node, -9999),
+                "path_segs": ps.get(node, -9999),
+                "path_order": po.get(node, -9999),
+            }
 
     # ------------------------------------------------------------------
     # 6. Validation logging
     # ------------------------------------------------------------------
-    n_valid = sum(1 for v in pf.values() if v is not None and v > 0)
-    n_excluded = sum(1 for v in pf.values() if v is None)
-    log(f"path_freq: {n_valid:,} valid (>0), {n_excluded:,} excluded (NULL)")
+    n_valid = sum(1 for v in pf.values() if v > 0)
+    n_ghost = len(ghosts)
+    log(f"path_freq: {n_valid:,} valid (>0), {n_ghost:,} ghosts (-9999)")
 
     # T002 monotonicity check (log-only)
     mono_violations = 0
     for u, v in G.edges():
-        pf_u = pf.get(u)
-        pf_v = pf.get(v)
-        if (
-            pf_u is not None
-            and pf_u > 0
-            and pf_v is not None
-            and pf_v > 0
-            and pf_v < pf_u
-        ):
+        pf_u = pf.get(u, -9999)
+        pf_v = pf.get(v, -9999)
+        if pf_u > 0 and pf_v > 0 and pf_v < pf_u:
             mono_violations += 1
     if mono_violations > 0:
         log(f"WARNING: T002 path_freq monotonicity violations: {mono_violations:,}")
@@ -678,7 +691,7 @@ def compute_path_variables(G: nx.DiGraph, sections_df: pd.DataFrame) -> Dict[int
     # T010 headwater check (log-only)
     hw_violations = 0
     for node in G.nodes():
-        if G.in_degree(node) == 0 and node not in excluded:
+        if G.in_degree(node) == 0 and node not in ghosts:
             if pf.get(node, 0) < 1:
                 hw_violations += 1
     if hw_violations > 0:
@@ -1523,11 +1536,7 @@ def process_region(
         "swot_updated": n_swot_updated,
     }
     if path_vars:
-        n_valid_pf = sum(
-            1
-            for v in path_vars.values()
-            if v.get("path_freq") is not None and v["path_freq"] > 0
-        )
+        n_valid_pf = sum(1 for v in path_vars.values() if v.get("path_freq", -9999) > 0)
         stats["path_freq_valid"] = n_valid_pf
         stats["path_freq_excluded"] = len(path_vars) - n_valid_pf
 

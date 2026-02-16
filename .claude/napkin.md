@@ -27,6 +27,8 @@
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing
+- Parallel agents editing same file works if they touch non-overlapping string regions (Edit tool uses string match, not line numbers)
+- path_freq topological summation: headwater=1, confluence=sum(upstream pf), side channels=-9999
 - Check `ST_Read(...) LIMIT 0` description to detect column availability
 - Skills need `SKILL.md` inside a directory (`.claude/skills/name/SKILL.md`), not flat `.md` files, for proper frontmatter discovery
 - `workflow.export()` is broken — `_do_export` passes `self._sword.db` (connection) not `self._sword` (SWORD instance). Call export functions directly.
