@@ -111,6 +111,7 @@ conn = get_connection()
 @st.cache_data(ttl=300)
 def get_reach_geometry(_conn, reach_id):
     # Try nodes table first (full DB), fall back to reaches.geom (deploy)
+    errors = []
     try:
         nodes = _conn.execute(
             "SELECT x, y FROM nodes WHERE reach_id = ? ORDER BY dist_out DESC",
@@ -118,13 +119,22 @@ def get_reach_geometry(_conn, reach_id):
         ).fetchdf()
         if len(nodes) > 0:
             return nodes[["x", "y"]].values.tolist()
-    except Exception:
-        pass
+    except Exception as e:
+        errors.append(f"nodes: {e}")
     # Fallback: extract coordinates from reaches.geom LINESTRING
     try:
         _conn.execute("LOAD spatial")
-    except Exception:
-        pass
+    except Exception as e:
+        errors.append(f"LOAD spatial: {e}")
+    # Check what columns exist
+    try:
+        cols = _conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'reaches' AND column_name = 'geom'"
+        ).fetchall()
+        errors.append(f"geom column exists: {len(cols) > 0}")
+    except Exception as e:
+        errors.append(f"col check: {e}")
     for cast_fn in ["ST_AsText(geom)", "CAST(geom AS VARCHAR)"]:
         try:
             row = _conn.execute(
@@ -133,6 +143,7 @@ def get_reach_geometry(_conn, reach_id):
             if row and row[0]:
                 wkt = str(row[0])
                 if "LINESTRING" not in wkt:
+                    errors.append(f"{cast_fn}: got '{wkt[:100]}' (no LINESTRING)")
                     continue
                 coords_str = (
                     wkt.replace("LINESTRING (", "")
@@ -146,8 +157,15 @@ def get_reach_geometry(_conn, reach_id):
                         coords.append([float(parts[0]), float(parts[1])])
                 if coords:
                     return coords
-        except Exception:
+            else:
+                errors.append(f"{cast_fn}: row={row}")
+        except Exception as e:
+            errors.append(f"{cast_fn}: {e}")
             continue
+    # DEBUG: show why geometry failed (remove after fixing)
+    import streamlit as _st
+
+    _st.warning(f"Geometry debug for {reach_id}: {'; '.join(errors)}")
     return None
 
 
