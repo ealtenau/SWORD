@@ -80,6 +80,76 @@ def append_skip_to_session(region, skip_record, check_id="all"):
 st.set_page_config(page_title="SWORD Lake Reviewer", page_icon="🏷️", layout="wide")
 
 
+def replay_persisted_fixes(conn):
+    """Replay JSON session fixes into DuckDB on startup.
+
+    The DuckDB is copied fresh from GCS on each Cloud Run instance start,
+    so lint_fix_log and data fixes are lost. JSON files on the GCS mount
+    persist across restarts -- replay them to restore state.
+    """
+    if not FIXES_DIR.exists():
+        return
+    replayed = 0
+    for session_file in sorted(FIXES_DIR.glob("lint_session_*.json")):
+        try:
+            with open(session_file) as f:
+                session = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        for fix in session.get("fixes", []):
+            if fix.get("undone", False):
+                continue
+            rid = fix.get("reach_id")
+            rgn = fix.get("region")
+            col = fix.get("column_changed")
+            new_val = fix.get("new_value")
+            if rid and rgn and col and new_val is not None:
+                try:
+                    cast = int if col in ("lakeflag", "type") else str
+                    conn.execute(
+                        f"UPDATE reaches SET {col} = ? WHERE reach_id = ? AND region = ?",
+                        [cast(new_val), rid, rgn],
+                    )
+                except Exception:
+                    pass
+            conn.execute(
+                """INSERT INTO lint_fix_log
+                   (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+                   VALUES (?, ?, ?, ?, 'fix', ?, ?, ?, ?, ?)""",
+                [
+                    fix.get("fix_id", 0),
+                    fix.get("check_id"),
+                    rid,
+                    rgn,
+                    col,
+                    str(fix.get("old_value")),
+                    str(new_val),
+                    fix.get("notes", ""),
+                    fix.get("undone", False),
+                ],
+            )
+            replayed += 1
+        for skip in session.get("skips", []):
+            if skip.get("undone", False):
+                continue
+            conn.execute(
+                """INSERT INTO lint_fix_log
+                   (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+                   VALUES (?, ?, ?, ?, 'skip', NULL, NULL, NULL, ?, ?)""",
+                [
+                    skip.get("fix_id", 0),
+                    skip.get("check_id"),
+                    skip.get("reach_id"),
+                    skip.get("region"),
+                    skip.get("notes", ""),
+                    skip.get("undone", False),
+                ],
+            )
+            replayed += 1
+    if replayed:
+        conn.commit()
+
+
 @st.cache_resource
 def get_connection():
     conn = duckdb.connect(
@@ -98,6 +168,7 @@ def get_connection():
             notes VARCHAR, undone BOOLEAN DEFAULT FALSE
         )
     """)
+    replay_persisted_fixes(conn)
     return conn
 
 
