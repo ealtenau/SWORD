@@ -137,6 +137,9 @@ def get_reach_geometry(_conn, reach_id):
                 if len(parts) >= 2:
                     coords.append([float(parts[0]), float(parts[1])])
             if coords:
+                # SWORD LINESTRINGs run downstream-to-upstream; reverse
+                # so coords go upstream-to-downstream (matching nodes order)
+                coords.reverse()
                 return coords
     except Exception:
         pass
@@ -419,8 +422,11 @@ def get_nearby_reaches(
     ).fetchdf()
 
 
-def add_flow_arrows(m, coords, color, num_arrows=2, size=0.003):
-    """Add vector arrows along a polyline to show flow direction."""
+def add_flow_arrows(m, coords, color, num_arrows=2, size=0.001):
+    """Add vector arrows along a polyline to show flow direction.
+
+    coords are [lat, lon] pairs in upstream-to-downstream order.
+    """
     if len(coords) < 2:
         return
     for i in range(num_arrows):
@@ -428,24 +434,27 @@ def add_flow_arrows(m, coords, color, num_arrows=2, size=0.003):
         idx = int(frac * (len(coords) - 1))
         idx = max(0, min(idx, len(coords) - 2))
         p1, p2 = coords[idx], coords[idx + 1]
-        dx = p2[1] - p1[1]
-        dy = p2[0] - p1[0]
-        length = math.sqrt(dx * dx + dy * dy)
+        # coords are [lat, lon]
+        dlat = p2[0] - p1[0]
+        dlon = p2[1] - p1[1]
+        length = math.sqrt(dlat * dlat + dlon * dlon)
         if length == 0:
             continue
-        dx /= length
-        dy /= length
-        cx, cy = (p1[1] + p2[1]) / 2, (p1[0] + p2[0]) / 2
-        tail_lon, tail_lat = cx - dx * size, cy - dy * size
-        tip_lon, tip_lat = cx + dx * size, cy + dy * size
+        dlat /= length
+        dlon /= length
+        mid_lat = (p1[0] + p2[0]) / 2
+        mid_lon = (p1[1] + p2[1]) / 2
+        tail_lat, tail_lon = mid_lat - dlat * size, mid_lon - dlon * size
+        tip_lat, tip_lon = mid_lat + dlat * size, mid_lon + dlon * size
         head_size = size * 0.6
-        angle1 = math.atan2(dy, dx) + math.radians(150)
-        angle2 = math.atan2(dy, dx) - math.radians(150)
-        v1_lon = tip_lon + math.cos(angle1) * head_size
-        v1_lat = tip_lat + math.sin(angle1) * head_size
-        v2_lon = tip_lon + math.cos(angle2) * head_size
-        v2_lat = tip_lat + math.sin(angle2) * head_size
-        for c, w in [("black", 5), (color, 3)]:
+        angle = math.atan2(dlon, dlat)
+        angle1 = angle + math.radians(150)
+        angle2 = angle - math.radians(150)
+        v1_lat = tip_lat + math.cos(angle1) * head_size
+        v1_lon = tip_lon + math.sin(angle1) * head_size
+        v2_lat = tip_lat + math.cos(angle2) * head_size
+        v2_lon = tip_lon + math.sin(angle2) * head_size
+        for c, w in [("black", 3), (color, 2)]:
             folium.PolyLine(
                 [[tail_lat, tail_lon], [tip_lat, tip_lon]], color=c, weight=w, opacity=1
             ).add_to(m)
