@@ -185,7 +185,8 @@ workflow.close()
 | stream_order | Log scale of path_freq: `round(log(path_freq)) + 1` |
 | path_freq | Traversal count - increases toward outlets |
 | path_segs | Unique ID for (path_order, path_freq) combo |
-| lakeflag | 0=river, 1=lake, 2=canal, 3=tidal |
+| lakeflag | 0=river, 1=lake, 2=canal, 3=tidal (physical water body from GRWL) |
+| type | 1=river, 3=lake_on_river, 4=dam, 5=unreliable, 6=ghost (**NO type=2; type=3 is NOT tidal**) |
 | trib_flag | 0=no tributary, 1=MHV tributary enters (spatial proximity) |
 | n_rch_up/down | Count of upstream/downstream neighbors |
 | main_side | 0=main (95%), 1=side (3%), 2=secondary outlet (2%) |
@@ -212,6 +213,7 @@ workflow.close()
 |----------|------------------|----------------|
 | trib_flag | "1 if n_rch_up > 1" (junction) | External MHV tributary enters (spatial proximity) |
 | main_side | "1=main, 2=side" | **0**=main (95%), 1=side (3%), 2=secondary outlet (2%) |
+| type=3 | "tidal_river" | **lake_on_river** (tidal is lakeflag=3, not type=3). lakeflag=1+type=3 is the primary lake combo (21k reaches). type=2 does NOT exist in SWORD. |
 
 **Before implementing ANY reconstruction:**
 
