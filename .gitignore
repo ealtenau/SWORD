@@ -209,6 +209,7 @@ src/updates/delta_updates/testing.py
 *.png
 outputs/
 test_*.py
+!tests/**/test_*.py
 cookies.txt
 ml4floods_models/
 deepwatermap/
