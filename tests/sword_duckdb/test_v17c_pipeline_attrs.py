@@ -511,10 +511,12 @@ class TestEdgeCases:
         """Test with a Y-shaped network (two tributaries merging)."""
         G = nx.DiGraph()
         # Two headwaters (1, 2) merge at 3, flow to outlet 4
-        G.add_node(1, reach_length=1000, width=30)
-        G.add_node(2, reach_length=1200, width=40)  # Wider tributary
-        G.add_node(3, reach_length=800, width=60)
-        G.add_node(4, reach_length=900, width=70)
+        G.add_node(1, reach_length=1000, width=30, effective_width=30, log_facc=0)
+        G.add_node(
+            2, reach_length=1200, width=40, effective_width=40, log_facc=0
+        )  # Wider tributary
+        G.add_node(3, reach_length=800, width=60, effective_width=60, log_facc=0)
+        G.add_node(4, reach_length=900, width=70, effective_width=70, log_facc=0)
 
         G.add_edge(1, 3)
         G.add_edge(2, 3)

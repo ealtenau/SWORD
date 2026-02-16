@@ -35,11 +35,11 @@ import numpy as np
 import pandas as pd
 
 # Regions in processing order (largest to smallest for progress feedback)
-REGIONS = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC']
+REGIONS = ["NA", "SA", "EU", "AF", "AS", "OC"]
 
 # Default model paths for facc correction
-DEFAULT_NOFACC_MODEL = 'output/facc_detection/rf_regressor_baseline_nofacc.joblib'
-DEFAULT_STANDARD_MODEL = 'output/facc_detection/rf_regressor_baseline.joblib'
+DEFAULT_NOFACC_MODEL = "output/facc_detection/rf_regressor_baseline_nofacc.joblib"
+DEFAULT_STANDARD_MODEL = "output/facc_detection/rf_regressor_baseline.joblib"
 
 
 def log(msg: str) -> None:
@@ -54,14 +54,14 @@ def get_effective_width(attrs: Dict, min_obs: int = 5) -> float:
     Prefers SWOT-observed width (width_obs_median) if n_obs >= min_obs,
     otherwise falls back to original GRWL width.
     """
-    n_obs = attrs.get('n_obs', 0)
+    n_obs = attrs.get("n_obs", 0)
     if pd.isna(n_obs):
         n_obs = 0
     if n_obs >= min_obs:
-        swot_width = attrs.get('width_obs_median')
+        swot_width = attrs.get("width_obs_median")
         if swot_width is not None and not pd.isna(swot_width) and swot_width > 0:
             return swot_width
-    width = attrs.get('width', 0)
+    width = attrs.get("width", 0)
     if pd.isna(width):
         return 0
     return width or 0
@@ -71,14 +71,18 @@ def get_effective_width(attrs: Dict, min_obs: int = 5) -> float:
 # Data Loading
 # =============================================================================
 
+
 def load_topology(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     """Load reach_topology from DuckDB."""
     log(f"Loading topology for {region}...")
-    df = conn.execute("""
+    df = conn.execute(
+        """
         SELECT reach_id, direction, neighbor_rank, neighbor_reach_id
         FROM reach_topology
         WHERE region = ?
-    """, [region.upper()]).fetchdf()
+    """,
+        [region.upper()],
+    ).fetchdf()
     log(f"Loaded {len(df):,} topology rows")
     return df
 
@@ -95,23 +99,36 @@ def load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
 
     # Core columns (required)
     core_cols = [
-        'reach_id', 'region', 'reach_length', 'width', 'slope', 'facc',
-        'n_rch_up', 'n_rch_down', 'dist_out', 'path_freq', 'stream_order',
-        'lakeflag', 'trib_flag'
+        "reach_id",
+        "region",
+        "reach_length",
+        "width",
+        "slope",
+        "facc",
+        "n_rch_up",
+        "n_rch_down",
+        "dist_out",
+        "path_freq",
+        "stream_order",
+        "lakeflag",
+        "trib_flag",
     ]
 
     # Optional columns (v17c additions)
-    optional_cols = ['wse_obs_mean', 'wse_obs_std', 'width_obs_median', 'n_obs']
+    optional_cols = ["wse_obs_mean", "wse_obs_std", "width_obs_median", "n_obs"]
 
     # Build column list
     select_cols = [c for c in core_cols if c.lower() in available_cols]
     select_cols += [c for c in optional_cols if c.lower() in available_cols]
 
-    df = conn.execute(f"""
-        SELECT {', '.join(select_cols)}
+    df = conn.execute(
+        f"""
+        SELECT {", ".join(select_cols)}
         FROM reaches
         WHERE region = ?
-    """, [region.upper()]).fetchdf()
+    """,
+        [region.upper()],
+    ).fetchdf()
     log(f"Loaded {len(df):,} reaches")
     return df
 
@@ -119,6 +136,7 @@ def load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
 # =============================================================================
 # FACC Correction (runs before graph construction)
 # =============================================================================
+
 
 def run_facc_corrections(
     conn: duckdb.DuckDBPyConnection,
@@ -209,7 +227,7 @@ def run_facc_corrections(
     extractor = RFFeatureExtractor(conn)
     all_features = extractor.extract_all(region=region)
 
-    entry_features = all_features[all_features['reach_id'].isin(entry_points)].copy()
+    entry_features = all_features[all_features["reach_id"].isin(entry_points)].copy()
     if len(entry_features) > 0:
         entry_preds = nofacc_model.predict(entry_features)
         apply_corrections_to_db(conn, entry_preds, "entry_points")
@@ -224,13 +242,15 @@ def run_facc_corrections(
 
         # Step 6: Correct propagation reaches with standard model
         for hop_idx, hop_ids in enumerate(hop_groups):
-            hop_features = all_features[all_features['reach_id'].isin(hop_ids)].copy()
+            hop_features = all_features[all_features["reach_id"].isin(hop_ids)].copy()
             if len(hop_features) == 0:
                 continue
             hop_preds = standard_model.predict(hop_features)
             apply_corrections_to_db(conn, hop_preds, f"propagation_hop{hop_idx + 1}")
             total_corrected += len(hop_preds)
-            log(f"  Corrected {len(hop_preds):,} propagation reaches (hop {hop_idx + 1})")
+            log(
+                f"  Corrected {len(hop_preds):,} propagation reaches (hop {hop_idx + 1})"
+            )
 
     log(f"Total facc corrections applied: {total_corrected:,}")
     return total_corrected
@@ -240,7 +260,10 @@ def run_facc_corrections(
 # Graph Construction
 # =============================================================================
 
-def build_reach_graph(topology_df: pd.DataFrame, reaches_df: pd.DataFrame) -> nx.DiGraph:
+
+def build_reach_graph(
+    topology_df: pd.DataFrame, reaches_df: pd.DataFrame
+) -> nx.DiGraph:
     """
     Build directed graph where nodes=reaches, edges=flow connections.
 
@@ -259,38 +282,43 @@ def build_reach_graph(topology_df: pd.DataFrame, reaches_df: pd.DataFrame) -> nx
     n_swot_width = 0
 
     for _, row in reaches_df.iterrows():
-        rid = int(row['reach_id'])
+        rid = int(row["reach_id"])
         base_attrs = {
-            'reach_length': row['reach_length'],
-            'width': row['width'],
-            'slope': row['slope'],
-            'facc': row.get('facc', 0),
-            'n_rch_up': row.get('n_rch_up', 0),
-            'n_rch_down': row.get('n_rch_down', 0),
-            'dist_out': row.get('dist_out', 0),
-            'path_freq': row.get('path_freq', 1),
-            'stream_order': row.get('stream_order', 1),
-            'lakeflag': row.get('lakeflag', 0),
-            'wse_obs_mean': row.get('wse_obs_mean'),
-            'width_obs_median': row.get('width_obs_median'),
-            'n_obs': row.get('n_obs', 0),
+            "reach_length": row["reach_length"],
+            "width": row["width"],
+            "slope": row["slope"],
+            "facc": row.get("facc", 0),
+            "n_rch_up": row.get("n_rch_up", 0),
+            "n_rch_down": row.get("n_rch_down", 0),
+            "dist_out": row.get("dist_out", 0),
+            "path_freq": row.get("path_freq", 1),
+            "stream_order": row.get("stream_order", 1),
+            "lakeflag": row.get("lakeflag", 0),
+            "wse_obs_mean": row.get("wse_obs_mean"),
+            "width_obs_median": row.get("width_obs_median"),
+            "n_obs": row.get("n_obs", 0),
         }
 
         # Compute effective width (SWOT-preferred) and use facc directly (already corrected in DB)
         eff_width = get_effective_width(base_attrs)
-        eff_facc = base_attrs.get('facc', 0)
+        eff_facc = base_attrs.get("facc", 0)
         if pd.isna(eff_facc):
             eff_facc = 0
 
         # Track usage stats
-        n_obs_val = base_attrs.get('n_obs', 0)
-        width_obs_val = base_attrs.get('width_obs_median')
-        if not pd.isna(n_obs_val) and n_obs_val >= 5 and width_obs_val is not None and not pd.isna(width_obs_val):
+        n_obs_val = base_attrs.get("n_obs", 0)
+        width_obs_val = base_attrs.get("width_obs_median")
+        if (
+            not pd.isna(n_obs_val)
+            and n_obs_val >= 5
+            and width_obs_val is not None
+            and not pd.isna(width_obs_val)
+        ):
             n_swot_width += 1
 
-        base_attrs['effective_width'] = eff_width
-        base_attrs['effective_facc'] = eff_facc
-        base_attrs['log_facc'] = math.log1p(eff_facc)
+        base_attrs["effective_width"] = eff_width
+        base_attrs["effective_facc"] = eff_facc
+        base_attrs["log_facc"] = math.log1p(eff_facc)
 
         reach_attrs[rid] = base_attrs
 
@@ -303,11 +331,11 @@ def build_reach_graph(topology_df: pd.DataFrame, reaches_df: pd.DataFrame) -> nx
     # Add edges from topology
     edges_added = set()
     for _, row in topology_df.iterrows():
-        reach_id = int(row['reach_id'])
-        neighbor_id = int(row['neighbor_reach_id'])
-        direction = row['direction']
+        reach_id = int(row["reach_id"])
+        neighbor_id = int(row["neighbor_reach_id"])
+        direction = row["direction"]
 
-        if direction == 'up':
+        if direction == "up":
             # neighbor is upstream: neighbor -> reach
             u, v = neighbor_id, reach_id
         else:
@@ -345,7 +373,9 @@ def identify_junctions(G: nx.DiGraph) -> Set[int]:
     return junctions
 
 
-def build_section_graph(G: nx.DiGraph, junctions: Set[int]) -> Tuple[nx.DiGraph, pd.DataFrame]:
+def build_section_graph(
+    G: nx.DiGraph, junctions: Set[int]
+) -> Tuple[nx.DiGraph, pd.DataFrame]:
     """
     Build a section graph where each edge is a section (chain of reaches between junctions).
 
@@ -366,11 +396,11 @@ def build_section_graph(G: nx.DiGraph, junctions: Set[int]) -> Tuple[nx.DiGraph,
         out_deg = G.out_degree(j)
 
         if in_deg == 0:
-            node_type = 'Head_water'
+            node_type = "Head_water"
         elif out_deg == 0:
-            node_type = 'Outlet'
+            node_type = "Outlet"
         else:
-            node_type = 'Junction'
+            node_type = "Junction"
 
         R.add_node(j, node_type=node_type, **node_data)
 
@@ -384,7 +414,7 @@ def build_section_graph(G: nx.DiGraph, junctions: Set[int]) -> Tuple[nx.DiGraph,
 
             while current not in junctions:
                 reach_ids.append(current)
-                cumulative_dist += G.nodes[current].get('reach_length', 0)
+                cumulative_dist += G.nodes[current].get("reach_length", 0)
 
                 succs = list(G.successors(current))
                 if len(succs) == 0:
@@ -395,32 +425,40 @@ def build_section_graph(G: nx.DiGraph, junctions: Set[int]) -> Tuple[nx.DiGraph,
             downstream_j = current
             if downstream_j in junctions:
                 reach_ids.append(downstream_j)
-                cumulative_dist += G.nodes[downstream_j].get('reach_length', 0)
+                cumulative_dist += G.nodes[downstream_j].get("reach_length", 0)
 
-                R.add_edge(upstream_j, downstream_j,
-                          section_id=section_id,
-                          reach_ids=reach_ids,
-                          distance=cumulative_dist,
-                          n_reaches=len(reach_ids))
+                R.add_edge(
+                    upstream_j,
+                    downstream_j,
+                    section_id=section_id,
+                    reach_ids=reach_ids,
+                    distance=cumulative_dist,
+                    n_reaches=len(reach_ids),
+                )
 
-                sections.append({
-                    'section_id': section_id,
-                    'upstream_junction': upstream_j,
-                    'downstream_junction': downstream_j,
-                    'reach_ids': reach_ids,
-                    'distance': cumulative_dist,
-                    'n_reaches': len(reach_ids),
-                })
+                sections.append(
+                    {
+                        "section_id": section_id,
+                        "upstream_junction": upstream_j,
+                        "downstream_junction": downstream_j,
+                        "reach_ids": reach_ids,
+                        "distance": cumulative_dist,
+                        "n_reaches": len(reach_ids),
+                    }
+                )
                 section_id += 1
 
     sections_df = pd.DataFrame(sections)
-    log(f"Section graph: {R.number_of_nodes():,} junctions, {R.number_of_edges():,} sections")
+    log(
+        f"Section graph: {R.number_of_nodes():,} junctions, {R.number_of_edges():,} sections"
+    )
     return R, sections_df
 
 
 # =============================================================================
 # New Attribute Computation
 # =============================================================================
+
 
 def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
     """
@@ -445,7 +483,7 @@ def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
 
     dist_out = {}
     for node in G.nodes():
-        dist_out[node] = float('inf')
+        dist_out[node] = float("inf")
 
     for outlet in outlets:
         dist_out[outlet] = 0
@@ -453,8 +491,7 @@ def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
     # Multi-source Dijkstra (only if we have outlets)
     if outlets:
         lengths = nx.multi_source_dijkstra_path_length(
-            R, outlets,
-            weight=lambda u, v, d: G.nodes[v].get('reach_length', 0)
+            R, outlets, weight=lambda u, v, d: G.nodes[v].get("reach_length", 0)
         )
         dist_out.update(lengths)
 
@@ -470,8 +507,7 @@ def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
     for hw in headwaters:
         try:
             lengths = nx.single_source_dijkstra_path_length(
-                G, hw,
-                weight=lambda u, v, d: G.nodes[v].get('reach_length', 0)
+                G, hw, weight=lambda u, v, d: G.nodes[v].get("reach_length", 0)
             )
             for node, dist in lengths.items():
                 if dist > dist_hw[node]:
@@ -482,8 +518,8 @@ def compute_hydro_distances(G: nx.DiGraph) -> Dict[int, Dict]:
     results = {}
     for node in G.nodes():
         results[node] = {
-            'hydro_dist_out': dist_out.get(node, float('inf')),
-            'hydro_dist_hw': dist_hw.get(node, 0),
+            "hydro_dist_out": dist_out.get(node, float("inf")),
+            "hydro_dist_hw": dist_hw.get(node, 0),
         }
 
     log("Hydrologic distances computed")
@@ -531,11 +567,11 @@ def compute_best_headwater_outlet(G: nx.DiGraph) -> Dict[int, Dict]:
 
             for p in preds:
                 union |= hw_sets[p]
-                reach_len = G.nodes[n].get('reach_length', 0)
+                reach_len = G.nodes[n].get("reach_length", 0)
                 total_len = pathlen_hw.get(p, 0) + reach_len
                 # Use effective_width (SWOT-preferred) and log_facc for ranking
-                eff_width = G.nodes[p].get('effective_width', 0) or 0
-                log_facc = G.nodes[p].get('log_facc', 0) or 0
+                eff_width = G.nodes[p].get("effective_width", 0) or 0
+                log_facc = G.nodes[p].get("log_facc", 0) or 0
                 candidates.append((eff_width, log_facc, total_len, best_hw.get(p), p))
 
             hw_sets[n] = union
@@ -560,11 +596,11 @@ def compute_best_headwater_outlet(G: nx.DiGraph) -> Dict[int, Dict]:
             candidates = []
 
             for s in succs:
-                reach_len = G.nodes[s].get('reach_length', 0)
+                reach_len = G.nodes[s].get("reach_length", 0)
                 total_len = pathlen_out.get(s, 0) + reach_len
                 # Use effective_width (SWOT-preferred) and log_facc for ranking
-                eff_width = G.nodes[s].get('effective_width', 0) or 0
-                log_facc = G.nodes[s].get('log_facc', 0) or 0
+                eff_width = G.nodes[s].get("effective_width", 0) or 0
+                log_facc = G.nodes[s].get("log_facc", 0) or 0
                 candidates.append((eff_width, log_facc, total_len, best_out.get(s), s))
 
             best = max(candidates, key=lambda x: (x[0], x[1], x[2]))
@@ -574,11 +610,11 @@ def compute_best_headwater_outlet(G: nx.DiGraph) -> Dict[int, Dict]:
     results = {}
     for node in G.nodes():
         results[node] = {
-            'best_headwater': best_hw.get(node),
-            'best_outlet': best_out.get(node),
-            'pathlen_hw': pathlen_hw.get(node, 0),
-            'pathlen_out': pathlen_out.get(node, 0),
-            'path_freq': len(hw_sets.get(node, set())),
+            "best_headwater": best_hw.get(node),
+            "best_outlet": best_out.get(node),
+            "pathlen_hw": pathlen_hw.get(node, 0),
+            "pathlen_out": pathlen_out.get(node, 0),
+            "path_freq": len(hw_sets.get(node, set())),
         }
 
     log("Best headwater/outlet computed")
@@ -598,7 +634,7 @@ def compute_mainstem(G: nx.DiGraph, hw_out_attrs: Dict[int, Dict]) -> Dict[int, 
     # Group by (best_headwater, best_outlet) pairs
     paths = defaultdict(list)
     for node, attrs in hw_out_attrs.items():
-        key = (attrs['best_headwater'], attrs['best_outlet'])
+        key = (attrs["best_headwater"], attrs["best_outlet"])
         paths[key].append(node)
 
     # For each unique path, mark nodes on it as mainstem
@@ -621,14 +657,69 @@ def compute_mainstem(G: nx.DiGraph, hw_out_attrs: Dict[int, Dict]) -> Dict[int, 
     return is_mainstem
 
 
+def compute_main_neighbors(G: nx.DiGraph) -> Dict[int, Dict]:
+    """
+    Compute rch_id_up_main and rch_id_dn_main for each reach.
+
+    For each node, selects the main upstream predecessor and main downstream
+    successor using the same (effective_width, log_facc) ranking used by
+    best_headwater/best_outlet, ensuring consistent routing across all v17c
+    columns.
+
+    Returns dict {reach_id: {'rch_id_up_main': int|None, 'rch_id_dn_main': int|None}}.
+    """
+    log("Computing main neighbors (rch_id_up_main / rch_id_dn_main)...")
+
+    results = {}
+
+    for node in G.nodes():
+        # Main upstream neighbor: pick best predecessor
+        preds = list(G.predecessors(node))
+        if preds:
+            best_up = max(
+                preds,
+                key=lambda n: (
+                    G.nodes[n].get("effective_width", 0) or 0,
+                    G.nodes[n].get("log_facc", 0) or 0,
+                ),
+            )
+            rch_id_up_main = best_up
+        else:
+            rch_id_up_main = None
+
+        # Main downstream neighbor: pick best successor
+        succs = list(G.successors(node))
+        if succs:
+            best_dn = max(
+                succs,
+                key=lambda n: (
+                    G.nodes[n].get("effective_width", 0) or 0,
+                    G.nodes[n].get("log_facc", 0) or 0,
+                ),
+            )
+            rch_id_dn_main = best_dn
+        else:
+            rch_id_dn_main = None
+
+        results[node] = {
+            "rch_id_up_main": rch_id_up_main,
+            "rch_id_dn_main": rch_id_dn_main,
+        }
+
+    n_with_up = sum(1 for v in results.values() if v["rch_id_up_main"] is not None)
+    n_with_dn = sum(1 for v in results.values() if v["rch_id_dn_main"] is not None)
+    log(f"Main neighbors: {n_with_up:,} with up_main, {n_with_dn:,} with dn_main")
+
+    return results
+
+
 # =============================================================================
 # SWOT Slope Validation (Junction-Level)
 # =============================================================================
 
+
 def compute_junction_slopes(
-    G: nx.DiGraph,
-    sections_df: pd.DataFrame,
-    reaches_df: pd.DataFrame
+    G: nx.DiGraph, sections_df: pd.DataFrame, reaches_df: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Compute slopes at junction endpoints for each section.
@@ -642,19 +733,19 @@ def compute_junction_slopes(
     # Create reach -> WSE mapping
     wse_map = {}
     for _, row in reaches_df.iterrows():
-        rid = int(row['reach_id'])
-        wse = row.get('wse_obs_mean')
+        rid = int(row["reach_id"])
+        wse = row.get("wse_obs_mean")
         if pd.notna(wse):
             wse_map[rid] = wse
 
     results = []
 
     for _, section in sections_df.iterrows():
-        section_id = section['section_id']
-        upstream_j = section['upstream_junction']
-        downstream_j = section['downstream_junction']
-        reach_ids = section['reach_ids']
-        total_distance = section['distance']
+        section_id = section["section_id"]
+        upstream_j = section["upstream_junction"]
+        downstream_j = section["downstream_junction"]
+        reach_ids = section["reach_ids"]
+        total_distance = section["distance"]
 
         if len(reach_ids) < 2:
             continue
@@ -665,15 +756,17 @@ def compute_junction_slopes(
 
         for rid in reach_ids:
             wse = wse_map.get(rid)
-            reach_len = G.nodes[rid].get('reach_length', 0) if rid in G.nodes else 0
+            reach_len = G.nodes[rid].get("reach_length", 0) if rid in G.nodes else 0
 
             if wse is not None:
-                wse_data.append({
-                    'reach_id': rid,
-                    'wse': wse,
-                    'dist_from_upstream': cumulative_dist,
-                    'dist_from_downstream': total_distance - cumulative_dist,
-                })
+                wse_data.append(
+                    {
+                        "reach_id": rid,
+                        "wse": wse,
+                        "dist_from_upstream": cumulative_dist,
+                        "dist_from_downstream": total_distance - cumulative_dist,
+                    }
+                )
             cumulative_dist += reach_len
 
         if len(wse_data) < 2:
@@ -683,62 +776,74 @@ def compute_junction_slopes(
 
         # Compute slope from upstream junction
         try:
-            slope_upstream = np.polyfit(wse_df['dist_from_upstream'], wse_df['wse'], 1)[0]
+            slope_upstream = np.polyfit(wse_df["dist_from_upstream"], wse_df["wse"], 1)[
+                0
+            ]
         except Exception:
             slope_upstream = np.nan
 
         # Compute slope from downstream junction
         try:
-            slope_downstream = np.polyfit(wse_df['dist_from_downstream'], wse_df['wse'], 1)[0]
+            slope_downstream = np.polyfit(
+                wse_df["dist_from_downstream"], wse_df["wse"], 1
+            )[0]
         except Exception:
             slope_downstream = np.nan
 
         # Determine if slopes match expected signs
         upstream_correct = slope_upstream < 0 if pd.notna(slope_upstream) else None
-        downstream_correct = slope_downstream > 0 if pd.notna(slope_downstream) else None
+        downstream_correct = (
+            slope_downstream > 0 if pd.notna(slope_downstream) else None
+        )
 
-        direction_valid = upstream_correct and downstream_correct if (
-            upstream_correct is not None and downstream_correct is not None
-        ) else None
+        direction_valid = (
+            upstream_correct and downstream_correct
+            if (upstream_correct is not None and downstream_correct is not None)
+            else None
+        )
 
         # Determine likely cause if invalid
         likely_cause = None
         if direction_valid is False:
-            lakeflag = G.nodes[upstream_j].get('lakeflag', 0) if upstream_j in G.nodes else 0
+            lakeflag = (
+                G.nodes[upstream_j].get("lakeflag", 0) if upstream_j in G.nodes else 0
+            )
             if lakeflag > 0:
-                likely_cause = 'lake_section'
+                likely_cause = "lake_section"
             elif pd.notna(slope_upstream) and abs(slope_upstream) > 0.05:
-                likely_cause = 'extreme_slope_data_error'
+                likely_cause = "extreme_slope_data_error"
             elif pd.notna(slope_downstream) and abs(slope_downstream) > 0.05:
-                likely_cause = 'extreme_slope_data_error'
+                likely_cause = "extreme_slope_data_error"
             else:
-                likely_cause = 'potential_topology_error'
+                likely_cause = "potential_topology_error"
 
-        results.append({
-            'section_id': section_id,
-            'upstream_junction': upstream_j,
-            'downstream_junction': downstream_j,
-            'n_reaches': len(reach_ids),
-            'n_reaches_with_wse': len(wse_df),
-            'distance': total_distance,
-            'slope_from_upstream': slope_upstream,
-            'slope_from_downstream': slope_downstream,
-            'direction_valid': direction_valid,
-            'likely_cause': likely_cause,
-        })
+        results.append(
+            {
+                "section_id": section_id,
+                "upstream_junction": upstream_j,
+                "downstream_junction": downstream_j,
+                "n_reaches": len(reach_ids),
+                "n_reaches_with_wse": len(wse_df),
+                "distance": total_distance,
+                "slope_from_upstream": slope_upstream,
+                "slope_from_downstream": slope_downstream,
+                "direction_valid": direction_valid,
+                "likely_cause": likely_cause,
+            }
+        )
 
     junction_slopes_df = pd.DataFrame(results)
 
     # Summary
     if not junction_slopes_df.empty:
         n_total = len(junction_slopes_df)
-        n_valid = junction_slopes_df['direction_valid'].sum()
-        n_invalid = (junction_slopes_df['direction_valid'] == False).sum()
+        n_valid = junction_slopes_df["direction_valid"].sum()
+        n_invalid = (junction_slopes_df["direction_valid"] == False).sum()
 
-        log(f"Junction slope validation:")
+        log("Junction slope validation:")
         log(f"  Total sections with SWOT data: {n_total:,}")
-        log(f"  Direction valid: {n_valid:,} ({100*n_valid/n_total:.1f}%)")
-        log(f"  Direction INVALID: {n_invalid:,} ({100*n_invalid/n_total:.1f}%)")
+        log(f"  Direction valid: {n_valid:,} ({100 * n_valid / n_total:.1f}%)")
+        log(f"  Direction INVALID: {n_invalid:,} ({100 * n_invalid / n_total:.1f}%)")
 
     return junction_slopes_df
 
@@ -747,12 +852,14 @@ def compute_junction_slopes(
 # DuckDB Output
 # =============================================================================
 
+
 def save_to_duckdb(
     conn: duckdb.DuckDBPyConnection,
     region: str,
     hydro_dist: Dict[int, Dict],
     hw_out: Dict[int, Dict],
     is_mainstem: Dict[int, bool],
+    main_neighbors: Optional[Dict[int, Dict]] = None,
 ) -> int:
     """
     Save computed v17c attributes to DuckDB reaches table.
@@ -764,21 +871,27 @@ def save_to_duckdb(
 
     # Build update dataframe
     rows = []
+    mn = main_neighbors or {}
     for reach_id in hydro_dist.keys():
         hd = hydro_dist.get(reach_id, {})
         ho = hw_out.get(reach_id, {})
         ms = is_mainstem.get(reach_id, False)
+        nb = mn.get(reach_id, {})
 
-        rows.append({
-            'reach_id': reach_id,
-            'hydro_dist_out': hd.get('hydro_dist_out'),
-            'hydro_dist_hw': hd.get('hydro_dist_hw'),
-            'best_headwater': ho.get('best_headwater'),
-            'best_outlet': ho.get('best_outlet'),
-            'pathlen_hw': ho.get('pathlen_hw'),
-            'pathlen_out': ho.get('pathlen_out'),
-            'is_mainstem_edge': ms,
-        })
+        rows.append(
+            {
+                "reach_id": reach_id,
+                "hydro_dist_out": hd.get("hydro_dist_out"),
+                "hydro_dist_hw": hd.get("hydro_dist_hw"),
+                "best_headwater": ho.get("best_headwater"),
+                "best_outlet": ho.get("best_outlet"),
+                "pathlen_hw": ho.get("pathlen_hw"),
+                "pathlen_out": ho.get("pathlen_out"),
+                "is_mainstem_edge": ms,
+                "rch_id_up_main": nb.get("rch_id_up_main"),
+                "rch_id_dn_main": nb.get("rch_id_dn_main"),
+            }
+        )
 
     if not rows:
         log("No rows to update")
@@ -790,7 +903,7 @@ def save_to_duckdb(
     update_df = update_df.replace([np.inf, -np.inf], np.nan)
 
     # Register DataFrame and update
-    conn.register('v17c_updates', update_df)
+    conn.register("v17c_updates", update_df)
 
     # Load spatial extension (needed for RTREE index compatibility)
     try:
@@ -807,13 +920,15 @@ def save_to_duckdb(
             best_outlet = u.best_outlet,
             pathlen_hw = u.pathlen_hw,
             pathlen_out = u.pathlen_out,
-            is_mainstem_edge = u.is_mainstem_edge
+            is_mainstem_edge = u.is_mainstem_edge,
+            rch_id_up_main = u.rch_id_up_main,
+            rch_id_dn_main = u.rch_id_dn_main
         FROM v17c_updates u
         WHERE reaches.reach_id = u.reach_id
         AND reaches.region = '{region.upper()}'
     """)
 
-    conn.unregister('v17c_updates')
+    conn.unregister("v17c_updates")
 
     log(f"Updated {len(rows):,} reaches")
     return len(rows)
@@ -834,11 +949,11 @@ def save_sections_to_duckdb(
 
     # Prepare sections for insert
     sections_insert = sections_df.copy()
-    sections_insert['region'] = region.upper()
+    sections_insert["region"] = region.upper()
     # Convert reach_ids list to JSON string
-    sections_insert['reach_ids'] = sections_insert['reach_ids'].apply(json.dumps)
+    sections_insert["reach_ids"] = sections_insert["reach_ids"].apply(json.dumps)
 
-    conn.register('sections_insert', sections_insert)
+    conn.register("sections_insert", sections_insert)
     conn.execute("""
         INSERT OR REPLACE INTO v17c_sections
         SELECT
@@ -851,15 +966,15 @@ def save_sections_to_duckdb(
             n_reaches
         FROM sections_insert
     """)
-    conn.unregister('sections_insert')
+    conn.unregister("sections_insert")
     log(f"Saved {len(sections_insert):,} sections")
 
     # Save validation results if any
     if not validation_df.empty:
         validation_insert = validation_df.copy()
-        validation_insert['region'] = region.upper()
+        validation_insert["region"] = region.upper()
 
-        conn.register('validation_insert', validation_insert)
+        conn.register("validation_insert", validation_insert)
         conn.execute("""
             INSERT OR REPLACE INTO v17c_section_slope_validation
             SELECT
@@ -871,13 +986,14 @@ def save_sections_to_duckdb(
                 likely_cause
             FROM validation_insert
         """)
-        conn.unregister('validation_insert')
+        conn.unregister("validation_insert")
         log(f"Saved {len(validation_insert):,} validation records")
 
 
 # =============================================================================
 # SWOT Slopes Integration
 # =============================================================================
+
 
 def apply_swot_slopes(
     conn: duckdb.DuckDBPyConnection,
@@ -915,8 +1031,11 @@ def apply_swot_slopes(
         log(f"SWOT data directory not found: {swot_path}")
         return 0
 
-    parquet_files = [f for f in glob.glob(os.path.join(swot_path, '*.parquet'))
-                     if not os.path.basename(f).startswith('._')]
+    parquet_files = [
+        f
+        for f in glob.glob(os.path.join(swot_path, "*.parquet"))
+        if not os.path.basename(f).startswith("._")
+    ]
 
     if not parquet_files:
         log(f"No parquet files found in {swot_path}")
@@ -925,22 +1044,25 @@ def apply_swot_slopes(
     log(f"Found {len(parquet_files)} SWOT parquet files")
 
     # Get node_ids for this region
-    nodes_df = conn.execute("""
+    nodes_df = conn.execute(
+        """
         SELECT node_id FROM nodes WHERE region = ?
-    """, [region.upper()]).fetchdf()
+    """,
+        [region.upper()],
+    ).fetchdf()
 
     if nodes_df.empty:
         log(f"No nodes found for region {region}")
         return 0
 
-    node_ids = nodes_df['node_id'].tolist()
+    node_ids = nodes_df["node_id"].tolist()
     log(f"Region {region} has {len(node_ids):,} nodes")
 
     # For now, we'll use the pre-computed slopes if they exist
     # in the SWOT pipeline output
     swot_slopes_file = os.path.join(
-        os.path.dirname(swot_path).replace('/node', ''),
-        f'output/{region.lower()}/{region.lower()}_swot_slopes.csv'
+        os.path.dirname(swot_path).replace("/node", ""),
+        f"output/{region.lower()}/{region.lower()}_swot_slopes.csv",
     )
 
     if os.path.exists(swot_slopes_file):
@@ -965,6 +1087,7 @@ def apply_swot_slopes(
 # =============================================================================
 # Main Pipeline
 # =============================================================================
+
 
 def process_region(
     db_path: str,
@@ -1009,9 +1132,9 @@ def process_region(
     from sword_duckdb.schema import add_v17c_columns, normalize_region
 
     region = normalize_region(region)
-    log(f"\n{'='*60}")
+    log(f"\n{'=' * 60}")
     log(f"Processing region: {region}")
-    log(f"{'='*60}")
+    log(f"{'=' * 60}")
 
     # Initialize workflow
     workflow = SWORDWorkflow(user_id=user_id)
@@ -1032,7 +1155,10 @@ def process_region(
     n_facc_corrections = 0
     if not skip_facc:
         n_facc_corrections = run_facc_corrections(
-            conn, region, nofacc_model_path, standard_model_path,
+            conn,
+            region,
+            nofacc_model_path,
+            standard_model_path,
         )
         if n_facc_corrections > 0:
             # Reload reaches with corrected facc values
@@ -1056,7 +1182,11 @@ def process_region(
     R, sections_df = build_section_graph(G, junctions)
 
     # Compute junction-level validation (uses WSE data)
-    has_wse = reaches_df['wse_obs_mean'].notna().any() if 'wse_obs_mean' in reaches_df.columns else False
+    has_wse = (
+        reaches_df["wse_obs_mean"].notna().any()
+        if "wse_obs_mean" in reaches_df.columns
+        else False
+    )
     validation_df = pd.DataFrame()
 
     if has_wse:
@@ -1065,15 +1195,18 @@ def process_region(
     # Load existing best_headwater/best_outlet for change tracking
     old_hw_out = {}
     try:
-        old_df = conn.execute("""
+        old_df = conn.execute(
+            """
             SELECT reach_id, best_headwater, best_outlet
             FROM reaches
             WHERE region = ? AND best_headwater IS NOT NULL
-        """, [region.upper()]).fetchdf()
+        """,
+            [region.upper()],
+        ).fetchdf()
         for _, row in old_df.iterrows():
-            old_hw_out[int(row['reach_id'])] = {
-                'best_headwater': row['best_headwater'],
-                'best_outlet': row['best_outlet'],
+            old_hw_out[int(row["reach_id"])] = {
+                "best_headwater": row["best_headwater"],
+                "best_outlet": row["best_outlet"],
             }
         log(f"Loaded {len(old_hw_out):,} existing best_headwater/outlet assignments")
     except Exception:
@@ -1083,6 +1216,7 @@ def process_region(
     hydro_dist = compute_hydro_distances(G)
     hw_out = compute_best_headwater_outlet(G)
     is_mainstem = compute_mainstem(G, hw_out)
+    main_neighbors = compute_main_neighbors(G)
 
     # Log changes in best_headwater/best_outlet assignments
     if old_hw_out:
@@ -1091,15 +1225,19 @@ def process_region(
         for rid, new_vals in hw_out.items():
             if rid in old_hw_out:
                 old_vals = old_hw_out[rid]
-                if new_vals['best_headwater'] != old_vals['best_headwater']:
+                if new_vals["best_headwater"] != old_vals["best_headwater"]:
                     n_hw_changed += 1
-                if new_vals['best_outlet'] != old_vals['best_outlet']:
+                if new_vals["best_outlet"] != old_vals["best_outlet"]:
                     n_out_changed += 1
-        log(f"Routing changes: {n_hw_changed:,} best_headwater, {n_out_changed:,} best_outlet")
+        log(
+            f"Routing changes: {n_hw_changed:,} best_headwater, {n_out_changed:,} best_outlet"
+        )
 
     # Save to DuckDB with provenance
     with workflow.transaction(f"v17c attributes for {region}"):
-        n_updated = save_to_duckdb(conn, region, hydro_dist, hw_out, is_mainstem)
+        n_updated = save_to_duckdb(
+            conn, region, hydro_dist, hw_out, is_mainstem, main_neighbors
+        )
         save_sections_to_duckdb(conn, region, sections_df, validation_df)
 
     # Apply SWOT slopes if requested
@@ -1112,19 +1250,21 @@ def process_region(
 
     # Summary statistics
     stats = {
-        'region': region,
-        'reaches_processed': len(reaches_df),
-        'reaches_updated': n_updated,
-        'facc_corrections': n_facc_corrections,
-        'sections': len(sections_df),
-        'junctions': len(junctions),
-        'mainstem_reaches': sum(is_mainstem.values()),
-        'swot_updated': n_swot_updated,
+        "region": region,
+        "reaches_processed": len(reaches_df),
+        "reaches_updated": n_updated,
+        "facc_corrections": n_facc_corrections,
+        "sections": len(sections_df),
+        "junctions": len(junctions),
+        "mainstem_reaches": sum(is_mainstem.values()),
+        "swot_updated": n_swot_updated,
     }
 
     if not validation_df.empty:
-        stats['validation_valid'] = int(validation_df['direction_valid'].sum())
-        stats['validation_invalid'] = int((validation_df['direction_valid'] == False).sum())
+        stats["validation_valid"] = int(validation_df["direction_valid"].sum())
+        stats["validation_invalid"] = int(
+            (validation_df["direction_valid"] == False).sum()
+        )
 
     log(f"\nRegion {region} complete: {n_updated:,} reaches updated")
     return stats
@@ -1220,11 +1360,14 @@ def run_pipeline(
         except Exception as e:
             log(f"ERROR processing {region}: {e}")
             import traceback
+
             traceback.print_exc()
-            all_stats.append({
-                'region': region,
-                'error': str(e),
-            })
+            all_stats.append(
+                {
+                    "region": region,
+                    "error": str(e),
+                }
+            )
 
     # Print summary
     log("\n" + "=" * 60)
@@ -1233,14 +1376,20 @@ def run_pipeline(
 
     total_updated = 0
     for stats in all_stats:
-        if 'error' in stats:
+        if "error" in stats:
             log(f"{stats['region']}: ERROR - {stats['error']}")
         else:
-            facc_str = f", {stats['facc_corrections']:,} facc fixes" if stats.get('facc_corrections') else ""
-            log(f"{stats['region']}: {stats['reaches_updated']:,} reaches, "
+            facc_str = (
+                f", {stats['facc_corrections']:,} facc fixes"
+                if stats.get("facc_corrections")
+                else ""
+            )
+            log(
+                f"{stats['region']}: {stats['reaches_updated']:,} reaches, "
                 f"{stats['sections']:,} sections, "
-                f"{stats['mainstem_reaches']:,} mainstem{facc_str}")
-            total_updated += stats.get('reaches_updated', 0)
+                f"{stats['mainstem_reaches']:,} mainstem{facc_str}"
+            )
+            total_updated += stats.get("reaches_updated", 0)
 
     log(f"\nTotal reaches updated: {total_updated:,}")
 
@@ -1252,49 +1401,36 @@ def main():
     parser = argparse.ArgumentParser(
         description="v17c Pipeline - Compute and save v17c attributes to DuckDB"
     )
+    parser.add_argument("--db", required=True, help="Path to sword_v17c.duckdb")
     parser.add_argument(
-        "--db",
-        required=True,
-        help="Path to sword_v17c.duckdb"
+        "--region", help="Single region to process (NA, SA, EU, AF, AS, OC)"
     )
+    parser.add_argument("--all", action="store_true", help="Process all regions")
     parser.add_argument(
-        "--region",
-        help="Single region to process (NA, SA, EU, AF, AS, OC)"
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Process all regions"
-    )
-    parser.add_argument(
-        "--skip-swot",
-        action="store_true",
-        help="Skip SWOT slope integration"
+        "--skip-swot", action="store_true", help="Skip SWOT slope integration"
     )
     parser.add_argument(
         "--swot-path",
         default="/Volumes/SWORD_DATA/data/swot/RiverSP_D_parq/node",
-        help="Path to SWOT parquet files"
+        help="Path to SWOT parquet files",
     )
     parser.add_argument(
-        "--user-id",
-        default="v17c_pipeline",
-        help="User ID for provenance tracking"
+        "--user-id", default="v17c_pipeline", help="User ID for provenance tracking"
     )
     parser.add_argument(
         "--skip-facc",
         action="store_true",
-        help="Skip facc anomaly correction (default: run corrections before v17c computation)"
+        help="Skip facc anomaly correction (default: run corrections before v17c computation)",
     )
     parser.add_argument(
         "--nofacc-model",
         default=DEFAULT_NOFACC_MODEL,
-        help=f"Path to no-facc RF model for entry points (default: {DEFAULT_NOFACC_MODEL})"
+        help=f"Path to no-facc RF model for entry points (default: {DEFAULT_NOFACC_MODEL})",
     )
     parser.add_argument(
         "--standard-model",
         default=DEFAULT_STANDARD_MODEL,
-        help=f"Path to standard RF model for propagation (default: {DEFAULT_STANDARD_MODEL})"
+        help=f"Path to standard RF model for propagation (default: {DEFAULT_STANDARD_MODEL})",
     )
 
     args = parser.parse_args()
@@ -1325,7 +1461,7 @@ def main():
     )
 
     # Exit with error if any region failed
-    if any('error' in s for s in stats):
+    if any("error" in s for s in stats):
         sys.exit(1)
 
 

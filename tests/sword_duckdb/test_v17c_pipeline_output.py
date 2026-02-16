@@ -147,6 +147,8 @@ class TestSaveToDuckDB:
             ("pathlen_hw", "DOUBLE"),
             ("pathlen_out", "DOUBLE"),
             ("is_mainstem_edge", "BOOLEAN"),
+            ("rch_id_up_main", "BIGINT"),
+            ("rch_id_dn_main", "BIGINT"),
         ]
         for col_name, col_type in v17c_columns:
             try:
