@@ -43,7 +43,7 @@ def check_lake_sandwich(
     WITH river_reaches AS (
         SELECT reach_id, region, x, y, reach_length, width, river_name
         FROM reaches
-        WHERE lakeflag = 0 {where_clause.replace('r.', '')}
+        WHERE lakeflag = 0 {where_clause.replace("r.", "")}
     ),
     has_lake_upstream AS (
         SELECT DISTINCT rt.reach_id, rt.region
@@ -167,13 +167,13 @@ def check_type_distribution(
     """
     Report reach type distribution.
 
-    Type values:
+    Type values (from SWORD PDD v17b):
     - 1: river
-    - 2: lake
-    - 3: tidal river
-    - 4: artificial (canal/dam)
-    - 5: unassigned
-    - 6: unreliable
+    - 2: (unused — no reaches have this value)
+    - 3: lake_on_river (NOT tidal — tidal is lakeflag=3)
+    - 4: dam/artificial
+    - 5: unreliable topology
+    - 6: ghost reach
     """
     where_clause = f"AND region = '{region}'" if region else ""
 
@@ -185,7 +185,7 @@ def check_type_distribution(
             CASE type
                 WHEN 1 THEN 'river'
                 WHEN 2 THEN 'lake'
-                WHEN 3 THEN 'tidal_river'
+                WHEN 3 THEN 'lake_on_river'
                 WHEN 4 THEN 'artificial'
                 WHEN 5 THEN 'unassigned'
                 WHEN 6 THEN 'unreliable'
@@ -291,14 +291,16 @@ def check_lakeflag_type_consistency(
 
         # Count potential mismatches (for reporting)
         # Main expected: lakeflag=0/type=1 (river/river), lakeflag=1/type=3 (lake/lake_on_river)
+        # type=3 is "lake_on_river" (NOT tidal). Tidal is lakeflag=3.
         mismatch_query = f"""
         SELECT COUNT(*) FROM reaches
         WHERE lakeflag IS NOT NULL AND type IS NOT NULL
             AND NOT (
-                    (lakeflag = 0 AND type IN (1, 4))   -- river: type=river or dam
-                    OR (lakeflag = 1 AND type IN (3, 4)) -- lake: type=lake_on_river or dam
-                    OR (lakeflag = 2 AND type IN (1, 4)) -- canal: type=river or artificial
-                    OR type IN (5, 6)                    -- unreliable/ghost (covers most tidal)
+                    (lakeflag = 0 AND type IN (1, 3, 4)) -- river: river, lake_on_river, dam
+                    OR (lakeflag = 1 AND type IN (3, 4)) -- lake: lake_on_river or dam
+                    OR (lakeflag = 2 AND type IN (1, 4)) -- canal: river or artificial
+                    OR (lakeflag = 3 AND type IN (3))    -- tidal: lake_on_river (tidal estuary)
+                    OR type IN (5, 6)                    -- unreliable/ghost
                 )
             {where_clause}
         """
@@ -320,7 +322,7 @@ def check_lakeflag_type_consistency(
             issues_found=mismatch_count,
             issue_pct=100 * mismatch_count / total if total > 0 else 0,
             details=stats,
-            description=f"Potential lakeflag/type mismatches: {mismatch_count} ({100*mismatch_count/total:.1f}%) - needs investigation",
+            description=f"Potential lakeflag/type mismatches: {mismatch_count} ({100 * mismatch_count / total:.1f}%) - needs investigation",
         )
 
     except (duckdb.CatalogException, duckdb.BinderException):

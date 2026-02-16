@@ -727,10 +727,11 @@ with tab_c004:
             try:
                 c004_df = conn.execute(
                     """
+                    -- type=3 is "lake_on_river" (NOT tidal). See validation spec.
+                    -- lakeflag=1 + type=3 is the PRIMARY expected lake combo (21k reaches).
                     SELECT reach_id, region, river_name, x, y, lakeflag, type,
                         CASE
                             WHEN lakeflag = 1 AND type = 1 THEN 'lake_labeled_as_river_type'
-                            WHEN lakeflag = 1 AND type = 3 THEN 'lake_labeled_as_tidal_type'
                             WHEN lakeflag = 0 AND type = 2 THEN 'river_labeled_as_lake_type'
                             WHEN lakeflag = 2 AND type NOT IN (1, 4, 5, 6) THEN 'canal_type_mismatch'
                             WHEN lakeflag = 3 AND type NOT IN (3, 5, 6) THEN 'tidal_type_mismatch'
@@ -740,7 +741,7 @@ with tab_c004:
                     WHERE region = ? AND lakeflag IS NOT NULL AND type IS NOT NULL
                         AND NOT (
                             (lakeflag = 0 AND type IN (1, 3, 4))
-                            OR (lakeflag = 1 AND type IN (2, 4))
+                            OR (lakeflag = 1 AND type IN (3, 4))  -- lake: lake_on_river or dam
                             OR (lakeflag = 2 AND type IN (1, 4))
                             OR (lakeflag = 3 AND type IN (3))
                             OR type IN (5, 6)
@@ -778,11 +779,11 @@ with tab_c004:
             lakeflag_map = {0: "River", 1: "Lake", 2: "Canal", 3: "Tidal"}
             type_map = {
                 1: "river",
-                2: "lake",
-                3: "tidal_river",
-                4: "artificial",
-                5: "unassigned",
-                6: "unreliable",
+                2: "lake (unused in SWORD)",
+                3: "lake_on_river",  # NOT tidal — see PDD v17b
+                4: "dam/artificial",
+                5: "unreliable_topology",
+                6: "ghost",
             }
             lf = issue["lakeflag"]
             tp = issue["type"]
@@ -805,17 +806,11 @@ with tab_c004:
                 st.markdown("### Fix the mismatch")
                 it = issue["issue_type"]
                 if it == "lake_labeled_as_river_type":
-                    fix_label = "Set type=2 (lake)"
+                    fix_label = "Set type=3 (lake_on_river)"
                     fix_sql = (
-                        "UPDATE reaches SET type = 2 WHERE reach_id = ? AND region = ?"
+                        "UPDATE reaches SET type = 3 WHERE reach_id = ? AND region = ?"
                     )
-                    fix_log = "Fixed: type->2"
-                elif it == "lake_labeled_as_tidal_type":
-                    fix_label = "Set type=2 (lake)"
-                    fix_sql = (
-                        "UPDATE reaches SET type = 2 WHERE reach_id = ? AND region = ?"
-                    )
-                    fix_log = "Fixed: type->2 (was tidal)"
+                    fix_log = "Fixed: type->3 (lake_on_river)"
                 elif it == "river_labeled_as_lake_type":
                     fix_label = "Set type=1 (river)"
                     fix_sql = (
