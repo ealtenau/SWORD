@@ -110,12 +110,36 @@ conn = get_connection()
 # =============================================================================
 @st.cache_data(ttl=300)
 def get_reach_geometry(_conn, reach_id):
-    nodes = _conn.execute(
-        "SELECT x, y FROM nodes WHERE reach_id = ? ORDER BY dist_out DESC", [reach_id]
-    ).fetchdf()
-    if len(nodes) == 0:
-        return None
-    return nodes[["x", "y"]].values.tolist()
+    # Try nodes table first (full DB), fall back to reaches.geom (deploy)
+    try:
+        nodes = _conn.execute(
+            "SELECT x, y FROM nodes WHERE reach_id = ? ORDER BY dist_out DESC",
+            [reach_id],
+        ).fetchdf()
+        if len(nodes) > 0:
+            return nodes[["x", "y"]].values.tolist()
+    except Exception:
+        pass
+    # Fallback: extract coordinates from reaches.geom LINESTRING
+    try:
+        row = _conn.execute(
+            "SELECT ST_AsText(geom) FROM reaches WHERE reach_id = ?", [reach_id]
+        ).fetchone()
+        if row and row[0]:
+            wkt = row[0]
+            coords_str = (
+                wkt.replace("LINESTRING (", "").replace("LINESTRING(", "").rstrip(")")
+            )
+            coords = []
+            for pair in coords_str.split(", "):
+                parts = pair.strip().split(" ")
+                if len(parts) >= 2:
+                    coords.append([float(parts[0]), float(parts[1])])
+            if coords:
+                return coords
+    except Exception:
+        pass
+    return None
 
 
 @st.cache_data(ttl=60)
