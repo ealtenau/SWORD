@@ -220,5 +220,25 @@ class TestSyncFromPostgres:
         assert "changed_only" in params
 
 
+class TestWorkflowSync:
+    """Test workflow sync methods on DuckDB primary backend."""
+
+    def test_sync_to_duckdb_skips_on_duckdb_primary(self, temp_workflow):
+        """sync_to_duckdb returns skipped status when primary is DuckDB."""
+        result = temp_workflow.sync_to_duckdb("/tmp/unused.duckdb")
+        assert result == {"status": "skipped", "reason": "not_postgres"}
+
+    def test_get_unsynced_operations_returns_dataframe(self, temp_workflow):
+        """get_unsynced_operations returns a DataFrame when synced_to_duckdb column exists."""
+        import pandas as pd
+        from src.updates.sword_duckdb.schema import add_sync_tracking_column
+
+        # Ensure the synced_to_duckdb column exists (test DB may predate migration)
+        add_sync_tracking_column(temp_workflow._sword.db.conn)
+
+        result = temp_workflow.get_unsynced_operations()
+        assert isinstance(result, pd.DataFrame)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
