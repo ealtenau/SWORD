@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
+COPY lake_app.py .
 COPY lint/ lint/
 COPY .streamlit/ .streamlit/
 COPY start.sh .
