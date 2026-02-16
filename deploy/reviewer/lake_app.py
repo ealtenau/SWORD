@@ -122,23 +122,32 @@ def get_reach_geometry(_conn, reach_id):
         pass
     # Fallback: extract coordinates from reaches.geom LINESTRING
     try:
-        row = _conn.execute(
-            "SELECT ST_AsText(geom) FROM reaches WHERE reach_id = ?", [reach_id]
-        ).fetchone()
-        if row and row[0]:
-            wkt = row[0]
-            coords_str = (
-                wkt.replace("LINESTRING (", "").replace("LINESTRING(", "").rstrip(")")
-            )
-            coords = []
-            for pair in coords_str.split(", "):
-                parts = pair.strip().split(" ")
-                if len(parts) >= 2:
-                    coords.append([float(parts[0]), float(parts[1])])
-            if coords:
-                return coords
+        _conn.execute("LOAD spatial")
     except Exception:
         pass
+    for cast_fn in ["ST_AsText(geom)", "CAST(geom AS VARCHAR)"]:
+        try:
+            row = _conn.execute(
+                f"SELECT {cast_fn} FROM reaches WHERE reach_id = ?", [reach_id]
+            ).fetchone()
+            if row and row[0]:
+                wkt = str(row[0])
+                if "LINESTRING" not in wkt:
+                    continue
+                coords_str = (
+                    wkt.replace("LINESTRING (", "")
+                    .replace("LINESTRING(", "")
+                    .rstrip(")")
+                )
+                coords = []
+                for pair in coords_str.split(", "):
+                    parts = pair.strip().split(" ")
+                    if len(parts) >= 2:
+                        coords.append([float(parts[0]), float(parts[1])])
+                if coords:
+                    return coords
+        except Exception:
+            continue
     return None
 
 
