@@ -110,8 +110,7 @@ conn = get_connection()
 # =============================================================================
 @st.cache_data(ttl=300)
 def get_reach_geometry(_conn, reach_id):
-    # Try nodes table first (full DB), fall back to reaches.geom (deploy)
-    errors = []
+    # Try nodes table first (full DB)
     try:
         nodes = _conn.execute(
             "SELECT x, y FROM nodes WHERE reach_id = ? ORDER BY dist_out DESC",
@@ -119,53 +118,37 @@ def get_reach_geometry(_conn, reach_id):
         ).fetchdf()
         if len(nodes) > 0:
             return nodes[["x", "y"]].values.tolist()
-    except Exception as e:
-        errors.append(f"nodes: {e}")
-    # Fallback: extract coordinates from reaches.geom LINESTRING
+    except Exception:
+        pass
+    # Try reaches.geom LINESTRING (if column exists)
     try:
         _conn.execute("LOAD spatial")
-    except Exception as e:
-        errors.append(f"LOAD spatial: {e}")
-    # Check what columns exist
+        row = _conn.execute(
+            "SELECT ST_AsText(geom) FROM reaches WHERE reach_id = ?", [reach_id]
+        ).fetchone()
+        if row and row[0] and "LINESTRING" in str(row[0]):
+            wkt = str(row[0])
+            coords_str = (
+                wkt.replace("LINESTRING (", "").replace("LINESTRING(", "").rstrip(")")
+            )
+            coords = []
+            for pair in coords_str.split(", "):
+                parts = pair.strip().split(" ")
+                if len(parts) >= 2:
+                    coords.append([float(parts[0]), float(parts[1])])
+            if coords:
+                return coords
+    except Exception:
+        pass
+    # Last resort: centroid point from reaches.x, reaches.y
     try:
-        cols = _conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'reaches' AND column_name = 'geom'"
-        ).fetchall()
-        errors.append(f"geom column exists: {len(cols) > 0}")
-    except Exception as e:
-        errors.append(f"col check: {e}")
-    for cast_fn in ["ST_AsText(geom)", "CAST(geom AS VARCHAR)"]:
-        try:
-            row = _conn.execute(
-                f"SELECT {cast_fn} FROM reaches WHERE reach_id = ?", [reach_id]
-            ).fetchone()
-            if row and row[0]:
-                wkt = str(row[0])
-                if "LINESTRING" not in wkt:
-                    errors.append(f"{cast_fn}: got '{wkt[:100]}' (no LINESTRING)")
-                    continue
-                coords_str = (
-                    wkt.replace("LINESTRING (", "")
-                    .replace("LINESTRING(", "")
-                    .rstrip(")")
-                )
-                coords = []
-                for pair in coords_str.split(", "):
-                    parts = pair.strip().split(" ")
-                    if len(parts) >= 2:
-                        coords.append([float(parts[0]), float(parts[1])])
-                if coords:
-                    return coords
-            else:
-                errors.append(f"{cast_fn}: row={row}")
-        except Exception as e:
-            errors.append(f"{cast_fn}: {e}")
-            continue
-    # DEBUG: show why geometry failed (remove after fixing)
-    import streamlit as _st
-
-    _st.warning(f"Geometry debug for {reach_id}: {'; '.join(errors)}")
+        row = _conn.execute(
+            "SELECT x, y FROM reaches WHERE reach_id = ?", [reach_id]
+        ).fetchone()
+        if row and row[0] is not None and row[1] is not None:
+            return [[float(row[0]), float(row[1])]]
+    except Exception:
+        pass
     return None
 
 
