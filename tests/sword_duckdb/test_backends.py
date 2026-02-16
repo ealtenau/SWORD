@@ -320,3 +320,59 @@ class TestBackendFactory:
         backend = get_backend(os.environ["SWORD_TEST_POSTGRES_URL"])
         assert isinstance(backend, PostgresBackend)
         backend.close()
+
+
+# =============================================================================
+# SWORD DATABASE DELEGATION TESTS
+# =============================================================================
+
+
+class TestSWORDDatabaseDelegation:
+    """Tests that SWORDDatabase delegates correctly to the backend."""
+
+    def test_backend_type_duckdb(self):
+        """SWORDDatabase(:memory:) reports DuckDB backend type."""
+        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+
+        db = SWORDDatabase(":memory:")
+        assert db.backend_type == BackendType.DUCKDB
+        db.close()
+
+    def test_is_duckdb_true(self):
+        """is_duckdb is True for DuckDB backend."""
+        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+
+        db = SWORDDatabase(":memory:")
+        assert db.is_duckdb is True
+        assert db.is_postgres is False
+        db.close()
+
+    def test_format_upsert_delegates(self):
+        """format_upsert delegates to backend (INSERT OR REPLACE for DuckDB)."""
+        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+
+        db = SWORDDatabase(":memory:")
+        sql = db.format_upsert("test_table", ["id", "name"], ["id"])
+        assert "INSERT OR REPLACE" in sql
+        db.close()
+
+    def test_format_array_literal_delegates(self):
+        """format_array_literal delegates to backend."""
+        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+
+        db = SWORDDatabase(":memory:")
+        result = db.format_array_literal([1, 2, 3])
+        assert result == "[1, 2, 3]"
+        db.close()
+
+    def test_convert_placeholders_identity(self):
+        """convert_placeholders is identity for DuckDB (? stays ?)."""
+        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+
+        db = SWORDDatabase(":memory:")
+        sql = "SELECT * FROM t WHERE id = ? AND name = ?"
+        # SWORDDatabase.query calls convert_placeholders internally;
+        # verify via the backend directly
+        converted = db._backend.convert_placeholders(sql)
+        assert converted == sql
+        db.close()
