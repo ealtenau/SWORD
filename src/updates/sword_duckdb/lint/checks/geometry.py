@@ -789,3 +789,777 @@ def check_endpoint_alignment(
         description=f"Connected reach pairs with endpoint gap > {gap_m}m",
         threshold=gap_m,
     )
+
+
+# ---------------------------------------------------------------------------
+# G013 – Width greater than length
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G013",
+    Category.GEOMETRY,
+    Severity.WARNING,
+    "River reach width should not exceed reach length (lakes excluded)",
+)
+def check_width_gt_length(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag non-lake reaches where width > reach_length."""
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        r.width, r.reach_length, r.lakeflag
+    FROM reaches r
+    WHERE r.lakeflag = 0
+        AND r.width > 0 AND r.width != -9999
+        AND r.reach_length > 0 AND r.reach_length != -9999
+        AND r.width > r.reach_length
+        {where_clause}
+    ORDER BY r.width / r.reach_length DESC
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE r.lakeflag = 0
+        AND r.width > 0 AND r.width != -9999
+        AND r.reach_length > 0 AND r.reach_length != -9999
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G013",
+        name="width_gt_length",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Non-lake reaches where width exceeds reach length",
+    )
+
+
+# ---------------------------------------------------------------------------
+# G014 – Duplicate geometry
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G014",
+    Category.GEOMETRY,
+    Severity.WARNING,
+    "No two reaches should share identical geometry",
+)
+def check_duplicate_geometry(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag pairs of reaches with identical geometry (ST_Equals)."""
+    if not _ensure_spatial(conn):
+        return CheckResult(
+            check_id="G014",
+            name="duplicate_geometry",
+            severity=Severity.WARNING,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0.0,
+            details=pd.DataFrame(),
+            description="SKIPPED – spatial extension unavailable",
+        )
+
+    where_clause_a = f"AND a.region = '{region}'" if region else ""
+    where_clause_r = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        a.reach_id AS reach_id_a,
+        b.reach_id AS reach_id_b,
+        a.region, a.river_name, a.x, a.y
+    FROM reaches a
+    JOIN reaches b
+        ON a.region = b.region
+        AND a.reach_id < b.reach_id
+        AND ABS(a.x - b.x) < 0.01
+        AND ABS(a.y - b.y) < 0.01
+    WHERE a.geom IS NOT NULL AND b.geom IS NOT NULL
+        AND ST_Equals(a.geom, b.geom)
+        {where_clause_a}
+    ORDER BY a.reach_id
+    LIMIT 5000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE r.geom IS NOT NULL {where_clause_r}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G014",
+        name="duplicate_geometry",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reach pairs with identical geometry",
+    )
+
+
+# ---------------------------------------------------------------------------
+# G015 – Node-to-reach distance
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G015",
+    Category.GEOMETRY,
+    Severity.WARNING,
+    "Nodes should be within 100m of their parent reach geometry",
+    default_threshold=100.0,
+)
+def check_node_reach_distance(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag nodes whose point geometry is >threshold metres from parent reach."""
+    max_dist = threshold if threshold is not None else 100.0
+
+    if not _ensure_spatial(conn):
+        return CheckResult(
+            check_id="G015",
+            name="node_reach_distance",
+            severity=Severity.WARNING,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0.0,
+            details=pd.DataFrame(),
+            description="SKIPPED – spatial extension unavailable",
+            threshold=max_dist,
+        )
+
+    where_clause_n = f"AND n.region = '{region}'" if region else ""
+
+    # ST_Distance_Spheroid only works on POINT types, not point-vs-linestring.
+    # Use ST_Distance (Cartesian degrees) and convert to approximate metres.
+    # 1 degree ≈ 111 km at equator — good enough for a lint threshold.
+    deg_thresh = max_dist / 111000.0
+
+    query = f"""
+    SELECT
+        n.node_id, n.reach_id, n.region, n.x, n.y,
+        ROUND(ST_Distance(n.geom, r.geom) * 111000, 1) AS dist_m
+    FROM nodes n
+    JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
+    WHERE n.geom IS NOT NULL AND r.geom IS NOT NULL
+        AND ST_Distance(n.geom, r.geom) > {deg_thresh}
+        {where_clause_n}
+    ORDER BY dist_m DESC
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM nodes n
+    JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
+    WHERE n.geom IS NOT NULL AND r.geom IS NOT NULL
+        {where_clause_n}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G015",
+        name="node_reach_distance",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Nodes more than ~{max_dist}m from parent reach",
+        threshold=max_dist,
+    )
+
+
+# ---------------------------------------------------------------------------
+# G016 – Node spacing uniformity
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G016",
+    Category.GEOMETRY,
+    Severity.INFO,
+    "Node spacing should be roughly uniform within a reach",
+    default_threshold=2.0,
+)
+def check_node_spacing(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag nodes whose length is >2× or <0.5× the reach mean node length."""
+    ratio = threshold if threshold is not None else 2.0
+    where_clause = f"AND n.region = '{region}'" if region else ""
+
+    query = f"""
+    WITH reach_avg AS (
+        SELECT
+            reach_id, region,
+            AVG(node_length) AS avg_len
+        FROM nodes
+        WHERE node_length > 0 AND node_length != -9999
+        GROUP BY reach_id, region
+        HAVING COUNT(*) >= 3
+    )
+    SELECT
+        n.node_id, n.reach_id, n.region, n.x, n.y,
+        n.node_length,
+        ROUND(ra.avg_len, 1) AS avg_node_length,
+        ROUND(n.node_length / ra.avg_len, 2) AS ratio
+    FROM nodes n
+    JOIN reach_avg ra ON n.reach_id = ra.reach_id AND n.region = ra.region
+    WHERE n.node_length > 0 AND n.node_length != -9999
+        AND (n.node_length > ra.avg_len * {ratio}
+             OR n.node_length < ra.avg_len / {ratio})
+        {where_clause}
+    ORDER BY ABS(n.node_length / ra.avg_len - 1) DESC
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM nodes n
+    WHERE n.node_length > 0 AND n.node_length != -9999
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G016",
+        name="node_spacing",
+        severity=Severity.INFO,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Nodes with spacing >{ratio}× or <1/{ratio}× reach mean",
+        threshold=ratio,
+    )
+
+
+# ---------------------------------------------------------------------------
+# G017 – Cross-reach nodes (node closer to another reach)
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G017",
+    Category.GEOMETRY,
+    Severity.WARNING,
+    "Nodes should not be closer to a different reach than their own",
+    default_threshold=50.0,
+)
+def check_cross_reach_nodes(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Two-pass: find nodes far from own reach, then check if closer to another."""
+    own_dist = threshold if threshold is not None else 50.0
+
+    if not _ensure_spatial(conn):
+        return CheckResult(
+            check_id="G017",
+            name="cross_reach_nodes",
+            severity=Severity.WARNING,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0.0,
+            details=pd.DataFrame(),
+            description="SKIPPED – spatial extension unavailable",
+            threshold=own_dist,
+        )
+
+    where_clause_n = f"AND n.region = '{region}'" if region else ""
+
+    # ST_Distance_Spheroid only works point-vs-point, so use Cartesian
+    # ST_Distance (degrees) and convert to approximate metres.
+    deg_thresh = own_dist / 111000.0
+
+    # Two-pass approach:
+    # 1. Find nodes > own_dist from their own reach
+    # 2. For those, find if any other reach (bbox prefilter) is closer
+    query = f"""
+    WITH far_nodes AS (
+        SELECT
+            n.node_id, n.reach_id, n.region, n.x, n.y, n.geom AS node_geom,
+            ST_Distance(n.geom, r.geom) AS own_dist_deg
+        FROM nodes n
+        JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
+        WHERE n.geom IS NOT NULL AND r.geom IS NOT NULL
+            AND ST_Distance(n.geom, r.geom) > {deg_thresh}
+            {where_clause_n}
+    ),
+    nearest_other AS (
+        SELECT
+            fn.node_id, fn.reach_id, fn.region, fn.x, fn.y,
+            ROUND(fn.own_dist_deg * 111000, 1) AS own_dist_m,
+            r2.reach_id AS alt_reach_id,
+            ROUND(ST_Distance(fn.node_geom, r2.geom) * 111000, 1) AS alt_dist_m
+        FROM far_nodes fn
+        JOIN reaches r2
+            ON r2.region = fn.region
+            AND r2.reach_id != fn.reach_id
+            AND r2.geom IS NOT NULL
+            AND ABS(r2.x - fn.x) < 0.05
+            AND ABS(r2.y - fn.y) < 0.05
+        WHERE ST_Distance(fn.node_geom, r2.geom) < fn.own_dist_deg
+    )
+    SELECT node_id, reach_id, region, x, y,
+        own_dist_m, alt_reach_id, alt_dist_m
+    FROM nearest_other
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY node_id ORDER BY alt_dist_m) = 1
+    ORDER BY own_dist_m DESC
+    LIMIT 5000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM nodes n
+    JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
+    WHERE n.geom IS NOT NULL AND r.geom IS NOT NULL
+        {where_clause_n}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G017",
+        name="cross_reach_nodes",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Nodes >{own_dist}m from own reach and closer to another",
+        threshold=own_dist,
+    )
+
+
+# ---------------------------------------------------------------------------
+# G018 – dist_out vs reach_length consistency
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G018",
+    Category.GEOMETRY,
+    Severity.WARNING,
+    "dist_out difference between connected reaches should approximate reach_length",
+    default_threshold=0.2,
+)
+def check_dist_out_vs_reach_length(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Single-hop: |r1.dist_out - r2.dist_out - r1.reach_length| / r1.reach_length > tol."""
+    tolerance = threshold if threshold is not None else 0.2
+    where_clause = f"AND t.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r1.reach_id, r1.region, r1.river_name, r1.x, r1.y,
+        r1.dist_out AS dist_out_up,
+        r2.dist_out AS dist_out_down,
+        r1.reach_length,
+        ROUND(ABS(r1.dist_out - r2.dist_out - r1.reach_length), 1) AS diff_m,
+        ROUND(ABS(r1.dist_out - r2.dist_out - r1.reach_length)
+              / r1.reach_length, 3) AS pct_diff
+    FROM reach_topology t
+    JOIN reaches r1 ON t.reach_id = r1.reach_id AND t.region = r1.region
+    JOIN reaches r2 ON t.neighbor_reach_id = r2.reach_id AND t.region = r2.region
+    WHERE t.direction = 'down'
+        AND r1.reach_length > 0 AND r1.reach_length != -9999
+        AND r1.dist_out IS NOT NULL AND r1.dist_out > 0 AND r1.dist_out != -9999
+        AND r2.dist_out IS NOT NULL AND r2.dist_out > 0 AND r2.dist_out != -9999
+        AND ABS(r1.dist_out - r2.dist_out - r1.reach_length)
+            / r1.reach_length > {tolerance}
+        {where_clause}
+    ORDER BY pct_diff DESC
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reach_topology t
+    JOIN reaches r1 ON t.reach_id = r1.reach_id AND t.region = r1.region
+    JOIN reaches r2 ON t.neighbor_reach_id = r2.reach_id AND t.region = r2.region
+    WHERE t.direction = 'down'
+        AND r1.reach_length > 0 AND r1.reach_length != -9999
+        AND r1.dist_out IS NOT NULL AND r1.dist_out > 0 AND r1.dist_out != -9999
+        AND r2.dist_out IS NOT NULL AND r2.dist_out > 0 AND r2.dist_out != -9999
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G018",
+        name="dist_out_vs_reach_length",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Reach pairs where dist_out gap differs from reach_length by >{tolerance * 100:.0f}%",
+        threshold=tolerance,
+    )
+
+
+# ---------------------------------------------------------------------------
+# G019 – Confluence geometry (upstream endpoints near downstream start)
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G019",
+    Category.GEOMETRY,
+    Severity.INFO,
+    "At confluences, upstream reach endpoints should be near downstream start",
+    default_threshold=500.0,
+)
+def check_confluence_geometry(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """At junctions (n_rch_up >= 2): min gap between upstream endpoints and
+    downstream startpoint. Uses LEAST-of-4-distances pattern."""
+    gap_m = threshold if threshold is not None else 500.0
+
+    if not _ensure_spatial(conn):
+        return CheckResult(
+            check_id="G019",
+            name="confluence_geometry",
+            severity=Severity.INFO,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0.0,
+            details=pd.DataFrame(),
+            description="SKIPPED – spatial extension unavailable",
+            threshold=gap_m,
+        )
+
+    where_clause = f"AND ds.region = '{region}'" if region else ""
+
+    query = f"""
+    WITH confluences AS (
+        SELECT reach_id, region
+        FROM reaches
+        WHERE n_rch_up >= 2 AND geom IS NOT NULL {where_clause.replace("ds.", "")}
+    ),
+    upstream_pairs AS (
+        SELECT
+            c.reach_id AS ds_id, c.region,
+            t.neighbor_reach_id AS us_id
+        FROM confluences c
+        JOIN reach_topology t
+            ON c.reach_id = t.reach_id AND c.region = t.region
+        WHERE t.direction = 'up'
+    ),
+    dists AS (
+        SELECT
+            up.ds_id, up.us_id, up.region,
+            LEAST(
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_StartPoint(us.geom)),
+                    ST_FlipCoordinates(ST_StartPoint(ds.geom))),
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_StartPoint(us.geom)),
+                    ST_FlipCoordinates(ST_EndPoint(ds.geom))),
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_EndPoint(us.geom)),
+                    ST_FlipCoordinates(ST_StartPoint(ds.geom))),
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_EndPoint(us.geom)),
+                    ST_FlipCoordinates(ST_EndPoint(ds.geom)))
+            ) AS min_gap_m
+        FROM upstream_pairs up
+        JOIN reaches us ON up.us_id = us.reach_id AND up.region = us.region
+        JOIN reaches ds ON up.ds_id = ds.reach_id AND up.region = ds.region
+        WHERE us.geom IS NOT NULL
+    )
+    SELECT
+        ds_id AS reach_id,
+        us_id AS upstream_reach_id,
+        region,
+        ROUND(min_gap_m, 1) AS min_gap_m
+    FROM dists
+    WHERE min_gap_m > {gap_m}
+    ORDER BY min_gap_m DESC
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*)
+    FROM reaches ds
+    JOIN reach_topology t ON ds.reach_id = t.reach_id AND ds.region = t.region
+    JOIN reaches us ON t.neighbor_reach_id = us.reach_id AND t.region = us.region
+    WHERE t.direction = 'up'
+        AND ds.n_rch_up >= 2
+        AND ds.geom IS NOT NULL AND us.geom IS NOT NULL
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G019",
+        name="confluence_geometry",
+        severity=Severity.INFO,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Confluence upstream-downstream endpoint gap > {gap_m}m",
+        threshold=gap_m,
+    )
+
+
+# ---------------------------------------------------------------------------
+# G020 – Bifurcation geometry (downstream endpoints near upstream end)
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G020",
+    Category.GEOMETRY,
+    Severity.INFO,
+    "At bifurcations, downstream reach endpoints should be near upstream end",
+    default_threshold=500.0,
+)
+def check_bifurcation_geometry(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """At bifurcations (n_rch_down >= 2): min gap between downstream
+    startpoints and upstream endpoint."""
+    gap_m = threshold if threshold is not None else 500.0
+
+    if not _ensure_spatial(conn):
+        return CheckResult(
+            check_id="G020",
+            name="bifurcation_geometry",
+            severity=Severity.INFO,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0.0,
+            details=pd.DataFrame(),
+            description="SKIPPED – spatial extension unavailable",
+            threshold=gap_m,
+        )
+
+    where_clause = f"AND us.region = '{region}'" if region else ""
+
+    query = f"""
+    WITH bifurcations AS (
+        SELECT reach_id, region
+        FROM reaches
+        WHERE n_rch_down >= 2 AND geom IS NOT NULL {where_clause.replace("us.", "")}
+    ),
+    downstream_pairs AS (
+        SELECT
+            b.reach_id AS us_id, b.region,
+            t.neighbor_reach_id AS ds_id
+        FROM bifurcations b
+        JOIN reach_topology t
+            ON b.reach_id = t.reach_id AND b.region = t.region
+        WHERE t.direction = 'down'
+    ),
+    dists AS (
+        SELECT
+            dp.us_id, dp.ds_id, dp.region,
+            LEAST(
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_StartPoint(us.geom)),
+                    ST_FlipCoordinates(ST_StartPoint(ds.geom))),
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_StartPoint(us.geom)),
+                    ST_FlipCoordinates(ST_EndPoint(ds.geom))),
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_EndPoint(us.geom)),
+                    ST_FlipCoordinates(ST_StartPoint(ds.geom))),
+                ST_Distance_Spheroid(
+                    ST_FlipCoordinates(ST_EndPoint(us.geom)),
+                    ST_FlipCoordinates(ST_EndPoint(ds.geom)))
+            ) AS min_gap_m
+        FROM downstream_pairs dp
+        JOIN reaches us ON dp.us_id = us.reach_id AND dp.region = us.region
+        JOIN reaches ds ON dp.ds_id = ds.reach_id AND dp.region = ds.region
+        WHERE ds.geom IS NOT NULL
+    )
+    SELECT
+        us_id AS reach_id,
+        ds_id AS downstream_reach_id,
+        region,
+        ROUND(min_gap_m, 1) AS min_gap_m
+    FROM dists
+    WHERE min_gap_m > {gap_m}
+    ORDER BY min_gap_m DESC
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*)
+    FROM reaches us
+    JOIN reach_topology t ON us.reach_id = t.reach_id AND us.region = t.region
+    JOIN reaches ds ON t.neighbor_reach_id = ds.reach_id AND t.region = ds.region
+    WHERE t.direction = 'down'
+        AND us.n_rch_down >= 2
+        AND us.geom IS NOT NULL AND ds.geom IS NOT NULL
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G020",
+        name="bifurcation_geometry",
+        severity=Severity.INFO,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Bifurcation upstream-downstream endpoint gap > {gap_m}m",
+        threshold=gap_m,
+    )
+
+
+# ---------------------------------------------------------------------------
+# G021 – Reach crossing (topologically distant reaches whose geometries cross)
+# ---------------------------------------------------------------------------
+
+
+@register_check(
+    "G021",
+    Category.GEOMETRY,
+    Severity.INFO,
+    "Topologically distant reaches should not spatially cross",
+)
+def check_reach_overlap(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag reach pairs whose geometries cross (ST_Crosses) and that are
+    not within 2 topology hops of each other.
+
+    Filters applied (based on investigation of NA region):
+    - ST_Crosses instead of ST_Intersects: eliminates endpoint touches
+      between near-neighbor reaches (94% of previous false positives).
+    - Direct neighbor exclusion: pairs linked in reach_topology are skipped.
+    - Shared-neighbor exclusion (2-hop): pairs that share a common topology
+      neighbor are skipped.  100% of previous NA flags were ≤2 hops apart.
+    """
+    if not _ensure_spatial(conn):
+        return CheckResult(
+            check_id="G021",
+            name="reach_overlap",
+            severity=Severity.INFO,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0.0,
+            details=pd.DataFrame(),
+            description="SKIPPED – spatial extension unavailable",
+        )
+
+    where_clause_a = f"AND a.region = '{region}'" if region else ""
+    where_clause_r = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        a.reach_id AS reach_id_a,
+        b.reach_id AS reach_id_b,
+        a.region
+    FROM reaches a
+    JOIN reaches b
+        ON a.region = b.region
+        AND a.reach_id < b.reach_id
+        AND a.geom IS NOT NULL AND b.geom IS NOT NULL
+        AND ABS(a.x - b.x) < 0.15
+        AND ABS(a.y - b.y) < 0.15
+    WHERE ST_Crosses(a.geom, b.geom)
+        -- Exclude direct topology neighbors (1-hop)
+        AND NOT EXISTS (
+            SELECT 1 FROM reach_topology t
+            WHERE t.reach_id = a.reach_id AND t.region = a.region
+              AND t.neighbor_reach_id = b.reach_id
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM reach_topology t
+            WHERE t.reach_id = b.reach_id AND t.region = b.region
+              AND t.neighbor_reach_id = a.reach_id
+        )
+        -- Exclude pairs sharing a common topology neighbor (2-hop)
+        AND NOT EXISTS (
+            SELECT 1 FROM reach_topology t1
+            JOIN reach_topology t2
+                ON t1.neighbor_reach_id = t2.reach_id
+                AND t1.region = t2.region
+            WHERE t1.reach_id = a.reach_id AND t1.region = a.region
+              AND t2.neighbor_reach_id = b.reach_id
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM reach_topology t1
+            JOIN reach_topology t2
+                ON t1.neighbor_reach_id = t2.reach_id
+                AND t1.region = t2.region
+            WHERE t1.reach_id = b.reach_id AND t1.region = b.region
+              AND t2.neighbor_reach_id = a.reach_id
+        )
+        {where_clause_a}
+    ORDER BY a.reach_id
+    LIMIT 5000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE r.geom IS NOT NULL {where_clause_r}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G021",
+        name="reach_overlap",
+        severity=Severity.INFO,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Topologically distant reach pairs with crossing geometry",
+    )
