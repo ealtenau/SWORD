@@ -1293,3 +1293,72 @@ class TestG021ReachOverlap:
         assert result.passed is False
         assert result.issues_found >= 1
         conn.close()
+
+    def test_pass_touching_not_crossing(self, tmp_path):
+        """Endpoint touches (ST_Touches) should NOT be flagged."""
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE reach_topology (
+                reach_id BIGINT, region VARCHAR, direction VARCHAR,
+                neighbor_rank INTEGER, neighbor_reach_id BIGINT
+            )
+        """)
+        # Two reaches that share an endpoint but don't cross
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 1 0)'),5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',0,0,ST_GeomFromText('LINESTRING(1 0, 2 0)'),5000,100,0,0,0)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+
+        result = check_reach_overlap(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_pass_crossing_within_two_hops(self, tmp_path):
+        """Crossing reaches within 2 topology hops should NOT be flagged."""
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE reach_topology (
+                reach_id BIGINT, region VARCHAR, direction VARCHAR,
+                neighbor_rank INTEGER, neighbor_reach_id BIGINT
+            )
+        """)
+        # Two crossing reaches connected through intermediate reach 3
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 1 1)'),5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',0,0,ST_GeomFromText('LINESTRING(0.5 0, 0.5 1)'),5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (3,'NA',0,0,ST_GeomFromText('LINESTRING(1 1, 2 2)'),5000,100,0,0,0)""")
+        # Topology: 1 → 3 → 2 (reach 3 bridges 1 and 2)
+        conn.execute("""INSERT INTO reach_topology VALUES
+            (1,'NA','down',0,3)""")
+        conn.execute("""INSERT INTO reach_topology VALUES
+            (3,'NA','up',0,1)""")
+        conn.execute("""INSERT INTO reach_topology VALUES
+            (3,'NA','down',0,2)""")
+        conn.execute("""INSERT INTO reach_topology VALUES
+            (2,'NA','up',0,3)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+
+        result = check_reach_overlap(conn)
+        assert result.passed is True
+        conn.close()

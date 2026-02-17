@@ -1458,7 +1458,7 @@ def check_bifurcation_geometry(
 
 
 # ---------------------------------------------------------------------------
-# G021 – Reach overlap (non-connected reaches intersecting)
+# G021 – Reach crossing (topologically distant reaches whose geometries cross)
 # ---------------------------------------------------------------------------
 
 
@@ -1466,14 +1466,23 @@ def check_bifurcation_geometry(
     "G021",
     Category.GEOMETRY,
     Severity.INFO,
-    "Non-connected reaches should not spatially overlap",
+    "Topologically distant reaches should not spatially cross",
 )
 def check_reach_overlap(
     conn: duckdb.DuckDBPyConnection,
     region: Optional[str] = None,
     threshold: Optional[float] = None,
 ) -> CheckResult:
-    """Flag non-connected reach pairs whose geometries intersect."""
+    """Flag reach pairs whose geometries cross (ST_Crosses) and that are
+    not within 2 topology hops of each other.
+
+    Filters applied (based on investigation of NA region):
+    - ST_Crosses instead of ST_Intersects: eliminates endpoint touches
+      between near-neighbor reaches (94% of previous false positives).
+    - Direct neighbor exclusion: pairs linked in reach_topology are skipped.
+    - Shared-neighbor exclusion (2-hop): pairs that share a common topology
+      neighbor are skipped.  100% of previous NA flags were ≤2 hops apart.
+    """
     if not _ensure_spatial(conn):
         return CheckResult(
             check_id="G021",
@@ -1502,7 +1511,8 @@ def check_reach_overlap(
         AND a.geom IS NOT NULL AND b.geom IS NOT NULL
         AND ABS(a.x - b.x) < 0.15
         AND ABS(a.y - b.y) < 0.15
-    WHERE ST_Intersects(a.geom, b.geom)
+    WHERE ST_Crosses(a.geom, b.geom)
+        -- Exclude direct topology neighbors (1-hop)
         AND NOT EXISTS (
             SELECT 1 FROM reach_topology t
             WHERE t.reach_id = a.reach_id AND t.region = a.region
@@ -1512,6 +1522,23 @@ def check_reach_overlap(
             SELECT 1 FROM reach_topology t
             WHERE t.reach_id = b.reach_id AND t.region = b.region
               AND t.neighbor_reach_id = a.reach_id
+        )
+        -- Exclude pairs sharing a common topology neighbor (2-hop)
+        AND NOT EXISTS (
+            SELECT 1 FROM reach_topology t1
+            JOIN reach_topology t2
+                ON t1.neighbor_reach_id = t2.reach_id
+                AND t1.region = t2.region
+            WHERE t1.reach_id = a.reach_id AND t1.region = a.region
+              AND t2.neighbor_reach_id = b.reach_id
+        )
+        AND NOT EXISTS (
+            SELECT 1 FROM reach_topology t1
+            JOIN reach_topology t2
+                ON t1.neighbor_reach_id = t2.reach_id
+                AND t1.region = t2.region
+            WHERE t1.reach_id = b.reach_id AND t1.region = b.region
+              AND t2.neighbor_reach_id = a.reach_id
         )
         {where_clause_a}
     ORDER BY a.reach_id
@@ -1534,5 +1561,5 @@ def check_reach_overlap(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description="Non-connected reach pairs with overlapping geometry",
+        description="Topologically distant reach pairs with crossing geometry",
     )
