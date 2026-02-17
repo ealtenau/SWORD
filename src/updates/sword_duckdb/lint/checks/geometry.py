@@ -876,7 +876,8 @@ def check_duplicate_geometry(
             description="SKIPPED – spatial extension unavailable",
         )
 
-    where_clause = f"AND a.region = '{region}'" if region else ""
+    where_clause_a = f"AND a.region = '{region}'" if region else ""
+    where_clause_r = f"AND r.region = '{region}'" if region else ""
 
     query = f"""
     SELECT
@@ -887,9 +888,11 @@ def check_duplicate_geometry(
     JOIN reaches b
         ON a.region = b.region
         AND a.reach_id < b.reach_id
+        AND ABS(a.x - b.x) < 0.01
+        AND ABS(a.y - b.y) < 0.01
     WHERE a.geom IS NOT NULL AND b.geom IS NOT NULL
         AND ST_Equals(a.geom, b.geom)
-        {where_clause}
+        {where_clause_a}
     ORDER BY a.reach_id
     LIMIT 5000
     """
@@ -897,7 +900,7 @@ def check_duplicate_geometry(
 
     total_query = f"""
     SELECT COUNT(*) FROM reaches r
-    WHERE r.geom IS NOT NULL {where_clause.replace("a.region", "r.region")}
+    WHERE r.geom IS NOT NULL {where_clause_r}
     """
     total = conn.execute(total_query).fetchone()[0]
 
@@ -1112,7 +1115,6 @@ def check_cross_reach_nodes(
         WHERE n.geom IS NOT NULL AND r.geom IS NOT NULL
             AND ST_Distance(n.geom, r.geom) > {deg_thresh}
             {where_clause_n}
-        LIMIT 5000
     ),
     nearest_other AS (
         SELECT
@@ -1133,7 +1135,8 @@ def check_cross_reach_nodes(
         own_dist_m, alt_reach_id, alt_dist_m
     FROM nearest_other
     QUALIFY ROW_NUMBER() OVER (PARTITION BY node_id ORDER BY alt_dist_m) = 1
-    ORDER BY node_id
+    ORDER BY own_dist_m DESC
+    LIMIT 5000
     """
     issues = conn.execute(query).fetchdf()
 
@@ -1271,7 +1274,7 @@ def check_confluence_geometry(
     WITH confluences AS (
         SELECT reach_id, region
         FROM reaches
-        WHERE n_rch_up >= 2 AND geom IS NOT NULL
+        WHERE n_rch_up >= 2 AND geom IS NOT NULL {where_clause.replace("ds.", "")}
     ),
     upstream_pairs AS (
         SELECT
@@ -1383,7 +1386,7 @@ def check_bifurcation_geometry(
     WITH bifurcations AS (
         SELECT reach_id, region
         FROM reaches
-        WHERE n_rch_down >= 2 AND geom IS NOT NULL
+        WHERE n_rch_down >= 2 AND geom IS NOT NULL {where_clause.replace("us.", "")}
     ),
     downstream_pairs AS (
         SELECT
@@ -1484,7 +1487,8 @@ def check_reach_overlap(
             description="SKIPPED – spatial extension unavailable",
         )
 
-    where_clause = f"AND a.region = '{region}'" if region else ""
+    where_clause_a = f"AND a.region = '{region}'" if region else ""
+    where_clause_r = f"AND r.region = '{region}'" if region else ""
 
     query = f"""
     SELECT
@@ -1509,7 +1513,7 @@ def check_reach_overlap(
             WHERE t.reach_id = b.reach_id AND t.region = b.region
               AND t.neighbor_reach_id = a.reach_id
         )
-        {where_clause}
+        {where_clause_a}
     ORDER BY a.reach_id
     LIMIT 5000
     """
@@ -1517,7 +1521,7 @@ def check_reach_overlap(
 
     total_query = f"""
     SELECT COUNT(*) FROM reaches r
-    WHERE r.geom IS NOT NULL {where_clause.replace("a.region", "r.region")}
+    WHERE r.geom IS NOT NULL {where_clause_r}
     """
     total = conn.execute(total_query).fetchone()[0]
 

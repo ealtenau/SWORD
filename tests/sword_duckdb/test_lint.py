@@ -946,6 +946,83 @@ class TestG016NodeSpacing:
         conn.close()
 
 
+class TestG017CrossReachNodes:
+    """Tests for G017 cross_reach_nodes."""
+
+    def test_pass_node_close_to_own_reach(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0.005,0,ST_GeomFromText('LINESTRING(0 0, 0.01 0)'),
+             5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',1.005,0,ST_GeomFromText('LINESTRING(1 0, 1.01 0)'),
+             5000,100,0,0,0)""")
+        conn.execute("""
+            CREATE TABLE nodes (
+                node_id BIGINT, reach_id BIGINT, region VARCHAR,
+                x DOUBLE, y DOUBLE, node_length DOUBLE, geom GEOMETRY
+            )
+        """)
+        # Node on top of its own reach — no issue
+        conn.execute("""INSERT INTO nodes VALUES
+            (1,1,'NA',0.005,0,200,ST_Point(0.005, 0))""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_cross_reach_nodes,
+        )
+
+        result = check_cross_reach_nodes(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_node_closer_to_other_reach(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        # Reach 1 at x=0, Reach 2 at x=0.001 (very close).
+        # Node belongs to reach 1 but is placed at x=0.0009 — closer to reach 2.
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 0 0.01)'),
+             5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',0.001,0,ST_GeomFromText('LINESTRING(0.001 0, 0.001 0.01)'),
+             5000,100,0,0,0)""")
+        conn.execute("""
+            CREATE TABLE nodes (
+                node_id BIGINT, reach_id BIGINT, region VARCHAR,
+                x DOUBLE, y DOUBLE, node_length DOUBLE, geom GEOMETRY
+            )
+        """)
+        # Node at x=0.0009 — own reach is at x=0 (dist ~0.0009°≈100m),
+        # alt reach is at x=0.001 (dist ~0.0001°≈11m).
+        conn.execute("""INSERT INTO nodes VALUES
+            (1,1,'NA',0.0009,0.005,200,ST_Point(0.0009, 0.005))""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_cross_reach_nodes,
+        )
+
+        # threshold=50m → 0.0009° × 111000 ≈ 100m > 50m, so node is "far"
+        result = check_cross_reach_nodes(conn, threshold=50.0)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
 class TestG018DistOutVsReachLength:
     """Tests for G018 dist_out_vs_reach_length."""
 

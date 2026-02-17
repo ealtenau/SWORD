@@ -434,53 +434,51 @@ def _populate_geometries(conn):
 def _inject_geometry_test_data(conn, region):
     """Add deliberate bad data to exercise geometry checks G013-G021.
 
-    Uses reach indices 90-97 (IDs 11000000090-11000000097) which are
+    Uses reach indices 90-95 (IDs 11000000090-11000000095) which are
     'normal' reaches in the middle of the network — safe to modify.
     """
     base = 11000000000
 
     # G013: width > length (reach 90) — set width = 10000, length stays ~5000
-    conn.execute(f"""
-        UPDATE reaches SET width = 10000.0
-        WHERE reach_id = {base + 90} AND region = '{region}'
-    """)
+    conn.execute(
+        "UPDATE reaches SET width = 10000.0 WHERE reach_id = ? AND region = ?",
+        [base + 90, region],
+    )
 
     # G015: node far from reach (move first node of reach 91 far away)
     # Shift node x by +2.0 degrees (~200 km) so it's far from its parent reach
-    conn.execute(f"""
-        UPDATE nodes SET x = x + 2.0,
-            geom = ST_Point(x + 2.0, y)
-        WHERE reach_id = {base + 91} AND region = '{region}'
+    conn.execute(
+        """UPDATE nodes SET x = x + 2.0, geom = ST_Point(x + 2.0, y)
+        WHERE reach_id = ? AND region = ?
         AND node_id = (
-            SELECT MIN(node_id) FROM nodes
-            WHERE reach_id = {base + 91} AND region = '{region}'
-        )
-    """)
+            SELECT MIN(node_id) FROM nodes WHERE reach_id = ? AND region = ?
+        )""",
+        [base + 91, region, base + 91, region],
+    )
 
     # G014: duplicate geometry — make reach 92 and 93 share identical geometry
-    conn.execute(f"""
-        UPDATE reaches SET geom = (
-            SELECT geom FROM reaches
-            WHERE reach_id = {base + 92} AND region = '{region}'
-        )
-        WHERE reach_id = {base + 93} AND region = '{region}'
-    """)
+    conn.execute(
+        """UPDATE reaches SET geom = (
+            SELECT geom FROM reaches WHERE reach_id = ? AND region = ?
+        ) WHERE reach_id = ? AND region = ?""",
+        [base + 92, region, base + 93, region],
+    )
 
     # G016: node spacing outlier — make one node of reach 94 have 5x avg length
-    conn.execute(f"""
-        UPDATE nodes SET node_length = node_length * 5.0
-        WHERE reach_id = {base + 94} AND region = '{region}'
+    conn.execute(
+        """UPDATE nodes SET node_length = node_length * 5.0
+        WHERE reach_id = ? AND region = ?
         AND node_id = (
-            SELECT MIN(node_id) FROM nodes
-            WHERE reach_id = {base + 94} AND region = '{region}'
-        )
-    """)
+            SELECT MIN(node_id) FROM nodes WHERE reach_id = ? AND region = ?
+        )""",
+        [base + 94, region, base + 94, region],
+    )
 
     # G018: dist_out gap mismatch — set reach 95 dist_out very high
-    conn.execute(f"""
-        UPDATE reaches SET dist_out = 999999.0
-        WHERE reach_id = {base + 95} AND region = '{region}'
-    """)
+    conn.execute(
+        "UPDATE reaches SET dist_out = 999999.0 WHERE reach_id = ? AND region = ?",
+        [base + 95, region],
+    )
 
 
 # ==============================================================================
