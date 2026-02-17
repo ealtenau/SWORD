@@ -190,7 +190,7 @@ class TestScoreSectionConfidence:
         G = _make_graph([100, 101, 102, 103])
         rdf = _make_reaches_df(
             reach_id=[101, 102, 103],
-            slope_obs_q=[8, 8, 0],  # bit 8 = extreme slope
+            slope_obs_q=[8, 8, 0],  # bit 3 (value 8) = extreme slope
             slope_obs_n_passes=[15, 12, 14],
         )
         vrow = {
@@ -202,6 +202,29 @@ class TestScoreSectionConfidence:
         }
         tier, _ = score_section_confidence(vrow, G, rdf, [101, 102, 103])
         assert tier == "LOW"
+
+    def test_high_variability_does_not_block(self):
+        """Bit 2 (value 4, high variability) should NOT trigger has_extreme."""
+        G = _make_graph([100, 101, 102, 103, 104])
+        rdf = _make_reaches_df(
+            reach_id=[101, 102, 103],
+            wse_obs_mean=[100.0, 99.0, 98.0],
+            slope_obs_q=[4, 0, 0],  # 4=high variability; majority still q==0
+            slope_obs_n_passes=[15, 12, 14],
+            n_obs=[50, 45, 48],
+            lakeflag=[0, 0, 0],
+        )
+        vrow = {
+            "direction_valid": False,
+            "likely_cause": "potential_topology_error",
+            "slope_from_upstream": 0.01,
+            "slope_from_downstream": -0.01,
+            "upstream_junction": 100,
+        }
+        tier, meta = score_section_confidence(vrow, G, rdf, [101, 102, 103])
+        # High variability (bit 2) is common in low-gradient rivers — not disqualifying
+        assert tier == "HIGH"
+        assert not meta["has_extreme_flags"]
 
 
 # ---------------------------------------------------------------------------

@@ -94,7 +94,7 @@ def _get_reach_quality(reach_ids: List[int], reaches_df: pd.DataFrame) -> Dict:
     n_good = sum(1 for q in slope_q_vals if q == 0)
     frac_good = n_good / len(slope_q_vals) if slope_q_vals else 0
     med_passes = float(np.median(n_passes_vals)) if n_passes_vals else 0
-    has_extreme = any(q & (4 | 8) for q in slope_q_vals)
+    has_extreme = any(q & 8 for q in slope_q_vals)
     has_lake = False
     if "lakeflag" in avail:
         lf_vals = subset["lakeflag"].dropna()
