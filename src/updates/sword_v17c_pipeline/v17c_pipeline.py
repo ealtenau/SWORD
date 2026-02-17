@@ -1363,7 +1363,7 @@ def process_region(
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
     skip_path_vars: bool = False,
-    skip_flow_correction: bool = False,
+    skip_flow_correction: bool = True,
 ) -> Dict:
     """
     Process a single region through the v17c pipeline.
@@ -1386,6 +1386,9 @@ def process_region(
         Path to no-facc RF model for entry point correction
     standard_model_path : str
         Path to standard RF model for propagation correction
+    skip_flow_correction : bool
+        Skip flow direction correction (default: True — disabled until
+        scoring reliability is improved, see issue #70)
 
     Returns
     -------
@@ -1629,7 +1632,7 @@ def run_pipeline(
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
     skip_path_vars: bool = False,
-    skip_flow_correction: bool = False,
+    skip_flow_correction: bool = True,
 ) -> List[Dict]:
     """
     Run the v17c pipeline for multiple regions.
@@ -1772,7 +1775,13 @@ def main():
     parser.add_argument(
         "--skip-flow-correction",
         action="store_true",
-        help="Skip flow direction correction (auto-flip wrong-direction sections)",
+        default=True,
+        help="Skip flow direction correction (default: on — correction disabled until scoring is reliable)",
+    )
+    parser.add_argument(
+        "--enable-flow-correction",
+        action="store_true",
+        help="Enable flow direction correction (experimental, disabled by default)",
     )
     parser.add_argument(
         "--rollback-flow-corrections",
@@ -1816,7 +1825,7 @@ def main():
         nofacc_model_path=args.nofacc_model,
         standard_model_path=args.standard_model,
         skip_path_vars=args.skip_path_vars,
-        skip_flow_correction=args.skip_flow_correction,
+        skip_flow_correction=not args.enable_flow_correction,
     )
 
     # Exit with error if any region failed
