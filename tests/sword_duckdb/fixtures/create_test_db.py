@@ -384,6 +384,106 @@ def generate_ice_flags(reaches: list) -> list:
 
 
 # ==============================================================================
+# Geometry Helpers
+# ==============================================================================
+
+
+def _populate_geometries(conn):
+    """Build actual geometries from x/y coordinates using DuckDB spatial.
+
+    Reaches: LineString from their nodes' x/y positions.
+    Nodes: Point from x/y.
+    Centerlines: Point from x/y.
+    """
+    try:
+        conn.execute("LOAD spatial")
+    except Exception:
+        try:
+            conn.execute("INSTALL spatial; LOAD spatial")
+        except Exception:
+            print("    Spatial extension unavailable, skipping geometry population")
+            return
+
+    # Nodes → Point
+    conn.execute("""
+        UPDATE nodes SET geom = ST_Point(x, y)
+        WHERE x IS NOT NULL AND y IS NOT NULL
+    """)
+
+    # Centerlines → Point
+    conn.execute("""
+        UPDATE centerlines SET geom = ST_Point(x, y)
+        WHERE x IS NOT NULL AND y IS NOT NULL
+    """)
+
+    # Reaches → LineString built from their nodes (ordered by node_id)
+    conn.execute("""
+        UPDATE reaches SET geom = sub.line
+        FROM (
+            SELECT n.reach_id, n.region,
+                   ST_MakeLine(LIST(ST_Point(n.x, n.y) ORDER BY n.node_id)) AS line
+            FROM nodes n
+            GROUP BY n.reach_id, n.region
+            HAVING COUNT(*) >= 2
+        ) sub
+        WHERE reaches.reach_id = sub.reach_id
+          AND reaches.region = sub.region
+    """)
+
+
+def _inject_geometry_test_data(conn, region):
+    """Add deliberate bad data to exercise geometry checks G013-G021.
+
+    Uses reach indices 90-97 (IDs 11000000090-11000000097) which are
+    'normal' reaches in the middle of the network — safe to modify.
+    """
+    base = 11000000000
+
+    # G013: width > length (reach 90) — set width = 10000, length stays ~5000
+    conn.execute(f"""
+        UPDATE reaches SET width = 10000.0
+        WHERE reach_id = {base + 90} AND region = '{region}'
+    """)
+
+    # G015: node far from reach (move first node of reach 91 far away)
+    # Shift node x by +2.0 degrees (~200 km) so it's far from its parent reach
+    conn.execute(f"""
+        UPDATE nodes SET x = x + 2.0,
+            geom = ST_Point(x + 2.0, y)
+        WHERE reach_id = {base + 91} AND region = '{region}'
+        AND node_id = (
+            SELECT MIN(node_id) FROM nodes
+            WHERE reach_id = {base + 91} AND region = '{region}'
+        )
+    """)
+
+    # G014: duplicate geometry — make reach 92 and 93 share identical geometry
+    conn.execute(f"""
+        UPDATE reaches SET geom = (
+            SELECT geom FROM reaches
+            WHERE reach_id = {base + 92} AND region = '{region}'
+        )
+        WHERE reach_id = {base + 93} AND region = '{region}'
+    """)
+
+    # G016: node spacing outlier — make one node of reach 94 have 5x avg length
+    conn.execute(f"""
+        UPDATE nodes SET node_length = node_length * 5.0
+        WHERE reach_id = {base + 94} AND region = '{region}'
+        AND node_id = (
+            SELECT MIN(node_id) FROM nodes
+            WHERE reach_id = {base + 94} AND region = '{region}'
+        )
+    """)
+
+    # G018: dist_out gap mismatch — set reach 95 dist_out very high
+    conn.execute(f"""
+        UPDATE reaches SET dist_out = 999999.0
+        WHERE reach_id = {base + 95} AND region = '{region}'
+    """)
+
+
+# ==============================================================================
 # Database Creation
 # ==============================================================================
 
@@ -517,6 +617,14 @@ def create_minimal_test_db(db_path: str, region: str = "NA", version: str = "v17
     """,
         [(f["reach_id"], f["julian_day"], f["iceflag"]) for f in ice_flags],
     )
+
+    # Populate geometries from x/y coordinates
+    print("  Populating geometries...")
+    _populate_geometries(conn)
+
+    # Inject bad data for geometry check tests
+    print("  Injecting geometry test data...")
+    _inject_geometry_test_data(conn, region)
 
     # Update topology counts on reaches
     print("  Updating topology counts...")

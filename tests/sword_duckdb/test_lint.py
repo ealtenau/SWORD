@@ -206,6 +206,15 @@ class TestRegistry:
             "A026",
             "A027",
             "G001",
+            "G013",
+            "G014",
+            "G015",
+            "G016",
+            "G017",
+            "G018",
+            "G019",
+            "G020",
+            "G021",
             "C001",
             "FL001",
             "FL002",
@@ -614,4 +623,596 @@ class TestV011OsmNameContinuity:
         result = check_osm_name_continuity(conn, region="NA")
         assert result.passed is True
         assert result.issues_found == 0
+        conn.close()
+
+
+# =============================================================================
+# Geometry Check Tests (G013-G021)
+# =============================================================================
+
+
+def _spatial_conn(tmp_path, name="test.duckdb"):
+    """Create a DuckDB connection with spatial extension loaded."""
+    import duckdb as _duckdb
+
+    db_path = tmp_path / name
+    conn = _duckdb.connect(str(db_path))
+    try:
+        conn.execute("INSTALL spatial; LOAD spatial")
+    except Exception:
+        pytest.skip("DuckDB spatial extension unavailable")
+    return conn
+
+
+def _create_reaches_table(conn, rows):
+    """Create minimal reaches table.
+
+    rows: list of dicts with at least reach_id, region.
+    Other columns have defaults.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reaches (
+            reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+            x_min DOUBLE, x_max DOUBLE, y_min DOUBLE, y_max DOUBLE,
+            geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+            lakeflag INTEGER, dist_out DOUBLE, river_name VARCHAR,
+            n_rch_up INTEGER DEFAULT 0, n_rch_down INTEGER DEFAULT 0,
+            sinuosity DOUBLE DEFAULT 1.1, n_nodes INTEGER DEFAULT 5
+        )
+    """)
+    for r in rows:
+        conn.execute(
+            """INSERT INTO reaches (reach_id, region, x, y, geom,
+               reach_length, width, lakeflag, dist_out, river_name,
+               n_rch_up, n_rch_down)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            [
+                r.get("reach_id"),
+                r.get("region", "NA"),
+                r.get("x", 0.0),
+                r.get("y", 0.0),
+                r.get("geom"),
+                r.get("reach_length", 5000.0),
+                r.get("width", 100.0),
+                r.get("lakeflag", 0),
+                r.get("dist_out", 50000.0),
+                r.get("river_name", "Test"),
+                r.get("n_rch_up", 0),
+                r.get("n_rch_down", 0),
+            ],
+        )
+
+
+def _create_nodes_table(conn, rows):
+    """Create minimal nodes table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS nodes (
+            node_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+            geom GEOMETRY, reach_id BIGINT, node_length DOUBLE
+        )
+    """)
+    for n in rows:
+        conn.execute(
+            "INSERT INTO nodes VALUES (?,?,?,?,?,?,?)",
+            [
+                n["node_id"],
+                n.get("region", "NA"),
+                n["x"],
+                n["y"],
+                n.get("geom"),
+                n["reach_id"],
+                n.get("node_length", 1000.0),
+            ],
+        )
+
+
+def _create_topology_table(conn, rows):
+    """Create minimal reach_topology table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reach_topology (
+            reach_id BIGINT, region VARCHAR, direction VARCHAR,
+            neighbor_rank INTEGER, neighbor_reach_id BIGINT
+        )
+    """)
+    for t in rows:
+        conn.execute(
+            "INSERT INTO reach_topology VALUES (?,?,?,?,?)",
+            [
+                t["reach_id"],
+                t.get("region", "NA"),
+                t["direction"],
+                t.get("neighbor_rank", 0),
+                t["neighbor_reach_id"],
+            ],
+        )
+
+
+class TestG013WidthGtLength:
+    """Tests for G013 width_gt_length."""
+
+    def test_pass_normal(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "width": 100.0, "reach_length": 5000.0, "lakeflag": 0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.geometry import check_width_gt_length
+
+        result = check_width_gt_length(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_width_exceeds_length(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {
+                    "reach_id": 1,
+                    "width": 10000.0,
+                    "reach_length": 5000.0,
+                    "lakeflag": 0,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.geometry import check_width_gt_length
+
+        result = check_width_gt_length(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+    def test_lake_excluded(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {
+                    "reach_id": 1,
+                    "width": 10000.0,
+                    "reach_length": 5000.0,
+                    "lakeflag": 1,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.geometry import check_width_gt_length
+
+        result = check_width_gt_length(conn)
+        assert result.passed is True
+        conn.close()
+
+
+class TestG014DuplicateGeometry:
+    """Tests for G014 duplicate_geometry."""
+
+    def test_pass_unique(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        line1 = "ST_GeomFromText('LINESTRING(0 0, 1 1)')"
+        line2 = "ST_GeomFromText('LINESTRING(2 2, 3 3)')"
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, river_name VARCHAR,
+                n_rch_up INTEGER DEFAULT 0, n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute(f"""INSERT INTO reaches VALUES
+            (1,'NA',0,0,{line1},5000,100,0,'R1',0,0)""")
+        conn.execute(f"""INSERT INTO reaches VALUES
+            (2,'NA',2,2,{line2},5000,100,0,'R2',0,0)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_duplicate_geometry,
+        )
+
+        result = check_duplicate_geometry(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_duplicates(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        line = "ST_GeomFromText('LINESTRING(0 0, 1 1)')"
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, river_name VARCHAR,
+                n_rch_up INTEGER DEFAULT 0, n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute(f"""INSERT INTO reaches VALUES
+            (1,'NA',0,0,{line},5000,100,0,'R1',0,0)""")
+        conn.execute(f"""INSERT INTO reaches VALUES
+            (2,'NA',0,0,{line},5000,100,0,'R2',0,0)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_duplicate_geometry,
+        )
+
+        result = check_duplicate_geometry(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestG015NodeReachDistance:
+    """Tests for G015 node_reach_distance."""
+
+    def test_pass_close_node(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE nodes (
+                node_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_id BIGINT, node_length DOUBLE
+            )
+        """)
+        # Reach is a line from (0,0) to (0.01,0.01), node is on the line
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 0.01 0.01)'),
+             5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO nodes VALUES
+            (101,'NA',0.005,0.005,ST_Point(0.005,0.005),1,1000)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_node_reach_distance,
+        )
+
+        result = check_node_reach_distance(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_far_node(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE nodes (
+                node_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_id BIGINT, node_length DOUBLE
+            )
+        """)
+        # Node is ~200km away from its reach
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 0.01 0.01)'),
+             5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO nodes VALUES
+            (101,'NA',2.0,2.0,ST_Point(2.0,2.0),1,1000)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_node_reach_distance,
+        )
+
+        result = check_node_reach_distance(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+
+class TestG016NodeSpacing:
+    """Tests for G016 node_spacing."""
+
+    def test_pass_uniform(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}])
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1, "reach_id": 1, "x": 0, "y": 0, "node_length": 1000},
+                {"node_id": 2, "reach_id": 1, "x": 0.01, "y": 0, "node_length": 1000},
+                {"node_id": 3, "reach_id": 1, "x": 0.02, "y": 0, "node_length": 1000},
+                {"node_id": 4, "reach_id": 1, "x": 0.03, "y": 0, "node_length": 1100},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.geometry import check_node_spacing
+
+        result = check_node_spacing(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_outlier(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}])
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1, "reach_id": 1, "x": 0, "y": 0, "node_length": 5000},
+                {"node_id": 2, "reach_id": 1, "x": 0.01, "y": 0, "node_length": 1000},
+                {"node_id": 3, "reach_id": 1, "x": 0.02, "y": 0, "node_length": 1000},
+                {"node_id": 4, "reach_id": 1, "x": 0.03, "y": 0, "node_length": 1000},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.geometry import check_node_spacing
+
+        result = check_node_spacing(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestG018DistOutVsReachLength:
+    """Tests for G018 dist_out_vs_reach_length."""
+
+    def test_pass_consistent(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        # r1.dist_out=10000, r2.dist_out=5000, r1.reach_length=5000 → diff=0
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "dist_out": 10000.0, "reach_length": 5000.0},
+                {"reach_id": 2, "dist_out": 5000.0, "reach_length": 5000.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_dist_out_vs_reach_length,
+        )
+
+        result = check_dist_out_vs_reach_length(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_mismatch(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        # r1.dist_out=50000, r2.dist_out=5000, r1.reach_length=5000
+        # diff = |50000 - 5000 - 5000| / 5000 = 8.0 >> 0.2
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "dist_out": 50000.0, "reach_length": 5000.0},
+                {"reach_id": 2, "dist_out": 5000.0, "reach_length": 5000.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_dist_out_vs_reach_length,
+        )
+
+        result = check_dist_out_vs_reach_length(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+
+class TestG019ConfluenceGeometry:
+    """Tests for G019 confluence_geometry."""
+
+    def test_pass_close_endpoints(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        # Two upstream reaches meeting at a downstream reach, endpoints close
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER, n_rch_down INTEGER
+            )
+        """)
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 0.01 0)'),5000,100,0,0,1)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',0,0.01,ST_GeomFromText('LINESTRING(0 0.01, 0.01 0)'),5000,100,0,0,1)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (3,'NA',0.01,0,ST_GeomFromText('LINESTRING(0.01 0, 0.02 0)'),5000,100,0,2,0)""")
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 3, "direction": "up", "neighbor_reach_id": 1},
+                {
+                    "reach_id": 3,
+                    "direction": "up",
+                    "neighbor_rank": 1,
+                    "neighbor_reach_id": 2,
+                },
+            ],
+        )
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_confluence_geometry,
+        )
+
+        result = check_confluence_geometry(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_far_endpoints(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER, n_rch_down INTEGER
+            )
+        """)
+        # Upstream reach 1 ends ~1000km from downstream reach 3 start
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',10,10,ST_GeomFromText('LINESTRING(10 10, 11 11)'),5000,100,0,0,1)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',0,0.01,ST_GeomFromText('LINESTRING(0 0.01, 0.01 0)'),5000,100,0,0,1)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (3,'NA',0.01,0,ST_GeomFromText('LINESTRING(0.01 0, 0.02 0)'),5000,100,0,2,0)""")
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 3, "direction": "up", "neighbor_reach_id": 1},
+                {
+                    "reach_id": 3,
+                    "direction": "up",
+                    "neighbor_rank": 1,
+                    "neighbor_reach_id": 2,
+                },
+            ],
+        )
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_confluence_geometry,
+        )
+
+        result = check_confluence_geometry(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestG020BifurcationGeometry:
+    """Tests for G020 bifurcation_geometry."""
+
+    def test_pass_close_endpoints(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER, n_rch_down INTEGER
+            )
+        """)
+        # Upstream reach 1 splits into reaches 2 and 3
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 0.01 0)'),5000,100,0,0,2)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',0.01,0,ST_GeomFromText('LINESTRING(0.01 0, 0.02 0)'),5000,100,0,1,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (3,'NA',0.01,0,ST_GeomFromText('LINESTRING(0.01 0, 0.02 0.01)'),5000,100,0,1,0)""")
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+                {
+                    "reach_id": 1,
+                    "direction": "down",
+                    "neighbor_rank": 1,
+                    "neighbor_reach_id": 3,
+                },
+            ],
+        )
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_bifurcation_geometry,
+        )
+
+        result = check_bifurcation_geometry(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_far_endpoints(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER, n_rch_down INTEGER
+            )
+        """)
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 0.01 0)'),5000,100,0,0,2)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',10,10,ST_GeomFromText('LINESTRING(10 10, 11 11)'),5000,100,0,1,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (3,'NA',0.01,0,ST_GeomFromText('LINESTRING(0.01 0, 0.02 0.01)'),5000,100,0,1,0)""")
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+                {
+                    "reach_id": 1,
+                    "direction": "down",
+                    "neighbor_rank": 1,
+                    "neighbor_reach_id": 3,
+                },
+            ],
+        )
+
+        from src.updates.sword_duckdb.lint.checks.geometry import (
+            check_bifurcation_geometry,
+        )
+
+        result = check_bifurcation_geometry(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestG021ReachOverlap:
+    """Tests for G021 reach_overlap."""
+
+    def test_pass_no_overlap(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE reach_topology (
+                reach_id BIGINT, region VARCHAR, direction VARCHAR,
+                neighbor_rank INTEGER, neighbor_reach_id BIGINT
+            )
+        """)
+        # Non-overlapping reaches
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 1 0)'),5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',5,5,ST_GeomFromText('LINESTRING(5 5, 6 5)'),5000,100,0,0,0)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+
+        result = check_reach_overlap(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_overlap_no_connection(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE reach_topology (
+                reach_id BIGINT, region VARCHAR, direction VARCHAR,
+                neighbor_rank INTEGER, neighbor_reach_id BIGINT
+            )
+        """)
+        # Overlapping reaches with no topology connection
+        conn.execute("""INSERT INTO reaches VALUES
+            (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 1 1)'),5000,100,0,0,0)""")
+        conn.execute("""INSERT INTO reaches VALUES
+            (2,'NA',0,0,ST_GeomFromText('LINESTRING(0.5 0, 0.5 1)'),5000,100,0,0,0)""")
+
+        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+
+        result = check_reach_overlap(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
         conn.close()

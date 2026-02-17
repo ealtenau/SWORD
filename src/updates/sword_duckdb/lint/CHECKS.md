@@ -25,6 +25,15 @@ This document provides detailed documentation for each lint check in the SWORD l
   - [G001: reach_length_bounds](#g001-reach_length_bounds)
   - [G002: node_length_consistency](#g002-node_length_consistency)
   - [G003: zero_length_reaches](#g003-zero_length_reaches)
+  - [G013: width_gt_length](#g013-width_gt_length)
+  - [G014: duplicate_geometry](#g014-duplicate_geometry)
+  - [G015: node_reach_distance](#g015-node_reach_distance)
+  - [G016: node_spacing](#g016-node_spacing)
+  - [G017: cross_reach_nodes](#g017-cross_reach_nodes)
+  - [G018: dist_out_vs_reach_length](#g018-dist_out_vs_reach_length)
+  - [G019: confluence_geometry](#g019-confluence_geometry)
+  - [G020: bifurcation_geometry](#g020-bifurcation_geometry)
+  - [G021: reach_overlap](#g021-reach_overlap)
 - [Classification Checks (C0xx)](#classification-checks-c0xx)
   - [C001: lake_sandwich](#c001-lake_sandwich)
   - [C002: lakeflag_distribution](#c002-lakeflag_distribution)
@@ -682,6 +691,111 @@ These should be investigated and either fixed or removed.
 
 ---
 
+### G013: width_gt_length
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Category** | Geometry |
+
+Flags non-lake reaches (`lakeflag = 0`) where `width > reach_length`. Lakes are excluded because wide, short lake-reaches are expected.
+
+---
+
+### G014: duplicate_geometry
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Category** | Geometry |
+
+Flags pairs of reaches within the same region whose geometry is identical (`ST_Equals`). Requires spatial extension.
+
+---
+
+### G015: node_reach_distance
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Default Threshold** | 100.0 (meters) |
+| **Category** | Geometry |
+
+Flags nodes whose point geometry is more than 100m from their parent reach linestring. Uses approximate Cartesian-to-metre conversion (`ST_Distance * 111000`). Requires spatial extension.
+
+---
+
+### G016: node_spacing
+
+| Property | Value |
+|----------|-------|
+| **Severity** | INFO |
+| **Default Threshold** | 2.0 (ratio) |
+| **Category** | Geometry |
+
+Flags nodes whose `node_length` is >2× or <0.5× the mean `node_length` for their reach. Only checks reaches with ≥3 nodes.
+
+---
+
+### G017: cross_reach_nodes
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Default Threshold** | 50.0 (meters) |
+| **Category** | Geometry |
+
+Two-pass check: (1) finds nodes >50m from their own reach, (2) checks if any nearby alternative reach is closer. Bbox prefilter (`|Δx| < 0.05°, |Δy| < 0.05°`). LIMIT 5000. Requires spatial extension.
+
+---
+
+### G018: dist_out_vs_reach_length
+
+| Property | Value |
+|----------|-------|
+| **Severity** | WARNING |
+| **Default Threshold** | 0.2 (20% tolerance) |
+| **Category** | Geometry |
+
+For each downstream connection, checks `|r1.dist_out - r2.dist_out - r1.reach_length| / r1.reach_length > 0.2`. Large discrepancies suggest dist_out or reach_length errors.
+
+---
+
+### G019: confluence_geometry
+
+| Property | Value |
+|----------|-------|
+| **Severity** | INFO |
+| **Default Threshold** | 500.0 (meters) |
+| **Category** | Geometry |
+
+At confluences (`n_rch_up >= 2`): checks that upstream reach endpoints are within 500m of the downstream reach endpoints. Uses LEAST-of-4-distances pattern (robust to digitization direction). Requires spatial extension.
+
+---
+
+### G020: bifurcation_geometry
+
+| Property | Value |
+|----------|-------|
+| **Severity** | INFO |
+| **Default Threshold** | 500.0 (meters) |
+| **Category** | Geometry |
+
+Mirror of G019 at bifurcations (`n_rch_down >= 2`). Checks that downstream reach endpoints are within 500m of the upstream reach endpoints. Requires spatial extension.
+
+---
+
+### G021: reach_overlap
+
+| Property | Value |
+|----------|-------|
+| **Severity** | INFO |
+| **Category** | Geometry |
+
+Flags pairs of non-connected reaches whose geometries intersect (`ST_Intersects`). Uses bbox prefilter (`|Δx| < 0.15°, |Δy| < 0.15°`) and `NOT EXISTS` on `reach_topology`. LIMIT 5000. Requires spatial extension.
+
+---
+
 ## Classification Checks (C0xx)
 
 Classification checks validate lake/river type assignments.
@@ -969,6 +1083,12 @@ Checks that SWOT-observed slope mean is below 50 m/km. Extremely high slopes are
 | A027 | threshold | 50.0 | m/km | Maximum reasonable observed slope |
 | FL003 | threshold | 1e-4 | m/m | Slope threshold for low_slope_flag |
 | G002 | threshold | 0.1 | ratio | Max difference in node sum vs reach length |
+| G015 | threshold | 100.0 | meters | Max node-to-reach distance |
+| G016 | threshold | 2.0 | ratio | Max node_length / mean ratio |
+| G017 | threshold | 50.0 | meters | Min dist before cross-reach check |
+| G018 | threshold | 0.2 | ratio | Max dist_out gap vs reach_length |
+| G019 | threshold | 500.0 | meters | Max confluence endpoint gap |
+| G020 | threshold | 500.0 | meters | Max bifurcation endpoint gap |
 
 Override thresholds via CLI:
 ```bash
