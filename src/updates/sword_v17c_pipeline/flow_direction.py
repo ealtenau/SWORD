@@ -71,38 +71,65 @@ def rollback_flow_corrections(
     return n
 
 
-def _get_reach_quality(reach_ids: List[int], reaches_df: pd.DataFrame) -> Dict:
-    """Gather quality metrics for reaches in a section."""
-    cols = ["slope_obs_q", "slope_obs_n_passes", "n_obs", "wse_obs_mean", "lakeflag"]
-    avail = [c for c in cols if c in reaches_df.columns]
-    subset = reaches_df[reaches_df["reach_id"].isin(reach_ids)]
+MIN_OBS_FOR_SLOPE = 5  # minimum n_obs to trust a reach's slope_obs_mean
 
+
+def _get_reach_quality(reach_ids: List[int], reaches_df: pd.DataFrame) -> Dict:
+    """Gather quality metrics for reaches in a section.
+
+    Primary signal: reach-level SWOT observed slopes (slope_obs_mean).
+    Negative slope_obs_mean = water flowing opposite to coded direction.
+    """
+    subset = reaches_df[reaches_df["reach_id"].isin(reach_ids)]
+    avail = set(subset.columns)
+
+    # Count reaches with SWOT WSE observations
     n_wse = 0
+    if "wse_obs_mean" in avail:
+        n_wse = int(subset["wse_obs_mean"].notna().sum())
+
+    # Reach-level SWOT slope evidence (only well-observed reaches)
+    n_neg_slope = 0
+    n_pos_slope = 0
+    obs_slopes = []
+    if "slope_obs_mean" in avail and "n_obs" in avail:
+        for _, row in subset.iterrows():
+            s = row.get("slope_obs_mean")
+            n = row.get("n_obs")
+            if pd.notna(s) and pd.notna(n) and int(n) >= MIN_OBS_FOR_SLOPE:
+                obs_slopes.append(float(s))
+                if s < 0:
+                    n_neg_slope += 1
+                else:
+                    n_pos_slope += 1
+
+    med_obs_slope = float(np.median(obs_slopes)) if obs_slopes else None
+
+    # Quality flag summary
     slope_q_vals = []
     n_passes_vals = []
-
     for _, row in subset.iterrows():
-        if "wse_obs_mean" in avail and pd.notna(row.get("wse_obs_mean")):
-            n_wse += 1
         sq = row.get("slope_obs_q")
-        if sq is not None and pd.notna(sq):
+        if pd.notna(sq):
             slope_q_vals.append(int(sq))
         np_val = row.get("slope_obs_n_passes")
-        if np_val is not None and pd.notna(np_val):
+        if pd.notna(np_val):
             n_passes_vals.append(int(np_val))
 
-    n_good = sum(1 for q in slope_q_vals if q == 0)
-    frac_good = n_good / len(slope_q_vals) if slope_q_vals else 0
     med_passes = float(np.median(n_passes_vals)) if n_passes_vals else 0
     has_extreme = any(q & 8 for q in slope_q_vals)
+
     has_lake = False
     if "lakeflag" in avail:
         lf_vals = subset["lakeflag"].dropna()
-        has_lake = (lf_vals > 0).any()
+        has_lake = bool((lf_vals > 0).any())
 
     return {
         "n_with_wse": n_wse,
-        "frac_good_q": frac_good,
+        "n_obs_reaches": len(obs_slopes),
+        "n_neg_slope": n_neg_slope,
+        "n_pos_slope": n_pos_slope,
+        "med_obs_slope": med_obs_slope,
         "median_n_passes": med_passes,
         "has_extreme_flags": has_extreme,
         "has_lake": has_lake,
@@ -114,20 +141,22 @@ def score_section_confidence(
     G: nx.DiGraph,
     reaches_df: pd.DataFrame,
     reach_ids: List[int],
-    min_wse_reaches: int = 2,
+    min_obs_reaches: int = 2,
 ) -> Tuple[str, Dict]:
-    """
-    Score a section into HIGH / MEDIUM / LOW / SKIP confidence tier.
+    """Score a section into HIGH / MEDIUM / LOW / SKIP confidence tier.
 
-    HIGH: both slopes wrong, majority good quality, >=10 passes, >=3 WSE reaches
-    MEDIUM: both slopes wrong, >=2 WSE reaches, no extreme flags
-    LOW: single slope wrong, quality issues, or insufficient WSE
-    SKIP: lake/reservoir, extreme data error, tidal, or already valid
+    Primary signal: reach-level SWOT observed slopes (slope_obs_mean).
+    Negative slope_obs_mean means water is flowing opposite to the coded
+    direction — independent evidence of wrong flow direction.
+
+    HIGH:   majority of well-observed reaches have negative SWOT slope,
+            >=3 reaches, strong median, good passes, no extreme flags
+    MEDIUM: majority negative, >=2 reaches, no extreme flags
+    LOW:    mixed signal, insufficient data, or extreme flags
+    SKIP:   lake/reservoir, extreme data error, tidal, or already valid
     """
     likely_cause = validation_row.get("likely_cause")
     direction_valid = validation_row.get("direction_valid")
-    slope_up = validation_row.get("slope_from_upstream")
-    slope_dn = validation_row.get("slope_from_downstream")
 
     if direction_valid is True or direction_valid is None:
         return "SKIP", {"reason": "valid_or_undetermined"}
@@ -142,31 +171,45 @@ def score_section_confidence(
             return "SKIP", {"reason": "tidal_section"}
 
     metrics = _get_reach_quality(reach_ids, reaches_df)
-    upstream_wrong = pd.notna(slope_up) and slope_up > 0
-    downstream_wrong = pd.notna(slope_dn) and slope_dn < 0
-    both_wrong = upstream_wrong and downstream_wrong
+    meta = {**metrics}
 
-    meta = {
-        "upstream_wrong": upstream_wrong,
-        "downstream_wrong": downstream_wrong,
-        **metrics,
-    }
+    n_obs = metrics["n_obs_reaches"]
+    n_neg = metrics["n_neg_slope"]
+    n_pos = metrics["n_pos_slope"]
+    med_slope = metrics["med_obs_slope"]
 
-    if metrics["n_with_wse"] < min_wse_reaches:
-        return "LOW", {**meta, "reason": "insufficient_wse"}
+    # Not enough well-observed reaches to judge
+    if n_obs < min_obs_reaches:
+        return "LOW", {**meta, "reason": "insufficient_obs_reaches"}
 
-    if both_wrong:
-        if (
-            metrics["frac_good_q"] > 0.5
-            and metrics["median_n_passes"] >= 10
-            and metrics["n_with_wse"] >= 3
-            and not metrics["has_extreme_flags"]
-        ):
-            return "HIGH", {**meta, "reason": "both_wrong_high_quality"}
-        if metrics["n_with_wse"] >= 2 and not metrics["has_extreme_flags"]:
-            return "MEDIUM", {**meta, "reason": "both_wrong_moderate_quality"}
+    # No negative SWOT slopes → junction calculation was a false positive
+    if n_neg == 0:
+        return "LOW", {**meta, "reason": "no_negative_swot_slopes"}
 
-    return "LOW", {**meta, "reason": "single_wrong_or_quality_issues"}
+    # Majority of SWOT reaches must show negative slope
+    majority_neg = n_neg > n_pos
+
+    if not majority_neg:
+        return "LOW", {**meta, "reason": "mixed_slope_signal"}
+
+    if metrics["has_extreme_flags"]:
+        return "LOW", {**meta, "reason": "extreme_slope_flags"}
+
+    # HIGH: strong consistent signal
+    if (
+        n_neg >= 3
+        and n_neg > n_pos * 2
+        and med_slope is not None
+        and med_slope < -0.1
+        and metrics["median_n_passes"] >= 10
+    ):
+        return "HIGH", {**meta, "reason": "majority_negative_high_quality"}
+
+    # MEDIUM: decent signal
+    if n_neg >= 2 and med_slope is not None and med_slope < -0.05:
+        return "MEDIUM", {**meta, "reason": "majority_negative_moderate"}
+
+    return "LOW", {**meta, "reason": "weak_negative_signal"}
 
 
 def flip_section_topology(

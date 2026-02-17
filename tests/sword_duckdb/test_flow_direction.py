@@ -42,9 +42,14 @@ def _insert_topology(conn, rows):
 
 
 def _make_reaches_df(**overrides):
-    """Build a minimal reaches DataFrame for scoring tests."""
+    """Build a minimal reaches DataFrame for scoring tests.
+
+    Defaults: 3 reaches with negative slope_obs_mean (wrong direction),
+    good quality, well-observed. Override any column to test other cases.
+    """
     defaults = {
         "reach_id": [101, 102, 103],
+        "slope_obs_mean": [-2.0, -1.5, -1.8],  # negative = wrong direction
         "wse_obs_mean": [100.0, 99.0, 98.0],
         "slope_obs_q": [0, 0, 0],
         "slope_obs_n_passes": [15, 12, 14],
@@ -66,6 +71,19 @@ def _make_graph(reach_ids, lakeflag_map=None):
     return G
 
 
+def _vrow(**overrides):
+    """Build a standard invalid validation row."""
+    defaults = {
+        "direction_valid": False,
+        "likely_cause": "potential_topology_error",
+        "slope_from_upstream": 0.01,
+        "slope_from_downstream": -0.01,
+        "upstream_junction": 100,
+    }
+    defaults.update(overrides)
+    return defaults
+
+
 # ---------------------------------------------------------------------------
 # score_section_confidence
 # ---------------------------------------------------------------------------
@@ -78,153 +96,137 @@ class TestScoreSectionConfidence:
         assert tier == "SKIP"
 
     def test_lake_section_is_skip(self):
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "lake_section",
-            "slope_from_upstream": 0.01,
-            "slope_from_downstream": -0.01,
-        }
-        tier, _ = score_section_confidence(vrow, nx.DiGraph(), pd.DataFrame(), [])
+        tier, _ = score_section_confidence(
+            _vrow(likely_cause="lake_section"), nx.DiGraph(), pd.DataFrame(), []
+        )
         assert tier == "SKIP"
 
     def test_extreme_data_error_is_skip(self):
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "extreme_slope_data_error",
-        }
-        tier, _ = score_section_confidence(vrow, nx.DiGraph(), pd.DataFrame(), [])
+        tier, _ = score_section_confidence(
+            _vrow(likely_cause="extreme_slope_data_error"),
+            nx.DiGraph(),
+            pd.DataFrame(),
+            [],
+        )
         assert tier == "SKIP"
 
     def test_tidal_section_is_skip(self):
         G = _make_graph([100, 101])
         G.nodes[100]["lakeflag"] = 3
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "potential_topology_error",
-            "upstream_junction": 100,
-            "slope_from_upstream": 0.01,
-            "slope_from_downstream": -0.01,
-        }
-        tier, _ = score_section_confidence(vrow, G, _make_reaches_df(), [101])
+        tier, _ = score_section_confidence(_vrow(), G, _make_reaches_df(), [101])
         assert tier == "SKIP"
 
-    def test_high_confidence_both_wrong(self):
-        """Both slopes wrong, good quality -> HIGH."""
+    def test_high_confidence_negative_swot_slopes(self):
+        """Majority of reaches have negative SWOT slope -> HIGH."""
         G = _make_graph([100, 101, 102, 103, 104])
         rdf = _make_reaches_df(
             reach_id=[101, 102, 103],
-            wse_obs_mean=[100.0, 99.0, 98.0],
-            slope_obs_q=[0, 0, 0],
+            slope_obs_mean=[-2.0, -1.5, -1.8],
+            n_obs=[50, 45, 48],
             slope_obs_n_passes=[15, 12, 14],
         )
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "potential_topology_error",
-            "slope_from_upstream": 0.01,  # wrong: should be negative
-            "slope_from_downstream": -0.01,  # wrong: should be positive
-            "upstream_junction": 100,
-        }
-        tier, meta = score_section_confidence(vrow, G, rdf, [101, 102, 103])
+        tier, meta = score_section_confidence(_vrow(), G, rdf, [101, 102, 103])
         assert tier == "HIGH"
-        assert meta["reason"] == "both_wrong_high_quality"
+        assert meta["n_neg_slope"] == 3
+        assert meta["n_pos_slope"] == 0
 
-    def test_medium_confidence_fewer_passes(self):
-        """Both slopes wrong, fewer passes -> MEDIUM."""
+    def test_medium_confidence_two_negative(self):
+        """2 negative slopes, decent signal -> MEDIUM."""
         G = _make_graph([100, 101, 102, 103])
         rdf = _make_reaches_df(
             reach_id=[101, 102],
+            slope_obs_mean=[-0.3, -0.2],
             wse_obs_mean=[100.0, 99.0],
-            slope_obs_q=[0, 2],  # one has low n_passes flag
+            slope_obs_q=[0, 2],
             slope_obs_n_passes=[5, 5],
             n_obs=[50, 45],
             lakeflag=[0, 0],
         )
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "potential_topology_error",
-            "slope_from_upstream": 0.01,
-            "slope_from_downstream": -0.01,
-            "upstream_junction": 100,
-        }
-        tier, _ = score_section_confidence(vrow, G, rdf, [101, 102])
+        tier, _ = score_section_confidence(_vrow(), G, rdf, [101, 102])
         assert tier == "MEDIUM"
 
-    def test_low_confidence_single_wrong(self):
-        """Only one slope wrong -> LOW."""
-        G = _make_graph([100, 101, 102, 103])
-        rdf = _make_reaches_df(reach_id=[101, 102, 103])
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "potential_topology_error",
-            "slope_from_upstream": -0.01,  # correct sign
-            "slope_from_downstream": -0.01,  # wrong sign
-            "upstream_junction": 100,
-        }
-        tier, _ = score_section_confidence(vrow, G, rdf, [101, 102, 103])
-        assert tier == "LOW"
-
-    def test_low_confidence_insufficient_wse(self):
-        """Not enough WSE reaches -> LOW."""
-        G = _make_graph([100, 101])
-        rdf = _make_reaches_df(
-            reach_id=[101],
-            wse_obs_mean=[np.nan],
-            slope_obs_q=[0],
-            slope_obs_n_passes=[15],
-            n_obs=[0],
-            lakeflag=[0],
-        )
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "potential_topology_error",
-            "slope_from_upstream": 0.01,
-            "slope_from_downstream": -0.01,
-            "upstream_junction": 100,
-        }
-        tier, meta = score_section_confidence(vrow, G, rdf, [101])
-        assert tier == "LOW"
-        assert "insufficient_wse" in meta["reason"]
-
-    def test_low_confidence_extreme_flags(self):
-        """Extreme quality flags -> LOW even if both wrong."""
+    def test_low_all_positive_swot_slopes(self):
+        """All SWOT slopes positive -> false positive, LOW."""
         G = _make_graph([100, 101, 102, 103])
         rdf = _make_reaches_df(
             reach_id=[101, 102, 103],
-            slope_obs_q=[8, 8, 0],  # bit 3 (value 8) = extreme slope
-            slope_obs_n_passes=[15, 12, 14],
+            slope_obs_mean=[3.0, 2.5, 2.8],  # all positive = correct direction
+            n_obs=[50, 45, 48],
         )
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "potential_topology_error",
-            "slope_from_upstream": 0.01,
-            "slope_from_downstream": -0.01,
-            "upstream_junction": 100,
-        }
-        tier, _ = score_section_confidence(vrow, G, rdf, [101, 102, 103])
+        tier, meta = score_section_confidence(_vrow(), G, rdf, [101, 102, 103])
         assert tier == "LOW"
+        assert "no_negative" in meta["reason"]
 
-    def test_high_variability_does_not_block(self):
-        """Bit 2 (value 4, high variability) should NOT trigger has_extreme."""
+    def test_low_mixed_slope_signal(self):
+        """Mixed positive/negative slopes -> LOW."""
         G = _make_graph([100, 101, 102, 103, 104])
         rdf = _make_reaches_df(
             reach_id=[101, 102, 103],
-            wse_obs_mean=[100.0, 99.0, 98.0],
-            slope_obs_q=[4, 0, 0],  # 4=high variability; majority still q==0
+            slope_obs_mean=[-0.5, 1.0, 0.8],  # 1 neg, 2 pos
+            n_obs=[50, 45, 48],
+        )
+        tier, meta = score_section_confidence(_vrow(), G, rdf, [101, 102, 103])
+        assert tier == "LOW"
+        assert "mixed" in meta["reason"]
+
+    def test_low_insufficient_obs(self):
+        """Not enough well-observed reaches -> LOW."""
+        G = _make_graph([100, 101])
+        rdf = _make_reaches_df(
+            reach_id=[101],
+            slope_obs_mean=[-2.0],
+            wse_obs_mean=[np.nan],
+            slope_obs_q=[0],
+            slope_obs_n_passes=[15],
+            n_obs=[3],  # below MIN_OBS_FOR_SLOPE=5
+            lakeflag=[0],
+        )
+        tier, meta = score_section_confidence(_vrow(), G, rdf, [101])
+        assert tier == "LOW"
+        assert "insufficient" in meta["reason"]
+
+    def test_low_extreme_flags(self):
+        """Extreme quality flags -> LOW even with negative slopes."""
+        G = _make_graph([100, 101, 102, 103])
+        rdf = _make_reaches_df(
+            reach_id=[101, 102, 103],
+            slope_obs_mean=[-2.0, -1.5, -1.8],
+            slope_obs_q=[8, 8, 0],  # bit 3 = extreme slope
+            slope_obs_n_passes=[15, 12, 14],
+        )
+        tier, _ = score_section_confidence(_vrow(), G, rdf, [101, 102, 103])
+        assert tier == "LOW"
+
+    def test_high_variability_does_not_block(self):
+        """Bit 2 (value 4, high variability) should NOT block flip."""
+        G = _make_graph([100, 101, 102, 103, 104])
+        rdf = _make_reaches_df(
+            reach_id=[101, 102, 103],
+            slope_obs_mean=[-2.0, -1.5, -1.8],
+            slope_obs_q=[4, 0, 0],  # 4=high variability, not extreme
             slope_obs_n_passes=[15, 12, 14],
             n_obs=[50, 45, 48],
             lakeflag=[0, 0, 0],
         )
-        vrow = {
-            "direction_valid": False,
-            "likely_cause": "potential_topology_error",
-            "slope_from_upstream": 0.01,
-            "slope_from_downstream": -0.01,
-            "upstream_junction": 100,
-        }
-        tier, meta = score_section_confidence(vrow, G, rdf, [101, 102, 103])
-        # High variability (bit 2) is common in low-gradient rivers — not disqualifying
+        tier, meta = score_section_confidence(_vrow(), G, rdf, [101, 102, 103])
         assert tier == "HIGH"
         assert not meta["has_extreme_flags"]
+
+    def test_low_weak_negative_signal(self):
+        """Negative slopes but very small magnitude -> LOW."""
+        G = _make_graph([100, 101, 102, 103])
+        rdf = _make_reaches_df(
+            reach_id=[101, 102],
+            slope_obs_mean=[-0.01, -0.02],  # negative but tiny
+            wse_obs_mean=[100.0, 99.0],
+            slope_obs_q=[0, 0],
+            slope_obs_n_passes=[5, 5],
+            n_obs=[50, 45],
+            lakeflag=[0, 0],
+        )
+        tier, meta = score_section_confidence(_vrow(), G, rdf, [101, 102])
+        assert tier == "LOW"
+        assert "weak" in meta["reason"]
 
 
 # ---------------------------------------------------------------------------
@@ -249,9 +251,6 @@ class TestFlipSectionTopology:
         rows = conn.execute(
             "SELECT reach_id, direction, neighbor_reach_id FROM reach_topology ORDER BY reach_id, neighbor_reach_id"
         ).fetchall()
-        # (101, down, 102) was 'up' -> now 'down'
-        # (101, down, 103) external -> unchanged 'down'
-        # (102, up, 101) was 'down' -> now 'up'
         directions = {(r[0], r[2]): r[1] for r in rows}
         assert directions[(101, 102)] == "down"  # was up
         assert directions[(102, 101)] == "up"  # was down
@@ -314,7 +313,7 @@ class TestSnapshotRollback:
 
 class TestCorrectFlowDirections:
     def _setup_correction_scenario(self, conn):
-        """Set up a scenario with one invalid section."""
+        """Set up a scenario with one invalid section with negative SWOT slopes."""
         _insert_topology(
             conn,
             [
@@ -356,6 +355,7 @@ class TestCorrectFlowDirections:
         )
         reaches_df = _make_reaches_df(
             reach_id=[1, 2, 3],
+            slope_obs_mean=[-2.0, -1.5, -1.8],
             wse_obs_mean=[100.0, 99.0, 98.0],
             slope_obs_q=[0, 0, 0],
             slope_obs_n_passes=[15, 12, 14],
@@ -380,12 +380,61 @@ class TestCorrectFlowDirections:
         assert result["n_flipped"] == 1
         assert result["run_id"] == "testrun1"
 
-        # Verify provenance log
         logs = conn.execute(
             "SELECT * FROM v17c_flow_corrections WHERE run_id = 'testrun1'"
         ).fetchdf()
         assert len(logs) == 1
         assert logs.iloc[0]["tier"] == "HIGH"
+
+    def test_false_positive_not_flipped(self, conn):
+        """Section with all positive SWOT slopes is not flipped."""
+        create_flow_corrections_table(conn)
+        _insert_topology(
+            conn,
+            [
+                (1, "up", 0, 2, "NA"),
+                (2, "down", 0, 1, "NA"),
+                (2, "up", 0, 3, "NA"),
+                (3, "down", 0, 2, "NA"),
+            ],
+        )
+        G = _make_graph([1, 2, 3])
+        sdf = pd.DataFrame(
+            [
+                {
+                    "section_id": 0,
+                    "upstream_junction": 1,
+                    "downstream_junction": 3,
+                    "reach_ids": [1, 2, 3],
+                    "distance": 3000,
+                    "n_reaches": 3,
+                }
+            ]
+        )
+        vdf = pd.DataFrame(
+            [
+                {
+                    "section_id": 0,
+                    "direction_valid": False,
+                    "likely_cause": "potential_topology_error",
+                    "slope_from_upstream": 0.0007,
+                    "slope_from_downstream": -0.0007,
+                    "upstream_junction": 1,
+                    "downstream_junction": 3,
+                }
+            ]
+        )
+        rdf = _make_reaches_df(
+            reach_id=[1, 2, 3],
+            slope_obs_mean=[3.0, 2.5, 2.8],  # all positive = correct direction
+            wse_obs_mean=[100.0, 99.0, 98.0],
+            slope_obs_q=[0, 0, 0],
+            slope_obs_n_passes=[15, 12, 14],
+            n_obs=[50, 45, 48],
+            lakeflag=[0, 0, 0],
+        )
+        result = correct_flow_directions(conn, "NA", G, sdf, vdf, rdf, run_id="fp1")
+        assert result["n_flipped"] == 0
 
     def test_skip_sections_not_flipped(self, conn):
         """Lake/skip sections are not flipped."""
@@ -425,6 +474,7 @@ class TestCorrectFlowDirections:
         )
         rdf = _make_reaches_df(
             reach_id=[1, 2],
+            slope_obs_mean=[-2.0, -1.5],
             wse_obs_mean=[100.0, 99.0],
             slope_obs_q=[0, 0],
             slope_obs_n_passes=[15, 12],
@@ -441,7 +491,6 @@ class TestCorrectFlowDirections:
 
         def mock_rebuild(c, r):
             call_count[0] += 1
-            # Always return same invalid validation to force oscillation
             return G, sdf, vdf
 
         result = correct_flow_directions(
@@ -455,6 +504,5 @@ class TestCorrectFlowDirections:
             rebuild_fn=mock_rebuild,
             max_iterations=5,
         )
-        # Should flip twice then stop (oscillation guard kicks in)
         assert result["n_flipped"] <= 2
         assert result["n_manual_review"] >= 1
