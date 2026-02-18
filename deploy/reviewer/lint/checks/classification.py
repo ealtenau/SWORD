@@ -43,7 +43,7 @@ def check_lake_sandwich(
     WITH river_reaches AS (
         SELECT reach_id, region, x, y, reach_length, width, river_name
         FROM reaches
-        WHERE lakeflag = 0 {where_clause.replace('r.', '')}
+        WHERE lakeflag = 0 {where_clause.replace("r.", "")}
     ),
     has_lake_upstream AS (
         SELECT DISTINCT rt.reach_id, rt.region
@@ -298,7 +298,8 @@ def check_lakeflag_type_consistency(
                     (lakeflag = 0 AND type IN (1, 4))   -- river: type=river or dam
                     OR (lakeflag = 1 AND type IN (3, 4)) -- lake: type=lake_on_river or dam
                     OR (lakeflag = 2 AND type IN (1, 4)) -- canal: type=river or artificial
-                    OR type IN (5, 6)                    -- unreliable/ghost (covers most tidal)
+                    OR (lakeflag = 3 AND type IN (3, 4)) -- tidal: lake_on_river or dam
+                    OR type IN (5, 6)                    -- unreliable/ghost
                 )
             {where_clause}
         """
@@ -320,7 +321,7 @@ def check_lakeflag_type_consistency(
             issues_found=mismatch_count,
             issue_pct=100 * mismatch_count / total if total > 0 else 0,
             details=stats,
-            description=f"Potential lakeflag/type mismatches: {mismatch_count} ({100*mismatch_count/total:.1f}%) - needs investigation",
+            description=f"Potential lakeflag/type mismatches: {mismatch_count} ({100 * mismatch_count / total:.1f}%) - needs investigation",
         )
 
     except (duckdb.CatalogException, duckdb.BinderException):

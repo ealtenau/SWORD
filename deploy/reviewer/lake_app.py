@@ -146,15 +146,76 @@ def replay_persisted_fixes(conn):
                 ],
             )
             replayed += 1
+        for defer in session.get("defers", []):
+            if defer.get("undone", False):
+                continue
+            conn.execute(
+                """INSERT INTO lint_fix_log
+                   (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+                   VALUES (?, ?, ?, ?, 'defer', NULL, NULL, NULL, ?, ?)""",
+                [
+                    defer.get("fix_id", 0),
+                    defer.get("check_id"),
+                    defer.get("reach_id"),
+                    defer.get("region"),
+                    defer.get("notes", ""),
+                    defer.get("undone", False),
+                ],
+            )
+            replayed += 1
     if replayed:
         conn.commit()
 
 
+def _cleanup_stale_c004_fixes(conn):
+    """Revert C004 fixes for lakeflag=3/type=4 combos (now considered valid)."""
+    stale = conn.execute("""
+        SELECT f.fix_id, f.reach_id, f.region, f.old_value, f.column_changed
+        FROM lint_fix_log f
+        JOIN reaches r ON f.reach_id = r.reach_id AND f.region = r.region
+        WHERE f.check_id = 'C004' AND f.action = 'fix' AND NOT f.undone
+        AND (
+            (f.column_changed = 'lakeflag' AND f.old_value = '3' AND r.type = 4)
+            OR (f.column_changed = 'type' AND f.old_value = '4' AND r.lakeflag = 3)
+        )
+    """).fetchall()
+    for fix_id, reach_id, region, old_value, column in stale:
+        cast = int if column in ("lakeflag", "type") else str
+        conn.execute(
+            f"UPDATE reaches SET {column} = ? WHERE reach_id = ? AND region = ?",
+            [cast(old_value), reach_id, region],
+        )
+        conn.execute("UPDATE lint_fix_log SET undone = TRUE WHERE fix_id = ?", [fix_id])
+    if stale:
+        conn.commit()
+        _mark_stale_fixes_in_json({f[0] for f in stale})
+
+
+def _mark_stale_fixes_in_json(stale_fix_ids):
+    """Mark stale fix_ids as undone in C004 JSON session files."""
+    if not FIXES_DIR.exists():
+        return
+    for session_file in FIXES_DIR.glob("lint_session_*_C004.json"):
+        try:
+            with open(session_file) as f:
+                session = json.load(f)
+            modified = False
+            for fix in session.get("fixes", []):
+                if fix.get("fix_id") in stale_fix_ids:
+                    fix["undone"] = True
+                    modified = True
+            if modified:
+                with open(session_file, "w") as f:
+                    json.dump(session, f, indent=2, default=str)
+        except (json.JSONDecodeError, OSError):
+            continue
+
+
 @st.cache_resource
-def get_connection():
-    conn = duckdb.connect(
-        os.environ.get("SWORD_DB_PATH", "data/duckdb/sword_v17c.duckdb")
-    )
+def init_database():
+    """One-time setup: install spatial, create tables, replay fixes, cleanup stale."""
+    db_path = os.environ.get("SWORD_DB_PATH", "data/duckdb/sword_v17c.duckdb")
+    conn = duckdb.connect(db_path)
     try:
         conn.execute("INSTALL spatial")
         conn.execute("LOAD spatial")
@@ -169,7 +230,21 @@ def get_connection():
         )
     """)
     replay_persisted_fixes(conn)
-    return conn
+    _cleanup_stale_c004_fixes(conn)
+    conn.close()
+    return db_path
+
+
+def get_connection():
+    db_path = init_database()
+    if "conn" not in st.session_state:
+        c = duckdb.connect(db_path)
+        try:
+            c.execute("LOAD spatial")
+        except Exception:
+            pass
+        st.session_state.conn = c
+    return st.session_state.conn
 
 
 conn = get_connection()
@@ -455,6 +530,48 @@ def log_skip(conn, reach_id, region, check_id, notes):
     )
     conn.commit()
     append_skip_to_session(
+        region,
+        {
+            "fix_id": new_id,
+            "timestamp": timestamp,
+            "check_id": check_id,
+            "reach_id": int(reach_id),
+            "region": region,
+            "notes": notes,
+            "undone": False,
+        },
+        check_id=check_id,
+    )
+
+
+def append_defer_to_session(region, defer_record, check_id="all"):
+    session_file = get_session_file(region, check_id)
+    session = load_session_fixes(region, check_id)
+    if "defers" not in session:
+        session["defers"] = []
+    session["defers"].append(defer_record)
+    session["last_updated"] = datetime.now().isoformat()
+    session["region"] = region
+    session["check_id"] = check_id
+    with open(session_file, "w") as f:
+        json.dump(session, f, indent=2, default=str)
+
+
+def log_defer(conn, reach_id, region, check_id, notes="Deferred"):
+    max_id = conn.execute(
+        "SELECT COALESCE(MAX(fix_id), 0) FROM lint_fix_log"
+    ).fetchone()[0]
+    new_id = max_id + 1
+    timestamp = datetime.now().isoformat()
+    conn.execute(
+        """
+        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
+        VALUES (?, ?, ?, ?, 'defer', NULL, NULL, NULL, ?)
+    """,
+        [new_id, check_id, reach_id, region, notes],
+    )
+    conn.commit()
+    append_defer_to_session(
         region,
         {
             "fix_id": new_id,
@@ -794,23 +911,40 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=
             clicked_id = int(match.group(1))
             if clicked_id in st.session_state.get("nearby_reach_ids", []):
                 st.session_state.clicked_reach = clicked_id
-    parts = [
-        f"Yellow=Selected | Orange=Up ({len(up_geoms)}) | Blue=Down ({len(dn_geoms)})"
-    ]
-    if show_all and nearby_unconnected:
-        type_counts = {}
-        for _, _rid, lf in nearby_unconnected:
-            type_counts[lf] = type_counts.get(lf, 0) + 1
-        type_labels = {
-            0: "White=River",
-            1: "Cyan=Lake",
-            2: "Yellow=Canal",
-            3: "Magenta=Tidal",
-        }
+    type_labels = {
+        0: "White=River",
+        1: "Cyan=Lake",
+        2: "Yellow=Canal",
+        3: "Magenta=Tidal",
+    }
+    if color_by_type:
+        all_type_counts = {}
+        for _, _, rid in up_geoms:
+            lf = connected_lakeflags.get(rid, 0)
+            all_type_counts[lf] = all_type_counts.get(lf, 0) + 1
+        for _, _, rid in dn_geoms:
+            lf = connected_lakeflags.get(rid, 0)
+            all_type_counts[lf] = all_type_counts.get(lf, 0) + 1
+        if show_all and nearby_unconnected:
+            for _, _rid, lf in nearby_unconnected:
+                all_type_counts[lf] = all_type_counts.get(lf, 0) + 1
+        parts = ["Yellow=Selected"]
         for lf_val in (0, 1, 2, 3):
-            cnt = type_counts.get(lf_val, 0)
+            cnt = all_type_counts.get(lf_val, 0)
             if cnt > 0:
                 parts.append(f"{type_labels[lf_val]} ({cnt})")
+    else:
+        parts = [
+            f"Yellow=Selected | Orange=Up ({len(up_geoms)}) | Blue=Down ({len(dn_geoms)})"
+        ]
+        if show_all and nearby_unconnected:
+            nearby_counts = {}
+            for _, _rid, lf in nearby_unconnected:
+                nearby_counts[lf] = nearby_counts.get(lf, 0) + 1
+            for lf_val in (0, 1, 2, 3):
+                cnt = nearby_counts.get(lf_val, 0)
+                if cnt > 0:
+                    parts.append(f"{type_labels[lf_val]} ({cnt})")
     st.caption(" | ".join(parts))
 
 
@@ -825,6 +959,7 @@ st.session_state.show_all_reaches = True
 
 st.sidebar.header("Settings")
 region = st.sidebar.selectbox("Region", ["NA", "SA", "EU", "AF", "AS", "OC"], index=0)
+color_mode = st.sidebar.toggle("Color by type", value=True)
 st.sidebar.subheader("Saved to Database")
 try:
     saved_summary = conn.execute(
@@ -856,20 +991,32 @@ with tab_c004:
     st.header("Lakeflag/Type Mismatch")
     if "c004_issues" not in st.session_state:
         st.session_state.c004_issues = None
-    if "c004_pending" not in st.session_state:
-        st.session_state.c004_pending = []
     reviewed_c004 = (
         conn.execute(
             """
         SELECT DISTINCT reach_id FROM lint_fix_log
-        WHERE region = ? AND check_id = 'C004' AND NOT undone
+        WHERE region = ? AND check_id = 'C004' AND NOT undone AND action != 'defer'
     """,
             [region],
         )
         .fetchdf()["reach_id"]
         .tolist()
     )
-    all_reviewed_c004 = set(reviewed_c004) | set(st.session_state.c004_pending)
+    all_reviewed_c004 = set(reviewed_c004)
+    deferred_c004_ids = (
+        set(
+            conn.execute(
+                """
+        SELECT DISTINCT reach_id FROM lint_fix_log
+        WHERE region = ? AND check_id = 'C004' AND NOT undone AND action = 'defer'
+    """,
+                [region],
+            )
+            .fetchdf()["reach_id"]
+            .tolist()
+        )
+        - all_reviewed_c004
+    )
     if (
         st.session_state.c004_issues is None
         or st.session_state.get("c004_region") != region
@@ -885,7 +1032,7 @@ with tab_c004:
                             WHEN lakeflag = 1 AND type = 1 THEN 'lake_labeled_as_river_type'
                             WHEN lakeflag = 0 AND type = 2 THEN 'river_labeled_as_lake_type'
                             WHEN lakeflag = 2 AND type NOT IN (1, 4, 5, 6) THEN 'canal_type_mismatch'
-                            WHEN lakeflag = 3 AND type NOT IN (3, 5, 6) THEN 'tidal_type_mismatch'
+                            WHEN lakeflag = 3 AND type NOT IN (3, 4, 5, 6) THEN 'tidal_type_mismatch'
                             ELSE 'other_mismatch'
                         END as issue_type
                     FROM reaches
@@ -894,7 +1041,7 @@ with tab_c004:
                             (lakeflag = 0 AND type IN (1, 3, 4))
                             OR (lakeflag = 1 AND type IN (3, 4))  -- lake: lake_on_river or dam
                             OR (lakeflag = 2 AND type IN (1, 4))
-                            OR (lakeflag = 3 AND type IN (3))
+                            OR (lakeflag = 3 AND type IN (3, 4))
                             OR type IN (5, 6)
                         )
                     ORDER BY reach_id
@@ -910,14 +1057,15 @@ with tab_c004:
         st.success("No lakeflag/type mismatches in this region!")
     else:
         total = len(issues)
-        remaining = len(
-            [r for r in issues["reach_id"].tolist() if r not in all_reviewed_c004]
-        )
-        done = len(all_reviewed_c004)
-        col1, col2, col3 = st.columns(3)
+        issue_ids = set(issues["reach_id"].tolist())
+        done = len(all_reviewed_c004 & issue_ids)
+        deferred = len(deferred_c004_ids & issue_ids)
+        remaining = total - done
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Remaining", remaining)
         col2.metric("Reviewed", done)
-        col3.metric("Total", total)
+        col3.metric("Deferred", deferred)
+        col4.metric("Total", total)
         st.progress(done / total if total > 0 else 0)
         if remaining == 0:
             st.success("All mismatches reviewed!")
@@ -949,7 +1097,7 @@ with tab_c004:
             col1, col2 = st.columns([2, 1])
             with col1:
                 render_reach_map_satellite(
-                    int(selected), region, conn, color_by_type=True
+                    int(selected), region, conn, color_by_type=color_mode
                 )
             with col2:
                 st.markdown(f"**River:** {issue['river_name'] or 'Unnamed'}")
@@ -982,7 +1130,6 @@ with tab_c004:
                         fix_info[2],
                         f"Fixed: {fix_info[1]}->{fix_info[2]}",
                     )
-                    st.session_state.c004_pending.append(selected)
                     st.cache_data.clear()
                     st.rerun()
                 if st.button(
@@ -991,13 +1138,18 @@ with tab_c004:
                     use_container_width=True,
                 ):
                     log_skip(conn, selected, region, "C004", "Skipped: correct as-is")
-                    st.session_state.c004_pending.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
+                if st.button(
+                    "Not Sure (defer)",
+                    key=f"c004_defer_{selected}",
+                    use_container_width=True,
+                ):
+                    log_defer(conn, selected, region, "C004", "Deferred")
                     st.cache_data.clear()
                     st.rerun()
 with tab_c001:
     st.header("Lake Sandwich Fixer")
-    if "pending_fixes" not in st.session_state:
-        st.session_state.pending_fixes = []
     if "last_fix" not in st.session_state:
         st.session_state.last_fix = None
     if "c001_results" not in st.session_state:
@@ -1009,28 +1161,45 @@ with tab_c001:
         with st.spinner("Running lake sandwich check..."):
             st.session_state.c001_results = run_c001_check(conn, region)
             st.session_state.c001_region = region
-            session = load_session_fixes(region, "C001")
-            st.session_state.pending_fixes = session.get("pending", [])
+    reviewed_c001 = (
+        conn.execute(
+            """
+        SELECT DISTINCT reach_id FROM lint_fix_log
+        WHERE region = ? AND check_id = 'C001' AND NOT undone AND action != 'defer'
+    """,
+            [region],
+        )
+        .fetchdf()["reach_id"]
+        .tolist()
+    )
+    all_reviewed_c001 = set(reviewed_c001)
+    deferred_c001_ids = (
+        set(
+            conn.execute(
+                """
+        SELECT DISTINCT reach_id FROM lint_fix_log
+        WHERE region = ? AND check_id = 'C001' AND NOT undone AND action = 'defer'
+    """,
+                [region],
+            )
+            .fetchdf()["reach_id"]
+            .tolist()
+        )
+        - all_reviewed_c001
+    )
     result = st.session_state.c001_results
     if result:
         issues = result.details
         total = len(issues)
-        done = len(st.session_state.pending_fixes)
-        remaining = (
-            len(
-                [
-                    r
-                    for r in issues["reach_id"].tolist()
-                    if r not in st.session_state.pending_fixes
-                ]
-            )
-            if total > 0
-            else 0
-        )
-        col1, col2, col3 = st.columns(3)
+        issue_ids = set(issues["reach_id"].tolist())
+        done = len(all_reviewed_c001 & issue_ids)
+        deferred = len(deferred_c001_ids & issue_ids)
+        remaining = total - done
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Remaining", remaining)
         col2.metric("Reviewed", done)
-        col3.metric("Total", total)
+        col3.metric("Deferred", deferred)
+        col4.metric("Total", total)
         if total > 0:
             st.progress(
                 done / total if total > 0 else 0, text=f"{done}/{total} reviewed"
@@ -1039,15 +1208,12 @@ with tab_c001:
             st.success("All lake sandwiches reviewed!")
             if st.button("Re-run check to verify", key="rerun_c001"):
                 st.session_state.c001_results = None
-                st.session_state.pending_fixes = []
                 st.rerun()
         elif total == 0:
             st.success("No lake sandwich issues in this region!")
         else:
             available = [
-                r
-                for r in issues["reach_id"].tolist()
-                if r not in st.session_state.pending_fixes
+                r for r in issues["reach_id"].tolist() if r not in all_reviewed_c001
             ]
             selected = available[0]
             issue = issues[issues["reach_id"] == selected].iloc[0]
@@ -1073,7 +1239,9 @@ with tab_c001:
             """)
             col1, col2 = st.columns([2, 1])
             with col1:
-                render_reach_map_satellite(int(selected), region, conn)
+                render_reach_map_satellite(
+                    int(selected), region, conn, color_by_type=color_mode
+                )
             with col2:
                 st.markdown("### Key Indicators")
                 if width > 500:
@@ -1108,7 +1276,7 @@ with tab_c001:
                 )
             st.markdown("---")
             st.markdown("### Your Decision")
-            btn_col1, btn_col2 = st.columns(2)
+            btn_col1, btn_col2, btn_col3 = st.columns(3)
             with btn_col1:
                 st.markdown("**It's a LAKE** (convert lakeflag to 1)")
                 if st.button(
@@ -1118,7 +1286,6 @@ with tab_c001:
                     use_container_width=True,
                 ):
                     apply_lakeflag_fix(conn, selected, region, 1)
-                    st.session_state.pending_fixes.append(selected)
                     st.session_state.last_fix = selected
                     st.cache_data.clear()
                     st.rerun()
@@ -1141,7 +1308,16 @@ with tab_c001:
                     "NO, IT'S A RIVER", key=f"skip_{selected}", use_container_width=True
                 ):
                     log_skip(conn, selected, region, "C001", skip_reason)
-                    st.session_state.pending_fixes.append(selected)
+                    st.cache_data.clear()
+                    st.rerun()
+            with btn_col3:
+                st.markdown("**NOT SURE** (defer)")
+                if st.button(
+                    "NOT SURE",
+                    key=f"defer_{selected}",
+                    use_container_width=True,
+                ):
+                    log_defer(conn, selected, region, "C001", "Deferred")
                     st.cache_data.clear()
                     st.rerun()
             if st.session_state.last_fix:
@@ -1150,16 +1326,12 @@ with tab_c001:
                 ):
                     undone_id = undo_last_fix(conn, region)
                     if undone_id:
-                        st.session_state.pending_fixes = [
-                            p for p in st.session_state.pending_fixes if p != undone_id
-                        ]
                         st.session_state.last_fix = None
                         st.cache_data.clear()
                         st.rerun()
     st.markdown("---")
     if st.button("Refresh Check", key="refresh_c001"):
         st.session_state.c001_results = None
-        st.session_state.pending_fixes = []
         st.rerun()
 with tab_history:
     st.header("Fix History (Lake Reviews)")
