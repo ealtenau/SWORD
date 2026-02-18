@@ -44,34 +44,25 @@ def load_session_fixes(region: str, check_id: str = "all") -> dict:
     return {"fixes": [], "skips": [], "pending": []}
 
 
-def save_session_fixes(region, fixes, skips, pending, check_id="all"):
+def save_session_fixes(region, session_data, check_id="all"):
     session_file = get_session_file(region, check_id)
-    data = {
-        "region": region,
-        "check_id": check_id,
-        "last_updated": datetime.now().isoformat(),
-        "fixes": fixes,
-        "skips": skips,
-        "pending": pending,
-    }
+    session_data["last_updated"] = datetime.now().isoformat()
+    session_data["region"] = region
+    session_data["check_id"] = check_id
     with open(session_file, "w") as f:
-        json.dump(data, f, indent=2, default=str)
+        json.dump(session_data, f, indent=2, default=str)
 
 
 def append_fix_to_session(region, fix_record, check_id="all"):
     session = load_session_fixes(region, check_id)
     session["fixes"].append(fix_record)
-    save_session_fixes(
-        region, session["fixes"], session["skips"], session.get("pending", []), check_id
-    )
+    save_session_fixes(region, session, check_id)
 
 
 def append_skip_to_session(region, skip_record, check_id="all"):
     session = load_session_fixes(region, check_id)
     session["skips"].append(skip_record)
-    save_session_fixes(
-        region, session["fixes"], session["skips"], session.get("pending", []), check_id
-    )
+    save_session_fixes(region, session, check_id)
 
 
 # =============================================================================
@@ -447,21 +438,24 @@ def apply_lakeflag_fix(conn, reach_id, region, new_lakeflag):
         [new_lakeflag, reach_id, region],
     )
     conn.commit()
-    append_fix_to_session(
-        region,
-        {
-            "fix_id": new_id,
-            "timestamp": timestamp,
-            "check_id": "C001",
-            "reach_id": int(reach_id),
-            "region": region,
-            "column_changed": "lakeflag",
-            "old_value": old_lakeflag,
-            "new_value": new_lakeflag,
-            "undone": False,
-        },
-        check_id="C001",
-    )
+    try:
+        append_fix_to_session(
+            region,
+            {
+                "fix_id": new_id,
+                "timestamp": timestamp,
+                "check_id": "C001",
+                "reach_id": int(reach_id),
+                "region": region,
+                "column_changed": "lakeflag",
+                "old_value": old_lakeflag,
+                "new_value": new_lakeflag,
+                "undone": False,
+            },
+            check_id="C001",
+        )
+    except Exception:
+        pass  # DB write already committed; JSON backup is best-effort
     return old_lakeflag
 
 
@@ -497,21 +491,24 @@ def apply_column_fix(conn, reach_id, region, check_id, column, new_value, notes=
         ],
     )
     conn.commit()
-    append_fix_to_session(
-        region,
-        {
-            "fix_id": new_id,
-            "timestamp": timestamp,
-            "check_id": check_id,
-            "reach_id": int(reach_id),
-            "region": region,
-            "column_changed": column,
-            "old_value": old_value,
-            "new_value": new_value,
-            "undone": False,
-        },
-        check_id=check_id,
-    )
+    try:
+        append_fix_to_session(
+            region,
+            {
+                "fix_id": new_id,
+                "timestamp": timestamp,
+                "check_id": check_id,
+                "reach_id": int(reach_id),
+                "region": region,
+                "column_changed": column,
+                "old_value": old_value,
+                "new_value": new_value,
+                "undone": False,
+            },
+            check_id=check_id,
+        )
+    except Exception:
+        pass  # DB write already committed; JSON backup is best-effort
     return old_value
 
 
@@ -529,32 +526,30 @@ def log_skip(conn, reach_id, region, check_id, notes):
         [new_id, check_id, reach_id, region, notes],
     )
     conn.commit()
-    append_skip_to_session(
-        region,
-        {
-            "fix_id": new_id,
-            "timestamp": timestamp,
-            "check_id": check_id,
-            "reach_id": int(reach_id),
-            "region": region,
-            "notes": notes,
-            "undone": False,
-        },
-        check_id=check_id,
-    )
+    try:
+        append_skip_to_session(
+            region,
+            {
+                "fix_id": new_id,
+                "timestamp": timestamp,
+                "check_id": check_id,
+                "reach_id": int(reach_id),
+                "region": region,
+                "notes": notes,
+                "undone": False,
+            },
+            check_id=check_id,
+        )
+    except Exception:
+        pass  # DB write already committed; JSON backup is best-effort
 
 
 def append_defer_to_session(region, defer_record, check_id="all"):
-    session_file = get_session_file(region, check_id)
     session = load_session_fixes(region, check_id)
     if "defers" not in session:
         session["defers"] = []
     session["defers"].append(defer_record)
-    session["last_updated"] = datetime.now().isoformat()
-    session["region"] = region
-    session["check_id"] = check_id
-    with open(session_file, "w") as f:
-        json.dump(session, f, indent=2, default=str)
+    save_session_fixes(region, session, check_id)
 
 
 def log_defer(conn, reach_id, region, check_id, notes="Deferred"):
@@ -571,19 +566,22 @@ def log_defer(conn, reach_id, region, check_id, notes="Deferred"):
         [new_id, check_id, reach_id, region, notes],
     )
     conn.commit()
-    append_defer_to_session(
-        region,
-        {
-            "fix_id": new_id,
-            "timestamp": timestamp,
-            "check_id": check_id,
-            "reach_id": int(reach_id),
-            "region": region,
-            "notes": notes,
-            "undone": False,
-        },
-        check_id=check_id,
-    )
+    try:
+        append_defer_to_session(
+            region,
+            {
+                "fix_id": new_id,
+                "timestamp": timestamp,
+                "check_id": check_id,
+                "reach_id": int(reach_id),
+                "region": region,
+                "notes": notes,
+                "undone": False,
+            },
+            check_id=check_id,
+        )
+    except Exception:
+        pass  # DB write already committed; JSON backup is best-effort
 
 
 def undo_last_fix(conn, region, check_id=None):
@@ -638,13 +636,7 @@ def undo_last_fix(conn, region, check_id=None):
         if fix.get("fix_id") == fix_id:
             fix["undone"] = True
             break
-    save_session_fixes(
-        region,
-        session["fixes"],
-        session["skips"],
-        session.get("pending", []),
-        check_id=orig_check_id,
-    )
+    save_session_fixes(region, session, check_id=orig_check_id)
     return reach_id
 
 
@@ -1121,33 +1113,47 @@ with tab_c004:
                     type="primary",
                     use_container_width=True,
                 ):
-                    apply_column_fix(
-                        conn,
-                        selected,
-                        region,
-                        "C004",
-                        fix_info[1],
-                        fix_info[2],
-                        f"Fixed: {fix_info[1]}->{fix_info[2]}",
-                    )
-                    st.cache_data.clear()
-                    st.rerun()
+                    try:
+                        apply_column_fix(
+                            conn,
+                            selected,
+                            region,
+                            "C004",
+                            fix_info[1],
+                            fix_info[2],
+                            f"Fixed: {fix_info[1]}->{fix_info[2]}",
+                        )
+                        st.toast(f"Fixed {fix_info[1]}={fix_info[2]}")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to record fix: {e}")
                 if st.button(
                     "Skip (correct as-is)",
                     key=f"c004_skip_{selected}",
                     use_container_width=True,
                 ):
-                    log_skip(conn, selected, region, "C004", "Skipped: correct as-is")
-                    st.cache_data.clear()
-                    st.rerun()
+                    try:
+                        log_skip(
+                            conn, selected, region, "C004", "Skipped: correct as-is"
+                        )
+                        st.toast("Recorded as skip")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to record skip: {e}")
                 if st.button(
                     "Not Sure (defer)",
                     key=f"c004_defer_{selected}",
                     use_container_width=True,
                 ):
-                    log_defer(conn, selected, region, "C004", "Deferred")
-                    st.cache_data.clear()
-                    st.rerun()
+                    try:
+                        log_defer(conn, selected, region, "C004", "Deferred")
+                        st.toast("Deferred for later")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to record defer: {e}")
 with tab_c001:
     st.header("Lake Sandwich Fixer")
     if "last_fix" not in st.session_state:
@@ -1285,10 +1291,14 @@ with tab_c001:
                     type="primary",
                     use_container_width=True,
                 ):
-                    apply_lakeflag_fix(conn, selected, region, 1)
-                    st.session_state.last_fix = selected
-                    st.cache_data.clear()
-                    st.rerun()
+                    try:
+                        apply_lakeflag_fix(conn, selected, region, 1)
+                        st.session_state.last_fix = selected
+                        st.toast("Recorded as lake")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to record fix: {e}")
             with btn_col2:
                 st.markdown("**Keep as RIVER** (no change)")
                 skip_reason = st.selectbox(
@@ -1307,9 +1317,13 @@ with tab_c001:
                 if st.button(
                     "NO, IT'S A RIVER", key=f"skip_{selected}", use_container_width=True
                 ):
-                    log_skip(conn, selected, region, "C001", skip_reason)
-                    st.cache_data.clear()
-                    st.rerun()
+                    try:
+                        log_skip(conn, selected, region, "C001", skip_reason)
+                        st.toast("Recorded as river")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to record skip: {e}")
             with btn_col3:
                 st.markdown("**NOT SURE** (defer)")
                 if st.button(
@@ -1317,9 +1331,13 @@ with tab_c001:
                     key=f"defer_{selected}",
                     use_container_width=True,
                 ):
-                    log_defer(conn, selected, region, "C001", "Deferred")
-                    st.cache_data.clear()
-                    st.rerun()
+                    try:
+                        log_defer(conn, selected, region, "C001", "Deferred")
+                        st.toast("Deferred for later")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to record defer: {e}")
             if st.session_state.last_fix:
                 if st.button(
                     f"Undo last ({st.session_state.last_fix})", key="undo_last"
