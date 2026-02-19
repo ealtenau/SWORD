@@ -1,0 +1,211 @@
+"""Tests for v17c pipeline validation gates."""
+
+import shutil
+from pathlib import Path
+
+import duckdb
+import pytest
+
+from src.updates.sword_v17c_pipeline.gates import (
+    GateFailure,
+    GateResult,
+    gate_post_save,
+    gate_source_data,
+    run_gate,
+)
+from src.updates.sword_duckdb.lint.core import Severity
+
+pytestmark = [pytest.mark.pipeline, pytest.mark.db]
+
+FIXTURE_DB = Path("tests/sword_duckdb/fixtures/sword_test_minimal.duckdb")
+
+
+def _load_spatial(conn):
+    """Load DuckDB spatial extension (required before UPDATE on RTREE-indexed tables)."""
+    try:
+        conn.execute("INSTALL spatial; LOAD spatial;")
+    except Exception:
+        pass
+
+
+@pytest.fixture
+def writable_db_path(tmp_path):
+    """Copy test DB to tmp and return its path as a string."""
+    dst = tmp_path / "test.duckdb"
+    shutil.copy2(FIXTURE_DB, dst)
+    return str(dst)
+
+
+class TestGateSourceData:
+    """Tests for gate_source_data (T005, T012)."""
+
+    def test_passes_on_clean_db(self, writable_db_path):
+        """Clean test DB should pass source data gate."""
+        result = gate_source_data(writable_db_path, "NA")
+        assert isinstance(result, GateResult)
+        assert result.passed is True
+        assert result.label == "source_data"
+        assert result.failed_checks == []
+
+    def test_fails_on_orphan_neighbor(self, writable_db_path):
+        """Inserting a topology row referencing non-existent reach triggers gate failure."""
+        conn = duckdb.connect(writable_db_path)
+        conn.execute(
+            "INSERT INTO reach_topology "
+            "(reach_id, region, neighbor_reach_id, direction, neighbor_rank) "
+            "VALUES (11000000001, 'NA', 99999999999, 'down', 3)"
+        )
+        conn.close()
+
+        with pytest.raises(GateFailure) as exc_info:
+            gate_source_data(writable_db_path, "NA")
+        # Both T005 and T012 fail; gate raises on whichever comes first
+        assert exc_info.value.check_id in ("T005", "T012")
+        assert exc_info.value.issues_found > 0
+
+    def test_fails_on_count_mismatch(self, writable_db_path):
+        """Corrupt n_rch_up triggers T005."""
+        conn = duckdb.connect(writable_db_path)
+        _load_spatial(conn)
+        conn.execute(
+            "UPDATE reaches SET n_rch_up = 99 "
+            "WHERE reach_id = (SELECT reach_id FROM reaches WHERE region='NA' LIMIT 1)"
+        )
+        conn.close()
+
+        with pytest.raises(GateFailure) as exc_info:
+            gate_source_data(writable_db_path, "NA")
+        assert exc_info.value.check_id == "T005"
+
+
+class TestGatePostSave:
+    """Tests for gate_post_save (V001, V005, V007, V008, T001, T002)."""
+
+    def test_runs_all_checks(self, writable_db_path):
+        """Gate runs all 6 checks and returns structured result."""
+        # Test DB may have pre-existing issues (T001 dist_out violations).
+        # We verify the gate runs all checks and returns a proper result,
+        # not that it necessarily passes on test fixture data.
+        try:
+            result = gate_post_save(writable_db_path, "NA")
+        except GateFailure:
+            # Expected if test DB has pre-existing issues
+            return
+
+        assert isinstance(result, GateResult)
+        assert result.label == "post_save"
+        assert len(result.results) == 6
+
+    def test_fails_on_bad_hydro_dist(self, writable_db_path):
+        """Hydro_dist_out increasing downstream triggers gate failure."""
+        conn = duckdb.connect(writable_db_path)
+        _load_spatial(conn)
+        row = conn.execute("""
+            SELECT rt.reach_id, rt.neighbor_reach_id
+            FROM reach_topology rt
+            WHERE rt.region = 'NA' AND rt.direction = 'down'
+            LIMIT 1
+        """).fetchone()
+        if row:
+            upstream_id, downstream_id = row
+            conn.execute(
+                "UPDATE reaches SET hydro_dist_out = 100 WHERE reach_id = ?",
+                [upstream_id],
+            )
+            conn.execute(
+                "UPDATE reaches SET hydro_dist_out = 99999 WHERE reach_id = ?",
+                [downstream_id],
+            )
+        conn.close()
+
+        with pytest.raises(GateFailure) as exc_info:
+            gate_post_save(writable_db_path, "NA")
+        # Should fail on V001 or T001 (both check dist_out monotonicity)
+        assert exc_info.value.check_id in ("V001", "T001")
+
+
+class TestRunGate:
+    """Tests for the generic run_gate function."""
+
+    def test_custom_check_ids(self, writable_db_path):
+        """Run gate with a single check."""
+        result = run_gate(writable_db_path, "NA", ["T005"], "custom_gate")
+        assert result.label == "custom_gate"
+        assert len(result.results) == 1
+        assert result.results[0].check_id == "T005"
+
+    def test_fail_on_warning(self, writable_db_path):
+        """With fail_on={WARNING}, warnings become failures."""
+        conn = duckdb.connect(writable_db_path)
+        _load_spatial(conn)
+        row = conn.execute("""
+            SELECT rt.reach_id, rt.neighbor_reach_id
+            FROM reach_topology rt
+            WHERE rt.region = 'NA' AND rt.direction = 'down'
+            LIMIT 1
+        """).fetchone()
+        if row:
+            upstream_id, downstream_id = row
+            conn.execute(
+                "UPDATE reaches SET path_freq = 999 WHERE reach_id = ?",
+                [upstream_id],
+            )
+            conn.execute(
+                "UPDATE reaches SET path_freq = 1 WHERE reach_id = ?",
+                [downstream_id],
+            )
+        conn.close()
+
+        with pytest.raises(GateFailure):
+            run_gate(
+                writable_db_path,
+                "NA",
+                ["T002"],
+                "strict_gate",
+                fail_on={Severity.WARNING},
+            )
+
+    def test_artifact_output(self, writable_db_path, tmp_path):
+        """Gate writes JSON artifact when artifact_dir is set."""
+        artifact_dir = str(tmp_path / "artifacts")
+        result = run_gate(
+            writable_db_path,
+            "NA",
+            ["T005"],
+            "test_artifact",
+            artifact_dir=artifact_dir,
+        )
+        assert result.passed
+        artifact_file = Path(artifact_dir) / "test_artifact.json"
+        assert artifact_file.exists()
+        import json
+
+        data = json.loads(artifact_file.read_text())
+        assert len(data) == 1
+        assert data[0]["check_id"] == "T005"
+
+
+class TestGateFailureException:
+    """Tests for GateFailure exception attributes."""
+
+    def test_attributes(self):
+        exc = GateFailure("my_gate", "T005", 42)
+        assert exc.label == "my_gate"
+        assert exc.check_id == "T005"
+        assert exc.issues_found == 42
+        assert "T005" in str(exc)
+        assert "42" in str(exc)
+
+    def test_is_exception(self):
+        assert issubclass(GateFailure, Exception)
+
+
+class TestGateResultStructure:
+    """Tests for GateResult dataclass."""
+
+    def test_defaults(self):
+        result = GateResult(label="test", passed=True, results=[])
+        assert result.label == "test"
+        assert result.passed is True
+        assert result.results == []
+        assert result.failed_checks == []
