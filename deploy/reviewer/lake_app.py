@@ -941,6 +941,59 @@ def render_reach_map_satellite(reach_id, region, conn, hops=None, color_by_type=
 
 
 # =============================================================================
+# CALLBACK FUNCTIONS (on_click handlers — atomic, can't be interrupted by map)
+# =============================================================================
+
+
+def _do_c004_fix(reach_id, rgn, column, value):
+    apply_column_fix(
+        conn, reach_id, rgn, "C004", column, value, f"Fixed: {column}->{value}"
+    )
+    st.session_state.c004_issues = None
+    st.cache_data.clear()
+
+
+def _do_c004_skip(reach_id, rgn):
+    log_skip(conn, reach_id, rgn, "C004", "Skipped: correct as-is")
+    st.session_state.c004_issues = None
+    st.cache_data.clear()
+
+
+def _do_c004_defer(reach_id, rgn):
+    log_defer(conn, reach_id, rgn, "C004", "Deferred")
+    st.session_state.c004_issues = None
+    st.cache_data.clear()
+
+
+def _do_c001_fix(reach_id, rgn):
+    apply_lakeflag_fix(conn, reach_id, rgn, 1)
+    st.session_state.last_fix = reach_id
+    st.session_state.c001_results = None
+    st.cache_data.clear()
+
+
+def _do_c001_skip(reach_id, rgn, reason_key):
+    reason = st.session_state.get(reason_key, "")
+    log_skip(conn, reach_id, rgn, "C001", reason)
+    st.session_state.c001_results = None
+    st.cache_data.clear()
+
+
+def _do_c001_defer(reach_id, rgn):
+    log_defer(conn, reach_id, rgn, "C001", "Deferred")
+    st.session_state.c001_results = None
+    st.cache_data.clear()
+
+
+def _do_undo(rgn):
+    undone_id = undo_last_fix(conn, rgn)
+    if undone_id:
+        st.session_state.last_fix = None
+        st.session_state.c001_results = None
+        st.cache_data.clear()
+
+
+# =============================================================================
 # MAIN APP
 # =============================================================================
 st.title("SWORD Lake QA Reviewer")
@@ -1065,7 +1118,30 @@ with tab_c004:
             available = [
                 r for r in issues["reach_id"].tolist() if r not in all_reviewed_c004
             ]
-            selected = available[0]
+            if "c004_idx" not in st.session_state:
+                st.session_state.c004_idx = 0
+            idx = min(st.session_state.c004_idx, max(len(available) - 1, 0))
+            st.session_state.c004_idx = idx
+            selected = available[idx]
+
+            nav1, nav2, nav3 = st.columns([1, 2, 1])
+            with nav1:
+                st.button(
+                    "← Prev",
+                    disabled=idx == 0,
+                    on_click=lambda i=idx: setattr(st.session_state, "c004_idx", i - 1),
+                    key="c004_prev",
+                )
+            with nav2:
+                st.markdown(f"**Issue {idx + 1} of {len(available)}**")
+            with nav3:
+                st.button(
+                    "Next →",
+                    disabled=idx >= len(available) - 1,
+                    on_click=lambda i=idx: setattr(st.session_state, "c004_idx", i + 1),
+                    key="c004_next",
+                )
+
             issue = issues[issues["reach_id"] == selected].iloc[0]
             lakeflag_map = {0: "River", 1: "Lake", 2: "Canal", 3: "Tidal"}
             type_map = {
@@ -1107,53 +1183,29 @@ with tab_c004:
                     "tidal_type_mismatch": ("Set lakeflag=0 (river)", "lakeflag", 0),
                 }
                 fix_info = c004_fixes.get(it)
-                if fix_info and st.button(
-                    fix_info[0],
-                    key=f"c004_fix_{selected}",
-                    type="primary",
-                    use_container_width=True,
-                ):
-                    try:
-                        apply_column_fix(
-                            conn,
-                            selected,
-                            region,
-                            "C004",
-                            fix_info[1],
-                            fix_info[2],
-                            f"Fixed: {fix_info[1]}->{fix_info[2]}",
-                        )
-                        st.toast(f"Fixed {fix_info[1]}={fix_info[2]}")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to record fix: {e}")
-                if st.button(
+                if fix_info:
+                    st.button(
+                        fix_info[0],
+                        key=f"c004_fix_{selected}",
+                        type="primary",
+                        use_container_width=True,
+                        on_click=_do_c004_fix,
+                        args=(selected, region, fix_info[1], fix_info[2]),
+                    )
+                st.button(
                     "Skip (correct as-is)",
                     key=f"c004_skip_{selected}",
                     use_container_width=True,
-                ):
-                    try:
-                        log_skip(
-                            conn, selected, region, "C004", "Skipped: correct as-is"
-                        )
-                        st.toast("Recorded as skip")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to record skip: {e}")
-                if st.button(
+                    on_click=_do_c004_skip,
+                    args=(selected, region),
+                )
+                st.button(
                     "Not Sure (defer)",
                     key=f"c004_defer_{selected}",
                     use_container_width=True,
-                ):
-                    try:
-                        log_defer(conn, selected, region, "C004", "Deferred")
-                        st.toast("Deferred for later")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to record defer: {e}")
+                    on_click=_do_c004_defer,
+                    args=(selected, region),
+                )
 with tab_c001:
     st.header("Lake Sandwich Fixer")
     if "last_fix" not in st.session_state:
@@ -1221,7 +1273,30 @@ with tab_c001:
             available = [
                 r for r in issues["reach_id"].tolist() if r not in all_reviewed_c001
             ]
-            selected = available[0]
+            if "c001_idx" not in st.session_state:
+                st.session_state.c001_idx = 0
+            idx = min(st.session_state.c001_idx, max(len(available) - 1, 0))
+            st.session_state.c001_idx = idx
+            selected = available[idx]
+
+            nav1, nav2, nav3 = st.columns([1, 2, 1])
+            with nav1:
+                st.button(
+                    "← Prev",
+                    disabled=idx == 0,
+                    on_click=lambda i=idx: setattr(st.session_state, "c001_idx", i - 1),
+                    key="c001_prev",
+                )
+            with nav2:
+                st.markdown(f"**Issue {idx + 1} of {len(available)}**")
+            with nav3:
+                st.button(
+                    "Next →",
+                    disabled=idx >= len(available) - 1,
+                    on_click=lambda i=idx: setattr(st.session_state, "c001_idx", i + 1),
+                    key="c001_next",
+                )
+
             issue = issues[issues["reach_id"] == selected].iloc[0]
             up_flags, dn_flags = get_neighbor_lakeflags(conn, selected, region)
             slope = get_reach_slope(conn, selected, region)
@@ -1285,23 +1360,17 @@ with tab_c001:
             btn_col1, btn_col2, btn_col3 = st.columns(3)
             with btn_col1:
                 st.markdown("**It's a LAKE** (convert lakeflag to 1)")
-                if st.button(
+                st.button(
                     "YES, IT'S A LAKE",
                     key=f"fix_{selected}",
                     type="primary",
                     use_container_width=True,
-                ):
-                    try:
-                        apply_lakeflag_fix(conn, selected, region, 1)
-                        st.session_state.last_fix = selected
-                        st.toast("Recorded as lake")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to record fix: {e}")
+                    on_click=_do_c001_fix,
+                    args=(selected, region),
+                )
             with btn_col2:
                 st.markdown("**Keep as RIVER** (no change)")
-                skip_reason = st.selectbox(
+                st.selectbox(
                     "Why is it a river?",
                     [
                         "Flowing water visible",
@@ -1314,39 +1383,29 @@ with tab_c001:
                     key=f"skip_reason_{selected}",
                     label_visibility="collapsed",
                 )
-                if st.button(
-                    "NO, IT'S A RIVER", key=f"skip_{selected}", use_container_width=True
-                ):
-                    try:
-                        log_skip(conn, selected, region, "C001", skip_reason)
-                        st.toast("Recorded as river")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to record skip: {e}")
+                st.button(
+                    "NO, IT'S A RIVER",
+                    key=f"skip_{selected}",
+                    use_container_width=True,
+                    on_click=_do_c001_skip,
+                    args=(selected, region, f"skip_reason_{selected}"),
+                )
             with btn_col3:
                 st.markdown("**NOT SURE** (defer)")
-                if st.button(
+                st.button(
                     "NOT SURE",
                     key=f"defer_{selected}",
                     use_container_width=True,
-                ):
-                    try:
-                        log_defer(conn, selected, region, "C001", "Deferred")
-                        st.toast("Deferred for later")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to record defer: {e}")
+                    on_click=_do_c001_defer,
+                    args=(selected, region),
+                )
             if st.session_state.last_fix:
-                if st.button(
-                    f"Undo last ({st.session_state.last_fix})", key="undo_last"
-                ):
-                    undone_id = undo_last_fix(conn, region)
-                    if undone_id:
-                        st.session_state.last_fix = None
-                        st.cache_data.clear()
-                        st.rerun()
+                st.button(
+                    f"Undo last ({st.session_state.last_fix})",
+                    key="undo_last",
+                    on_click=_do_undo,
+                    args=(region,),
+                )
     st.markdown("---")
     if st.button("Refresh Check", key="refresh_c001"):
         st.session_state.c001_results = None
