@@ -144,6 +144,261 @@ def load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
 
 
 # =============================================================================
+# Topology Count & dist_out Fixes (runs before FACC correction)
+# =============================================================================
+
+
+def fix_topology_counts(conn: duckdb.DuckDBPyConnection, region: str) -> int:
+    """Recount n_rch_up/n_rch_down from reach_topology table. Fixes stale counts.
+
+    Also corrects end_reach classification based on updated counts:
+      headwater (n_up=0, n_down>0) → 1
+      outlet (n_down=0, n_up>0) → 2
+      junction (n_up>1 OR n_down>1) → 3
+      middle → 0
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Read-write connection.
+    region : str
+        Region code (e.g. 'NA').
+
+    Returns
+    -------
+    int
+        Number of reaches with corrected counts.
+    """
+    region_upper = region.upper()
+
+    # Single UPDATE: recount from reach_topology and fix mismatches
+    n_fixed = conn.execute(
+        """
+        WITH actual_counts AS (
+            SELECT
+                rt.reach_id,
+                rt.region,
+                SUM(CASE WHEN rt.direction = 'up' THEN 1 ELSE 0 END) AS actual_up,
+                SUM(CASE WHEN rt.direction = 'down' THEN 1 ELSE 0 END) AS actual_down
+            FROM reach_topology rt
+            WHERE rt.region = ?
+            GROUP BY rt.reach_id, rt.region
+        )
+        UPDATE reaches
+        SET
+            n_rch_up = COALESCE(ac.actual_up, 0),
+            n_rch_down = COALESCE(ac.actual_down, 0)
+        FROM actual_counts ac
+        WHERE reaches.reach_id = ac.reach_id
+          AND reaches.region = ac.region
+          AND (reaches.n_rch_up != COALESCE(ac.actual_up, 0)
+               OR reaches.n_rch_down != COALESCE(ac.actual_down, 0))
+        """,
+        [region_upper],
+    ).fetchone()[0]
+
+    if n_fixed > 0:
+        log(f"  Fixed {n_fixed} topology count mismatches")
+
+    # Also fix reaches that have NO topology entries but have nonzero counts
+    n_orphan_fix = conn.execute(
+        """
+        UPDATE reaches
+        SET n_rch_up = 0, n_rch_down = 0
+        WHERE region = ?
+          AND (n_rch_up != 0 OR n_rch_down != 0)
+          AND reach_id NOT IN (
+              SELECT DISTINCT reach_id FROM reach_topology WHERE region = ?
+          )
+        """,
+        [region_upper, region_upper],
+    ).fetchone()[0]
+
+    if n_orphan_fix > 0:
+        log(f"  Fixed {n_orphan_fix} orphan reaches with nonzero counts")
+        n_fixed += n_orphan_fix
+
+    # Fix end_reach based on updated counts
+    n_end_fix = conn.execute(
+        """
+        UPDATE reaches
+        SET end_reach = CASE
+            WHEN n_rch_up = 0 AND n_rch_down > 0 THEN 1   -- headwater
+            WHEN n_rch_down = 0 AND n_rch_up > 0 THEN 2   -- outlet
+            WHEN n_rch_up > 1 OR n_rch_down > 1 THEN 3    -- junction
+            ELSE 0                                          -- middle
+        END
+        WHERE region = ?
+          AND end_reach != CASE
+            WHEN n_rch_up = 0 AND n_rch_down > 0 THEN 1
+            WHEN n_rch_down = 0 AND n_rch_up > 0 THEN 2
+            WHEN n_rch_up > 1 OR n_rch_down > 1 THEN 3
+            ELSE 0
+          END
+        """,
+        [region_upper],
+    ).fetchone()[0]
+
+    if n_end_fix > 0:
+        log(f"  Fixed {n_end_fix} end_reach classifications")
+
+    return n_fixed
+
+
+def fix_dist_out_monotonicity(
+    conn: duckdb.DuckDBPyConnection,
+    region: str,
+    tolerance: float = 100.0,
+) -> int:
+    """Recalculate dist_out for reaches violating downstream monotonicity.
+
+    Uses the same formula as dist_out_from_topo.py:
+        dist_out = reach_length + max(downstream neighbor dist_out)
+
+    Iterates until stable (violations can cascade upstream), max 100 iters.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Read-write connection.
+    region : str
+        Region code (e.g. 'NA').
+    tolerance : float
+        Tolerance in meters for detecting violations.
+
+    Returns
+    -------
+    int
+        Total number of reaches with corrected dist_out.
+    """
+    region_upper = region.upper()
+    total_fixed = 0
+
+    for iteration in range(100):
+        # Find violations: min downstream dist_out > upstream dist_out + tolerance
+        violations = conn.execute(
+            """
+            WITH min_downstream AS (
+                SELECT
+                    r1.reach_id,
+                    r1.region,
+                    r1.dist_out AS dist_out_up,
+                    r1.reach_length,
+                    MAX(r2.dist_out) AS max_dist_out_down
+                FROM reaches r1
+                JOIN reach_topology rt
+                    ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+                JOIN reaches r2
+                    ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
+                WHERE rt.direction = 'down'
+                    AND r1.region = ?
+                    AND r1.dist_out > 0 AND r1.dist_out != -9999
+                    AND r2.dist_out > 0 AND r2.dist_out != -9999
+                GROUP BY r1.reach_id, r1.region, r1.dist_out, r1.reach_length
+            )
+            SELECT
+                reach_id,
+                region,
+                reach_length,
+                max_dist_out_down
+            FROM min_downstream
+            WHERE max_dist_out_down > dist_out_up + ?
+            """,
+            [region_upper, tolerance],
+        ).fetchdf()
+
+        if len(violations) == 0:
+            break
+
+        # Recalculate: dist_out = reach_length + max(downstream dist_out)
+        for _, row in violations.iterrows():
+            new_dist_out = row["reach_length"] + row["max_dist_out_down"]
+            conn.execute(
+                """
+                UPDATE reaches
+                SET dist_out = ?
+                WHERE reach_id = ? AND region = ?
+                """,
+                [float(new_dist_out), int(row["reach_id"]), row["region"]],
+            )
+
+        total_fixed += len(violations)
+        log(f"  dist_out iteration {iteration + 1}: fixed {len(violations)} violations")
+
+    return total_fixed
+
+
+# =============================================================================
+# Lint Gate (runs after all writes are committed)
+# =============================================================================
+
+
+def run_lint_gate(
+    db_path: str,
+    region: str,
+    checks: Optional[List[str]] = None,
+) -> dict:
+    """Run ERROR-severity lint checks; raise RuntimeError if any fail.
+
+    Opens a read-only connection via LintRunner (separate from the pipeline
+    connection) and runs all ERROR-severity checks (or a filtered subset).
+
+    Parameters
+    ----------
+    db_path : str
+        Path to the DuckDB database (must be a file, not in-memory).
+    region : str
+        Region code (e.g. 'NA').
+    checks : list of str, optional
+        Specific check IDs or category prefixes (e.g. ``["T001", "T005"]``).
+        Default ``None`` runs all ERROR-severity checks.
+
+    Returns
+    -------
+    dict
+        Mapping ``{check_id: {"passed": bool, "issues": int, "total": int}}``.
+
+    Raises
+    ------
+    RuntimeError
+        If any ERROR-severity check fails, listing failing checks and counts.
+    """
+    from sword_duckdb.lint import LintRunner, Severity
+
+    log(f"Running lint gate for {region}...")
+
+    with LintRunner(db_path) as runner:
+        results = runner.run(
+            checks=checks,
+            region=region,
+            severity=Severity.ERROR,
+        )
+
+    summary: dict = {}
+    failures: List[str] = []
+
+    for r in results:
+        summary[r.check_id] = {
+            "passed": r.passed,
+            "issues": r.issues_found,
+            "total": r.total_checked,
+        }
+        if not r.passed:
+            failures.append(f"{r.check_id} ({r.name}): {r.issues_found} issues")
+
+    log(f"Lint gate: {len(results)} checks, {len(failures)} failures")
+
+    if failures:
+        msg = (
+            f"Lint gate FAILED for {region} — {len(failures)} ERROR check(s):\n"
+            + "\n".join(f"  - {f}" for f in failures)
+        )
+        raise RuntimeError(msg)
+
+    return summary
+
+
+# =============================================================================
 # FACC Correction (runs before graph construction)
 # =============================================================================
 
@@ -1363,6 +1618,8 @@ def process_region(
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
     skip_path_vars: bool = False,
+    skip_lint_gate: bool = False,
+    lint_checks: Optional[List[str]] = None,
 ) -> Dict:
     """
     Process a single region through the v17c pipeline.
@@ -1385,6 +1642,10 @@ def process_region(
         Path to no-facc RF model for entry point correction
     standard_model_path : str
         Path to standard RF model for propagation correction
+    skip_lint_gate : bool
+        Skip the post-write lint gate (default: run it)
+    lint_checks : list of str, optional
+        Specific lint check IDs or prefixes to run (default: all ERROR checks)
 
     Returns
     -------
@@ -1415,6 +1676,18 @@ def process_region(
     # Load data from database
     topology_df = load_topology(conn, region)
     reaches_df = load_reaches(conn, region)
+
+    # Fix stale topology counts from reach_topology table
+    n_topo_fixes = fix_topology_counts(conn, region)
+    if n_topo_fixes > 0:
+        log(f"Fixed {n_topo_fixes} topology count mismatches")
+        reaches_df = load_reaches(conn, region)
+
+    # Fix dist_out monotonicity violations
+    n_dist_fixes = fix_dist_out_monotonicity(conn, region)
+    if n_dist_fixes > 0:
+        log(f"Fixed {n_dist_fixes} dist_out monotonicity violations")
+        reaches_df = load_reaches(conn, region)
 
     # Detect and correct facc anomalies BEFORE building graph
     n_facc_corrections = 0
@@ -1524,6 +1797,11 @@ def process_region(
 
     workflow.close()
 
+    # Post-write lint gate (read-only, separate connection)
+    lint_results = {}
+    if not skip_lint_gate:
+        lint_results = run_lint_gate(db_path, region, checks=lint_checks)
+
     # Summary statistics
     stats = {
         "region": region,
@@ -1544,6 +1822,12 @@ def process_region(
         stats["validation_valid"] = int(validation_df["direction_valid"].sum())
         stats["validation_invalid"] = int(
             (validation_df["direction_valid"] == False).sum()
+        )
+
+    if lint_results:
+        stats["lint_checks_run"] = len(lint_results)
+        stats["lint_checks_passed"] = sum(
+            1 for v in lint_results.values() if v["passed"]
         )
 
     log(f"\nRegion {region} complete: {n_updated:,} reaches updated")
@@ -1588,6 +1872,8 @@ def run_pipeline(
     nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
     skip_path_vars: bool = False,
+    skip_lint_gate: bool = False,
+    lint_checks: Optional[List[str]] = None,
 ) -> List[Dict]:
     """
     Run the v17c pipeline for multiple regions.
@@ -1610,6 +1896,10 @@ def run_pipeline(
         Path to no-facc RF model for entry point correction
     standard_model_path : str
         Path to standard RF model for propagation correction
+    skip_lint_gate : bool
+        Skip the post-write lint gate
+    lint_checks : list of str, optional
+        Specific lint check IDs or prefixes for the lint gate
 
     Returns
     -------
@@ -1621,6 +1911,7 @@ def run_pipeline(
     log(f"Skip SWOT: {skip_swot}")
     log(f"Skip FACC: {skip_facc}")
     log(f"Skip path vars: {skip_path_vars}")
+    log(f"Skip lint gate: {skip_lint_gate}")
     if swot_path:
         log(f"SWOT path: {swot_path}")
 
@@ -1638,6 +1929,8 @@ def run_pipeline(
                 nofacc_model_path=nofacc_model_path,
                 standard_model_path=standard_model_path,
                 skip_path_vars=skip_path_vars,
+                skip_lint_gate=skip_lint_gate,
+                lint_checks=lint_checks,
             )
             all_stats.append(stats)
         except Exception as e:
@@ -1725,6 +2018,17 @@ def main():
         default=DEFAULT_STANDARD_MODEL,
         help=f"Path to standard RF model for propagation (default: {DEFAULT_STANDARD_MODEL})",
     )
+    parser.add_argument(
+        "--skip-lint-gate",
+        action="store_true",
+        help="Skip the post-write lint gate (default: run ERROR-severity checks)",
+    )
+    parser.add_argument(
+        "--lint-checks",
+        nargs="+",
+        default=None,
+        help="Specific lint check IDs or prefixes to run (e.g. T001 T005 F)",
+    )
 
     args = parser.parse_args()
 
@@ -1752,6 +2056,8 @@ def main():
         nofacc_model_path=args.nofacc_model,
         standard_model_path=args.standard_model,
         skip_path_vars=args.skip_path_vars,
+        skip_lint_gate=args.skip_lint_gate,
+        lint_checks=args.lint_checks,
     )
 
     # Exit with error if any region failed
