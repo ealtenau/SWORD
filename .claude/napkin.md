@@ -33,9 +33,15 @@
 - Check `ST_Read(...) LIMIT 0` description to detect column availability
 - Skills need `SKILL.md` inside a directory (`.claude/skills/name/SKILL.md`), not flat `.md` files, for proper frontmatter discovery
 - `workflow.export()` is broken — `_do_export` passes `self._sword.db` (connection) not `self._sword` (SWORD instance). Call export functions directly.
+- Playwright on deployed URL is the only reliable way to reproduce Cloud Run bugs — local DuckDB behavior differs from containerized Linux DuckDB
+- Debug cycle for deployed Streamlit: add logging → `bash deploy.sh` (~2 min) → test deployed URL → `gcloud logging read` — don't waste time trying to reproduce locally
+- For map zoom in folium with `fit_bounds`: the zoom is driven by the extent of coords passed to `fit_bounds`, NOT `zoom_start`. Reduce `hops` to control how many reaches are fetched, which controls the bounding box.
+- The `app.py` (topology reviewer) and `lake_app.py` (lake reviewer) share helper functions but are independent deployments — `APP_FILE` env var in `start.sh` selects which one runs
 
 ## Patterns That Don't Work
 - Relying on DuckDB `DEFAULT FALSE` in INSERT statements — on Cloud Run (DuckDB 1.4.x) omitting a boolean column from INSERT produces NULL, not the DEFAULT value. This silently breaks `NOT column` WHERE clauses.
+- Inline `if st.button():` for state mutations — use `on_click` callbacks instead. Inline handlers with `st.rerun()` have timing issues where state changes can get lost during Streamlit's execution model.
+- Editing `app.py` when the bug is in `lake_app.py` — check `APP_FILE` env var in `start.sh`/`deploy.sh` to know which file is actually deployed. They're separate apps sharing some lint code.
 
 ## Streamlit + Google Cloud Run Lessons
 
@@ -69,6 +75,8 @@ These are hard-won lessons from debugging the SWORD Lake QA Reviewer deployed on
 ## Domain Notes
 - **SWORD `type` field**: 1=river, 3=lake_on_river, 4=dam, 5=unreliable, 6=ghost. **Type=2 does NOT exist.** Type=3 is NOT tidal — tidal is lakeflag=3.
 - **lakeflag=1 + type=3** is the PRIMARY expected lake combo (21k+ reaches). Do NOT flag it as mismatch.
+- **type=3 "lake_on_river" is misleading** — it doesn't mean "a lake sitting on a river." It means "a lake-classified reach within the SWORD river network." All lake reaches (lakeflag=1) should have type=3. This includes lake islands, reservoir segments, wide lake sections — anything with lakeflag=1 that isn't a dam (type=4).
+- **Lake sandwich = river reach (lakeflag=0) between two lake reaches (lakeflag=1)** — the archetypal case is an island in a lake being miscoded as a river. Fix is to set lakeflag=1 (making it a lake). The type mismatch (lakeflag=1 + type=1) then gets fixed separately via C004 tab (set type=3).
 - SWORD name columns: `river_name` (GRWL), `river_name_en` (standardized English), `river_name_local` (OSM local name)
 - 248,674 total reaches; 55,671 still completely unnamed after OSM enrichment
 - OSM `name:en` coverage is sparse — only 69K reaches have real English translations
