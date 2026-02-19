@@ -16,7 +16,7 @@
 - Prefers concise plans, sacrifice grammar for brevity
 - No speculative features
 - `uv` not pip, `ruff` not black/pylint, `pytest -q`
-- Never push to main — feature branches + PRs to gearon_dev3
+- Never push to main — feature branches + PRs to v17c-updates
 - Use SCRATCHPAD.md for working memory, HANDOVER.md for session summaries
 
 | 2026-02-16 | self (audit) | C004 fixes were logged via `log_skip()` — recorded as action='skip' with NULL old/new values, making them untrackable and un-undoable | Use `apply_column_fix()` which reads old value, does UPDATE, and logs with action='fix', column_changed, old_value, new_value |

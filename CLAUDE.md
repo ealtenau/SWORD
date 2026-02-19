@@ -508,13 +508,12 @@ Streamlit app for manual QA review of SWORD reaches.
 
 ## Git
 
-- **Main branch:** main
-- **Dev branch:** gearon_dev3
-- **v17c branch:** v17c-updates (for v17c work)
-- **v18 branch:** v18-planning (for v18 planning)
+- **Main branch:** main (release-only — never commit directly)
+- **Working branch:** v17c-updates (all active work happens here)
+- **v18 branch:** v18-planning (future planning)
 - Never force push to main
-- **NEVER merge to main** - PRs go to gearon_dev3
-- Commit with provenance context
+- **NEVER merge to main** until v17c is fully validated — PRs go to v17c-updates
+- Feature branches branch off v17c-updates and PR back into v17c-updates
 
 ## GitHub Issue Tracking
 
