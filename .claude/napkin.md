@@ -23,6 +23,7 @@
 | 2026-02-16 | self (audit) | Dead code after `st.rerun()` in C004 tab — nested button block could never execute | Code after `st.rerun()` is unreachable; delete it |
 | 2026-02-16 | self (audit) | `undo_last_fix` hardcoded `lakeflag` column regardless of what `column_changed` was | Read `column_changed` from fix log and use it dynamically in the undo UPDATE |
 | 2026-02-16 | user report | Refreshing deployed app lost all review progress — Cloud Run copies fresh DuckDB from GCS on each instance start, lint_fix_log and data fixes in /tmp are ephemeral | JSON session files on GCS persist; added `replay_persisted_fixes()` at startup to re-apply fixes and restore lint_fix_log from JSON |
+| 2026-02-19 | self | DuckDB `DEFAULT FALSE` on Cloud Run produces NULL, not FALSE, when column omitted from INSERT column list. `NOT undone` filters out NULL rows (since `NOT NULL` = NULL = falsy). Buttons appeared to do nothing — write succeeded but row was invisible to reviewed-count query. | **Always include explicit `undone = FALSE`** (or any boolean default) in INSERT column lists. Never rely on `DEFAULT` for boolean columns in DuckDB. |
 
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
@@ -32,6 +33,9 @@
 - Check `ST_Read(...) LIMIT 0` description to detect column availability
 - Skills need `SKILL.md` inside a directory (`.claude/skills/name/SKILL.md`), not flat `.md` files, for proper frontmatter discovery
 - `workflow.export()` is broken — `_do_export` passes `self._sword.db` (connection) not `self._sword` (SWORD instance). Call export functions directly.
+
+## Patterns That Don't Work
+- Relying on DuckDB `DEFAULT FALSE` in INSERT statements — on Cloud Run (DuckDB 1.4.x) omitting a boolean column from INSERT produces NULL, not the DEFAULT value. This silently breaks `NOT column` WHERE clauses.
 
 ## Domain Notes
 - **SWORD `type` field**: 1=river, 3=lake_on_river, 4=dam, 5=unreliable, 6=ghost. **Type=2 does NOT exist.** Type=3 is NOT tidal — tidal is lakeflag=3.

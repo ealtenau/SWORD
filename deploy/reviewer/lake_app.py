@@ -12,6 +12,7 @@ Cannot run both simultaneously (DuckDB single-writer lock).
 """
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -24,6 +25,9 @@ import streamlit as st
 from streamlit_folium import st_folium
 
 from lint.checks.classification import check_lake_sandwich
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("lake_app")
 
 # =============================================================================
 # LOCAL PERSISTENCE (JSON file backup for session fixes)
@@ -235,6 +239,12 @@ def get_connection():
         except Exception:
             pass
         st.session_state.conn = c
+        # Log connection info once per session
+        try:
+            db_info = c.execute("PRAGMA database_list").fetchall()
+            logger.info("New DuckDB connection: %s", db_info)
+        except Exception:
+            pass
     return st.session_state.conn
 
 
@@ -428,8 +438,8 @@ def apply_lakeflag_fix(conn, reach_id, region, new_lakeflag):
     timestamp = datetime.now().isoformat()
     conn.execute(
         """
-        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
-        VALUES (?, 'C001', ?, ?, 'fix', 'lakeflag', ?, ?, '')
+        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+        VALUES (?, 'C001', ?, ?, 'fix', 'lakeflag', ?, ?, '', FALSE)
     """,
         [new_id, reach_id, region, str(old_lakeflag), str(new_lakeflag)],
     )
@@ -476,8 +486,8 @@ def apply_column_fix(conn, reach_id, region, check_id, column, new_value, notes=
     )
     conn.execute(
         """
-        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
-        VALUES (?, ?, ?, ?, 'fix', ?, ?, ?, ?)
+        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+        VALUES (?, ?, ?, ?, 'fix', ?, ?, ?, ?, FALSE)
     """,
         [
             new_id,
@@ -518,14 +528,24 @@ def log_skip(conn, reach_id, region, check_id, notes):
     ).fetchone()[0]
     new_id = max_id + 1
     timestamp = datetime.now().isoformat()
+    logger.info(
+        "log_skip: inserting fix_id=%d reach=%s check=%s", new_id, reach_id, check_id
+    )
     conn.execute(
         """
-        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
-        VALUES (?, ?, ?, ?, 'skip', NULL, NULL, NULL, ?)
+        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+        VALUES (?, ?, ?, ?, 'skip', NULL, NULL, NULL, ?, FALSE)
     """,
         [new_id, check_id, reach_id, region, notes],
     )
     conn.commit()
+    # Verify the write actually persisted
+    verify = conn.execute(
+        "SELECT COUNT(*) FROM lint_fix_log WHERE fix_id = ?", [new_id]
+    ).fetchone()[0]
+    logger.info("log_skip: verify fix_id=%d exists: count=%d", new_id, verify)
+    if verify == 0:
+        logger.error("log_skip: WRITE DID NOT PERSIST for fix_id=%d", new_id)
     try:
         append_skip_to_session(
             region,
@@ -560,8 +580,8 @@ def log_defer(conn, reach_id, region, check_id, notes="Deferred"):
     timestamp = datetime.now().isoformat()
     conn.execute(
         """
-        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
-        VALUES (?, ?, ?, ?, 'defer', NULL, NULL, NULL, ?)
+        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+        VALUES (?, ?, ?, ?, 'defer', NULL, NULL, NULL, ?, FALSE)
     """,
         [new_id, check_id, reach_id, region, notes],
     )
@@ -617,8 +637,8 @@ def undo_last_fix(conn, region, check_id=None):
     ).fetchone()[0]
     conn.execute(
         """
-        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes)
-        VALUES (?, ?, ?, ?, 'undo', ?, NULL, ?, ?)
+        INSERT INTO lint_fix_log (fix_id, check_id, reach_id, region, action, column_changed, old_value, new_value, notes, undone)
+        VALUES (?, ?, ?, ?, 'undo', ?, NULL, ?, ?, FALSE)
     """,
         [
             max_id + 1,
@@ -966,7 +986,13 @@ def _do_c004_defer(reach_id, rgn):
 
 
 def _do_c001_fix(reach_id, rgn):
-    apply_lakeflag_fix(conn, reach_id, rgn, 1)
+    logger.info("_do_c001_fix: reach=%s rgn=%s", reach_id, rgn)
+    try:
+        apply_lakeflag_fix(conn, reach_id, rgn, 1)
+        logger.info("_do_c001_fix: apply_lakeflag_fix completed OK")
+    except Exception as e:
+        logger.error("_do_c001_fix: FAILED: %s", e)
+        st.session_state._c001_skip_error = f"Fix failed: {e}"
     st.session_state.last_fix = reach_id
     st.session_state.c001_results = None
     st.cache_data.clear()
@@ -974,7 +1000,13 @@ def _do_c001_fix(reach_id, rgn):
 
 def _do_c001_skip(reach_id, rgn, reason_key):
     reason = st.session_state.get(reason_key, "")
-    log_skip(conn, reach_id, rgn, "C001", reason)
+    logger.info("_do_c001_skip: reach=%s rgn=%s reason=%s", reach_id, rgn, reason)
+    try:
+        log_skip(conn, reach_id, rgn, "C001", reason)
+        logger.info("_do_c001_skip: log_skip completed OK")
+    except Exception as e:
+        logger.error("_do_c001_skip: log_skip FAILED: %s", e)
+        st.session_state._c001_skip_error = str(e)
     st.session_state.c001_results = None
     st.cache_data.clear()
 
@@ -1208,6 +1240,10 @@ with tab_c004:
                 )
 with tab_c001:
     st.header("Lake Sandwich Fixer")
+    # Show any errors from callbacks
+    if st.session_state.get("_c001_skip_error"):
+        st.error(f"Skip callback error: {st.session_state._c001_skip_error}")
+        del st.session_state._c001_skip_error
     if "last_fix" not in st.session_state:
         st.session_state.last_fix = None
     if "c001_results" not in st.session_state:
@@ -1219,6 +1255,10 @@ with tab_c001:
         with st.spinner("Running lake sandwich check..."):
             st.session_state.c001_results = run_c001_check(conn, region)
             st.session_state.c001_region = region
+    total_c001_rows = conn.execute(
+        "SELECT COUNT(*) FROM lint_fix_log WHERE check_id = 'C001' AND region = ?",
+        [region],
+    ).fetchone()[0]
     reviewed_c001 = (
         conn.execute(
             """
@@ -1231,6 +1271,11 @@ with tab_c001:
         .tolist()
     )
     all_reviewed_c001 = set(reviewed_c001)
+    logger.info(
+        "C001 tab: total_c001_rows=%d, reviewed_distinct=%d",
+        total_c001_rows,
+        len(reviewed_c001),
+    )
     deferred_c001_ids = (
         set(
             conn.execute(
