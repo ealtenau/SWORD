@@ -345,10 +345,9 @@ def _process_region_inner(
 
     # Gate: validate source data before graph build
     if not skip_gates:
-        # Flush writes so the read-only LintRunner connection sees current data
         conn.execute("CHECKPOINT")
         try:
-            gate_source_data(db_path, region)
+            gate_source_data(db_path, region, conn=conn)
         except GateFailure as e:
             return RegionResult(
                 region=region,
@@ -486,10 +485,9 @@ def _process_region_inner(
 
     # Gate: validate post-save output integrity
     if not skip_gates:
-        # Flush writes so the read-only LintRunner connection sees current data
         conn.execute("CHECKPOINT")
         try:
-            gate_post_save(db_path, region)
+            gate_post_save(db_path, region, conn=conn)
         except GateFailure as e:
             return RegionResult(
                 region=region,

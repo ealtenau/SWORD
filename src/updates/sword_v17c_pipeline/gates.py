@@ -52,6 +52,7 @@ def run_gate(
     check_ids: List[str],
     label: str,
     *,
+    conn=None,
     fail_on: Optional[Set[Severity]] = None,
     artifact_dir: Optional[str] = None,
 ) -> GateResult:
@@ -67,6 +68,8 @@ def run_gate(
         Lint check IDs to run (e.g. ["T005", "T012"]).
     label : str
         Human-readable gate name for logging/artifacts.
+    conn : duckdb.DuckDBPyConnection, optional
+        Existing connection to reuse (avoids read_only conflict).
     fail_on : set[Severity], optional
         Severities that cause gate failure. Defaults to {ERROR}.
     artifact_dir : str, optional
@@ -86,7 +89,7 @@ def run_gate(
 
     log(f"Gate '{label}': running checks {check_ids} for {region}...")
 
-    with LintRunner(db_path) as runner:
+    with LintRunner(db_path, conn=conn) as runner:
         results = runner.run(checks=check_ids, region=region.upper())
 
     # Write artifact if requested (non-fatal — don't let I/O errors abort the gate)

@@ -24,6 +24,14 @@
 | 2026-02-16 | self (audit) | `undo_last_fix` hardcoded `lakeflag` column regardless of what `column_changed` was | Read `column_changed` from fix log and use it dynamically in the undo UPDATE |
 | 2026-02-16 | user report | Refreshing deployed app lost all review progress — Cloud Run copies fresh DuckDB from GCS on each instance start, lint_fix_log and data fixes in /tmp are ephemeral | JSON session files on GCS persist; added `replay_persisted_fixes()` at startup to re-apply fixes and restore lint_fix_log from JSON |
 
+| 2026-02-19 | self | Linter strips unused imports between individual Edit calls | When adding imports that won't be used until later edits, use a single Python script via Bash to apply all edits atomically before the linter runs |
+| 2026-02-19 | self | SWORDWorkflow stores user_id as `_user_id` (private), not `user_id` | Use `getattr(workflow, "_user_id", default)` when accessing user_id from outside the class |
+| 2026-02-19 | self | Reassigning `workflow`/`conn` inside an inner function doesn't update the outer caller's `finally` block — leaks the new connection | Don't close/reopen connections in inner functions; restructure so the caller owns the lifecycle (e.g. run facc BEFORE opening workflow) |
+| 2026-02-19 | self | DuckDB RTREE index blocks UPDATE even in test fixtures | Always call `conn.execute("INSTALL spatial; LOAD spatial;")` before UPDATE on RTREE-indexed tables (reaches) |
+| 2026-02-19 | self (review) | `save_to_duckdb` in output.py only loaded spatial extension but didn't drop/recreate RTREE indexes — same segfault risk documented in CLAUDE.md | Always apply the full RTREE drop/recreate pattern (drop → UPDATE → recreate), not just LOAD spatial |
+| 2026-02-19 | self (review) | `conn.register("name", df)` without try/finally leaks on exception — subsequent calls get "Table already exists" | Always wrap `conn.register` / `conn.unregister` in try/finally |
+| 2026-02-19 | self (review) | DuckDB gate opening read-only LintRunner while write connection is active causes stale reads | Call `conn.execute("CHECKPOINT")` before opening a second connection to the same DB |
+
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing

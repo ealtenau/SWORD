@@ -18,7 +18,6 @@ from .core import (
     get_registry,
     get_check,
     get_checks_by_category,
-    get_checks_by_severity,
 )
 
 
@@ -35,23 +34,33 @@ class LintRunner:
         runner.close()
     """
 
-    def __init__(self, db_path: Union[str, Path]):
+    def __init__(
+        self,
+        db_path: Union[str, Path],
+        conn: Optional[duckdb.DuckDBPyConnection] = None,
+    ):
         """
         Initialize the lint runner.
 
         Args:
             db_path: Path to SWORD DuckDB database
+            conn: Optional existing DuckDB connection to reuse.
+                  When provided, the runner will NOT close this connection.
         """
         self.db_path = Path(db_path)
-        if not self.db_path.exists():
-            raise FileNotFoundError(f"Database not found: {self.db_path}")
-
-        self.conn = duckdb.connect(str(self.db_path), read_only=True)
+        if conn is not None:
+            self.conn = conn
+            self._owns_conn = False
+        else:
+            if not self.db_path.exists():
+                raise FileNotFoundError(f"Database not found: {self.db_path}")
+            self.conn = duckdb.connect(str(self.db_path), read_only=True)
+            self._owns_conn = True
         self._threshold_overrides: Dict[str, float] = {}
 
     def close(self):
-        """Close the database connection."""
-        if self.conn:
+        """Close the database connection (only if we own it)."""
+        if self.conn and self._owns_conn:
             self.conn.close()
             self.conn = None
 
@@ -113,7 +122,9 @@ class LintRunner:
                     elif check == "F":
                         # Special case: F checks are in ATTRIBUTES but filtered by ID
                         all_attrs = get_checks_by_category(Category.ATTRIBUTES)
-                        specs.extend([s for s in all_attrs if s.check_id.startswith("F")])
+                        specs.extend(
+                            [s for s in all_attrs if s.check_id.startswith("F")]
+                        )
                 else:
                     # Unknown check
                     raise ValueError(f"Unknown check ID or prefix: {check}")
@@ -210,9 +221,7 @@ class LintRunner:
 
         # Use provided threshold, override, or default
         if threshold is None:
-            threshold = self._threshold_overrides.get(
-                check_id, spec.default_threshold
-            )
+            threshold = self._threshold_overrides.get(check_id, spec.default_threshold)
 
         start = time.perf_counter()
         result = spec.check_fn(conn=self.conn, region=region, threshold=threshold)

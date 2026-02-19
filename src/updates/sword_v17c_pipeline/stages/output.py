@@ -135,6 +135,11 @@ def save_sections_to_duckdb(
 
     if sections_df.empty:
         log("No sections to save")
+        conn.execute("DELETE FROM v17c_sections WHERE region = ?", [region.upper()])
+        conn.execute(
+            "DELETE FROM v17c_section_slope_validation WHERE region = ?",
+            [region.upper()],
+        )
         return
 
     # Prepare sections for insert
