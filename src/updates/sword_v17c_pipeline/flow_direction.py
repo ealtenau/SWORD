@@ -10,7 +10,6 @@ Confidence tiers use existing slope quality metrics:
 """
 
 import json
-from datetime import datetime as dt
 from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
@@ -19,9 +18,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-
-def log(msg: str) -> None:
-    print(f"[{dt.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+from .stages._logging import log
 
 
 def create_flow_corrections_table(conn: duckdb.DuckDBPyConnection) -> None:
