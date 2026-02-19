@@ -25,7 +25,7 @@ gcloud run deploy "$SERVICE" \
   --execution-environment gen2 \
   --add-volume name=gcs,type=cloud-storage,bucket="$BUCKET" \
   --add-volume-mount volume=gcs,mount-path=/mnt/gcs \
-  --set-env-vars "SWORD_DB_PATH=/tmp/sword/sword_v17c.duckdb,FIXES_DIR=/mnt/gcs/sword/lint_fixes,APP_FILE=lake_app.py"
+  --set-env-vars "SWORD_DB_PATH=/tmp/sword/sword_v17c.duckdb,FIXES_DIR=/mnt/gcs/sword/lint_fixes"
 
 echo "Done. URL:"
 gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)'

@@ -5,7 +5,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "import duckdb; duckdb.connect().execute('INSTALL spatial')"
 COPY app.py .
-COPY lake_app.py .
 COPY lint/ lint/
 COPY .streamlit/ .streamlit/
 COPY start.sh .
