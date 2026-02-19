@@ -288,7 +288,7 @@ def process_region(
     # Import SWORDWorkflow for provenance
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from sword_duckdb import SWORDWorkflow
-    from sword_duckdb.schema import add_v17c_columns, normalize_region
+    from sword_duckdb.schema import normalize_region
 
     region = normalize_region(region)
     log(f"\n{'=' * 60}")
@@ -299,6 +299,43 @@ def process_region(
     workflow = SWORDWorkflow(user_id=user_id)
     sword = workflow.load(db_path, region, reason=f"v17c pipeline for {region}")
     conn = sword.db.conn
+
+    try:
+        return _process_region_inner(
+            workflow=workflow,
+            conn=conn,
+            db_path=db_path,
+            region=region,
+            skip_swot=skip_swot,
+            swot_path=swot_path,
+            skip_facc=skip_facc,
+            nofacc_model_path=nofacc_model_path,
+            standard_model_path=standard_model_path,
+            skip_path_vars=skip_path_vars,
+            skip_flow_correction=skip_flow_correction,
+            skip_gates=skip_gates,
+        )
+    finally:
+        workflow.close()
+
+
+def _process_region_inner(
+    *,
+    workflow,
+    conn: duckdb.DuckDBPyConnection,
+    db_path: str,
+    region: str,
+    skip_swot: bool,
+    swot_path: Optional[str],
+    skip_facc: bool,
+    nofacc_model_path: str,
+    standard_model_path: str,
+    skip_path_vars: bool,
+    skip_flow_correction: bool,
+    skip_gates: bool,
+) -> RegionResult:
+    """Inner implementation of process_region (called inside try/finally)."""
+    from sword_duckdb.schema import add_v17c_columns
 
     # Ensure v17c columns exist
     add_v17c_columns(conn)
@@ -325,10 +362,11 @@ def process_region(
 
     # Gate: validate source data before graph build
     if not skip_gates:
+        # Flush writes so the read-only LintRunner connection sees current data
+        conn.execute("CHECKPOINT")
         try:
             gate_source_data(db_path, region)
         except GateFailure as e:
-            workflow.close()
             return RegionResult(
                 region=region,
                 ok=False,
@@ -465,10 +503,11 @@ def process_region(
 
     # Gate: validate post-save output integrity
     if not skip_gates:
+        # Flush writes so the read-only LintRunner connection sees current data
+        conn.execute("CHECKPOINT")
         try:
             gate_post_save(db_path, region)
         except GateFailure as e:
-            workflow.close()
             return RegionResult(
                 region=region,
                 ok=False,
@@ -481,8 +520,6 @@ def process_region(
                     "sections": len(sections_df),
                 },
             )
-
-    workflow.close()
 
     # Summary statistics
     stats = {
@@ -560,7 +597,8 @@ def run_pipeline(
     standard_model_path: str = DEFAULT_STANDARD_MODEL,
     skip_path_vars: bool = False,
     skip_flow_correction: bool = True,
-) -> List[Dict]:
+    skip_gates: bool = False,
+) -> List[RegionResult]:
     """
     Run the v17c pipeline for multiple regions.
 
@@ -582,6 +620,8 @@ def run_pipeline(
         Path to no-facc RF model for entry point correction
     standard_model_path : str
         Path to standard RF model for propagation correction
+    skip_gates : bool
+        Skip lint validation gates (default: False)
 
     Returns
     -------
@@ -594,6 +634,7 @@ def run_pipeline(
     log(f"Skip FACC: {skip_facc}")
     log(f"Skip path vars: {skip_path_vars}")
     log(f"Skip flow correction: {skip_flow_correction}")
+    log(f"Skip gates: {skip_gates}")
     if swot_path:
         log(f"SWOT path: {swot_path}")
 
@@ -612,6 +653,7 @@ def run_pipeline(
                 standard_model_path=standard_model_path,
                 skip_path_vars=skip_path_vars,
                 skip_flow_correction=skip_flow_correction,
+                skip_gates=skip_gates,
             )
             all_results.append(result)
         except Exception as e:

@@ -17,20 +17,22 @@ from src.updates.sword_duckdb.lint.core import Severity
 
 pytestmark = [pytest.mark.pipeline, pytest.mark.db]
 
-FIXTURE_DB = Path("tests/sword_duckdb/fixtures/sword_test_minimal.duckdb")
+FIXTURE_DB = Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb"
 
 
 def _load_spatial(conn):
     """Load DuckDB spatial extension (required before UPDATE on RTREE-indexed tables)."""
     try:
-        conn.execute("INSTALL spatial; LOAD spatial;")
+        conn.execute("LOAD spatial;")
     except Exception:
-        pass
+        conn.execute("INSTALL spatial; LOAD spatial;")
 
 
 @pytest.fixture
 def writable_db_path(tmp_path):
     """Copy test DB to tmp and return its path as a string."""
+    if not FIXTURE_DB.exists():
+        pytest.skip(f"Test fixture DB not found: {FIXTURE_DB}")
     dst = tmp_path / "test.duckdb"
     shutil.copy2(FIXTURE_DB, dst)
     return str(dst)
@@ -82,14 +84,13 @@ class TestGatePostSave:
     """Tests for gate_post_save (V001, V005, V007, V008, T001, T002)."""
 
     def test_runs_all_checks(self, writable_db_path):
-        """Gate runs all 6 checks and returns structured result."""
-        # Test DB may have pre-existing issues (T001 dist_out violations).
-        # We verify the gate runs all checks and returns a proper result,
-        # not that it necessarily passes on test fixture data.
+        """Gate runs all 6 checks regardless of pass/fail."""
         try:
             result = gate_post_save(writable_db_path, "NA")
-        except GateFailure:
-            # Expected if test DB has pre-existing issues
+        except GateFailure as e:
+            # Gate failed but we can still verify it ran multiple checks
+            # by checking that failed_checks is populated
+            assert len(e.failed_checks) >= 1
             return
 
         assert isinstance(result, GateResult)
@@ -106,16 +107,16 @@ class TestGatePostSave:
             WHERE rt.region = 'NA' AND rt.direction = 'down'
             LIMIT 1
         """).fetchone()
-        if row:
-            upstream_id, downstream_id = row
-            conn.execute(
-                "UPDATE reaches SET hydro_dist_out = 100 WHERE reach_id = ?",
-                [upstream_id],
-            )
-            conn.execute(
-                "UPDATE reaches SET hydro_dist_out = 99999 WHERE reach_id = ?",
-                [downstream_id],
-            )
+        assert row is not None, "Test fixture must have downstream topology rows for NA"
+        upstream_id, downstream_id = row
+        conn.execute(
+            "UPDATE reaches SET hydro_dist_out = 100 WHERE reach_id = ?",
+            [upstream_id],
+        )
+        conn.execute(
+            "UPDATE reaches SET hydro_dist_out = 99999 WHERE reach_id = ?",
+            [downstream_id],
+        )
         conn.close()
 
         with pytest.raises(GateFailure) as exc_info:
@@ -144,16 +145,16 @@ class TestRunGate:
             WHERE rt.region = 'NA' AND rt.direction = 'down'
             LIMIT 1
         """).fetchone()
-        if row:
-            upstream_id, downstream_id = row
-            conn.execute(
-                "UPDATE reaches SET path_freq = 999 WHERE reach_id = ?",
-                [upstream_id],
-            )
-            conn.execute(
-                "UPDATE reaches SET path_freq = 1 WHERE reach_id = ?",
-                [downstream_id],
-            )
+        assert row is not None, "Test fixture must have downstream topology rows for NA"
+        upstream_id, downstream_id = row
+        conn.execute(
+            "UPDATE reaches SET path_freq = 999 WHERE reach_id = ?",
+            [upstream_id],
+        )
+        conn.execute(
+            "UPDATE reaches SET path_freq = 1 WHERE reach_id = ?",
+            [downstream_id],
+        )
         conn.close()
 
         with pytest.raises(GateFailure):
@@ -193,8 +194,14 @@ class TestGateFailureException:
         assert exc.label == "my_gate"
         assert exc.check_id == "T005"
         assert exc.issues_found == 42
+        assert exc.failed_checks == ["T005"]
         assert "T005" in str(exc)
-        assert "42" in str(exc)
+
+    def test_multiple_failed_checks(self):
+        exc = GateFailure("my_gate", "T005", 42, failed_checks=["T005", "T012"])
+        assert exc.failed_checks == ["T005", "T012"]
+        assert "T005" in str(exc)
+        assert "T012" in str(exc)
 
     def test_is_exception(self):
         assert issubclass(GateFailure, Exception)

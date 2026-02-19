@@ -68,14 +68,16 @@ def save_to_duckdb(
     # Handle infinity values - convert to NULL
     update_df = update_df.replace([np.inf, -np.inf], np.nan)
 
-    # Register DataFrame and update
-    conn.register("v17c_updates", update_df)
+    # Load spatial extension (required for RTREE index compatibility)
+    conn.execute("INSTALL spatial; LOAD spatial;")
 
-    # Load spatial extension (needed for RTREE index compatibility)
-    try:
-        conn.execute("INSTALL spatial; LOAD spatial;")
-    except Exception:
-        pass  # Extension may already be loaded or not needed
+    # Drop RTREE indexes before UPDATE (DuckDB segfaults otherwise)
+    rtree_indexes = conn.execute(
+        "SELECT index_name, table_name, sql FROM duckdb_indexes() "
+        "WHERE sql LIKE '%RTREE%'"
+    ).fetchall()
+    for idx_name, _tbl, _sql in rtree_indexes:
+        conn.execute(f'DROP INDEX "{idx_name}"')
 
     # Build SET clause - always include base v17c columns
     set_clauses = [
@@ -99,16 +101,25 @@ def save_to_duckdb(
             ]
         )
 
-    # Update reaches table
-    conn.execute(f"""
-        UPDATE reaches SET
-            {", ".join(set_clauses)}
-        FROM v17c_updates u
-        WHERE reaches.reach_id = u.reach_id
-        AND reaches.region = '{region.upper()}'
-    """)
+    # Register DataFrame, update, and always unregister
+    conn.register("v17c_updates", update_df)
+    try:
+        conn.execute(
+            f"""
+            UPDATE reaches SET
+                {", ".join(set_clauses)}
+            FROM v17c_updates u
+            WHERE reaches.reach_id = u.reach_id
+            AND reaches.region = ?
+        """,
+            [region.upper()],
+        )
+    finally:
+        conn.unregister("v17c_updates")
 
-    conn.unregister("v17c_updates")
+    # Recreate RTREE indexes
+    for _idx_name, _tbl, sql in rtree_indexes:
+        conn.execute(sql)
 
     log(f"Updated {len(rows):,} reaches")
     return len(rows)
@@ -134,19 +145,21 @@ def save_sections_to_duckdb(
     sections_insert["reach_ids"] = sections_insert["reach_ids"].apply(json.dumps)
 
     conn.register("sections_insert", sections_insert)
-    conn.execute("""
-        INSERT OR REPLACE INTO v17c_sections
-        SELECT
-            section_id,
-            region,
-            upstream_junction,
-            downstream_junction,
-            reach_ids,
-            distance,
-            n_reaches
-        FROM sections_insert
-    """)
-    conn.unregister("sections_insert")
+    try:
+        conn.execute("""
+            INSERT OR REPLACE INTO v17c_sections
+            SELECT
+                section_id,
+                region,
+                upstream_junction,
+                downstream_junction,
+                reach_ids,
+                distance,
+                n_reaches
+            FROM sections_insert
+        """)
+    finally:
+        conn.unregister("sections_insert")
     log(f"Saved {len(sections_insert):,} sections")
 
     # Save validation results if any
@@ -155,18 +168,20 @@ def save_sections_to_duckdb(
         validation_insert["region"] = region.upper()
 
         conn.register("validation_insert", validation_insert)
-        conn.execute("""
-            INSERT OR REPLACE INTO v17c_section_slope_validation
-            SELECT
-                section_id,
-                region,
-                slope_from_upstream,
-                slope_from_downstream,
-                direction_valid,
-                likely_cause
-            FROM validation_insert
-        """)
-        conn.unregister("validation_insert")
+        try:
+            conn.execute("""
+                INSERT OR REPLACE INTO v17c_section_slope_validation
+                SELECT
+                    section_id,
+                    region,
+                    slope_from_upstream,
+                    slope_from_downstream,
+                    direction_valid,
+                    likely_cause
+                FROM validation_insert
+            """)
+        finally:
+            conn.unregister("validation_insert")
         log(f"Saved {len(validation_insert):,} validation records")
 
 

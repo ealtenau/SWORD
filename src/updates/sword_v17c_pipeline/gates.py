@@ -18,12 +18,21 @@ from .stages._logging import log
 class GateFailure(Exception):
     """Raised when a gate detects failing lint checks."""
 
-    def __init__(self, label: str, check_id: str, issues_found: int):
+    def __init__(
+        self,
+        label: str,
+        check_id: str,
+        issues_found: int,
+        *,
+        failed_checks: Optional[List[str]] = None,
+    ):
         self.label = label
         self.check_id = check_id
         self.issues_found = issues_found
+        self.failed_checks = failed_checks or [check_id]
         super().__init__(
-            f"Gate '{label}' failed: check {check_id} found {issues_found} issues"
+            f"Gate '{label}' failed: checks {self.failed_checks} "
+            f"({issues_found} issues in {check_id})"
         )
 
 
@@ -80,9 +89,12 @@ def run_gate(
     with LintRunner(db_path) as runner:
         results = runner.run(checks=check_ids, region=region.upper())
 
-    # Write artifact if requested
+    # Write artifact if requested (non-fatal — don't let I/O errors abort the gate)
     if artifact_dir:
-        _write_artifact(artifact_dir, label, results)
+        try:
+            _write_artifact(artifact_dir, label, results)
+        except OSError as e:
+            log(f"Gate '{label}': WARNING — could not write artifact: {e}")
 
     # Evaluate pass/fail
     failed = []
@@ -99,9 +111,10 @@ def run_gate(
         log(f"Gate '{label}': PASSED ({len(results)} checks)")
     else:
         log(f"Gate '{label}': FAILED — {failed}")
-        # Raise on first failed check
         first = next(r for r in results if r.check_id == failed[0])
-        raise GateFailure(label, first.check_id, first.issues_found)
+        raise GateFailure(
+            label, first.check_id, first.issues_found, failed_checks=failed
+        )
 
     return gate_result
 
