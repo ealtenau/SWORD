@@ -101,7 +101,7 @@ def save_to_duckdb(
             ]
         )
 
-    # Register DataFrame, update, and always unregister
+    # Register DataFrame, update, and always unregister + recreate RTREE indexes
     conn.register("v17c_updates", update_df)
     try:
         conn.execute(
@@ -116,10 +116,9 @@ def save_to_duckdb(
         )
     finally:
         conn.unregister("v17c_updates")
-
-    # Recreate RTREE indexes
-    for _idx_name, _tbl, sql in rtree_indexes:
-        conn.execute(sql)
+        # Always recreate RTREE indexes, even if UPDATE failed
+        for _idx_name, _tbl, sql in rtree_indexes:
+            conn.execute(sql)
 
     log(f"Updated {len(rows):,} reaches")
     return len(rows)

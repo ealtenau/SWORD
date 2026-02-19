@@ -373,7 +373,7 @@ def _process_region_inner(
                 reaches_processed=len(reaches_df),
                 reaches_updated=0,
                 failed_gate=e.label,
-                failed_checks=[e.check_id],
+                failed_checks=e.failed_checks,
             )
 
     # Build reach-level graph (uses corrected facc from DB)
@@ -514,7 +514,7 @@ def _process_region_inner(
                 reaches_processed=len(reaches_df),
                 reaches_updated=n_updated,
                 failed_gate=e.label,
-                failed_checks=[e.check_id],
+                failed_checks=e.failed_checks,
                 stats={
                     "facc_corrections": n_facc_corrections,
                     "sections": len(sections_df),
@@ -762,6 +762,11 @@ def main():
         metavar="RUN_ID",
         help="Rollback flow corrections for the given run_id, then exit",
     )
+    parser.add_argument(
+        "--skip-gates",
+        action="store_true",
+        help="Skip lint validation gates between pipeline stages",
+    )
 
     args = parser.parse_args()
 
@@ -800,6 +805,7 @@ def main():
         standard_model_path=args.standard_model,
         skip_path_vars=args.skip_path_vars,
         skip_flow_correction=not args.enable_flow_correction,
+        skip_gates=args.skip_gates,
     )
 
     # Exit with error if any region failed
