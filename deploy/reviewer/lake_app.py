@@ -1366,7 +1366,7 @@ with tab_c001:
             col1, col2 = st.columns([2, 1])
             with col1:
                 render_reach_map_satellite(
-                    int(selected), region, conn, color_by_type=color_mode
+                    int(selected), region, conn, hops=3, color_by_type=color_mode
                 )
             with col2:
                 st.markdown("### Key Indicators")
