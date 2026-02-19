@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """
-SWORD Lake QA Reviewer
-======================
-Streamlit UI for QA review of lake-related issues only.
+SWORD QA Reviewer
+=================
+Streamlit UI for QA review of SWORD lake classification issues.
 Tabs: Lakeflag/Type (C004), Lake Sandwich (C001), Fix History.
 
-Run with: streamlit run lake_reviewer.py
-
-Shares the same DuckDB file and lint_fix_log table as topology_reviewer.py.
-Cannot run both simultaneously (DuckDB single-writer lock).
+Run with: streamlit run reviewer.py
 """
 
 import json

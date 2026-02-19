@@ -36,12 +36,12 @@
 - Playwright on deployed URL is the only reliable way to reproduce Cloud Run bugs — local DuckDB behavior differs from containerized Linux DuckDB
 - Debug cycle for deployed Streamlit: add logging → `bash deploy.sh` (~2 min) → test deployed URL → `gcloud logging read` — don't waste time trying to reproduce locally
 - For map zoom in folium with `fit_bounds`: the zoom is driven by the extent of coords passed to `fit_bounds`, NOT `zoom_start`. Reduce `hops` to control how many reaches are fetched, which controls the bounding box.
-- The `app.py` (topology reviewer) and `lake_app.py` (lake reviewer) share helper functions but are independent deployments — `APP_FILE` env var in `start.sh` selects which one runs
+- Single reviewer app: `reviewer.py` (local) / `app.py` (deploy). `APP_FILE` defaults to `app.py` in `start.sh`.
 
 ## Patterns That Don't Work
 - Relying on DuckDB `DEFAULT FALSE` in INSERT statements — on Cloud Run (DuckDB 1.4.x) omitting a boolean column from INSERT produces NULL, not the DEFAULT value. This silently breaks `NOT column` WHERE clauses.
 - Inline `if st.button():` for state mutations — use `on_click` callbacks instead. Inline handlers with `st.rerun()` have timing issues where state changes can get lost during Streamlit's execution model.
-- Editing `app.py` when the bug is in `lake_app.py` — check `APP_FILE` env var in `start.sh`/`deploy.sh` to know which file is actually deployed. They're separate apps sharing some lint code.
+- The old topology_reviewer.py was removed — there's only one reviewer app now (`reviewer.py` / `deploy/reviewer/app.py`)
 
 ## Streamlit + Google Cloud Run Lessons
 

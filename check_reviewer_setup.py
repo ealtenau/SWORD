@@ -7,6 +7,7 @@ for the SWORD QA Reviewer.
 
 Usage: python check_reviewer_setup.py
 """
+
 import sys
 from pathlib import Path
 
@@ -67,7 +68,7 @@ for module_name, pip_name in REQUIRED_PACKAGES:
 if missing:
     print()
     print(f"  Fix: pip install {' '.join(missing)}")
-    print(f"  Or:  pip install -r requirements-reviewer.txt")
+    print("  Or:  pip install -r requirements-reviewer.txt")
 
 # 3. Database file
 print()
@@ -99,17 +100,9 @@ else:
 print()
 print("[5/5] Lint check imports")
 try:
-    from src.updates.sword_duckdb.lint.checks.classification import (
+    from src.updates.sword_duckdb.lint.checks.classification import (  # noqa: F401 — import-only check
         check_lake_sandwich,
         check_lakeflag_type_consistency,
-    )
-    from src.updates.sword_duckdb.lint.checks.topology import (
-        check_facc_monotonicity,
-        check_orphan_reaches,
-    )
-    from src.updates.sword_duckdb.lint.checks.attributes import (
-        check_slope_reasonableness,
-        check_end_reach_consistency,
     )
 
     check("All lint checks importable", True)
@@ -123,7 +116,7 @@ if failed == 0:
     print(f"ALL {total} CHECKS PASSED")
     print()
     print("Ready! Launch the reviewer with:")
-    print("  streamlit run topology_reviewer.py")
+    print("  streamlit run reviewer.py")
 else:
     print(f"{failed} of {total} checks FAILED")
     print()

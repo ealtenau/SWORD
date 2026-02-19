@@ -492,19 +492,19 @@ Test DB: `tests/sword_duckdb/fixtures/sword_test_minimal.duckdb` (100 reaches, 5
 | `src/updates/sword_duckdb/lint/` | Lint framework (50 checks) |
 | `run_v17c_topology.py` | Topology recalculation script |
 | `rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
-| `topology_reviewer.py` | Streamlit GUI for facc/topology fixes |
+| `reviewer.py` | Streamlit QA reviewer for lake classification |
 
-## Topology Reviewer (topology_reviewer.py)
+## QA Reviewer (reviewer.py)
 
-Streamlit app for manual QA review of SWORD reaches.
+Streamlit app for manual QA review of SWORD lake classification (C001, C004).
 
 **Key gotchas:**
 - `check_lakeflag_type_consistency()` returns cross-tab summary (lakeflag, type, count), NOT individual reaches. Use direct SQL for per-reach review.
 - Streamlit tabs must ALL be created in every code path — no conditional `None` tabs
 - `render_reach_map_satellite()` supports `color_by_type=True` for lakeflag-colored connected reaches (used in C004 tab)
-- Beginner mode (default ON) reorders tabs: C004, A010, T004, A002, Suspect, Fix History first
 - All review actions logged to `lint_fix_log` table with check_id, action, old/new values
 - `requirements-reviewer.txt` has minimal deps for reviewer-only usage (no psycopg2/aiohttp)
+- Deploy: `cd deploy/reviewer && bash deploy.sh` — `APP_FILE` defaults to `app.py`
 
 ## Git
 
