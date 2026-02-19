@@ -13,6 +13,8 @@
 | 2026-02-15 | self | Substring match `"lake" in issue_type` caught "river_labeled_as_lake_type" | Use exact `==` match on issue_type strings, never substring match for dispatch |
 
 ## User Preferences
+- Always create PRs — never merge locally, never ask which option
+- After PR, ask: self-review or agent review (sonnet, not haiku)
 - Prefers concise plans, sacrifice grammar for brevity
 - No speculative features
 - `uv` not pip, `ruff` not black/pylint, `pytest -q`
@@ -28,6 +30,8 @@
 | 2026-02-19 | self | SWORDWorkflow stores user_id as `_user_id` (private), not `user_id` | Use `getattr(workflow, "_user_id", default)` when accessing user_id from outside the class |
 | 2026-02-19 | self | Reassigning `workflow`/`conn` inside an inner function doesn't update the outer caller's `finally` block — leaks the new connection | Don't close/reopen connections in inner functions; restructure so the caller owns the lifecycle (e.g. run facc BEFORE opening workflow) |
 | 2026-02-19 | self | DuckDB RTREE index blocks UPDATE even in test fixtures | Always call `conn.execute("INSTALL spatial; LOAD spatial;")` before UPDATE on RTREE-indexed tables (reaches) |
+| 2026-02-19 | self | `git stash` only saves tracked changes — untracked file deletions and unstaged changes to already-modified-but-untracked files are lost | Stage changes before stashing, or avoid stash when verifying pre-existing lint errors |
+| 2026-02-19 | self | _phase4d_node_validation spiked reaches to node_max when corrected < 10% of node_max, then B5 propagated spikes via bifurc children → junction floors → 5-10x inflation on large rivers | Removed B4 (node validation) from both Stage A and Stage B; replaced with empty dicts to preserve return signature |
 | 2026-02-19 | self (review) | `save_to_duckdb` in output.py only loaded spatial extension but didn't drop/recreate RTREE indexes — same segfault risk documented in CLAUDE.md | Always apply the full RTREE drop/recreate pattern (drop → UPDATE → recreate), not just LOAD spatial |
 | 2026-02-19 | self (review) | `conn.register("name", df)` without try/finally leaks on exception — subsequent calls get "Table already exists" | Always wrap `conn.register` / `conn.unregister` in try/finally |
 | 2026-02-19 | self (review) | DuckDB gate opening read-only LintRunner while write connection is active causes stale reads | Call `conn.execute("CHECKPOINT")` before opening a second connection to the same DB |
