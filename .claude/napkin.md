@@ -37,6 +37,35 @@
 ## Patterns That Don't Work
 - Relying on DuckDB `DEFAULT FALSE` in INSERT statements — on Cloud Run (DuckDB 1.4.x) omitting a boolean column from INSERT produces NULL, not the DEFAULT value. This silently breaks `NOT column` WHERE clauses.
 
+## Streamlit + Google Cloud Run Lessons
+
+These are hard-won lessons from debugging the SWORD Lake QA Reviewer deployed on Cloud Run gen2 with GCS FUSE. Future agents: read this before touching the deployed app.
+
+### Architecture
+- **DB is ephemeral**: `start.sh` copies DuckDB from GCS FUSE (`/mnt/gcs/`) → `/tmp/sword/` on every container start. Writes to `/tmp` are lost when the container scales to zero or redeploys.
+- **JSON is persistent**: Fix/skip data is backed up as JSON to `/mnt/gcs/sword/lint_fixes/` (GCS FUSE mount). On startup, `replay_persisted_fixes()` (decorated with `@st.cache_resource`) re-inserts all JSON data into the fresh DuckDB.
+- **Scale-to-zero**: `min-instances=0, max-instances=1`. After ~15 min idle, container dies. Next request cold-starts a new one. All `/tmp` state is gone, only GCS JSON survives.
+
+### Debugging Deployed Bugs
+- **Local testing is insufficient**: DuckDB behavior can differ between macOS (local) and Linux (Cloud Run container). The `DEFAULT FALSE` bug only manifested on Cloud Run — local testing showed everything working.
+- **Use Playwright on the deployed URL**: Navigate to the Cloud Run URL, interact with the app, check if state actually changes. This is the only reliable way to reproduce deployed-only bugs.
+- **Use `gcloud logging read`**: Cloud Run logs go to GCP Logging. Filter by service name and severity. JSON writes to GCS FUSE show up as separate log entries from the GCS FUSE sidecar.
+- **Add diagnostic logging, deploy, test, read logs**: The fastest debug cycle is: add `logging.info()` calls → `bash deploy.sh` → test on deployed URL → `gcloud logging read` to see what happened. Each deploy takes ~2 min.
+- **Deploy script**: `cd deploy/reviewer && bash deploy.sh` — builds Docker image via Cloud Build, pushes to GCR, deploys to Cloud Run. Output shows revision number (e.g., `sword-reviewer-00022-v8f`).
+
+### Streamlit Gotchas on Cloud Run
+- **`@st.cache_resource` runs once per process**: `init_database()` creates tables and replays JSON fixes. If it errors, the whole app is broken until the container restarts.
+- **`st.session_state` is per-browser-tab**: Each tab gets its own DuckDB connection in `st.session_state.conn`. But the underlying DuckDB file is shared, so writes from one tab are visible to others.
+- **`on_click` callbacks vs inline `if st.button()`**: Callbacks execute before the script re-runs and are more reliable for state mutations. Inline button handlers can have timing issues with `st.rerun()`.
+- **`st.cache_data.clear()` is essential after DB writes**: Without it, queries return stale cached results. Every callback that writes to DB must call `st.cache_data.clear()`.
+- **Module-level `conn = get_connection()`**: The module-level variable captures the connection on first import. Callbacks reference this module-level `conn`. If the session_state connection gets replaced, the module-level `conn` can go stale.
+
+### DuckDB on Cloud Run
+- **Never rely on DEFAULT values in INSERT**: Always specify every column explicitly, especially booleans. `DEFAULT FALSE` can produce NULL instead of FALSE.
+- **`NOT column` where column is NULL = NULL (falsy)**: This is standard SQL three-valued logic, but it's a nasty silent bug when you expect DEFAULT to populate the value.
+- **Single-writer lock**: Only one connection can write at a time. With `max-instances=1` this is fine, but if you ever scale up, DuckDB will deadlock.
+- **INSTALL spatial at build time**: The Dockerfile runs `python -c "import duckdb; duckdb.connect().execute('INSTALL spatial')"` during build so extensions are cached.
+
 ## Domain Notes
 - **SWORD `type` field**: 1=river, 3=lake_on_river, 4=dam, 5=unreliable, 6=ghost. **Type=2 does NOT exist.** Type=3 is NOT tidal — tidal is lakeflag=3.
 - **lakeflag=1 + type=3** is the PRIMARY expected lake combo (21k+ reaches). Do NOT flag it as mismatch.
