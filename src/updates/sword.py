@@ -933,7 +933,12 @@ class SWORD:
                                 #current reach 
                                 self.reaches.n_rch_up[ridx] = 1
                                 self.reaches.rch_id_up[:,ridx] = 0
-                                self.reaches.rch_id_up[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]+1]]][0]
+                                # bounds check to prevent index error
+                                if pts[mx]+1 < len(order_ids):
+                                    self.reaches.rch_id_up[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]+1]]][0]
+                                else:
+                                    # if at end of reach, use the last point
+                                    self.reaches.rch_id_up[0,ridx] = self.centerlines.reach_id[0,cl_r[order_ids[pts[mx]]]][0]
                         
                         else:
                             #update downstream end for reach level. 

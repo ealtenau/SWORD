@@ -24,7 +24,7 @@ sys.path.append(main_dir)
 import numpy as np
 import pandas as pd
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -34,8 +34,9 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-#read data. 
-sword = SWORD(main_dir, region, version)
+#read data.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 outpath = sword.paths['update_dir']+region.lower()+'_'+version+'_single_pt_rchs.csv'
 
 #find reaches that are only one centerline point in length. 

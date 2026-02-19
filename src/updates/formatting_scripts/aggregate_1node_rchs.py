@@ -27,7 +27,7 @@ import time
 from statistics import mode
 import pandas as pd
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start = time.time()
 
@@ -39,8 +39,9 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-# File paths. 
-sword = SWORD(main_dir, region, version)
+# File paths.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #copies original file for version control.
 out_dir = sword.paths['update_dir']
 

@@ -2,24 +2,28 @@
 Adding Deltas to SWORD (2_add_deltas_to_sword)
 ===================================================
 
-This script reads in the delta centerlines and 
-auxillary attributes and formats them to be added 
+This script reads in the delta centerlines and
+auxillary attributes and formats them to be added
 to the SWOT River Database (SWORD).
 
-Output is a new SWORD netCDF file with all delta 
-location and hydrologic attributes added.
+Output is updated SWORD DuckDB database with all delta
+location and hydrologic attributes added. Optional NetCDF
+export is available via save_nc().
 
-The script is run at a regional/continental scale. 
-Command line arguments required are the two-letter 
-region identifier (i.e. NA), SWORD version (i.e. v17), 
-the directory path containing the delta netCDF file, 
-and a True/False statment indicating if you want to write 
-the new netCDF files. If False, only the plots will be output
-which allows for users to inspect for any potential issues 
-before altering the SWORD database. 
+The script is run at a regional/continental scale.
+Command line arguments required are the two-letter
+region identifier (i.e. NA), SWORD version (i.e. v17b),
+the directory path containing the delta netCDF file,
+and a True/False statment indicating if you want to write
+the data. If False, only the plots will be output
+which allows for users to inspect for any potential issues
+before altering the SWORD database.
+
+Note: This script uses the DuckDB backend. The database
+file is expected at: data/duckdb/sword_{version}.duckdb
 
 Execution example (terminal):
-    python path/to/2_add_deltas_to_sword.py NA v17 path/to/delta_file.nc True
+    python path/to/2_add_deltas_to_sword.py NA v17b path/to/delta_file.nc True
 
 """
 from __future__ import division
@@ -28,11 +32,14 @@ import os
 main_dir = os.getcwd()
 sys.path.append(main_dir)
 import time
+import logging
 import numpy as np
 import shutil
 import argparse
+
+logger = logging.getLogger(__name__)
 import src.updates.delta_updates.delta_utils as dlt
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start = time.time()
 
@@ -58,9 +65,11 @@ print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 print('Starting File:', os.path.basename(delta_dir))
 print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
-#read delta data and SWORD. 
+#read delta data and SWORD.
 delta_cls = dlt.read_delta(delta_dir)
-sword = SWORD(main_dir, region, version)
+# Use DuckDB database path
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 #copy data file in case errors occur in overwrite. 
 if write_data == 'True':
     sword.copy() 
@@ -102,7 +111,35 @@ if len(del_rchs) > 0:
     sword.delete_data(del_rchs)
 #find remaining sword reaches to remove or flag as tributaries
 #into the delta. 
-rmv_rchs, delta_tribs = dlt.find_delta_tribs(delta_cls, sword)
+# manual delete list for specific deltas
+manual_delete = []
+manual_tributaries = []
+if 'Parana' in delta_dir or 'parana' in delta_dir.lower():
+    manual_delete = [64212000165, 64212000155, 64212000145, 64212000135]
+elif 'Orinoco' in delta_dir or 'orinoco' in delta_dir.lower():
+    manual_tributaries = []  # 61309000375 was deleted in earlier step
+elif 'Niger' in delta_dir or 'niger' in delta_dir.lower():
+    manual_tributaries = [14301000995, 14301001006, 14301001065, 14301001076, 14301000675]
+elif 'Amazon' in delta_dir or 'amazon' in delta_dir.lower():
+    manual_tributaries = [62100100125, 62100100135, 62100100145, 62100100155, 62100100165, 
+                         62100100175, 62100100185, 62100100195, 62100100205, 62100100275, 62221100145]
+    manual_delete = [62210000495, 62210000506, 62210000255, 62210000275, 62210000285, 
+                    62210000455, 62210000465, 62210000475, 62210000486, 62210000446, 
+                    62210000435, 62302000375, 62302000385, 62210000225, 62210000235, 
+                    62210000245, 62210000265, 62210000686, 62305000656, 61690000016,
+                    62305000796, 62305000826, 62305000846, 62305000446, 62304000486,
+                    62304000596,62210000616,62100900416]
+
+rmv_rchs, delta_tribs = dlt.find_delta_tribs(delta_cls, sword, delete_ids=manual_delete, tributary_ids=manual_tributaries)
+logger.debug(f"rmv_rchs contains {len(rmv_rchs)} reaches")
+logger.debug(f"delta_tribs contains {len(delta_tribs)} reaches")
+if len(manual_tributaries) > 0:
+    logger.debug(f"manual_tributaries: {manual_tributaries}")
+    for trib_id in manual_tributaries:
+        if trib_id in rmv_rchs:
+            logger.warning(f"{trib_id} is in rmv_rchs (will be deleted)")
+        if trib_id in delta_tribs:
+            logger.debug(f"{trib_id} is in delta_tribs (will be tributary)")
 #save plot of what was deleted for future checks. 
 dlt.plot_sword_deletions(sword, 
                          delta_cls, 
@@ -111,6 +148,10 @@ dlt.plot_sword_deletions(sword,
                          delta_dir)
 #delete sword reaches.
 if len(rmv_rchs) > 0:
+    # remove manual tributaries from delete list
+    if len(manual_tributaries) > 0:
+        rmv_rchs = np.array([r for r in rmv_rchs if r not in manual_tributaries])
+        print(f'----> removed {len(manual_tributaries)} manual tributaries from delete list')
     print('----> deleting', len(rmv_rchs), 'additional reaches')
     sword.delete_data(rmv_rchs)
 #save plot of what was added for future checks. 

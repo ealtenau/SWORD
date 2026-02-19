@@ -37,7 +37,7 @@ from shapely.geometry import Point
 import argparse
 import src.updates.geo_utils as geo 
 import src.updates.mhv_sword.mhv_reach_def_tools as rdt
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 import warnings
 warnings.filterwarnings("ignore") #if code stops working may need to comment out to check warnings. 
 
@@ -55,8 +55,9 @@ mhv_dir = main_dir+'/data/inputs/MeritHydroVector/'
 mhv_files = np.sort(np.array(np.array([file for file in geo.getListOfFiles(mhv_dir) if '.shp' in file])))
 mhv_basins = np.array([int(f[-6:-4]) for f in mhv_files])
 
-#read data. 
-sword = SWORD(main_dir, region, version)
+#read data.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword_l2 = np.array([int(str(ind)[0:2]) for ind in sword.centerlines.reach_id[0,:]])
 unq_l2 = np.unique(sword_l2)
 

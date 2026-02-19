@@ -36,7 +36,7 @@ import geopandas as gp
 import glob
 import argparse
 import src.updates.geo_utils as geo 
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 ###############################################################################
 
@@ -141,7 +141,8 @@ mhv_dir = main_dir+'/data/inputs/MHV_SWORD/netcdf/' + region +'/'
 mhv_files = np.sort(glob.glob(os.path.join(mhv_dir, '*.nc')))
 
 #reading in sword data.
-sword = SWORD(main_dir, region, version)
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 
 #loop through and find SWORD reaches that intersect MHV additions. 
 for ind in list(range(len(mhv_files))):

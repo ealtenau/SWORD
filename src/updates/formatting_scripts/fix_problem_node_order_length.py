@@ -27,7 +27,7 @@ import pandas as pd
 import time
 import argparse
 from scipy import stats as st
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 import src.updates.geo_utils as geo 
 
 start_all = time.time()
@@ -39,8 +39,9 @@ args = parser.parse_args()
 
 region = args.region
 version = args.version
- 
-sword = SWORD(main_dir, region, version)
+
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #copies original file for version control.
 
 csv_dir1 = sword.paths['update_dir']+region.lower()+'_node_order_problems.csv'

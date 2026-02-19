@@ -30,7 +30,7 @@ import pandas as pd
 from scipy import spatial as sp
 import pandas as pd
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 parser = argparse.ArgumentParser()
 parser.add_argument("region", help="<Required> Two-Letter Continental SWORD Region (i.e. NA)", type = str)
@@ -49,8 +49,10 @@ old_v = args.old_version
 # old_v = 'v16'
 
 #read data and create outpaths.
-new_sword = SWORD(main_dir, region, new_v)
-old_sword = SWORD(main_dir, region, old_v)
+new_db_path = os.path.join(main_dir, f'data/duckdb/sword_{new_v}.duckdb')
+new_sword = SWORD(new_db_path, region, new_v)
+old_db_path = os.path.join(main_dir, f'data/duckdb/sword_{old_v}.duckdb')
+old_sword = SWORD(old_db_path, region, old_v)
 rch_outpath = new_sword.paths['version_dir']+region+'_ReachIDs_'+new_v+'_vs_'+old_v+'.csv'
 node_outpath = new_sword.paths['version_dir']+region+'_NodeIDs_'+new_v+'_vs_'+old_v+'.csv'
 

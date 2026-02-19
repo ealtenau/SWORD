@@ -28,7 +28,7 @@ import geopandas as gp
 import geopy.distance
 import pandas as pd
 import argparse
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 import src.updates.geo_utils as geo
 
 parser = argparse.ArgumentParser()
@@ -46,8 +46,9 @@ version = args.version
 # version = 'v18'
 # reach = [53190500116, 56257300106]
 
-#read sword data. 
-sword = SWORD(main_dir, region, version)
+#read sword data.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #copies original file for version control. 
 
 #read csv file of updated reaches. 

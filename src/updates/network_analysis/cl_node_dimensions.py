@@ -29,7 +29,7 @@ import sys
 import time
 import matplotlib.pyplot as plt
 from scipy import spatial as sp
-from src.updates.sword import SWORD
+from src.updates.sword_duckdb import SWORD
 
 start_all = time.time()
 parser = argparse.ArgumentParser()
@@ -40,8 +40,9 @@ args = parser.parse_args()
 region = args.region
 version = args.version
 
-#read data. 
-sword = SWORD(main_dir, region, version)
+#read data.
+db_path = os.path.join(main_dir, f'data/duckdb/sword_{version}.duckdb')
+sword = SWORD(db_path, region, version)
 sword.copy() #copies original file for version control.
 
 print('Updating Centerline Node ID Neighbors')
