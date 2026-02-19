@@ -45,8 +45,6 @@ Or using shell script:
 __version__ = "2.0.0"
 
 from .v17c_pipeline import (
-    DEFAULT_NOFACC_MODEL,
-    DEFAULT_STANDARD_MODEL,
     REGIONS,
     RegionResult,
     apply_swot_slopes,
@@ -73,8 +71,6 @@ from .v17c_pipeline import (
 from .gates import GateFailure, GateResult, gate_source_data, gate_post_save
 
 __all__ = [
-    "DEFAULT_NOFACC_MODEL",
-    "DEFAULT_STANDARD_MODEL",
     "GateFailure",
     "GateResult",
     "REGIONS",

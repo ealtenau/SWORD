@@ -41,8 +41,6 @@ from .stages.loading import (
     load_topology,
     load_reaches,
     run_facc_corrections,
-    DEFAULT_NOFACC_MODEL,
-    DEFAULT_STANDARD_MODEL,
 )
 from .stages.graph import (
     get_effective_width,
@@ -59,8 +57,6 @@ from .stages._logging import log
 __all__ = [
     "REGIONS",
     "RegionResult",
-    "DEFAULT_NOFACC_MODEL",
-    "DEFAULT_STANDARD_MODEL",
     "log",
     "get_effective_width",
     "load_topology",
@@ -247,8 +243,7 @@ def process_region(
     skip_swot: bool = False,
     swot_path: Optional[str] = None,
     skip_facc: bool = False,
-    nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
-    standard_model_path: str = DEFAULT_STANDARD_MODEL,
+    v17b_path: str = "data/duckdb/sword_v17b.duckdb",
     skip_path_vars: bool = False,
     skip_flow_correction: bool = True,
     skip_gates: bool = False,
@@ -270,10 +265,8 @@ def process_region(
         Path to SWOT data directory
     skip_facc : bool
         Skip facc anomaly correction (default: run corrections)
-    nofacc_model_path : str
-        Path to no-facc RF model for entry point correction
-    standard_model_path : str
-        Path to standard RF model for propagation correction
+    v17b_path : str
+        Path to sword_v17b.duckdb (read-only baseline for facc denoise)
     skip_flow_correction : bool
         Skip flow direction correction (default: True — disabled until
         scoring reliability is improved, see issue #70)
@@ -295,7 +288,14 @@ def process_region(
     log(f"Processing region: {region}")
     log(f"{'=' * 60}")
 
-    # Initialize workflow
+    # Run facc corrections BEFORE opening the long-lived workflow.
+    # correct_facc_denoise opens its own DuckDB write connection, so we
+    # must not hold one simultaneously.
+    n_facc_corrections = 0
+    if not skip_facc:
+        n_facc_corrections = run_facc_corrections(db_path, v17b_path, region)
+
+    # Initialize workflow (after facc, so no write-lock conflict)
     workflow = SWORDWorkflow(user_id=user_id)
     sword = workflow.load(db_path, region, reason=f"v17c pipeline for {region}")
     conn = sword.db.conn
@@ -306,11 +306,9 @@ def process_region(
             conn=conn,
             db_path=db_path,
             region=region,
+            n_facc_corrections=n_facc_corrections,
             skip_swot=skip_swot,
             swot_path=swot_path,
-            skip_facc=skip_facc,
-            nofacc_model_path=nofacc_model_path,
-            standard_model_path=standard_model_path,
             skip_path_vars=skip_path_vars,
             skip_flow_correction=skip_flow_correction,
             skip_gates=skip_gates,
@@ -325,11 +323,9 @@ def _process_region_inner(
     conn: duckdb.DuckDBPyConnection,
     db_path: str,
     region: str,
+    n_facc_corrections: int,
     skip_swot: bool,
     swot_path: Optional[str],
-    skip_facc: bool,
-    nofacc_model_path: str,
-    standard_model_path: str,
     skip_path_vars: bool,
     skip_flow_correction: bool,
     skip_gates: bool,
@@ -346,19 +342,6 @@ def _process_region_inner(
     # Load data from database
     topology_df = load_topology(conn, region)
     reaches_df = load_reaches(conn, region)
-
-    # Detect and correct facc anomalies BEFORE building graph
-    n_facc_corrections = 0
-    if not skip_facc:
-        n_facc_corrections = run_facc_corrections(
-            conn,
-            region,
-            nofacc_model_path,
-            standard_model_path,
-        )
-        if n_facc_corrections > 0:
-            # Reload reaches with corrected facc values
-            reaches_df = load_reaches(conn, region)
 
     # Gate: validate source data before graph build
     if not skip_gates:
@@ -593,8 +576,7 @@ def run_pipeline(
     skip_swot: bool = False,
     swot_path: Optional[str] = None,
     skip_facc: bool = False,
-    nofacc_model_path: str = DEFAULT_NOFACC_MODEL,
-    standard_model_path: str = DEFAULT_STANDARD_MODEL,
+    v17b_path: str = "data/duckdb/sword_v17b.duckdb",
     skip_path_vars: bool = False,
     skip_flow_correction: bool = True,
     skip_gates: bool = False,
@@ -616,10 +598,8 @@ def run_pipeline(
         Path to SWOT data directory
     skip_facc : bool
         Skip facc anomaly correction
-    nofacc_model_path : str
-        Path to no-facc RF model for entry point correction
-    standard_model_path : str
-        Path to standard RF model for propagation correction
+    v17b_path : str
+        Path to sword_v17b.duckdb (read-only baseline for facc denoise)
     skip_gates : bool
         Skip lint validation gates (default: False)
 
@@ -649,8 +629,7 @@ def run_pipeline(
                 skip_swot=skip_swot,
                 swot_path=swot_path,
                 skip_facc=skip_facc,
-                nofacc_model_path=nofacc_model_path,
-                standard_model_path=standard_model_path,
+                v17b_path=v17b_path,
                 skip_path_vars=skip_path_vars,
                 skip_flow_correction=skip_flow_correction,
                 skip_gates=skip_gates,
@@ -732,19 +711,14 @@ def main():
         help="Skip facc anomaly correction (default: run corrections before v17c computation)",
     )
     parser.add_argument(
+        "--v17b",
+        default="data/duckdb/sword_v17b.duckdb",
+        help="Path to sword_v17b.duckdb (read-only baseline for facc denoise)",
+    )
+    parser.add_argument(
         "--skip-path-vars",
         action="store_true",
         help="Skip path variable recomputation (path_freq, stream_order, path_segs, path_order)",
-    )
-    parser.add_argument(
-        "--nofacc-model",
-        default=DEFAULT_NOFACC_MODEL,
-        help=f"Path to no-facc RF model for entry points (default: {DEFAULT_NOFACC_MODEL})",
-    )
-    parser.add_argument(
-        "--standard-model",
-        default=DEFAULT_STANDARD_MODEL,
-        help=f"Path to standard RF model for propagation (default: {DEFAULT_STANDARD_MODEL})",
     )
     parser.add_argument(
         "--skip-flow-correction",
@@ -801,8 +775,7 @@ def main():
         skip_swot=args.skip_swot,
         swot_path=args.swot_path,
         skip_facc=args.skip_facc,
-        nofacc_model_path=args.nofacc_model,
-        standard_model_path=args.standard_model,
+        v17b_path=args.v17b,
         skip_path_vars=args.skip_path_vars,
         skip_flow_correction=not args.enable_flow_correction,
         skip_gates=args.skip_gates,
