@@ -7,7 +7,7 @@ Three-stage architecture that cleans baseline accuracy FIRST, then propagates:
 
   Stage A — Baseline Cleanup (internal data only, no propagation):
     A1: Node denoising (dn-node for noisy reaches)
-    A2: Node validation on baseline (cap extreme lows)
+    A2: (REMOVED — node validation spiked baseline, seeding inflation)
     A3: Outlier detection on baseline (diagnostics only)
     A4: Isotonic regression on baseline chains (smooth 1:1 chains)
 
@@ -15,7 +15,7 @@ Three-stage architecture that cleans baseline accuracy FIRST, then propagates:
     B1: Full topology propagation
     B2: Isotonic smoothing (with bifurc anchors)
     B3: Junction floor
-    B4: Node validation
+    B4: (REMOVED — caused cascading inflation via B5 propagation)
     B5: Final consistency pass
 
   Stage C — Optional MERIT refinement (only if --merit provided):
@@ -985,9 +985,9 @@ def _phase_final_consistency(
     """
     Final topological pass after all correction phases.
 
-    Phases 4b (isotonic), 4c (junction floor), and 4d (node validation)
-    adjust values after Phase 2 but don't propagate downstream. This
-    pass re-enforces all three topology rules using final values:
+    Phases 4b (isotonic) and 4c (junction floor) adjust values after
+    Phase 2 but don't propagate downstream. This pass re-enforces all
+    three topology rules using final values:
 
     1. Junctions: floor to sum(corrected upstream) + lateral (only raises)
     2. Bifurcation children: width-proportional share of corrected parent
@@ -1056,44 +1056,6 @@ def _phase_final_consistency(
             changes[node] = (old_val, corrected[node], tag)
 
     return corrected, changes
-
-
-def _phase4d_node_validation(
-    G: nx.DiGraph,
-    corrected: Dict[int, float],
-    node_max_lookup: Dict[int, float],
-    ratio_threshold: float = 0.1,
-) -> Tuple[Dict[int, float], Dict[int, Tuple[float, float]]]:
-    """
-    Post-correction validation: compare corrected facc against node-level evidence.
-
-    If corrected facc is wildly below node MAX (< ratio_threshold * node_max),
-    the pipeline corrupted the value (e.g., Phase 4 re-sample followed wrong
-    tributary, then Phase 4b isotonic smoothed the chain DOWN to match).
-
-    Replace with node MAX — safe because node-level facc comes directly from
-    MERIT D8 sampling at the reach's actual location.
-
-    Parameters
-    ----------
-    G : reach graph
-    corrected : {reach_id: corrected_facc}
-    node_max_lookup : {reach_id: MAX(node_facc)} from v17b
-    ratio_threshold : flag if corrected < threshold * node_max (default 0.1 = 10%)
-
-    Returns
-    -------
-    corrected : updated dict
-    overrides : {reach_id: (old_corrected, node_max)} for overridden reaches
-    """
-    overrides: Dict[int, Tuple[float, float]] = {}
-    for rid in G.nodes():
-        node_max = node_max_lookup.get(rid, 0.0)
-        corr = corrected.get(rid, 0.0)
-        if node_max > 0 and corr < node_max * ratio_threshold:
-            overrides[rid] = (corr, node_max)
-            corrected[rid] = node_max
-    return corrected, overrides
 
 
 # ---------------------------------------------------------------------------
@@ -1276,14 +1238,25 @@ def _export_remaining_t003(
 # ---------------------------------------------------------------------------
 
 
+def _report_stage(
+    label: str,
+    corrected: Dict[int, float],
+    diagnose_rids: Set[int],
+) -> None:
+    """Print max facc for tracked reaches after a pipeline stage."""
+    vals = {rid: corrected.get(rid, 0.0) for rid in diagnose_rids}
+    top = sorted(vals.items(), key=lambda x: -x[1])[:5]
+    parts = [f"{rid}={v:,.0f}" for rid, v in top]
+    print(f"    [diag] {label}: {', '.join(parts)}")
+
+
 def _run_stage_b(
     G: nx.DiGraph,
     dn_node_facc: Dict[int, float],
-    node_max_lookup: Dict[int, float],
+    diagnose_rids: Optional[Set[int]] = None,
 ) -> Tuple[
     Dict[int, float],
     Dict[int, Tuple[float, float, str]],
-    Dict[int, Tuple[float, float]],
     Dict[int, Tuple[float, float]],
     Dict[int, Tuple[float, float]],
     Dict[int, Tuple[float, float, str]],
@@ -1291,10 +1264,17 @@ def _run_stage_b(
     """
     Propagation + refinement on a cleaned baseline.
 
-    Returns (corrected, changes, adjusted, floored, node_overrides, final_changes).
+    Returns (corrected, changes, adjusted, floored, final_changes).
+
+    B4 (node validation) removed — it spiked reaches to node_max when
+    corrected < 10% of node_max, then B5 propagated those spikes through
+    bifurcation children and junction floors, causing 5-10x inflation on
+    large rivers.
     """
     # B1: Full topology propagation
     corrected, changes = _phase2_topo_correction(G, dn_node_facc)
+    if diagnose_rids:
+        _report_stage("B1_topo", corrected, diagnose_rids)
 
     # B2: Isotonic smoothing with bifurc anchors
     anchors: Dict[int, float] = {}
@@ -1305,19 +1285,24 @@ def _run_stage_b(
     corrected, adjusted = _phase4b_isotonic_chains(
         G, corrected, dn_node_facc, anchor_overrides=anchors
     )
+    if diagnose_rids:
+        _report_stage("B2_isotonic", corrected, diagnose_rids)
 
     # B3: Junction floor
     corrected, floored = _phase4c_junction_floor(G, corrected)
+    if diagnose_rids:
+        _report_stage("B3_junc_floor", corrected, diagnose_rids)
 
-    # B4: Node validation
-    corrected, node_overrides = _phase4d_node_validation(
-        G, corrected, node_max_lookup, ratio_threshold=0.1
-    )
+    # B4: REMOVED — node validation caused cascading inflation.
+    # It spiked corrected values to node_max when corrected < 0.1 * node_max,
+    # then B5 propagated those spikes via bifurc children → junctions.
 
     # B5: Final consistency pass
     corrected, final_changes = _phase_final_consistency(G, corrected, dn_node_facc)
+    if diagnose_rids:
+        _report_stage("B5_final", corrected, diagnose_rids)
 
-    return corrected, changes, adjusted, floored, node_overrides, final_changes
+    return corrected, changes, adjusted, floored, final_changes
 
 
 # ---------------------------------------------------------------------------
@@ -1703,6 +1688,7 @@ def correct_facc_denoise(
     output_dir: str = "output/facc_detection",
     log_threshold: float = 1.0,
     variability_threshold: float = 2.0,
+    diagnose: bool = False,
 ) -> pd.DataFrame:
     """
     Run v3 facc denoising pipeline for one region.
@@ -1723,6 +1709,7 @@ def correct_facc_denoise(
     output_dir : where to write CSV + JSON
     log_threshold : min log-deviation for outlier flagging (default 1.0 ~ 2.7x)
     variability_threshold : min MAX/MIN ratio to trigger dn-node denoising (default 2.0)
+    diagnose : if True, print per-stage max facc for top 5 reaches by v17b facc
     """
     region = region.upper()
     out_path = Path(output_dir)
@@ -1758,7 +1745,7 @@ def correct_facc_denoise(
             f"    {len(node_stats)} reaches, {n_noisy} with variability >{variability_threshold}x"
         )
 
-        # Build node MAX lookup for sanity guards (Phase 4 + Phase 4d)
+        # Build node MAX lookup for sanity guards
         node_max_lookup: Dict[int, float] = dict(
             zip(
                 node_stats["reach_id"].astype(int),
@@ -1774,6 +1761,19 @@ def correct_facc_denoise(
             f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, "
             f"{n_bifurc} bifurcations"
         )
+
+        # Diagnostic reach selection: top 5 by v17b facc
+        diagnose_rids: Optional[Set[int]] = None
+        if diagnose:
+            graph_rids = set(G.nodes())
+            v17b_in_graph = {
+                rid: v for rid, v in v17b_facc.items() if rid in graph_rids
+            }
+            top5 = sorted(v17b_in_graph.items(), key=lambda x: -x[1])[:5]
+            diagnose_rids = {rid for rid, _ in top5}
+            print("\n  [diag] Tracking top 5 reaches by v17b facc:")
+            for rid, v in top5:
+                print(f"    {rid}: v17b={v:,.0f}")
 
         # ==============================================================
         # Stage A: Baseline Cleanup (internal data only, no propagation)
@@ -1792,12 +1792,8 @@ def correct_facc_denoise(
         n_node_diff = len(denoised_ids)
         print(f"    {n_node_diff} reaches denoised (switched from MAX to dn-node)")
 
-        # A2: Node validation on baseline — catch extreme denoising errors
-        print("\n  A2: Node validation on baseline")
-        dn_node_facc, baseline_overrides = _phase4d_node_validation(
-            G, dn_node_facc, node_max_lookup, ratio_threshold=0.1
-        )
-        print(f"    {len(baseline_overrides)} baseline reaches overridden by node MAX")
+        # A2: REMOVED — node validation spiked baseline values to node_max,
+        # seeding the inflation cascade through Stage B.
 
         # A3: Outlier detection on baseline — diagnostics only
         print("\n  A3: Outlier detection on baseline (diagnostics only)")
@@ -1825,8 +1821,8 @@ def correct_facc_denoise(
         # ==============================================================
 
         print("\n  Stage B: Propagation + Refinement")
-        corrected, changes, adjusted, floored, node_overrides, final_changes = (
-            _run_stage_b(G, dn_node_facc, node_max_lookup)
+        corrected, changes, adjusted, floored, final_changes = _run_stage_b(
+            G, dn_node_facc, diagnose_rids
         )
         n_final_junc = sum(
             1 for _, _, t in final_changes.values() if t == "final_junction"
@@ -1838,7 +1834,6 @@ def correct_facc_denoise(
         print(f"    Phase 2 changes: {len(changes)}")
         print(f"    Isotonic adjusted: {len(adjusted)}")
         print(f"    Junctions re-floored: {len(floored)}")
-        print(f"    Node MAX overrides: {len(node_overrides)}")
         print(
             f"    Final consistency: {len(final_changes)} "
             f"({n_final_junc} junc, {n_final_bifurc} bifurc, {n_final_1to1} 1:1)"
@@ -1876,14 +1871,9 @@ def correct_facc_denoise(
 
             if n_resampled > 0:
                 print("\n    Re-running Stage B on MERIT-updated baseline...")
-                (
-                    corrected,
-                    changes,
-                    adjusted,
-                    floored,
-                    node_overrides,
-                    final_changes,
-                ) = _run_stage_b(G, dn_node_facc, node_max_lookup)
+                corrected, changes, adjusted, floored, final_changes = _run_stage_b(
+                    G, dn_node_facc, diagnose_rids
+                )
                 n_final_junc = sum(
                     1 for _, _, t in final_changes.values() if t == "final_junction"
                 )
@@ -1896,7 +1886,6 @@ def correct_facc_denoise(
                 print(f"    Phase 2 changes: {len(changes)}")
                 print(f"    Isotonic adjusted: {len(adjusted)}")
                 print(f"    Junctions re-floored: {len(floored)}")
-                print(f"    Node MAX overrides: {len(node_overrides)}")
                 print(
                     f"    Final consistency: {len(final_changes)} "
                     f"({n_final_junc} junc, {n_final_bifurc} bifurc, "
@@ -1909,9 +1898,7 @@ def correct_facc_denoise(
         # Post-pipeline: validation, export, summary
         # ==============================================================
 
-        baseline_override_ids = set(baseline_overrides.keys())
         baseline_isotonic_ids = set(baseline_isotonic.keys())
-        node_override_ids = set(node_overrides.keys())
         final_ids = set(final_changes.keys())
 
         # ---- Collect T003 flags ----
@@ -1928,21 +1915,17 @@ def correct_facc_denoise(
         # ---- Validation ----
         print("\n  Validation:")
         validation = _phase6_validate(G, corrected, v17b_facc)
-        validation["baseline_node_overrides"] = len(baseline_overrides)
         validation["baseline_isotonic_adjusted"] = len(baseline_isotonic)
         validation["phase3_flagged"] = len(flagged)
         validation["isotonic_adjusted"] = len(adjusted)
         validation["t003_flagged"] = len(t003_flags)
         validation["floored_junctions"] = len(floored)
-        validation["node_max_overrides"] = len(node_overrides)
         validation["final_consistency_changes"] = len(final_changes)
-        print(f"      {'baseline_node_overrides':35s} {len(baseline_overrides):,}")
         print(f"      {'baseline_isotonic_adjusted':35s} {len(baseline_isotonic):,}")
         print(f"      {'phase3_flagged':35s} {len(flagged):,}")
         print(f"      {'isotonic_adjusted':35s} {len(adjusted):,}")
         print(f"      {'t003_flagged':35s} {len(t003_flags):,}")
         print(f"      {'floored_junctions':35s} {len(floored):,}")
-        print(f"      {'node_max_overrides':35s} {len(node_overrides):,}")
         print(f"      {'final_consistency_changes':35s} {len(final_changes):,}")
 
         # Build corrections DataFrame — compare corrected to v17b
@@ -1960,8 +1943,6 @@ def correct_facc_denoise(
                 # Determine correction type (last-write-wins order)
                 if rid in final_ids:
                     ctype = final_changes[rid][2]
-                elif rid in node_override_ids:
-                    ctype = "node_max_override"
                 elif rid in floored:
                     ctype = "junction_floor_post"
                 elif rid in adjusted:
@@ -1972,8 +1953,6 @@ def correct_facc_denoise(
                     ctype = "upa_resample"
                 elif rid in baseline_isotonic_ids:
                     ctype = "baseline_isotonic"
-                elif rid in baseline_override_ids:
-                    ctype = "baseline_node_override"
                 elif rid in denoised_ids:
                     ctype = "node_denoise"
                 elif rid in t003_flags:
@@ -2028,7 +2007,6 @@ def correct_facc_denoise(
         print(f"    Lowered: {n_lowered}")
         print(f"    Net facc change: {total_delta:>+,.0f} km^2 ({pct:+.3f}%)")
         print(f"    Phase 3 flagged: {len(flagged)}")
-        print(f"    Baseline node overrides: {len(baseline_overrides)}")
         print(f"    Baseline isotonic adjusted: {len(baseline_isotonic)}")
         print(f"    T003 targeted resampled: {n_resampled}")
         if resample_stats:
@@ -2088,13 +2066,11 @@ def correct_facc_denoise(
             "total_facc_before": total_before,
             "net_facc_change": total_delta,
             "pct_change": round(pct, 4),
-            "baseline_node_overrides": len(baseline_overrides),
             "baseline_isotonic_adjusted": len(baseline_isotonic),
             "phase3_flagged": len(flagged),
             "t003_resample_stats": resample_stats,
             "t003_flagged": len(t003_flags),
             "floored_junctions": len(floored),
-            "node_max_overrides": len(node_overrides),
             "final_consistency_changes": len(final_changes),
             "final_junctions": n_final_junc,
             "final_bifurc": n_final_bifurc,
@@ -2164,6 +2140,11 @@ def main():
         default=2.0,
         help="Variability threshold for node denoising (default: 2.0)",
     )
+    parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="Print per-stage max facc for top 5 reaches (debug inflation)",
+    )
 
     args = parser.parse_args()
     if not args.region and not args.all:
@@ -2181,6 +2162,7 @@ def main():
             output_dir=args.output_dir,
             log_threshold=args.log_threshold,
             variability_threshold=args.var_threshold,
+            diagnose=args.diagnose,
         )
         if len(df) > 0:
             all_corrections.append(df)
