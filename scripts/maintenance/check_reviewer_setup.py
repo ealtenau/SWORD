@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 SWORD Reviewer Setup Checker
-=============================
+-----------------------------
 Run this script to verify all dependencies and data are ready
 for the SWORD QA Reviewer.
 
 Usage: python check_reviewer_setup.py
 """
+
 import sys
 from pathlib import Path
 
@@ -67,7 +68,7 @@ for module_name, pip_name in REQUIRED_PACKAGES:
 if missing:
     print()
     print(f"  Fix: pip install {' '.join(missing)}")
-    print(f"  Or:  pip install -r requirements-reviewer.txt")
+    print("  Or:  pip install -r requirements-reviewer.txt")
 
 # 3. Database file
 print()

@@ -1,6 +1,6 @@
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- SWORD PostgreSQL Schema with PostGIS Support
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- This schema mirrors the DuckDB schema for SWOT River Database (SWORD)
 -- with PostGIS geometry columns for spatial operations in QGIS.
 --
@@ -22,14 +22,14 @@
 --   + provenance tables
 --   + v17c tables
 --   + operational tables
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- Enable PostGIS extension (must be done by superuser or user with CREATE privilege)
 CREATE EXTENSION IF NOT EXISTS postgis;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- CORE TABLES
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- Centerlines: Dense geospatial points forming river centerlines
 -- Primary Key: (cl_id, region) - cl_id is only unique within region
@@ -350,9 +350,9 @@ CREATE TABLE sword_versions (
     notes VARCHAR
 );
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- PROVENANCE TABLES
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- Operations: Audit trail of all changes
 DROP TABLE IF EXISTS sword_operations CASCADE;
@@ -462,9 +462,9 @@ CREATE TABLE sword_snapshots (
     tags VARCHAR[]
 );
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- V17C TABLES
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- v17c sections: Junction-to-junction sections
 DROP TABLE IF EXISTS v17c_sections CASCADE;
@@ -493,9 +493,9 @@ CREATE TABLE v17c_section_slope_validation (
     PRIMARY KEY (section_id, region)
 );
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- OPERATIONAL TABLES
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- facc fix log: Tracks flow accumulation corrections
 DROP TABLE IF EXISTS facc_fix_log CASCADE;
@@ -578,18 +578,18 @@ CREATE TABLE reach_geometries (
     geom GEOMETRY(LINESTRING, 4326)
 );
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- SPATIAL INDEXES (GIST)
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 CREATE INDEX idx_centerlines_geom_gist ON centerlines USING GIST (geom);
 CREATE INDEX idx_nodes_geom_gist ON nodes USING GIST (geom);
 CREATE INDEX idx_reaches_geom_gist ON reaches USING GIST (geom);
 CREATE INDEX idx_reach_geometries_geom_gist ON reach_geometries USING GIST (geom);
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- B-TREE INDEXES
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- Foreign key lookups
 CREATE INDEX idx_centerlines_reach ON centerlines(reach_id);
@@ -647,9 +647,9 @@ CREATE INDEX idx_lint_fix_log_check ON lint_fix_log(check_id);
 CREATE INDEX idx_reach_imagery_reach ON reach_imagery(reach_id);
 CREATE INDEX idx_imagery_acquisitions_region ON imagery_acquisitions(region);
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- REGIONAL VIEWS
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 -- North America
 CREATE OR REPLACE VIEW na_centerlines AS SELECT * FROM centerlines WHERE region = 'NA';
@@ -681,9 +681,9 @@ CREATE OR REPLACE VIEW as_centerlines AS SELECT * FROM centerlines WHERE region 
 CREATE OR REPLACE VIEW as_nodes AS SELECT * FROM nodes WHERE region = 'AS';
 CREATE OR REPLACE VIEW as_reaches AS SELECT * FROM reaches WHERE region = 'AS';
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- SCHEMA VERSION
--- =============================================================================
+-- -----------------------------------------------------------------------------
 
 INSERT INTO sword_versions (version, schema_version, notes)
 VALUES ('schema', '1.6.0', 'Add SWOT slope obs quality columns to reaches')
@@ -692,7 +692,7 @@ SET schema_version = EXCLUDED.schema_version,
     notes = EXCLUDED.notes,
     created_at = CURRENT_TIMESTAMP;
 
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- DONE
--- =============================================================================
+-- -----------------------------------------------------------------------------
 -- Schema created successfully. Run load_from_duckdb.py to populate data.

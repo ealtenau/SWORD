@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SWORD DuckDB to PostgreSQL/PostGIS Loader
-==========================================
+------------------------------------------
 
 This script exports data from a SWORD DuckDB database and loads it into
 PostgreSQL with PostGIS geometry support.
@@ -60,23 +60,23 @@ except ImportError:
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
 # Valid regions
-VALID_REGIONS = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC']
+VALID_REGIONS = ["NA", "SA", "EU", "AF", "AS", "OC"]
 
 # Batch sizes for different tables (tuned for memory/performance)
 BATCH_SIZES = {
-    'centerlines': 50_000,      # 66.9M rows - use smaller batches
-    'nodes': 25_000,            # 11.1M rows
-    'reaches': 10_000,          # 248.7K rows
-    'reach_topology': 50_000,   # ~1M rows
-    'reach_swot_orbits': 100_000,
-    'reach_ice_flags': 100_000,
-    'default': 10_000
+    "centerlines": 50_000,  # 66.9M rows - use smaller batches
+    "nodes": 25_000,  # 11.1M rows
+    "reaches": 10_000,  # 248.7K rows
+    "reach_topology": 50_000,  # ~1M rows
+    "reach_swot_orbits": 100_000,
+    "reach_ice_flags": 100_000,
+    "default": 10_000,
 }
 
 
@@ -89,25 +89,25 @@ def get_table_columns(duck_conn, table_name: str) -> list[tuple[str, str]]:
 def duckdb_to_pg_type(duckdb_type: str) -> str:
     """Map DuckDB types to PostgreSQL types."""
     type_map = {
-        'BIGINT': 'BIGINT',
-        'INTEGER': 'INTEGER',
-        'SMALLINT': 'SMALLINT',
-        'TINYINT': 'SMALLINT',
-        'DOUBLE': 'DOUBLE PRECISION',
-        'FLOAT': 'REAL',
-        'VARCHAR': 'VARCHAR',
-        'BOOLEAN': 'BOOLEAN',
-        'TIMESTAMP': 'TIMESTAMP',
-        'DATE': 'DATE',
-        'GEOMETRY': 'GEOMETRY',
-        'JSON': 'JSONB',
-        'BIGINT[]': 'BIGINT[]',
-        'VARCHAR[]': 'VARCHAR[]',
+        "BIGINT": "BIGINT",
+        "INTEGER": "INTEGER",
+        "SMALLINT": "SMALLINT",
+        "TINYINT": "SMALLINT",
+        "DOUBLE": "DOUBLE PRECISION",
+        "FLOAT": "REAL",
+        "VARCHAR": "VARCHAR",
+        "BOOLEAN": "BOOLEAN",
+        "TIMESTAMP": "TIMESTAMP",
+        "DATE": "DATE",
+        "GEOMETRY": "GEOMETRY",
+        "JSON": "JSONB",
+        "BIGINT[]": "BIGINT[]",
+        "VARCHAR[]": "VARCHAR[]",
     }
     # Handle VARCHAR(n)
-    if duckdb_type.startswith('VARCHAR'):
+    if duckdb_type.startswith("VARCHAR"):
         return duckdb_type
-    return type_map.get(duckdb_type.upper(), 'VARCHAR')
+    return type_map.get(duckdb_type.upper(), "VARCHAR")
 
 
 def count_rows(duck_conn, table_name: str, region: Optional[str] = None) -> int:
@@ -115,10 +115,9 @@ def count_rows(duck_conn, table_name: str, region: Optional[str] = None) -> int:
     if region:
         # Check if table has region column
         cols = [c[0] for c in get_table_columns(duck_conn, table_name)]
-        if 'region' in cols:
+        if "region" in cols:
             return duck_conn.execute(
-                f"SELECT COUNT(*) FROM {table_name} WHERE region = ?",
-                [region]
+                f"SELECT COUNT(*) FROM {table_name} WHERE region = ?", [region]
             ).fetchone()[0]
     return duck_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
 
@@ -130,7 +129,7 @@ def export_table_to_postgres(
     region: Optional[str] = None,
     batch_size: Optional[int] = None,
     dry_run: bool = False,
-    convert_geometry: bool = True
+    convert_geometry: bool = True,
 ) -> int:
     """
     Export a DuckDB table to PostgreSQL.
@@ -158,13 +157,13 @@ def export_table_to_postgres(
         Number of rows loaded
     """
     if batch_size is None:
-        batch_size = BATCH_SIZES.get(table_name, BATCH_SIZES['default'])
+        batch_size = BATCH_SIZES.get(table_name, BATCH_SIZES["default"])
 
     # Get columns
     columns = get_table_columns(duck_conn, table_name)
     col_names = [c[0] for c in columns]
-    has_region = 'region' in col_names
-    has_geom = 'geom' in col_names
+    has_region = "region" in col_names
+    has_geom = "geom" in col_names
 
     # Count rows
     total_rows = count_rows(duck_conn, table_name, region if has_region else None)
@@ -189,8 +188,8 @@ def export_table_to_postgres(
         # Replace geom with ST_AsWKB(geom) for proper PostGIS transfer
         col_list = []
         for c in col_names:
-            if c == 'geom':
-                col_list.append(f"ST_AsWKB(geom) as geom")
+            if c == "geom":
+                col_list.append("ST_AsWKB(geom) as geom")
             else:
                 col_list.append(c)
         if has_region and region:
@@ -202,20 +201,22 @@ def export_table_to_postgres(
     pg_cursor = pg_conn.cursor()
 
     # Build INSERT statement
-    placeholders = ', '.join(['%s'] * len(col_names))
-    insert_sql = f"INSERT INTO {table_name} ({', '.join(col_names)}) VALUES ({placeholders})"
+    placeholders = ", ".join(["%s"] * len(col_names))
+    insert_sql = (
+        f"INSERT INTO {table_name} ({', '.join(col_names)}) VALUES ({placeholders})"
+    )
 
     # For geometry, use ST_SetSRID(ST_GeomFromWKB(...), 4326)
     if has_geom and convert_geometry:
         # Find geometry column index
-        geom_idx = col_names.index('geom')
+        geom_idx = col_names.index("geom")
         # Use execute_values with a template that handles geometry
         col_templates = []
         for i, c in enumerate(col_names):
-            if c == 'geom':
-                col_templates.append('ST_SetSRID(ST_GeomFromWKB(%s), 4326)')
+            if c == "geom":
+                col_templates.append("ST_SetSRID(ST_GeomFromWKB(%s), 4326)")
             else:
-                col_templates.append('%s')
+                col_templates.append("%s")
         insert_template = f"({', '.join(col_templates)})"
         insert_sql = f"INSERT INTO {table_name} ({', '.join(col_names)}) VALUES %s"
 
@@ -241,7 +242,9 @@ def export_table_to_postgres(
             # Insert into PostgreSQL
             try:
                 if has_geom and convert_geometry:
-                    execute_values(pg_cursor, insert_sql, batch_data, template=insert_template)
+                    execute_values(
+                        pg_cursor, insert_sql, batch_data, template=insert_template
+                    )
                 else:
                     pg_cursor.executemany(insert_sql, batch_data)
 
@@ -265,9 +268,7 @@ def export_table_to_postgres(
 
 
 def load_geometry_from_coordinates(
-    pg_conn,
-    table_name: str,
-    region: Optional[str] = None
+    pg_conn, table_name: str, region: Optional[str] = None
 ) -> int:
     """
     Generate PostGIS geometry from x,y coordinates for rows with NULL geometry.
@@ -290,9 +291,11 @@ def load_geometry_from_coordinates(
     """
     pg_cursor = pg_conn.cursor()
 
-    if table_name == 'reaches':
+    if table_name == "reaches":
         # Reaches need LINESTRING from centerlines
-        logger.info(f"Building reach geometries from centerlines for {region or 'all regions'}...")
+        logger.info(
+            f"Building reach geometries from centerlines for {region or 'all regions'}..."
+        )
 
         if region:
             update_sql = """
@@ -408,13 +411,17 @@ def overwrite_reach_geom_from_v17b(
             f"v17b geometry source: {v17b_table} in '{v17b_dsn}' ({remote_cnt:,} rows)"
         )
     except Exception as e:
-        logger.warning(f"Cannot reach v17b geometry source ({e}) — skipping geometry overwrite")
+        logger.warning(
+            f"Cannot reach v17b geometry source ({e}) — skipping geometry overwrite"
+        )
         pg_conn.rollback()
         cur.close()
         return 0
 
     # Copy geometries
-    logger.info("Overwriting reach geometries with v17b originals (endpoint overlap)...")
+    logger.info(
+        "Overwriting reach geometries with v17b originals (endpoint overlap)..."
+    )
     cur.execute(
         f"""
         UPDATE reaches r
@@ -452,18 +459,23 @@ def truncate_table(pg_conn, table_name: str, region: Optional[str] = None):
     pg_cursor = pg_conn.cursor()
 
     # Check if table has region column by querying information_schema
-    pg_cursor.execute("""
+    pg_cursor.execute(
+        """
         SELECT column_name FROM information_schema.columns
         WHERE table_name = %s AND column_name = 'region'
-    """, [table_name])
+    """,
+        [table_name],
+    )
 
     has_region = pg_cursor.fetchone() is not None
 
     if region and has_region:
         logger.info(f"Deleting existing {region} data from {table_name}...")
         pg_cursor.execute(
-            sql.SQL("DELETE FROM {} WHERE region = %s").format(sql.Identifier(table_name)),
-            [region]
+            sql.SQL("DELETE FROM {} WHERE region = %s").format(
+                sql.Identifier(table_name)
+            ),
+            [region],
         )
     else:
         logger.info(f"Truncating {table_name}...")
@@ -477,7 +489,7 @@ def truncate_table(pg_conn, table_name: str, region: Optional[str] = None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Load SWORD data from DuckDB to PostgreSQL/PostGIS',
+        description="Load SWORD data from DuckDB to PostgreSQL/PostGIS",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -492,35 +504,54 @@ Examples:
 
     # Load specific tables only
     python load_from_duckdb.py --duckdb sword_v17c.duckdb --pg "..." --region NA --tables reaches nodes
-        """
+        """,
     )
 
-    parser.add_argument('--duckdb', required=True,
-                        help='Path to DuckDB database file')
-    parser.add_argument('--pg', required=True,
-                        help='PostgreSQL connection string (e.g., postgresql://user:pass@host:5432/db)')
-    parser.add_argument('--region', choices=VALID_REGIONS,
-                        help='Region to load (NA, SA, EU, AF, AS, OC)')
-    parser.add_argument('--all', action='store_true',
-                        help='Load all regions')
-    parser.add_argument('--tables', nargs='+',
-                        help='Specific tables to load (default: all)')
-    parser.add_argument('--dry-run', action='store_true',
-                        help='Show row counts without loading')
-    parser.add_argument('--no-truncate', action='store_true',
-                        help='Do not truncate tables before loading')
-    parser.add_argument('--skip-geometry', action='store_true',
-                        help='Skip geometry generation (faster, no spatial queries)')
-    parser.add_argument('--skip-v17b-geom', action='store_true',
-                        help='Skip overwriting reach geometry from v17b source')
-    parser.add_argument('--v17b-dsn', default='dbname=postgres host=localhost',
-                        help='libpq DSN for database hosting v17b reaches (default: dbname=postgres host=localhost)')
-    parser.add_argument('--v17b-table', default='sword_reaches_v17b',
-                        help='v17b reaches table name (default: sword_reaches_v17b)')
-    parser.add_argument('--batch-size', type=int,
-                        help='Override default batch size')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Verbose output')
+    parser.add_argument("--duckdb", required=True, help="Path to DuckDB database file")
+    parser.add_argument(
+        "--pg",
+        required=True,
+        help="PostgreSQL connection string (e.g., postgresql://user:pass@host:5432/db)",
+    )
+    parser.add_argument(
+        "--region",
+        choices=VALID_REGIONS,
+        help="Region to load (NA, SA, EU, AF, AS, OC)",
+    )
+    parser.add_argument("--all", action="store_true", help="Load all regions")
+    parser.add_argument(
+        "--tables", nargs="+", help="Specific tables to load (default: all)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show row counts without loading"
+    )
+    parser.add_argument(
+        "--no-truncate",
+        action="store_true",
+        help="Do not truncate tables before loading",
+    )
+    parser.add_argument(
+        "--skip-geometry",
+        action="store_true",
+        help="Skip geometry generation (faster, no spatial queries)",
+    )
+    parser.add_argument(
+        "--skip-v17b-geom",
+        action="store_true",
+        help="Skip overwriting reach geometry from v17b source",
+    )
+    parser.add_argument(
+        "--v17b-dsn",
+        default="dbname=postgres host=localhost",
+        help="libpq DSN for database hosting v17b reaches (default: dbname=postgres host=localhost)",
+    )
+    parser.add_argument(
+        "--v17b-table",
+        default="sword_reaches_v17b",
+        help="v17b reaches table name (default: sword_reaches_v17b)",
+    )
+    parser.add_argument("--batch-size", type=int, help="Override default batch size")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
 
@@ -536,26 +567,26 @@ Examples:
     # Define tables to load in order (respects foreign key dependencies)
     # Tables with region column first, then supporting tables
     default_tables = [
-        'centerlines',
-        'centerline_neighbors',
-        'nodes',
-        'reaches',
-        'reach_topology',
-        'reach_swot_orbits',
-        'reach_ice_flags',
-        'sword_versions',
-        'sword_operations',
-        'sword_value_snapshots',
-        'sword_source_lineage',
-        'sword_reconstruction_recipes',
-        'sword_snapshots',
-        'v17c_sections',
-        'v17c_section_slope_validation',
-        'facc_fix_log',
-        'lint_fix_log',
-        'imagery_acquisitions',
-        'reach_imagery',
-        'reach_geometries',
+        "centerlines",
+        "centerline_neighbors",
+        "nodes",
+        "reaches",
+        "reach_topology",
+        "reach_swot_orbits",
+        "reach_ice_flags",
+        "sword_versions",
+        "sword_operations",
+        "sword_value_snapshots",
+        "sword_source_lineage",
+        "sword_reconstruction_recipes",
+        "sword_snapshots",
+        "v17c_sections",
+        "v17c_section_slope_validation",
+        "facc_fix_log",
+        "lint_fix_log",
+        "imagery_acquisitions",
+        "reach_imagery",
+        "reach_geometries",
     ]
 
     tables_to_load = args.tables if args.tables else default_tables
@@ -573,9 +604,11 @@ Examples:
     try:
         duck_conn.execute("INSTALL spatial; LOAD spatial;")
     except Exception:
-        logger.warning("DuckDB spatial extension not available - geometry will use x,y coordinates")
+        logger.warning(
+            "DuckDB spatial extension not available - geometry will use x,y coordinates"
+        )
 
-    logger.info(f"Connecting to PostgreSQL...")
+    logger.info("Connecting to PostgreSQL...")
     try:
         pg_conn = psycopg2.connect(args.pg)
     except Exception as e:
@@ -594,9 +627,12 @@ Examples:
 
     try:
         # Get list of tables that actually exist in DuckDB
-        existing_tables = set(row[0] for row in duck_conn.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
-        ).fetchall())
+        existing_tables = set(
+            row[0]
+            for row in duck_conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+            ).fetchall()
+        )
 
         # Filter to tables that exist
         tables_to_load = [t for t in tables_to_load if t in existing_tables]
@@ -605,14 +641,14 @@ Examples:
             logger.info("=== DRY RUN - showing row counts ===")
 
         for region in regions:
-            logger.info(f"\n{'='*60}")
+            logger.info(f"\n{'=' * 60}")
             logger.info(f"Processing region: {region}")
-            logger.info(f"{'='*60}")
+            logger.info(f"{'=' * 60}")
 
             for table_name in tables_to_load:
                 # Check if table has region column
                 cols = [c[0] for c in get_table_columns(duck_conn, table_name)]
-                has_region = 'region' in cols
+                has_region = "region" in cols
 
                 # For tables without region column, only process once (first region)
                 if not has_region and region != regions[0]:
@@ -621,7 +657,9 @@ Examples:
                 try:
                     # Truncate/delete before loading
                     if not args.dry_run and not args.no_truncate:
-                        truncate_table(pg_conn, table_name, region if has_region else None)
+                        truncate_table(
+                            pg_conn, table_name, region if has_region else None
+                        )
 
                     # Export data
                     batch_size = args.batch_size if args.batch_size else None
@@ -632,7 +670,7 @@ Examples:
                         region=region if has_region else None,
                         batch_size=batch_size,
                         dry_run=args.dry_run,
-                        convert_geometry=not args.skip_geometry
+                        convert_geometry=not args.skip_geometry,
                     )
                     total_loaded += rows
 
@@ -640,6 +678,7 @@ Examples:
                     logger.error(f"Error loading {table_name}: {e}")
                     if args.verbose:
                         import traceback
+
                         traceback.print_exc()
                     # Continue with next table
                     continue
@@ -647,16 +686,18 @@ Examples:
             # Generate geometry from coordinates if geometry was NULL
             if not args.dry_run and not args.skip_geometry:
                 logger.info(f"\nGenerating missing geometries for {region}...")
-                for table_name in ['centerlines', 'nodes', 'reaches']:
+                for table_name in ["centerlines", "nodes", "reaches"]:
                     if table_name in tables_to_load:
                         try:
                             load_geometry_from_coordinates(pg_conn, table_name, region)
                         except Exception as e:
-                            logger.error(f"Error generating geometry for {table_name}: {e}")
+                            logger.error(
+                                f"Error generating geometry for {table_name}: {e}"
+                            )
 
         # After all regions loaded: overwrite reach geometries with v17b originals
         # (run once, not per-region, since it's a global UPDATE by reach_id)
-        if not args.dry_run and not args.skip_v17b_geom and 'reaches' in tables_to_load:
+        if not args.dry_run and not args.skip_v17b_geom and "reaches" in tables_to_load:
             try:
                 overwrite_reach_geom_from_v17b(
                     pg_conn,
@@ -667,6 +708,7 @@ Examples:
                 logger.error(f"Error overwriting reach geometry from v17b: {e}")
                 if args.verbose:
                     import traceback
+
                     traceback.print_exc()
 
     finally:
@@ -674,12 +716,12 @@ Examples:
         pg_conn.close()
 
     elapsed = datetime.now() - start_time
-    logger.info(f"\n{'='*60}")
-    logger.info(f"Load complete!")
+    logger.info(f"\n{'=' * 60}")
+    logger.info("Load complete!")
     logger.info(f"Total rows: {total_loaded:,}")
     logger.info(f"Elapsed time: {elapsed}")
-    logger.info(f"{'='*60}")
+    logger.info(f"{'=' * 60}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
