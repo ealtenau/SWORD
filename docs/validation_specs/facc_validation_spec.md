@@ -20,7 +20,7 @@
 ## Code Path
 
 ### Primary Implementation
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Reach facc:** Lines 1664-1722 (`_reconstruct_reach_facc`)
 - **Node facc:** Lines 3334-3364 (`_reconstruct_node_facc`)
 
@@ -154,7 +154,7 @@ result_df = conn.execute("""
 
 ### Existing Check: T003 (facc_monotonicity)
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/topology.py:157-220`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/topology.py:157-220`
 
 **Current Implementation:**
 ```sql

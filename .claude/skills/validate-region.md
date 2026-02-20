@@ -21,7 +21,7 @@ When the user invokes this skill:
 
 2. **Run the lint CLI**
    ```bash
-   python -m src.updates.sword_duckdb.lint.cli \
+   python -m src.sword_duckdb.lint.cli \
      --db data/duckdb/sword_v17c.duckdb \
      --region {REGION} \
      --format markdown
@@ -30,7 +30,7 @@ When the user invokes this skill:
    For "all" regions:
    ```bash
    for region in NA SA EU AF AS OC; do
-     python -m src.updates.sword_duckdb.lint.cli \
+     python -m src.sword_duckdb.lint.cli \
        --db data/duckdb/sword_v17c.duckdb \
        --region $region \
        --format json \

@@ -31,7 +31,7 @@ main_dir = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(main_dir))
 
 import duckdb
-from src.updates.sword_duckdb.schema import create_schema
+from src.sword_duckdb.schema import create_schema
 
 
 # ==============================================================================

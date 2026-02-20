@@ -43,16 +43,16 @@ cp .env.example .env
 
 # Load all regions from DuckDB to PostgreSQL
 # (auto-overwrites reach geom with v17b originals for endpoint connectivity)
-python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --all
+python scripts/maintenance/load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --all
 
 # Load single region
-python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --region NA
+python scripts/maintenance/load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --region NA
 
 # Skip v17b geometry overwrite (if v17b PG table not available)
-python load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --all --skip-v17b-geom
+python scripts/maintenance/load_from_duckdb.py --source data/duckdb/sword_v17c.duckdb --all --skip-v17b-geom
 
 # Verify load
-python load_from_duckdb.py --verify
+python scripts/maintenance/load_from_duckdb.py --verify
 ```
 
 **Notes:**
@@ -70,7 +70,7 @@ python load_from_duckdb.py --verify
 
 **v17b is the pristine reference for comparison.** If v17b gets corrupted, rebuild from NetCDF:
 ```bash
-python rebuild_v17b.py  # Rebuilds from data/netcdf/*.nc
+python scripts/maintenance/rebuild_v17b.py  # Rebuilds from data/netcdf/*.nc
 ```
 
 **All topology fixes, facc corrections, and experimental changes go to v17c only.**
@@ -78,12 +78,24 @@ python rebuild_v17b.py  # Rebuilds from data/netcdf/*.nc
 ## Key Directories
 
 ```
-src/updates/
+src/
   sword_duckdb/           # Core module - workflow, schema, validation
     imagery/              # Satellite water detection (NDWI, ML4Floods, OPERA)
+    lint/                 # Lint framework (61 checks)
   sword_v17c_pipeline/    # v17b→v17c topology enhancement (phi algorithm)
-  delta_updates/          # Delta region processing
-  mhv_sword/              # MERIT Hydro Vector integration
+  _legacy/                # Archived pre-DuckDB code (see _legacy/README.md)
+    updates/              # Old updates module (delta_updates, mhv_sword)
+    development/          # Original development scripts
+
+scripts/
+  topology/               # Topology recalculation scripts
+  visualization/          # Visualization and presentation scripts
+  analysis/               # Comparison and analysis scripts
+  maintenance/            # Database rebuild, import, and setup scripts
+  sql/                    # SQL utility scripts
+
+deploy/
+  reviewer/               # Streamlit topology/lake reviewer app
 
 data/
   duckdb/
@@ -100,7 +112,7 @@ tests/sword_duckdb/
 **ALWAYS use SWORDWorkflow:**
 
 ```python
-from updates.sword_duckdb import SWORDWorkflow
+from sword_duckdb import SWORDWorkflow
 
 workflow = SWORDWorkflow(user_id="jake")
 # IMPORTANT: Use v17c for modifications, v17b is READ-ONLY reference
@@ -224,7 +236,7 @@ workflow.close()
 
 2. **Check if your logic matches** - if 95% have value X, your code better produce X mostly
 
-3. **Find original source code** - check `src/development/` for original algorithms
+3. **Find original source code** - check `src/_legacy/development/` for original algorithms
 
 4. **Check validation specs** - `docs/validation_specs/` has deep documentation
 
@@ -265,7 +277,7 @@ workflow.close()
 
 ## v17c Pipeline
 
-**Location:** `src/updates/sword_v17c_pipeline/`
+**Location:** `src/sword_v17c_pipeline/`
 
 **Steps:**
 1. Load v17b topology from DuckDB
@@ -289,13 +301,13 @@ workflow.close()
 **Run:**
 ```bash
 # All regions
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all
+python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all
 
 # Single region
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --region NA
+python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --region NA
 
 # Skip SWOT (faster)
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all --skip-swot
+python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all --skip-swot
 ```
 
 **Note:** MILP optimization files archived in `_archived/` - v17c uses original v17b topology.
@@ -310,7 +322,7 @@ python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v
 | **DuckDB lock contention** | Only one write connection at a time. Kill Streamlit/other processes before UPDATE. |
 | **end_reach divergence from v17b** | v17c recomputed end_reach from topology: junction=3 when n_up>1 OR n_down>1. ~30k v17b "phantom junctions" (n_up=1, n_dn=1, end_reach=3) relabeled to 0. UNC's original junction criterion is unknown. See `docs/validation_specs/end_reach_trib_flag_validation_spec.md` Section 1.8. |
 | **reconstruction.py end_reach bug** | `_reconstruct_reach_end_reach` uses `n_up > 1` only (misses bifurcations). `reactive.py` has the correct logic (`n_up > 1 OR n_down > 1`). Don't use the reconstruction function without fixing it. |
-| **DuckDB reach geometry missing endpoint overlap** | DuckDB geometries (rebuilt from NetCDF) lack the overlap vertices at endpoints that make adjacent reaches visually connect. The v17b PostgreSQL table (`postgres.sword_reaches_v17b`) has the full-fidelity geometries. `load_from_duckdb.py` auto-copies v17b geometries to v17c PostgreSQL via dblink (`--skip-v17b-geom` to disable). |
+| **DuckDB reach geometry missing endpoint overlap** | DuckDB geometries (rebuilt from NetCDF) lack the overlap vertices at endpoints that make adjacent reaches visually connect. The v17b PostgreSQL table (`postgres.sword_reaches_v17b`) has the full-fidelity geometries. `scripts/maintenance/load_from_duckdb.py` auto-copies v17b geometries to v17c PostgreSQL via dblink (`--skip-v17b-geom` to disable). |
 | **path_freq=0/-9999 on connected reaches** | 4,952 connected non-ghost reaches globally have invalid path_freq (34 with 0, 4,918 with -9999). 91% are 1:1 links (fixable by propagation), 9% are junctions (need full traversal). AS has 2,478. See issue #16. |
 
 ## Column Name Gotchas
@@ -352,7 +364,7 @@ Dependency graph auto-recalculates derived attributes:
 
 ## Validation Checks
 
-`src/updates/sword_duckdb/validation.py`:
+`src/sword_duckdb/validation.py`:
 - dist_out decreasing downstream
 - path_freq increasing toward outlets
 - lake sandwich detection
@@ -360,32 +372,32 @@ Dependency graph auto-recalculates derived attributes:
 
 ## Lint Framework
 
-**Location:** `src/updates/sword_duckdb/lint/`
+**Location:** `src/sword_duckdb/lint/`
 
 Comprehensive linting framework with 61 checks across 8 categories (T=Topology, A=Attributes, F=Facc, G=Geometry, C=Classification, V=v17c, FL=Flags, N=Network).
 
 **CLI Usage:**
 ```bash
 # Run all checks
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb
 
 # Filter by region
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
 
 # Specific checks or category
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T001 T002
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T  # all topology
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T001 T002
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T  # all topology
 
 # Output formats
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format markdown -o report.md
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --format markdown -o report.md
 
 # CI mode (exit codes)
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-error   # exit 2 on errors
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-warning  # exit 1 on warnings
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-error   # exit 2 on errors
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-warning  # exit 1 on warnings
 
 # List all checks
-python -m src.updates.sword_duckdb.lint.cli --list-checks
+python -m src.sword_duckdb.lint.cli --list-checks
 ```
 
 **Python API:**
@@ -484,19 +496,22 @@ Test DB: `tests/sword_duckdb/fixtures/sword_test_minimal.duckdb` (100 reaches, 5
 
 | File | Purpose |
 |------|---------|
-| `src/updates/sword_duckdb/workflow.py` | Main entry point (3,511 lines) |
-| `src/updates/sword_duckdb/sword_class.py` | SWORD data class (4,623 lines) |
-| `src/updates/sword_duckdb/schema.py` | Table definitions |
-| `src/updates/sword_duckdb/reactive.py` | Dependency graph |
-| `src/updates/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
-| `src/updates/sword_duckdb/lint/` | Lint framework (50 checks) |
-| `run_v17c_topology.py` | Topology recalculation script |
-| `rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
-| `topology_reviewer.py` | Streamlit GUI for facc/topology fixes |
+| `src/sword_duckdb/workflow.py` | Main entry point (3,511 lines) |
+| `src/sword_duckdb/sword_class.py` | SWORD data class (4,623 lines) |
+| `src/sword_duckdb/schema.py` | Table definitions |
+| `src/sword_duckdb/reactive.py` | Dependency graph |
+| `src/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
+| `src/sword_duckdb/lint/` | Lint framework (50 checks) |
+| `scripts/topology/run_v17c_topology.py` | Topology recalculation script |
+| `scripts/maintenance/rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
+| `deploy/reviewer/` | Streamlit GUI for topology/lake review |
 
-## Topology Reviewer (topology_reviewer.py)
+## Topology Reviewer (deploy/reviewer/)
 
-Streamlit app for manual QA review of SWORD reaches.
+Streamlit app for manual QA review of SWORD reaches. Located in `deploy/reviewer/`.
+
+- `deploy/reviewer/app.py` - topology reviewer (main app)
+- `deploy/reviewer/lake_app.py` - lake classification reviewer
 
 **Key gotchas:**
 - `check_lakeflag_type_consistency()` returns cross-tab summary (lakeflag, type, count), NOT individual reaches. Use direct SQL for per-reach review.
@@ -571,7 +586,7 @@ Streamlit app for manual QA review of SWORD reaches.
 
 ## Imagery Pipeline
 
-**Location:** `src/updates/sword_duckdb/imagery/`
+**Location:** `src/sword_duckdb/imagery/`
 
 **Water Detection Ensemble (6 methods):**
 - NDWI, MNDWI, AWEI_nsh, AWEI_sh (spectral indices)
@@ -610,4 +625,4 @@ Streamlit app for manual QA review of SWORD reaches.
 - Braided/anastomosing rivers need manual review
 - Wide lake-like sections have noisy skeletons
 
-**Test script:** `test_constrained_centerline.py`
+**Note:** The centerline update approach is experimental. See `src/sword_duckdb/imagery/` for implementation.

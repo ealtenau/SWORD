@@ -34,7 +34,7 @@ Validate region is one of the six codes or "all". Normalize to uppercase.
 ### 1. Pre-export Lint (ERROR checks only)
 
 ```bash
-python -m src.updates.sword_duckdb.lint.cli \
+python -m src.sword_duckdb.lint.cli \
   --db data/duckdb/sword_v17c.duckdb \
   --region {REGION} --fail-on-error
 ```
@@ -44,7 +44,7 @@ If errors found, show them and ask user: continue or abort?
 ### 2. Load Data
 
 ```python
-from updates.sword_duckdb import SWORDWorkflow
+from sword_duckdb import SWORDWorkflow
 
 workflow = SWORDWorkflow(user_id="export")
 sword = workflow.load('data/duckdb/sword_v17c.duckdb', region)
@@ -56,7 +56,7 @@ sword = workflow.load('data/duckdb/sword_v17c.duckdb', region)
 #### GeoPackage
 
 ```python
-from updates.sword_duckdb.export import export_to_geopackage
+from sword_duckdb.export import export_to_geopackage
 
 export_to_geopackage(
     sword=workflow._sword,          # SWORD instance, NOT .db
@@ -70,7 +70,7 @@ export_to_geopackage(
 #### GeoParquet
 
 ```python
-from updates.sword_duckdb.export import export_to_geoparquet
+from sword_duckdb.export import export_to_geoparquet
 
 # One call per table (reaches, nodes, centerlines)
 for table in ['reaches', 'nodes', 'centerlines']:
@@ -97,7 +97,7 @@ workflow._sword.save_nc(f"{out_dir}/sword_{region}_v17c.nc")
 
 ```python
 import os
-from updates.sword_duckdb.export import export_to_postgres
+from sword_duckdb.export import export_to_postgres
 
 pg_url = os.environ.get('SWORD_POSTGRES_URL')
 if not pg_url:

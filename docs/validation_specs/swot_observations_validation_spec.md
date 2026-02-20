@@ -56,7 +56,7 @@ These columns are **v17c additions** and do not appear in the SWORD v17b Product
 ## Code Path
 
 ### Population Code
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/workflow.py:1622-1884`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/workflow.py:1622-1884`
 - **Function:** `SWORDWorkflow.aggregate_swot_observations()`
 
 #### Node-Level Aggregation (lines 1700-1750)
@@ -115,14 +115,14 @@ GROUP BY reach_id
 ```
 
 ### SWOT Observation Aggregation (v17c pipeline)
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/reach_swot_obs.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/reach_swot_obs.py`
 - **Algorithm:** OLS regression (wse ~ p_dist_out) per cycle/pass for slope; direct aggregation for wse/width
 - **Bounds checking:** width > 0 AND width < 100000, wse > -1000 AND wse < 10000 (prevents STDDEV_SAMP overflow)
 - **Note:** Renamed from reach_slope_obs.py (2026-02-03) to reflect that it computes slope, wse, and width
 
 ## Schema Definition
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py`
 
 ### Nodes Table (lines 167-175)
 ```sql

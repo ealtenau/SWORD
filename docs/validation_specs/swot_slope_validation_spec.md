@@ -40,13 +40,13 @@ Non-null swot_slope_confidence: 0 (0.00%)
 The v17c pipeline requires a multi-step process:
 
 1. **SWOT Slope Computation Pipeline**
-   - File: `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/SWOT_slopes.py`
+   - File: `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/SWOT_slopes.py`
    - Status: Implemented but NOT integrated into main v17c pipeline
    - Requires: External SWOT data at `/Volumes/SWORD_DATA/data/swot/RiverSP_D_parq/node`
    - Output: Section-level slopes (junction-to-junction), not reach-level
 
 2. **v17c Pipeline Integration**
-   - File: `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/v17c_pipeline.py:707-787`
+   - File: `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/v17c_pipeline.py:707-787`
    - Function: `apply_swot_slopes()`
    - Status: Partially implemented - loads slope data but DOES NOT map to reaches
    - Issue: Requires section-to-reach mapping which is incomplete
@@ -105,7 +105,7 @@ The v17c pipeline requires a multi-step process:
 ## Code Path
 
 ### Main Computation: SWOT_slopes.py
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/SWOT_slopes.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/SWOT_slopes.py`
 
 #### Overview
 Computes water surface slope for each section (junction-to-junction) using Linear Mixed Effects (LME) regression on SWOT node observations.
@@ -163,7 +163,7 @@ junction_id=7890, section_id=893, slope=0.0123, SE=0.0089, slopeF=0.95
 ```
 
 ### v17c Pipeline Integration (Incomplete)
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/v17c_pipeline.py:707-787`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/v17c_pipeline.py:707-787`
 
 **Function:** `apply_swot_slopes(conn, region, swot_path)`
 
@@ -183,7 +183,7 @@ junction_id=7890, section_id=893, slope=0.0123, SE=0.0089, slopeF=0.95
 
 ## Schema Definition
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py:805-850`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py:805-850`
 
 ### Reaches Table Columns
 
@@ -368,7 +368,7 @@ Not yet populated - these will be determined after computation.
 
 The SWOT_slopes.py script produces section-level slopes, but:
 - v17c_pipeline.py does not call SWOT_slopes.py
-- No automatic slope computation during standard `python -m src.updates.sword_v17c_pipeline.v17c_pipeline`
+- No automatic slope computation during standard `python -m src.sword_v17c_pipeline.v17c_pipeline`
 - External execution required: `python SWOT_slopes.py --dir {dir} --continent {continent}`
 
 **Workaround:** Manual execution after running main v17c pipeline.
@@ -539,11 +539,11 @@ LME model can produce negative slopes in backwater reaches:
 
 ## References
 
-1. **SWOT_slopes.py:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/SWOT_slopes.py` - Main computation script
+1. **SWOT_slopes.py:** `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/SWOT_slopes.py` - Main computation script
 
-2. **v17c_pipeline.py:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/v17c_pipeline.py:707-787` - Pipeline integration (incomplete)
+2. **v17c_pipeline.py:** `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/v17c_pipeline.py:707-787` - Pipeline integration (incomplete)
 
-3. **schema.py:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py:805-850` - Column definitions
+3. **schema.py:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py:805-850` - Column definitions
 
 4. **SWOT PDD:** JPL D-56411 - Surface Water and Ocean Topography Mission Product Description Document
 

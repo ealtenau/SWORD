@@ -41,8 +41,8 @@
 - **v17b variables covered:** ~100
 - **v17c additions:** ~20 new computed variables
 - **Empty columns:** GRADES discharge (19/21), swot_slope (removed)
-- **Reconstruction rules:** 35+ in `src/updates/sword_duckdb/reconstruction.py`
+- **Reconstruction rules:** 35+ in `src/sword_duckdb/reconstruction.py`
 
 ## Lint Integration
 
-Each spec maps to one or more of the 35 lint checks in `src/updates/sword_duckdb/lint/`. See lint framework docs for check IDs (T001-T011, A002-A010, G001-G003, C001-C004, V001-V008).
+Each spec maps to one or more of the 35 lint checks in `src/sword_duckdb/lint/`. See lint framework docs for check IDs (T001-T011, A002-A010, G001-G003, C001-C004, V001-V008).

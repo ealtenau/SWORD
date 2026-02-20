@@ -5,8 +5,8 @@
 set -e
 
 echo "Checking setup..."
-python check_reviewer_setup.py
+python scripts/maintenance/check_reviewer_setup.py
 
 echo ""
 echo "Launching SWORD Reviewer..."
-streamlit run topology_reviewer.py
+streamlit run deploy/reviewer/app.py

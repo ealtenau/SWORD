@@ -7,7 +7,7 @@ Tabs: Lakeflag/Type (C004), Lake Sandwich (C001), Fix History.
 
 Run with: streamlit run lake_app.py
 
-Shares the same DuckDB file and lint_fix_log table as topology_reviewer.py.
+Shares the same DuckDB file and lint_fix_log table as app.py.
 Cannot run both simultaneously (DuckDB single-writer lock).
 """
 

@@ -4,7 +4,7 @@ SWORD Topology & FACC Reviewer
 ==============================
 Streamlit UI to review and fix topology/facc issues in SWORD database.
 
-Run with: streamlit run topology_reviewer.py
+Run with: streamlit run deploy/reviewer/app.py
 
 Issue Types:
 - Topology Ratio: upstream facc >> downstream facc

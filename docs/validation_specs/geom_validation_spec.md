@@ -200,11 +200,11 @@ If `geom` is corrupted, all metadata columns will be invalid.
 
 | Component | File | Description |
 |-----------|------|-------------|
-| Schema: geom column | `src/updates/sword_duckdb/schema.py` | Column definition |
-| Creation: from centerlines | `src/updates/sword_duckdb/workflow.py` | Geometry construction |
+| Schema: geom column | `src/sword_duckdb/schema.py` | Column definition |
+| Creation: from centerlines | `src/sword_duckdb/workflow.py` | Geometry construction |
 | Validation: geometry tests | `tests/sword_duckdb/` | Geometry test cases |
-| Exports: to GeoPackage | `src/updates/sword_duckdb/exports.py` | Geometry export |
-| Exports: to shapefiles | `src/updates/sword_duckdb/exports.py` | Geometry export |
+| Exports: to GeoPackage | `src/sword_duckdb/exports.py` | Geometry export |
+| Exports: to shapefiles | `src/sword_duckdb/exports.py` | Geometry export |
 
 ---
 

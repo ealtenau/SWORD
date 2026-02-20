@@ -19,7 +19,7 @@ main_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(main_dir))
 
 # Import after path setup
-from src.updates.sword_duckdb import SWORD
+from src.sword_duckdb import SWORD
 
 
 # ==============================================================================
@@ -201,7 +201,7 @@ def temp_sword(sword_writable):
 # Workflow Fixtures
 # ==============================================================================
 
-from src.updates.sword_duckdb.workflow import SWORDWorkflow
+from src.sword_duckdb.workflow import SWORDWorkflow
 
 
 @pytest.fixture

@@ -54,7 +54,7 @@
 ### Primary Implementation
 
 **Original Production:**
-- **File:** `src/development/reach_definition/Reach_Definition_Tools_v11.py`
+- **File:** `src/_legacy/development/reach_definition/Reach_Definition_Tools_v11.py`
 - **Node computation:** `basin_node_attributes()` lines 4534-4556
 - **Reach computation:** `reach_attributes()` lines 4927-4937
 
@@ -84,7 +84,7 @@ else:
 
 ### Current Reconstruction (DuckDB)
 
-**File:** `src/updates/sword_duckdb/reconstruction.py`
+**File:** `src/sword_duckdb/reconstruction.py`
 
 **AttributeSpec definitions (lines 301-326):**
 ```python
@@ -264,7 +264,7 @@ else:
 
 ## Existing Lint Checks
 
-**None found.** The current lint framework (`src/updates/sword_duckdb/lint/checks/`) does not include any checks for obstruction variables.
+**None found.** The current lint framework (`src/sword_duckdb/lint/checks/`) does not include any checks for obstruction variables.
 
 ---
 

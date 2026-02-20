@@ -54,7 +54,7 @@ These flags enable a **two-phase review process**:
 
 ### 3.1 reach_topology Table Schema
 
-**Location:** `src/updates/sword_duckdb/schema.py`, lines 303-316
+**Location:** `src/sword_duckdb/schema.py`, lines 303-316
 
 ```sql
 CREATE TABLE reach_topology (

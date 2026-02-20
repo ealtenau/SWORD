@@ -23,7 +23,7 @@ import shutil
 main_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, main_dir)
 
-from src.updates.sword_duckdb.workflow import SWORDWorkflow
+from src.sword_duckdb.workflow import SWORDWorkflow
 
 TEST_REGION = "NA"
 

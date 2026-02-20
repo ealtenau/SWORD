@@ -41,7 +41,7 @@ reach_width_var = np.var(node_width[reach_nodes])
 ```
 
 #### Node Width Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:3527-3554`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:3527-3554`
 - **Algorithm:**
   1. Query centerlines for each node
   2. Compute `MEDIAN(c.width)` where `width > 0`
@@ -58,11 +58,11 @@ GROUP BY c.node_id
 ```
 
 #### Node Width Variance Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:3556-3584`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:3556-3584`
 - **Algorithm:** `VAR_SAMP(c.width)` from centerlines grouped by node_id
 
 #### Reach Width Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:1948-1971`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:1948-1971`
 - **Algorithm:**
   1. Query all nodes for each reach
   2. Compute `MEDIAN(n.width)` grouped by reach_id
@@ -77,13 +77,13 @@ GROUP BY n.reach_id
 ```
 
 #### Reach Width Variance Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:1973-1996`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:1973-1996`
 - **Algorithm:** `VARIANCE(n.width)` grouped by reach_id
 
 ### Slope
 
 #### Reach Slope Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:1565-1662`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:1565-1662`
 - **Algorithm:**
   1. Get nodes for each reach, ordered by `dist_out DESC` (upstream to downstream)
   2. Filter out NaN values in both `dist_out` and `wse`
@@ -108,7 +108,7 @@ result_values.append(abs(slope))  # Store absolute value
 
 ## Schema Definition
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py`
 
 ### Nodes Table (lines 117-119)
 ```sql
@@ -241,27 +241,27 @@ reaches.slope = linreg(node.wse vs node.dist_out) converted to m/km
 ## Existing Lint Checks
 
 ### A002: slope_reasonableness
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py:20-80`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py:20-80`
 - **Severity:** WARNING
 - **Rule:** Slope must be non-negative AND < 100 m/km
 - **Scope:** Rivers only (lakeflag=0), excludes -9999 fill values
 - **Assessment:** Well-designed, covers main failure modes 1 and 2
 
 ### A003: width_trend
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py:83-154`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py:83-154`
 - **Severity:** INFO
 - **Rule:** Downstream width should be >= 30% of upstream width
 - **Scope:** Rivers only (lakeflag=0), width > 100m
 - **Assessment:** Good for detecting dramatic decreases, threshold may be too permissive
 
 ### A006: attribute_outliers
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py:297-354`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py:297-354`
 - **Severity:** INFO
 - **Rule:** width < 50km, wse < 8000m, facc < 10M km²
 - **Assessment:** Basic extreme value check; width limit reasonable
 
 ### A008: headwater_width
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py:414-469`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py:414-469`
 - **Severity:** WARNING
 - **Rule:** Headwater rivers (n_rch_up=0, lakeflag=0) should be < 500m wide
 - **Assessment:** Good topology validation check

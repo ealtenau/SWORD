@@ -22,7 +22,7 @@
 ## Code Path
 
 ### Primary File
-`/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/v17c_pipeline.py`
+`/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/v17c_pipeline.py`
 
 ### Key Functions
 
@@ -363,10 +363,10 @@ From README.md:
 
 | File | Change |
 |------|--------|
-| `src/updates/sword_duckdb/lint/core.py` | Add `V17C` category if desired |
-| `src/updates/sword_duckdb/lint/checks/topology.py` | Add T008-T011 checks |
-| `src/updates/sword_duckdb/lint/checks/v17c.py` | NEW: Add V001-V008 checks |
-| `src/updates/sword_duckdb/lint/checks/__init__.py` | Import new v17c module |
+| `src/sword_duckdb/lint/core.py` | Add `V17C` category if desired |
+| `src/sword_duckdb/lint/checks/topology.py` | Add T008-T011 checks |
+| `src/sword_duckdb/lint/checks/v17c.py` | NEW: Add V001-V008 checks |
+| `src/sword_duckdb/lint/checks/__init__.py` | Import new v17c module |
 
 ## Deep Audit Results (2026-02-02)
 

@@ -14,7 +14,7 @@ import duckdb
 import networkx as nx
 from pathlib import Path
 
-from src.updates.sword_v17c_pipeline.v17c_pipeline import (
+from src.sword_v17c_pipeline.v17c_pipeline import (
     build_reach_graph,
     compute_hydro_distances,
     compute_best_headwater_outlet,
