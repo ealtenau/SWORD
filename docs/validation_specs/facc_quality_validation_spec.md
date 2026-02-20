@@ -141,7 +141,7 @@ Reaches are identified as "corrupted" when BOTH conditions hold:
 
 ### 3.4 Manual Correction: topology_reviewer GUI
 
-**Location:** `/Users/jakegearon/projects/SWORD/topology_reviewer.py` (lines 180-1183)
+**Location:** `deploy/reviewer/app.py`
 
 **Interactive Workflow:**
 
@@ -376,7 +376,7 @@ def check_facc_quality_effectiveness(conn, region=None):
 
 ### Interactive GUI
 
-**File:** `/Users/jakegearon/projects/SWORD/topology_reviewer.py`
+**File:** `deploy/reviewer/app.py`
 
 **Key sections:**
 - Lines 189-191: Set facc_quality on manual edits

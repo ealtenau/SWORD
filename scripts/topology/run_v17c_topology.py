@@ -9,20 +9,26 @@ This script:
 """
 
 import sys
-sys.path.insert(0, '/Users/jakegearon/projects/SWORD/src')
-
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+
 from sword_duckdb import SWORDWorkflow
 
-DB_PATH = Path('/Users/jakegearon/projects/SWORD/data/duckdb/sword_v17c.duckdb')
-REGIONS = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC']
+DB_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "data"
+    / "duckdb"
+    / "sword_v17c.duckdb"
+)
+REGIONS = ["NA", "SA", "EU", "AF", "AS", "OC"]
 
 
 def recalculate_region_topology(region: str, workflow: SWORDWorkflow = None):
     """Run all topology recalculations for a region."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Processing region: {region}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Initialize workflow if not provided
     if workflow is None:
@@ -39,33 +45,32 @@ def recalculate_region_topology(region: str, workflow: SWORDWorkflow = None):
     # v17c uses separate hydro_dist_out/hydro_dist_hw computed by assign_attribute.py
     print("\n1. Skipping dist_out recalculation (preserving v17b values)")
     print("   v17c uses hydro_dist_out/hydro_dist_hw from assign_attribute.py")
-    results['dist_out'] = {'skipped': True, 'reason': 'v17c uses hydro_dist_out/hydro_dist_hw'}
+    results["dist_out"] = {
+        "skipped": True,
+        "reason": "v17c uses hydro_dist_out/hydro_dist_hw",
+    }
 
     # 2. Recalculate stream_order
     print("\n2. Recalculating stream_order...")
     try:
         so_result = workflow.recalculate_stream_order(
-            update_nodes=True,
-            update_reaches=True,
-            reason="v17c topology recalculation"
+            update_nodes=True, update_reaches=True, reason="v17c topology recalculation"
         )
-        results['stream_order'] = so_result
+        results["stream_order"] = so_result
         print(f"   stream_order: {so_result.get('reaches_updated', 0)} reaches updated")
     except Exception as e:
         print(f"   ERROR: {e}")
-        results['stream_order'] = {'error': str(e)}
+        results["stream_order"] = {"error": str(e)}
 
     # 3. Recalculate path_segs
     print("\n3. Recalculating path_segs...")
     try:
-        ps_result = workflow.recalculate_path_segs(
-            reason="v17c topology recalculation"
-        )
-        results['path_segs'] = ps_result
+        ps_result = workflow.recalculate_path_segs(reason="v17c topology recalculation")
+        results["path_segs"] = ps_result
         print(f"   path_segs: {ps_result.get('reaches_updated', 0)} reaches updated")
     except Exception as e:
         print(f"   ERROR: {e}")
-        results['path_segs'] = {'error': str(e)}
+        results["path_segs"] = {"error": str(e)}
 
     # 4. Recalculate sinuosity
     print("\n4. Recalculating sinuosity...")
@@ -73,11 +78,11 @@ def recalculate_region_topology(region: str, workflow: SWORDWorkflow = None):
         sin_result = workflow.recalculate_sinuosity(
             reason="v17c topology recalculation"
         )
-        results['sinuosity'] = sin_result
-        print(f"   sinuosity: updated")
+        results["sinuosity"] = sin_result
+        print("   sinuosity: updated")
     except Exception as e:
         print(f"   ERROR: {e}")
-        results['sinuosity'] = {'error': str(e)}
+        results["sinuosity"] = {"error": str(e)}
 
     # Close the connection
     workflow.close()
@@ -89,9 +94,10 @@ def recalculate_region_topology(region: str, workflow: SWORDWorkflow = None):
 def main():
     """Run topology recalculation for all regions or specified region."""
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--region', '-r', help='Specific region to process')
-    parser.add_argument('--all', '-a', action='store_true', help='Process all regions')
+    parser.add_argument("--region", "-r", help="Specific region to process")
+    parser.add_argument("--all", "-a", action="store_true", help="Process all regions")
     args = parser.parse_args()
 
     if args.region:
@@ -100,7 +106,7 @@ def main():
         regions = REGIONS
     else:
         # Default to NA for testing
-        regions = ['NA']
+        regions = ["NA"]
 
     print("SWORD v17c Topology Recalculation")
     print(f"Database: {DB_PATH}")
@@ -110,17 +116,17 @@ def main():
     for region in regions:
         all_results[region] = recalculate_region_topology(region)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("SUMMARY")
-    print("="*60)
+    print("=" * 60)
     for region, results in all_results.items():
         print(f"\n{region}:")
         for attr, result in results.items():
-            if 'error' in result:
+            if "error" in result:
                 print(f"  {attr}: ERROR - {result['error']}")
             else:
                 print(f"  {attr}: OK")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

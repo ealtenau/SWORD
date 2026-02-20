@@ -124,7 +124,7 @@ if failed == 0:
     print(f"ALL {total} CHECKS PASSED")
     print()
     print("Ready! Launch the reviewer with:")
-    print("  streamlit run topology_reviewer.py")
+    print("  streamlit run deploy/reviewer/app.py")
 else:
     print(f"{failed} of {total} checks FAILED")
     print()

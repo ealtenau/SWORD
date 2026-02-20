@@ -83,7 +83,7 @@ The file is about 11 GB, so copying will take a few minutes.
 Run the setup checker to make sure everything is ready:
 
 ```
-python check_reviewer_setup.py
+python scripts/maintenance/check_reviewer_setup.py
 ```
 
 You should see all **PASS** results. If any fail, follow the instructions shown.
@@ -95,7 +95,7 @@ You should see all **PASS** results. If any fail, follow the instructions shown.
 **Option B:** In terminal, type:
 
 ```
-streamlit run topology_reviewer.py
+streamlit run deploy/reviewer/app.py
 ```
 
 Your browser will open automatically to the reviewer app.

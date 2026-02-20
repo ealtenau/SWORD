@@ -198,8 +198,8 @@ temp/
 swot_data_tools/
 
 #files
-src/updates/formatting_scripts/testing.py
-src/updates/delta_updates/testing.py
+src/_legacy/updates/formatting_scripts/testing.py
+src/_legacy/updates/delta_updates/testing.py
 
 .history/
 .venv/

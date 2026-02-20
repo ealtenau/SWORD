@@ -68,4 +68,4 @@ When the user invokes this skill:
 
 - All modifications are logged with provenance
 - User must confirm before applying changes
-- Use topology_reviewer.py GUI for bulk/visual fixes
+- Use deploy/reviewer/app.py GUI for bulk/visual fixes

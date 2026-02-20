@@ -2,7 +2,7 @@
 """
 Reimport Lint Fixes from CSV
 ----------------------------
-Reimport fixes exported from topology_reviewer.py into another database.
+Reimport fixes exported from the reviewer app into another database.
 
 Usage:
     python reimport_fixes.py --db data/duckdb/sword_v17c.duckdb --csv c001_fixes_NA_20250127.csv

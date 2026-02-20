@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.pipeline, pytest.mark.db]
 @pytest.fixture
 def writable_db(tmp_path):
     """Create a writable copy of the test database."""
-    src = Path("tests/sword_duckdb/fixtures/sword_test_minimal.duckdb")
+    src = Path(__file__).parent / "fixtures" / "sword_test_minimal.duckdb"
     dst = tmp_path / "test.duckdb"
     shutil.copy2(src, dst)
     conn = duckdb.connect(str(dst))

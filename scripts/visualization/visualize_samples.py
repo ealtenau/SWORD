@@ -5,7 +5,9 @@ Visualize the stratified sample results.
 
 import sys
 
-sys.path.insert(0, "/Users/jakegearon/projects/SWORD/src/updates")
+sys.path.insert(
+    0, str(__import__("pathlib").Path(__file__).resolve().parent.parent.parent / "src")
+)
 
 import numpy as np
 import pandas as pd
