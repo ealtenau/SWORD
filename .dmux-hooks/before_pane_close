@@ -1,0 +1,10 @@
+#!/bin/bash
+# Warn if there are uncommitted changes before closing a pane
+set -euo pipefail
+
+cd "$DMUX_WORKTREE_PATH"
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "[Hook] WARNING: Uncommitted changes in $DMUX_SLUG"
+  git status --short
+fi
