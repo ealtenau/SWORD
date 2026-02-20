@@ -22,7 +22,7 @@ Key design choice: **lowering propagates, raising does not.** Junction raises ar
 confined to the junction reach.  This prevents the exponential inflation that occurs
 in multi-bifurcation deltas (e.g. Lena: 674x under v1 additive → 2.95x under v2).
 
-See docs/facc_conservation_algorithm.md for full details.
+See docs/technical/facc_conservation_algorithm.md for full details.
 
 Usage:
     # Dry run on NA
@@ -53,6 +53,7 @@ REGIONS = ["NA", "SA", "EU", "AF", "AS", "OC"]
 # Data loading (same pattern as existing passes)
 # ---------------------------------------------------------------------------
 
+
 def _load_topology(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     return conn.execute(
         "SELECT reach_id, direction, neighbor_rank, neighbor_reach_id "
@@ -69,9 +70,7 @@ def _load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     ).fetchdf()
 
 
-def _load_v17b_facc(
-    v17b_path: str, region: str
-) -> Dict[int, float]:
+def _load_v17b_facc(v17b_path: str, region: str) -> Dict[int, float]:
     """Load v17b original facc as {reach_id: facc} dict."""
     conn = duckdb.connect(v17b_path, read_only=True)
     try:
@@ -88,9 +87,8 @@ def _load_v17b_facc(
 # Graph building
 # ---------------------------------------------------------------------------
 
-def _build_graph(
-    topology_df: pd.DataFrame, reaches_df: pd.DataFrame
-) -> nx.DiGraph:
+
+def _build_graph(topology_df: pd.DataFrame, reaches_df: pd.DataFrame) -> nx.DiGraph:
     """Build DiGraph where edges follow flow (upstream → downstream)."""
     G = nx.DiGraph()
     for _, row in reaches_df.iterrows():
@@ -117,6 +115,7 @@ def _build_graph(
 # ---------------------------------------------------------------------------
 # Core algorithm
 # ---------------------------------------------------------------------------
+
 
 def _run_single_pass(
     G: nx.DiGraph,
@@ -188,8 +187,7 @@ def _run_single_pass(
             new_val = floor + lateral
             corrected[node] = new_val
             if abs(new_val - base) > 0.01:
-                _record(changes, counts, node, base, new_val,
-                        "junction_floor")
+                _record(changes, counts, node, base, new_val, "junction_floor")
             continue
 
         # Single predecessor
@@ -202,8 +200,7 @@ def _run_single_pass(
             new_val = corrected[parent] * share
             corrected[node] = new_val
             if abs(new_val - base) > 0.01:
-                _record(changes, counts, node, base, new_val,
-                        "bifurc_share")
+                _record(changes, counts, node, base, new_val, "bifurc_share")
         else:
             # 1:1 LINK — only propagate *lowering* (from bifurcation
             # splits).  Junction raises must NOT cascade downstream or
@@ -212,8 +209,7 @@ def _run_single_pass(
             if parent_base == 0 and corrected[parent] == 0:
                 corrected[node] = 0.0
                 if base > 0.01:
-                    _record(changes, counts, node, base, 0.0,
-                            "cascade_zero")
+                    _record(changes, counts, node, base, 0.0, "cascade_zero")
             elif corrected[parent] < parent_base:
                 # Parent was LOWERED (bifurcation split) → additive lateral
                 # Take the parent's corrected value and add only the local
@@ -224,8 +220,7 @@ def _run_single_pass(
                 new_val = corrected[parent] + lateral
                 corrected[node] = new_val
                 if abs(new_val - base) > 0.01:
-                    _record(changes, counts, node, base, new_val,
-                            "lateral_lower")
+                    _record(changes, counts, node, base, new_val, "lateral_lower")
             else:
                 # Parent raised or unchanged → keep original D8 value.
                 # Equivalent to: base_parent + (base - base_parent) = base.
@@ -256,6 +251,7 @@ def _record(
 # DB application (RTREE-safe pattern)
 # ---------------------------------------------------------------------------
 
+
 def _apply_to_db(
     conn: duckdb.DuckDBPyConnection,
     corrections_df: pd.DataFrame,
@@ -274,13 +270,14 @@ def _apply_to_db(
 
     conn.execute("DROP TABLE IF EXISTS _sp_facc")
     conn.execute(
-        "CREATE TEMP TABLE _sp_facc ("
-        "  reach_id BIGINT PRIMARY KEY, new_facc DOUBLE)"
+        "CREATE TEMP TABLE _sp_facc (  reach_id BIGINT PRIMARY KEY, new_facc DOUBLE)"
     )
-    data = list(zip(
-        corrections_df["reach_id"].astype(int),
-        corrections_df["corrected_facc"].astype(float),
-    ))
+    data = list(
+        zip(
+            corrections_df["reach_id"].astype(int),
+            corrections_df["corrected_facc"].astype(float),
+        )
+    )
     conn.executemany("INSERT INTO _sp_facc VALUES (?, ?)", data)
     conn.execute(
         "UPDATE reaches SET facc = t.new_facc "
@@ -356,6 +353,7 @@ def _restore_v17b(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+
 def correct_facc_single_pass(
     db_path: str,
     v17b_path: str,
@@ -378,9 +376,9 @@ def correct_facc_single_pass(
     out_path = Path(output_dir)
     mode_str = "DRY RUN" if dry_run else "APPLYING TO DB"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Facc Conservation — Single Pass — {region} [{mode_str}]")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Step 1: Load v17b baseline
     print("  Loading v17b baseline...")
@@ -404,8 +402,10 @@ def correct_facc_single_pass(
         print("  Building graph...")
         G = _build_graph(topo_df, reaches_df)
         n_bifurc = sum(1 for n in G.nodes() if G.out_degree(n) >= 2)
-        print(f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, "
-              f"{n_bifurc} bifurcations")
+        print(
+            f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, "
+            f"{n_bifurc} bifurcations"
+        )
 
         # Step 5: Run single pass
         print("  Running single-pass conservation...")
@@ -420,18 +420,22 @@ def correct_facc_single_pass(
         rows = []
         for rid, (orig, corr, ctype) in changes.items():
             delta = corr - orig
-            delta_pct = 100.0 * delta / orig if orig > 0 else (
-                float("inf") if delta > 0 else 0.0
+            delta_pct = (
+                100.0 * delta / orig
+                if orig > 0
+                else (float("inf") if delta > 0 else 0.0)
             )
-            rows.append({
-                "reach_id": rid,
-                "region": region,
-                "original_facc": round(orig, 4),
-                "corrected_facc": round(corr, 4),
-                "delta": round(delta, 4),
-                "delta_pct": round(delta_pct, 2),
-                "correction_type": ctype,
-            })
+            rows.append(
+                {
+                    "reach_id": rid,
+                    "region": region,
+                    "original_facc": round(orig, 4),
+                    "corrected_facc": round(corr, 4),
+                    "delta": round(delta, 4),
+                    "delta_pct": round(delta_pct, 2),
+                    "correction_type": ctype,
+                }
+            )
         corrections_df = pd.DataFrame(rows)
 
         # Summary stats
@@ -447,13 +451,15 @@ def correct_facc_single_pass(
             median_delta=("delta", "median"),
         )
 
-        print(f"\n  Summary:")
+        print("\n  Summary:")
         print(f"    Raised:  {n_raised}")
         print(f"    Lowered: {n_lowered}")
         print(f"    Net facc change: {total_delta:>+,.0f} km² ({pct:+.3f}%)")
         for ctype, row in by_type.iterrows():
-            print(f"      {ctype:25s}  n={int(row['count']):>6,}  "
-                  f"med_delta={row['median_delta']:>+12,.1f} km²")
+            print(
+                f"      {ctype:25s}  n={int(row['count']):>6,}  "
+                f"med_delta={row['median_delta']:>+12,.1f} km²"
+            )
 
         # Apply to DB: restore v17b → apply conservation
         if not dry_run:
@@ -532,35 +538,41 @@ def _clear_old_tags(
             f"WHERE region = ? AND facc_quality IN ({old_quality})",
             [region],
         ).fetchone()
-        print(f"    Cleared facc_quality tags")
+        print("    Cleared facc_quality tags")
     if "edit_flag" in cols:
         n = conn.execute(
             f"UPDATE reaches SET edit_flag = NULL "
             f"WHERE region = ? AND edit_flag IN ({old_edit})",
             [region],
         ).fetchone()
-        print(f"    Cleared edit_flag tags")
+        print("    Cleared edit_flag tags")
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Facc conservation — single-pass correction"
     )
-    parser.add_argument("--db", required=True,
-                        help="v17c DuckDB path")
-    parser.add_argument("--v17b", default="data/duckdb/sword_v17b.duckdb",
-                        help="v17b DuckDB path (baseline)")
+    parser.add_argument("--db", required=True, help="v17c DuckDB path")
+    parser.add_argument(
+        "--v17b",
+        default="data/duckdb/sword_v17b.duckdb",
+        help="v17b DuckDB path (baseline)",
+    )
     parser.add_argument("--region", help="Single region")
-    parser.add_argument("--all", action="store_true",
-                        help="Process all regions")
-    parser.add_argument("--apply", action="store_true",
-                        help="Write corrections to DB (default: dry run)")
-    parser.add_argument("--output-dir", default="output/facc_detection",
-                        help="Output directory")
+    parser.add_argument("--all", action="store_true", help="Process all regions")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write corrections to DB (default: dry run)",
+    )
+    parser.add_argument(
+        "--output-dir", default="output/facc_detection", help="Output directory"
+    )
 
     args = parser.parse_args()
     if not args.region and not args.all:
@@ -583,10 +595,12 @@ def main():
         combined = pd.concat(all_corrections, ignore_index=True)
         n_up = int((combined["delta"] > 0).sum())
         n_dn = int((combined["delta"] < 0).sum())
-        print(f"\n{'='*60}")
-        print(f"GRAND TOTAL: {len(combined)} modifications "
-              f"({n_up} raised, {n_dn} lowered)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print(
+            f"GRAND TOTAL: {len(combined)} modifications "
+            f"({n_up} raised, {n_dn} lowered)"
+        )
+        print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
