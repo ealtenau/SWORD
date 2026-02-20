@@ -154,7 +154,7 @@ NOW ─────────────────────────�
 
 ## Resolved: Legacy Reach Code Location
 
-**Found in `src/development/reach_definition/`**
+**Found in `src/_legacy/development/reach_definition/`**
 
 | File | Lines | Purpose |
 |------|-------|---------|

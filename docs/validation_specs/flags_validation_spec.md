@@ -890,6 +890,6 @@ Result:
 2. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 3. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py`
 4. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/sword_class.py`
-5. `/Users/jakegearon/projects/SWORD/src/updates/delta_updates/delta_utils.py`
+5. `/Users/jakegearon/projects/SWORD/src/_legacy/updates/delta_updates/delta_utils.py`
 6. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py`
 7. Yang, X., Pavelsky, T. M., Allen, G. H. (2019). The past and future of global river ice. Nature.
