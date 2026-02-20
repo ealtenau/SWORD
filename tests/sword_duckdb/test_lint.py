@@ -1826,6 +1826,28 @@ class TestA030WseMonotonicity:
         assert result.issues_found == 1
         conn.close()
 
+    def test_sentinel_skipped(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_with_wse(
+            conn,
+            [
+                {"reach_id": 1, "wse": -9999},
+                {"reach_id": 2, "wse": -9999},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.attributes import (
+            check_wse_downstream_monotonicity,
+        )
+
+        result = check_wse_downstream_monotonicity(conn)
+        assert result.passed is True
+        assert result.total_checked == 0
+        conn.close()
+
 
 # =============================================================================
 # N003-N010 Node Check Tests

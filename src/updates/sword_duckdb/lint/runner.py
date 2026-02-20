@@ -124,7 +124,13 @@ class LintRunner:
                         "N": Category.NETWORK,
                     }
                     if check in prefix_map:
-                        specs.extend(get_checks_by_category(prefix_map[check]))
+                        cat_specs = get_checks_by_category(prefix_map[check])
+                        if check == "A":
+                            # Exclude F-prefixed facc checks that share Category.ATTRIBUTES
+                            cat_specs = [
+                                s for s in cat_specs if s.check_id.startswith("A")
+                            ]
+                        specs.extend(cat_specs)
                     else:
                         raise ValueError(f"Unknown check prefix: {check}")
                 else:

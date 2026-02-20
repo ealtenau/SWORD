@@ -850,7 +850,7 @@ def check_bidirectional_topology(
 @register_check(
     "T015",
     Category.TOPOLOGY,
-    Severity.WARNING,
+    Severity.INFO,
     "Shortcut edges bypassing intermediate reach (A→B→C and A→C)",
 )
 def check_topology_shortcut(
@@ -897,7 +897,7 @@ def check_topology_shortcut(
     return CheckResult(
         check_id="T015",
         name="topology_shortcut",
-        severity=Severity.WARNING,
+        severity=Severity.INFO,
         passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),
@@ -1005,8 +1005,10 @@ def check_dist_out_jump(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r1
     JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
     WHERE rt.direction = 'down'
-        AND r1.dist_out != -9999 AND r1.dist_out > 0
+        AND r1.dist_out != -9999 AND r2.dist_out != -9999
+        AND r1.dist_out > 0 AND r2.dist_out > 0
         {where_clause}
     """
     total = conn.execute(total_query).fetchone()[0]
@@ -1041,7 +1043,7 @@ def check_id_format(
     where_node = f"AND n.region = '{region}'" if region else ""
 
     query = f"""
-    SELECT reach_id, region, 'reach' as issue_type,
+    SELECT reach_id as entity_id, region, 'reach' as issue_type,
         CASE
             WHEN LENGTH(CAST(reach_id AS VARCHAR)) != 11 THEN 'wrong_length'
             WHEN CAST(reach_id AS VARCHAR)[-1:] NOT IN ('1','3','4','5','6') THEN 'bad_suffix'
@@ -1053,14 +1055,14 @@ def check_id_format(
     )
         {where_reach}
     UNION ALL
-    SELECT node_id as reach_id, region, 'node' as issue_type,
+    SELECT node_id as entity_id, region, 'node' as issue_type,
         CASE
             WHEN LENGTH(CAST(node_id AS VARCHAR)) != 14 THEN 'wrong_length'
         END as reason
     FROM nodes n
     WHERE LENGTH(CAST(node_id AS VARCHAR)) != 14
         {where_node}
-    ORDER BY issue_type, reach_id
+    ORDER BY issue_type, entity_id
     LIMIT 10000
     """
 
@@ -1148,6 +1150,8 @@ def check_river_name_consensus(
     """Flag reaches whose river_name differs from ALL their neighbors (consensus mismatch)."""
     where_clause = f"AND r.region = '{region}'" if region else ""
 
+    nn_where = f"AND rt.region = '{region}'" if region else ""
+
     query = f"""
     WITH neighbor_names AS (
         SELECT
@@ -1156,6 +1160,7 @@ def check_river_name_consensus(
         FROM reach_topology rt
         JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
         WHERE r2.river_name != 'NODATA'
+            {nn_where}
     ),
     consensus AS (
         SELECT

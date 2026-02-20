@@ -390,7 +390,8 @@ def check_node_count_vs_n_nodes(
         ABS(r.n_nodes - COALESCE(ac.actual_count, 0)) as count_diff
     FROM reaches r
     LEFT JOIN actual_counts ac ON r.reach_id = ac.reach_id AND r.region = ac.region
-    WHERE r.n_nodes != COALESCE(ac.actual_count, 0)
+    WHERE r.n_nodes IS NOT NULL AND r.n_nodes != -9999
+        AND r.n_nodes != COALESCE(ac.actual_count, 0)
         {where_clause}
     ORDER BY count_diff DESC
     LIMIT 10000
