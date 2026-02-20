@@ -218,16 +218,20 @@ def check_boundary_dist_out(
     max_diff = threshold if threshold is not None else 1000.0
     where_clause = f"AND rt.region = '{region}'" if region else ""
 
+    # SWORD convention: node_id increases upstream (higher node_id = higher dist_out).
+    # For upstream reach A → downstream reach B (direction='down'):
+    #   A's downstream boundary = MIN(node_id) in A
+    #   B's upstream boundary   = MAX(node_id) in B
     query = f"""
-    WITH last_node AS (
+    WITH up_boundary AS (
         SELECT reach_id, region,
-            MAX(node_id) as last_node_id
+            MIN(node_id) as boundary_node_id
         FROM nodes
         GROUP BY reach_id, region
     ),
-    first_node AS (
+    dn_boundary AS (
         SELECT reach_id, region,
-            MIN(node_id) as first_node_id
+            MAX(node_id) as boundary_node_id
         FROM nodes
         GROUP BY reach_id, region
     ),
@@ -236,15 +240,15 @@ def check_boundary_dist_out(
             rt.reach_id as up_reach,
             rt.neighbor_reach_id as dn_reach,
             rt.region,
-            n1.dist_out as up_last_dist_out,
-            n2.dist_out as dn_first_dist_out,
-            n1.node_id as up_last_node,
-            n2.node_id as dn_first_node
+            n1.dist_out as up_boundary_dist_out,
+            n2.dist_out as dn_boundary_dist_out,
+            n1.node_id as up_boundary_node,
+            n2.node_id as dn_boundary_node
         FROM reach_topology rt
-        JOIN last_node ln ON rt.reach_id = ln.reach_id AND rt.region = ln.region
-        JOIN first_node fn ON rt.neighbor_reach_id = fn.reach_id AND rt.region = fn.region
-        JOIN nodes n1 ON ln.last_node_id = n1.node_id AND ln.region = n1.region
-        JOIN nodes n2 ON fn.first_node_id = n2.node_id AND fn.region = n2.region
+        JOIN up_boundary ub ON rt.reach_id = ub.reach_id AND rt.region = ub.region
+        JOIN dn_boundary db ON rt.neighbor_reach_id = db.reach_id AND rt.region = db.region
+        JOIN nodes n1 ON ub.boundary_node_id = n1.node_id AND ub.region = n1.region
+        JOIN nodes n2 ON db.boundary_node_id = n2.node_id AND db.region = n2.region
         WHERE rt.direction = 'down'
             AND n1.dist_out IS NOT NULL AND n1.dist_out != -9999
             AND n2.dist_out IS NOT NULL AND n2.dist_out != -9999
@@ -252,11 +256,11 @@ def check_boundary_dist_out(
     )
     SELECT
         up_reach, dn_reach, region,
-        up_last_node, dn_first_node,
-        up_last_dist_out, dn_first_dist_out,
-        ABS(up_last_dist_out - dn_first_dist_out) as boundary_gap
+        up_boundary_node, dn_boundary_node,
+        up_boundary_dist_out, dn_boundary_dist_out,
+        ABS(up_boundary_dist_out - dn_boundary_dist_out) as boundary_gap
     FROM boundary_pairs
-    WHERE ABS(up_last_dist_out - dn_first_dist_out) > {max_diff}
+    WHERE ABS(up_boundary_dist_out - dn_boundary_dist_out) > {max_diff}
     ORDER BY boundary_gap DESC
     LIMIT 10000
     """
