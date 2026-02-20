@@ -206,8 +206,8 @@ def check_node_dist_out_jump(
     "N006",
     Category.NETWORK,
     Severity.WARNING,
-    "Boundary node dist_out mismatch >10km between connected reaches",
-    default_threshold=10000.0,
+    "Boundary node dist_out mismatch >1000m between connected reaches",
+    default_threshold=1000.0,
 )
 def check_boundary_dist_out(
     conn: duckdb.DuckDBPyConnection,
@@ -215,7 +215,7 @@ def check_boundary_dist_out(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """Check dist_out continuity at reach boundaries."""
-    max_diff = threshold if threshold is not None else 10000.0
+    max_diff = threshold if threshold is not None else 1000.0
     where_clause = f"AND rt.region = '{region}'" if region else ""
 
     # SWORD convention: node_id increases upstream (higher node_id = higher dist_out).

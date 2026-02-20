@@ -2002,7 +2002,7 @@ class TestN006BoundaryDistOut:
     """Tests for N006 boundary_dist_out."""
 
     def test_pass_close_dist_out(self, tmp_path):
-        """Boundary gap within 10km threshold. dist_out increases with node_id (SWORD convention).
+        """Boundary gap within 1000m threshold. dist_out increases with node_id (SWORD convention).
 
         Reach 1 (upstream): nodes 1001 (dist_out=5000), 1002 (dist_out=5500)
         Reach 2 (downstream): nodes 2001 (dist_out=4500), 2002 (dist_out=4900)
@@ -2054,15 +2054,11 @@ class TestN006BoundaryDistOut:
         conn.close()
 
     def test_fail_large_gap(self, tmp_path):
-        """Boundary gap exceeds 10km threshold. dist_out increases with node_id (SWORD convention).
+        """Boundary gap exceeds 1000m threshold. dist_out increases with node_id (SWORD convention).
 
-        Reach 1 (upstream): nodes 1001 (dist_out=5000), 1002 (dist_out=20000)
-        Reach 2 (downstream): nodes 2001 (dist_out=1000), 2002 (dist_out=4000)
-        Boundary: MIN(reach1)=1001 (5000) vs MAX(reach2)=2002 (4000) → gap=1000m → PASS
-        ... but we need >10km, so use bigger values:
-        Reach 1 (upstream): nodes 1001 (dist_out=25000), 1002 (dist_out=30000)
-        Reach 2 (downstream): nodes 2001 (dist_out=1000), 2002 (dist_out=5000)
-        Boundary: MIN(reach1)=1001 (25000) vs MAX(reach2)=2002 (5000) → gap=20000m → FAIL
+        Reach 1 (upstream): nodes 1001 (dist_out=9500), 1002 (dist_out=10000)
+        Reach 2 (downstream): nodes 2001 (dist_out=4500), 2002 (dist_out=5000)
+        Boundary: MIN(reach1)=1001 (9500) vs MAX(reach2)=2002 (5000) → gap=4500m → FAIL
         """
         conn = _spatial_conn(tmp_path)
         _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
@@ -2078,21 +2074,21 @@ class TestN006BoundaryDistOut:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 25000.0,
+                    "dist_out": 9500.0,
                 },
                 {
                     "node_id": 1002,
                     "reach_id": 1,
                     "x": 0.001,
                     "y": 0.0,
-                    "dist_out": 30000.0,
+                    "dist_out": 10000.0,
                 },
                 {
                     "node_id": 2001,
                     "reach_id": 2,
                     "x": 0.002,
                     "y": 0.0,
-                    "dist_out": 1000.0,
+                    "dist_out": 4500.0,
                 },
                 {
                     "node_id": 2002,
