@@ -50,7 +50,7 @@
 ## facc Fixes
 
 ### Current State
-- **Detection pipeline**: `src/updates/sword_duckdb/facc_detection/` ✅ Complete
+- **Detection pipeline**: `src/sword_duckdb/facc_detection/` ✅ Complete
 - **GeoJSON exports**: `output/facc_detection/` for QGIS review
 - **1,725 anomalies detected** globally (run on v17b pristine reference)
 - **34/39 seeds detected** (87.2% recall), 5 missed are propagation reaches
@@ -61,7 +61,7 @@
 
 **Run command:**
 ```bash
-python -m src.updates.sword_duckdb.facc_detection.cli \
+python -m src.sword_duckdb.facc_detection.cli \
     --db data/duckdb/sword_v17b.duckdb \
     --all \
     --export-geojson \

@@ -30,31 +30,31 @@ class TestExportImports:
 
     def test_import_export_to_postgres(self):
         """Test import of export_to_postgres."""
-        from src.updates.sword_duckdb.export import export_to_postgres
+        from src.sword_duckdb.export import export_to_postgres
 
         assert callable(export_to_postgres)
 
     def test_import_export_to_geoparquet(self):
         """Test import of export_to_geoparquet."""
-        from src.updates.sword_duckdb.export import export_to_geoparquet
+        from src.sword_duckdb.export import export_to_geoparquet
 
         assert callable(export_to_geoparquet)
 
     def test_import_export_to_geopackage(self):
         """Test import of export_to_geopackage."""
-        from src.updates.sword_duckdb.export import export_to_geopackage
+        from src.sword_duckdb.export import export_to_geopackage
 
         assert callable(export_to_geopackage)
 
     def test_import_sync_from_postgres(self):
         """Test import of sync_from_postgres."""
-        from src.updates.sword_duckdb.export import sync_from_postgres
+        from src.sword_duckdb.export import sync_from_postgres
 
         assert callable(sync_from_postgres)
 
     def test_module_exports(self):
         """Test that functions are exported from package __init__."""
-        from src.updates.sword_duckdb import (
+        from src.sword_duckdb import (
             export_to_postgres,
             export_to_geoparquet,
             export_to_geopackage,
@@ -85,7 +85,7 @@ class TestGeoParquetExport:
         except ImportError:
             pytest.skip("geopandas/pyarrow not installed")
 
-        from src.updates.sword_duckdb.export import export_to_geoparquet
+        from src.sword_duckdb.export import export_to_geoparquet
 
         output_path = os.path.join(temp_dir, "reaches.parquet")
         count = export_to_geoparquet(sword, output_path, table="reaches")
@@ -109,7 +109,7 @@ class TestGeoParquetExport:
         except ImportError:
             pytest.skip("geopandas/pyarrow not installed")
 
-        from src.updates.sword_duckdb.export import export_to_geoparquet
+        from src.sword_duckdb.export import export_to_geoparquet
 
         output_path = os.path.join(temp_dir, "nodes.parquet")
         count = export_to_geoparquet(sword, output_path, table="nodes")
@@ -136,7 +136,7 @@ class TestGeoPackageExport:
         except ImportError:
             pytest.skip("geopandas/fiona not installed")
 
-        from src.updates.sword_duckdb.export import export_to_geopackage
+        from src.sword_duckdb.export import export_to_geopackage
 
         output_path = os.path.join(temp_dir, "sword.gpkg")
         results = export_to_geopackage(sword, output_path, tables=["reaches", "nodes"])
@@ -159,7 +159,7 @@ class TestPostgresExport:
 
     def test_pg_schema_definitions(self):
         """Test that PostgreSQL schema definitions are valid."""
-        from src.updates.sword_duckdb.export import (
+        from src.sword_duckdb.export import (
             PG_CENTERLINES_SCHEMA,
             PG_NODES_SCHEMA,
             PG_REACHES_SCHEMA,
@@ -187,7 +187,7 @@ class TestPostgresExport:
         """Test that export raises ImportError when psycopg2 is missing."""
         # This test is tricky because psycopg2 might be installed
         # We'll just verify the function signature accepts expected args
-        from src.updates.sword_duckdb.export import export_to_postgres
+        from src.sword_duckdb.export import export_to_postgres
         import inspect
 
         sig = inspect.signature(export_to_postgres)
@@ -207,7 +207,7 @@ class TestSyncFromPostgres:
 
     def test_sync_function_signature(self):
         """Test sync function has expected signature."""
-        from src.updates.sword_duckdb.export import sync_from_postgres
+        from src.sword_duckdb.export import sync_from_postgres
         import inspect
 
         sig = inspect.signature(sync_from_postgres)
@@ -231,7 +231,7 @@ class TestWorkflowSync:
     def test_get_unsynced_operations_returns_dataframe(self, temp_workflow):
         """get_unsynced_operations returns a DataFrame when synced_to_duckdb column exists."""
         import pandas as pd
-        from src.updates.sword_duckdb.schema import add_sync_tracking_column
+        from src.sword_duckdb.schema import add_sync_tracking_column
 
         # Ensure the synced_to_duckdb column exists (test DB may predate migration)
         add_sync_tracking_column(temp_workflow._sword.db.conn)

@@ -1092,7 +1092,7 @@ Checks that SWOT-observed slope mean is below 50 m/km. Extremely high slopes are
 
 Override thresholds via CLI:
 ```bash
-python -m src.updates.sword_duckdb.lint.cli --db sword.duckdb --threshold A002 150
+python -m src.sword_duckdb.lint.cli --db sword.duckdb --threshold A002 150
 ```
 
 ---

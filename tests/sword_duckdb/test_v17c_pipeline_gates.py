@@ -6,14 +6,14 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from src.updates.sword_v17c_pipeline.gates import (
+from src.sword_v17c_pipeline.gates import (
     GateFailure,
     GateResult,
     gate_post_save,
     gate_source_data,
     run_gate,
 )
-from src.updates.sword_duckdb.lint.core import Severity
+from src.sword_duckdb.lint.core import Severity
 
 pytestmark = [pytest.mark.pipeline, pytest.mark.db]
 

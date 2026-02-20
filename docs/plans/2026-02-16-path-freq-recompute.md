@@ -35,7 +35,7 @@ Commit: `"Add failing tests for compute_path_variables path_freq (#16)"`
 ### Task 2: Implement `compute_path_variables`
 
 **Files:**
-- Modify: `src/updates/sword_v17c_pipeline/v17c_pipeline.py` (insert after `build_section_graph` ~line 458)
+- Modify: `src/sword_v17c_pipeline/v17c_pipeline.py` (insert after `build_section_graph` ~line 458)
 
 New function `compute_path_variables(G, sections_df) -> Dict[int, Dict]`:
 
@@ -76,7 +76,7 @@ Commit: `"Add tests for stream_order, path_segs, path_order (#16)"`
 ### Task 4: Wire into process_region() and save_to_duckdb()
 
 **Files:**
-- Modify: `src/updates/sword_v17c_pipeline/v17c_pipeline.py`
+- Modify: `src/sword_v17c_pipeline/v17c_pipeline.py`
 
 Changes:
 
@@ -97,7 +97,7 @@ Commit: `"Wire compute_path_variables into process_region and save_to_duckdb (#1
 
 1. Run NA only first:
 ```bash
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+python -m src.sword_v17c_pipeline.v17c_pipeline \
   --db data/duckdb/sword_v17c.duckdb --region NA --skip-swot --skip-facc
 ```
 
@@ -105,7 +105,7 @@ python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
 
 3. Run all regions:
 ```bash
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+python -m src.sword_v17c_pipeline.v17c_pipeline \
   --db data/duckdb/sword_v17c.duckdb --all --skip-swot --skip-facc
 ```
 

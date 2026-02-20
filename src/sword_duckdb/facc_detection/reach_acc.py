@@ -262,7 +262,7 @@ def compute_reach_accumulation(
 
     Examples
     --------
-    >>> from updates.sword_duckdb.facc_detection import compute_reach_accumulation
+    >>> from sword_duckdb.facc_detection import compute_reach_accumulation
     >>> df = compute_reach_accumulation("sword_v17c.duckdb", region="NA")
     >>> print(df.head())
     """

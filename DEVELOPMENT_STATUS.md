@@ -199,7 +199,7 @@ Database: `data/duckdb/sword_v17b.duckdb` (9.9 GB)
 ## Package Structure
 
 ```
-src/updates/sword_duckdb/
+src/sword_duckdb/
 ├── __init__.py         # Exports: SWORDWorkflow, SWORD, ProvenanceLogger, etc.
 ├── schema.py           # Table definitions (v1.2.0 with provenance)
 ├── sword_db.py         # Connection manager (SWORDDatabase class)
@@ -219,7 +219,7 @@ src/updates/sword_duckdb/
 ## Usage Example
 
 ```python
-from src.updates.sword_duckdb import SWORDWorkflow
+from src.sword_duckdb import SWORDWorkflow
 
 # Initialize workflow (recommended entry point)
 workflow = SWORDWorkflow(user_id="jake")
@@ -272,7 +272,7 @@ SWORD was constructed from:
 ## Usage Example: Reconstruction
 
 ```python
-from src.updates.sword_duckdb import SWORDWorkflow
+from src.sword_duckdb import SWORDWorkflow
 
 workflow = SWORDWorkflow(user_id="jake")
 sword = workflow.load('data/duckdb/sword_v17b.duckdb', 'NA')

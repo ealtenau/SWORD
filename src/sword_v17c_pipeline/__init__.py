@@ -28,16 +28,16 @@ New Columns Added by Pipeline:
 
 Usage:
     # Process all regions
-    python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all
+    python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all
 
     # Process single region
-    python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --region NA
+    python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --region NA
 
     # Skip SWOT integration
-    python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all --skip-swot
+    python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all --skip-swot
 
 Or using shell script:
-    cd src/updates/sword_v17c_pipeline
+    cd src/sword_v17c_pipeline
     ./run_pipeline.sh  # All regions
     REGION=NA ./run_pipeline.sh  # Single region
 """

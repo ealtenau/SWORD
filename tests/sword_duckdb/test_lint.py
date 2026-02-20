@@ -12,7 +12,7 @@ import pandas as pd
 
 pytestmark = pytest.mark.lint
 
-from src.updates.sword_duckdb.lint import (
+from src.sword_duckdb.lint import (
     Severity,
     Category,
     CheckResult,
@@ -23,7 +23,7 @@ from src.updates.sword_duckdb.lint import (
     get_checks_by_severity,
     list_check_ids,
 )
-from src.updates.sword_duckdb.lint.formatters import (
+from src.sword_duckdb.lint.formatters import (
     ConsoleFormatter,
     JsonFormatter,
     MarkdownFormatter,
@@ -565,7 +565,7 @@ class TestV011OsmNameContinuity:
                 (1002, "NA", -75.1, 45.1, "St. Lawrence", None, 0, 1),
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+        from src.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
 
         result = check_osm_name_continuity(conn, region="NA")
         assert result.passed is True
@@ -585,7 +585,7 @@ class TestV011OsmNameContinuity:
                 (1002, "NA", -75.1, 45.1, "Ottawa River", None, 0, 1),
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+        from src.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
 
         result = check_osm_name_continuity(conn, region="NA")
         assert result.passed is False
@@ -615,7 +615,7 @@ class TestV011OsmNameContinuity:
                 ),  # junction: n_rch_up=2
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+        from src.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
 
         result = check_osm_name_continuity(conn, region="NA")
         assert result.passed is True
@@ -635,7 +635,7 @@ class TestV011OsmNameContinuity:
                 (1002, "NA", -75.1, 45.1, "St. Lawrence", None, 0, 1),
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
+        from src.sword_duckdb.lint.checks.v17c import check_osm_name_continuity
 
         result = check_osm_name_continuity(conn, region="NA")
         assert result.passed is True
@@ -755,7 +755,7 @@ class TestG013WidthGtLength:
                 {"reach_id": 1, "width": 100.0, "reach_length": 5000.0, "lakeflag": 0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.geometry import check_width_gt_length
+        from src.sword_duckdb.lint.checks.geometry import check_width_gt_length
 
         result = check_width_gt_length(conn)
         assert result.passed is True
@@ -774,7 +774,7 @@ class TestG013WidthGtLength:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.geometry import check_width_gt_length
+        from src.sword_duckdb.lint.checks.geometry import check_width_gt_length
 
         result = check_width_gt_length(conn)
         assert result.passed is False
@@ -794,7 +794,7 @@ class TestG013WidthGtLength:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.geometry import check_width_gt_length
+        from src.sword_duckdb.lint.checks.geometry import check_width_gt_length
 
         result = check_width_gt_length(conn)
         assert result.passed is True
@@ -821,7 +821,7 @@ class TestG014DuplicateGeometry:
         conn.execute(f"""INSERT INTO reaches VALUES
             (2,'NA',2,2,{line2},5000,100,0,'R2',0,0)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_duplicate_geometry,
         )
 
@@ -845,7 +845,7 @@ class TestG014DuplicateGeometry:
         conn.execute(f"""INSERT INTO reaches VALUES
             (2,'NA',0,0,{line},5000,100,0,'R2',0,0)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_duplicate_geometry,
         )
 
@@ -881,7 +881,7 @@ class TestG015NodeReachDistance:
         conn.execute("""INSERT INTO nodes VALUES
             (101,'NA',0.005,0.005,ST_Point(0.005,0.005),1,1000)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_node_reach_distance,
         )
 
@@ -912,7 +912,7 @@ class TestG015NodeReachDistance:
         conn.execute("""INSERT INTO nodes VALUES
             (101,'NA',2.0,2.0,ST_Point(2.0,2.0),1,1000)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_node_reach_distance,
         )
 
@@ -937,7 +937,7 @@ class TestG016NodeSpacing:
                 {"node_id": 4, "reach_id": 1, "x": 0.03, "y": 0, "node_length": 1100},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.geometry import check_node_spacing
+        from src.sword_duckdb.lint.checks.geometry import check_node_spacing
 
         result = check_node_spacing(conn)
         assert result.passed is True
@@ -955,7 +955,7 @@ class TestG016NodeSpacing:
                 {"node_id": 4, "reach_id": 1, "x": 0.03, "y": 0, "node_length": 1000},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.geometry import check_node_spacing
+        from src.sword_duckdb.lint.checks.geometry import check_node_spacing
 
         result = check_node_spacing(conn)
         assert result.passed is False
@@ -992,7 +992,7 @@ class TestG017CrossReachNodes:
         conn.execute("""INSERT INTO nodes VALUES
             (1,1,'NA',0.005,0,200,ST_Point(0.005, 0))""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_cross_reach_nodes,
         )
 
@@ -1029,7 +1029,7 @@ class TestG017CrossReachNodes:
         conn.execute("""INSERT INTO nodes VALUES
             (1,1,'NA',0.0009,0.005,200,ST_Point(0.0009, 0.005))""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_cross_reach_nodes,
         )
 
@@ -1059,7 +1059,7 @@ class TestG018DistOutVsReachLength:
                 {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_dist_out_vs_reach_length,
         )
 
@@ -1084,7 +1084,7 @@ class TestG018DistOutVsReachLength:
                 {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_dist_out_vs_reach_length,
         )
 
@@ -1126,7 +1126,7 @@ class TestG019ConfluenceGeometry:
             ],
         )
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_confluence_geometry,
         )
 
@@ -1163,7 +1163,7 @@ class TestG019ConfluenceGeometry:
             ],
         )
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_confluence_geometry,
         )
 
@@ -1205,7 +1205,7 @@ class TestG020BifurcationGeometry:
             ],
         )
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_bifurcation_geometry,
         )
 
@@ -1241,7 +1241,7 @@ class TestG020BifurcationGeometry:
             ],
         )
 
-        from src.updates.sword_duckdb.lint.checks.geometry import (
+        from src.sword_duckdb.lint.checks.geometry import (
             check_bifurcation_geometry,
         )
 
@@ -1276,7 +1276,7 @@ class TestG021ReachOverlap:
         conn.execute("""INSERT INTO reaches VALUES
             (2,'NA',5,5,ST_GeomFromText('LINESTRING(5 5, 6 5)'),5000,100,0,0,0)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+        from src.sword_duckdb.lint.checks.geometry import check_reach_overlap
 
         result = check_reach_overlap(conn)
         assert result.passed is True
@@ -1304,7 +1304,7 @@ class TestG021ReachOverlap:
         conn.execute("""INSERT INTO reaches VALUES
             (2,'NA',0,0,ST_GeomFromText('LINESTRING(0.5 0, 0.5 1)'),5000,100,0,0,0)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+        from src.sword_duckdb.lint.checks.geometry import check_reach_overlap
 
         result = check_reach_overlap(conn)
         assert result.passed is False
@@ -1334,7 +1334,7 @@ class TestG021ReachOverlap:
         conn.execute("""INSERT INTO reaches VALUES
             (2,'NA',0,0,ST_GeomFromText('LINESTRING(1 0, 2 0)'),5000,100,0,0,0)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+        from src.sword_duckdb.lint.checks.geometry import check_reach_overlap
 
         result = check_reach_overlap(conn)
         assert result.passed is True
@@ -1374,7 +1374,7 @@ class TestG021ReachOverlap:
         conn.execute("""INSERT INTO reach_topology VALUES
             (2,'NA','up',0,3)""")
 
-        from src.updates.sword_duckdb.lint.checks.geometry import check_reach_overlap
+        from src.sword_duckdb.lint.checks.geometry import check_reach_overlap
 
         result = check_reach_overlap(conn)
         assert result.passed is True
@@ -1396,7 +1396,7 @@ class TestT013SelfReferential:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_self_referential_topology,
         )
 
@@ -1411,7 +1411,7 @@ class TestT013SelfReferential:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 1}],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_self_referential_topology,
         )
 
@@ -1434,7 +1434,7 @@ class TestT014Bidirectional:
                 {"reach_id": 2, "direction": "up", "neighbor_reach_id": 1},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_bidirectional_topology,
         )
 
@@ -1452,7 +1452,7 @@ class TestT014Bidirectional:
                 {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_bidirectional_topology,
         )
 
@@ -1475,7 +1475,7 @@ class TestT015Shortcut:
                 {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_topology_shortcut,
         )
 
@@ -1499,7 +1499,7 @@ class TestT015Shortcut:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_topology_shortcut,
         )
 
@@ -1525,7 +1525,7 @@ class TestT016CentroidDistance:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_neighbor_centroid_distance,
         )
 
@@ -1546,7 +1546,7 @@ class TestT016CentroidDistance:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_neighbor_centroid_distance,
         )
 
@@ -1572,7 +1572,7 @@ class TestT017DistOutJump:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_dist_out_jump,
         )
 
@@ -1593,7 +1593,7 @@ class TestT017DistOutJump:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_dist_out_jump,
         )
 
@@ -1620,7 +1620,7 @@ class TestT018IdFormat:
                 }
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import check_id_format
+        from src.sword_duckdb.lint.checks.topology import check_id_format
 
         result = check_id_format(conn)
         assert result.passed is True
@@ -1641,7 +1641,7 @@ class TestT018IdFormat:
                 }
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import check_id_format
+        from src.sword_duckdb.lint.checks.topology import check_id_format
 
         result = check_id_format(conn)
         assert result.passed is False
@@ -1661,7 +1661,7 @@ class TestT019NameNodata:
                 {"reach_id": 2, "river_name": "Rhine"},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_river_name_nodata,
         )
 
@@ -1676,7 +1676,7 @@ class TestT019NameNodata:
             conn,
             [{"reach_id": 1, "river_name": "Rhine"}],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_river_name_nodata,
         )
 
@@ -1707,7 +1707,7 @@ class TestT020NameConsensus:
                 {"reach_id": 3, "direction": "up", "neighbor_reach_id": 2},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_river_name_consensus,
         )
 
@@ -1732,7 +1732,7 @@ class TestT020NameConsensus:
                 {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.topology import (
+        from src.sword_duckdb.lint.checks.topology import (
             check_river_name_consensus,
         )
 
@@ -1796,7 +1796,7 @@ class TestA030WseMonotonicity:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.attributes import (
+        from src.sword_duckdb.lint.checks.attributes import (
             check_wse_downstream_monotonicity,
         )
 
@@ -1817,7 +1817,7 @@ class TestA030WseMonotonicity:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.attributes import (
+        from src.sword_duckdb.lint.checks.attributes import (
             check_wse_downstream_monotonicity,
         )
 
@@ -1839,7 +1839,7 @@ class TestA030WseMonotonicity:
             conn,
             [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
         )
-        from src.updates.sword_duckdb.lint.checks.attributes import (
+        from src.sword_duckdb.lint.checks.attributes import (
             check_wse_downstream_monotonicity,
         )
 
@@ -1891,7 +1891,7 @@ class TestN003NodeSpacingGap:
                 {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import check_node_spacing_gap
+        from src.sword_duckdb.lint.checks.node import check_node_spacing_gap
 
         result = check_node_spacing_gap(conn)
         assert result.passed is True
@@ -1906,7 +1906,7 @@ class TestN003NodeSpacingGap:
                 {"node_id": 1002, "reach_id": 1, "x": 1.0, "y": 0.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import check_node_spacing_gap
+        from src.sword_duckdb.lint.checks.node import check_node_spacing_gap
 
         result = check_node_spacing_gap(conn)
         assert result.passed is False
@@ -1945,7 +1945,7 @@ class TestN004NodeDistOutMonotonicity:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_node_dist_out_monotonicity,
         )
 
@@ -1974,7 +1974,7 @@ class TestN004NodeDistOutMonotonicity:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_node_dist_out_monotonicity,
         )
 
@@ -2008,7 +2008,7 @@ class TestN005NodeDistOutJump:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import check_node_dist_out_jump
+        from src.sword_duckdb.lint.checks.node import check_node_dist_out_jump
 
         result = check_node_dist_out_jump(conn)
         assert result.passed is True
@@ -2035,7 +2035,7 @@ class TestN005NodeDistOutJump:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import check_node_dist_out_jump
+        from src.sword_duckdb.lint.checks.node import check_node_dist_out_jump
 
         result = check_node_dist_out_jump(conn)
         assert result.passed is False
@@ -2086,7 +2086,7 @@ class TestN006BoundaryDistOut:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import check_boundary_dist_out
+        from src.sword_duckdb.lint.checks.node import check_boundary_dist_out
 
         result = check_boundary_dist_out(conn)
         assert result.passed is True
@@ -2132,7 +2132,7 @@ class TestN006BoundaryDistOut:
                 },
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import check_boundary_dist_out
+        from src.sword_duckdb.lint.checks.node import check_boundary_dist_out
 
         result = check_boundary_dist_out(conn)
         assert result.passed is False
@@ -2159,7 +2159,7 @@ class TestN007BoundaryGeolocation:
                 {"node_id": 2002, "reach_id": 2, "x": 0.002, "y": 0.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_boundary_geolocation,
         )
 
@@ -2183,7 +2183,7 @@ class TestN007BoundaryGeolocation:
                 {"node_id": 2002, "reach_id": 2, "x": 5.001, "y": 5.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_boundary_geolocation,
         )
 
@@ -2219,7 +2219,7 @@ class TestN008NodeCountVsNNodes:
                 {"node_id": 1003, "reach_id": 1, "x": 0.002, "y": 0.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_node_count_vs_n_nodes,
         )
 
@@ -2249,7 +2249,7 @@ class TestN008NodeCountVsNNodes:
                 {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_node_count_vs_n_nodes,
         )
 
@@ -2273,7 +2273,7 @@ class TestN010NodeIndexContiguity:
                 {"node_id": 10001003, "reach_id": 1, "x": 0.002, "y": 0.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_node_index_contiguity,
         )
 
@@ -2291,7 +2291,7 @@ class TestN010NodeIndexContiguity:
                 {"node_id": 10001003, "reach_id": 1, "x": 0.002, "y": 0.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.node import (
+        from src.sword_duckdb.lint.checks.node import (
             check_node_index_contiguity,
         )
 
@@ -2340,7 +2340,7 @@ class TestC005CenterlineReachDistance:
                 {"cl_id": 102, "reach_id": 1, "x": -0.001, "y": -0.001},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.classification import (
+        from src.sword_duckdb.lint.checks.classification import (
             check_centerline_reach_distance,
         )
 
@@ -2358,7 +2358,7 @@ class TestC005CenterlineReachDistance:
                 {"cl_id": 102, "reach_id": 1, "x": 6.0, "y": 6.0},
             ],
         )
-        from src.updates.sword_duckdb.lint.checks.classification import (
+        from src.sword_duckdb.lint.checks.classification import (
             check_centerline_reach_distance,
         )
 
@@ -2370,7 +2370,7 @@ class TestC005CenterlineReachDistance:
     def test_skip_no_centerlines(self, tmp_path):
         conn = _spatial_conn(tmp_path)
         _create_reaches_table(conn, [{"reach_id": 1}])
-        from src.updates.sword_duckdb.lint.checks.classification import (
+        from src.sword_duckdb.lint.checks.classification import (
             check_centerline_reach_distance,
         )
 

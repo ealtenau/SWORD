@@ -31,7 +31,7 @@ This document provides a comprehensive audit of the `end_reach` (end_rch) and `t
 
 **Derivation Method:** GRAPH_TRAVERSAL
 
-**Code Path:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**Code Path:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 **Function:** `_reconstruct_reach_end_reach` (lines 2438-2491)
 
@@ -68,7 +68,7 @@ def _reconstruct_reach_end_reach(self, ...):
 
 ### 1.4 Schema Definition
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py` (line 157, 258)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py` (line 157, 258)
 
 ```python
 # In NODES_TABLE (line 157):
@@ -80,7 +80,7 @@ end_reach INTEGER,           -- end_rch: 0=main, 1=headwater, 2=outlet, 3=juncti
 
 ### 1.5 Attribute Specification
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` (lines 486-492)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` (lines 486-492)
 
 ```python
 "reach.end_reach": AttributeSpec(
@@ -97,7 +97,7 @@ end_reach INTEGER,           -- end_rch: 0=main, 1=headwater, 2=outlet, 3=juncti
 
 Nodes inherit `end_reach` from their parent reach.
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` (lines 779-785)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` (lines 779-785)
 
 ```python
 "node.end_reach": AttributeSpec(
@@ -161,7 +161,7 @@ The reconstruction function should be updated to match the reactive version if i
 
 ### 1.9 Current Lint Check
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py`
 
 **Check ID:** A010 - `check_end_reach_consistency` (lines 529-592)
 
@@ -242,7 +242,7 @@ This distinction is critical:
 
 **RECONSTRUCTION_SPEC.md Reference:**
 ```python
-# From /Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/RECONSTRUCTION_SPEC.md
+# From /Users/jakegearon/projects/SWORD/src/sword_duckdb/RECONSTRUCTION_SPEC.md
 # Section 6.1 Tributary Flag (trib_flag)
 
 # cKDTree proximity search
@@ -260,7 +260,7 @@ trib_flag = 1  # tributary junction
 
 ### 2.5 Attribute Specification
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` (lines 431-437)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` (lines 431-437)
 
 ```python
 "reach.trib_flag": AttributeSpec(
@@ -279,7 +279,7 @@ trib_flag = 1  # tributary junction
 
 The wrong implementation (`n_rch_up > 1`) was removed. Full reconstruction requires external MERIT Hydro-Vector (MHV) data files that are not included in the repository.
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 **Function (reach/node):** `_reconstruct_reach_trib_flag` and `_reconstruct_node_trib_flag`
 
@@ -308,7 +308,7 @@ def _reconstruct_reach_trib_flag(self, ...):
 
 ### 2.7 Schema Definition
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py`
 
 ```python
 # In NODES_TABLE (line 149):
@@ -320,7 +320,7 @@ trib_flag INTEGER,           -- 0=no tributary, 1=tributary
 
 ### 2.8 Current Lint Check
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py`
 
 **Check ID:** A005 - `check_trib_flag_distribution` (lines 235-294)
 
@@ -496,8 +496,8 @@ def check_ghost_reach_classification(conn, region=None, threshold=None):
 ## 7. References
 
 1. SWORD Product Description Document v17b (March 2025)
-2. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
-3. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py`
-4. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/RECONSTRUCTION_SPEC.md`
-5. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py`
-6. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/geometry.py`
+2. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
+3. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py`
+4. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/RECONSTRUCTION_SPEC.md`
+5. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py`
+6. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/geometry.py`

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.updates.sword_v17c_pipeline.flow_direction import (
+from src.sword_v17c_pipeline.flow_direction import (
     correct_flow_directions,
     create_flow_corrections_table,
     flip_section_topology,

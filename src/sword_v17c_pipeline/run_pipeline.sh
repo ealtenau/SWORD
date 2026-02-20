@@ -52,7 +52,7 @@ echo "Skip SWOT: $SKIP_SWOT"
 echo "=============================================================="
 
 ########## BUILD COMMAND ##########
-CMD="python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db $DB_PATH"
+CMD="python -m src.sword_v17c_pipeline.v17c_pipeline --db $DB_PATH"
 
 # Add region or --all flag
 if [ -n "$REGION" ]; then

@@ -10,7 +10,7 @@ Training script for the improved SplitFaccRegressor:
 4. Exports comparison metrics and predictions
 
 Usage:
-    python -m src.updates.sword_duckdb.facc_detection.train_split_regressor \
+    python -m src.sword_duckdb.facc_detection.train_split_regressor \
         --db data/duckdb/sword_v17c.duckdb \
         --output-dir output/facc_detection
 """

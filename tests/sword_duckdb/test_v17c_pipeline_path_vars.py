@@ -14,7 +14,7 @@ import networkx as nx
 import pandas as pd
 import pytest
 
-from src.updates.sword_v17c_pipeline.v17c_pipeline import (
+from src.sword_v17c_pipeline.v17c_pipeline import (
     build_reach_graph,
     build_section_graph,
     compute_path_variables,

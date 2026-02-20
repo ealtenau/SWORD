@@ -5,28 +5,28 @@ Command-line interface for running lint checks on SWORD DuckDB databases.
 
 Usage:
     # Basic usage
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb
 
     # Filter by region
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
 
     # Specific checks
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T001 T002 A001
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T001 T002 A001
 
     # By category
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T  # all topology
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T  # all topology
 
     # Severity filter
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --severity error
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --severity error
 
     # Output formats
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
 
     # CI mode (exit code based on issues)
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-error
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-error
 
     # Override thresholds
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --threshold A002 150
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --threshold A002 150
 """
 
 import argparse

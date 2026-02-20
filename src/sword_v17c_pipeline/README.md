@@ -75,19 +75,19 @@ SWOT slope validation results per section.
 
 ```bash
 # Process all regions
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+python -m src.sword_v17c_pipeline.v17c_pipeline \
     --db data/duckdb/sword_v17c.duckdb --all
 
 # Process single region
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+python -m src.sword_v17c_pipeline.v17c_pipeline \
     --db data/duckdb/sword_v17c.duckdb --region NA
 
 # Skip SWOT integration (faster)
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+python -m src.sword_v17c_pipeline.v17c_pipeline \
     --db data/duckdb/sword_v17c.duckdb --all --skip-swot
 
 # Custom SWOT path
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
+python -m src.sword_v17c_pipeline.v17c_pipeline \
     --db data/duckdb/sword_v17c.duckdb --region NA \
     --swot-path /path/to/swot/data
 ```
@@ -95,7 +95,7 @@ python -m src.updates.sword_v17c_pipeline.v17c_pipeline \
 ### Shell Script
 
 ```bash
-cd src/updates/sword_v17c_pipeline
+cd src/sword_v17c_pipeline
 
 # All regions
 ./run_pipeline.sh
@@ -113,7 +113,7 @@ DB=/path/to/sword_v17c.duckdb ./run_pipeline.sh
 ### Python API
 
 ```python
-from src.updates.sword_v17c_pipeline import run_pipeline, process_region
+from src.sword_v17c_pipeline import run_pipeline, process_region
 
 # Process all regions
 stats = run_pipeline(
@@ -152,15 +152,15 @@ The `reach_swot_obs.py` script computes reach-level SWOT observations from node 
 
 ```bash
 # Process all regions
-python -m src.updates.sword_v17c_pipeline.reach_swot_obs \
+python -m src.sword_v17c_pipeline.reach_swot_obs \
     --db data/duckdb/sword_v17c.duckdb --all
 
 # Process single region
-python -m src.updates.sword_v17c_pipeline.reach_swot_obs \
+python -m src.sword_v17c_pipeline.reach_swot_obs \
     --db data/duckdb/sword_v17c.duckdb --region NA
 
 # Dry run (compute but don't update DB)
-python -m src.updates.sword_v17c_pipeline.reach_swot_obs \
+python -m src.sword_v17c_pipeline.reach_swot_obs \
     --db data/duckdb/sword_v17c.duckdb --region NA --dry-run
 ```
 
@@ -200,7 +200,7 @@ duckdb data/duckdb/sword_v17c.duckdb -c "
 SELECT * FROM sword_operations ORDER BY started_at DESC LIMIT 5"
 
 # Run lint
-python -m src.updates.sword_duckdb.lint.cli --db data/duckdb/sword_v17c.duckdb --region NA
+python -m src.sword_duckdb.lint.cli --db data/duckdb/sword_v17c.duckdb --region NA
 ```
 
 ## Known Issues

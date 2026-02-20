@@ -27,7 +27,7 @@
 
 ### Code Reference
 
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 3614-3659
 - **Function:** `_reconstruct_reach_main_side()`
 
@@ -124,7 +124,7 @@ Based on analysis of v17b data, the actual algorithm appears to be:
 
 ### Code Reference
 
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 2493-2565
 - **Function:** `_reconstruct_reach_network()`
 
@@ -356,7 +356,7 @@ The `_reconstruct_reach_main_side()` function needs a complete rewrite to:
 
 ### T006: connected_components
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/topology.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/topology.py`
 **Lines:** 344-401
 
 This check:
@@ -570,6 +570,6 @@ The 40 reaches with `main_side=0` and `stream_order=-9999` should be investigate
 ## 11. References
 
 - SWORD Product Description Document v17b, pages 5 (v17 changes), 12-13 (nodes), 17-18 (reaches), 23-24 (shapefiles), 26-27 (figures)
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` lines 477-502, 770-794, 2493-2565, 3614-3659
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/topology.py` lines 232-249 (T004), 344-401 (T006)
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` lines 477-502, 770-794, 2493-2565, 3614-3659
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/topology.py` lines 232-249 (T004), 344-401 (T006)
 - `/Users/jakegearon/projects/SWORD/docs/validation_specs/stream_order_path_segs_validation_spec.md`

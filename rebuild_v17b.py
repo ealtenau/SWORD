@@ -24,9 +24,9 @@ from datetime import datetime
 
 sys.path.insert(0, 'src')
 
-from updates.sword_duckdb.sword_db import SWORDDatabase
-from updates.sword_duckdb.migrations import migrate_region, build_all_geometry
-from updates.sword_duckdb.schema import create_schema
+from sword_duckdb.sword_db import SWORDDatabase
+from sword_duckdb.migrations import migrate_region, build_all_geometry
+from sword_duckdb.schema import create_schema
 
 # Paths
 NC_DIR = Path('data/netcdf')

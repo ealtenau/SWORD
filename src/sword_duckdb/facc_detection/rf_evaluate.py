@@ -23,7 +23,7 @@ Usage:
     report = evaluator.generate_report()
 
 CLI:
-    python -m src.updates.sword_duckdb.facc_detection.rf_evaluate \\
+    python -m src.sword_duckdb.facc_detection.rf_evaluate \\
         --predictions output/facc_detection/rf_predictions.parquet \\
         --features output/facc_detection/rf_features.parquet \\
         --model output/facc_detection/rf_model.joblib \\

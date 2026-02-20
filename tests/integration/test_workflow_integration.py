@@ -19,8 +19,8 @@ from pathlib import Path
 main_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(main_dir))
 
-from src.updates.sword_duckdb import SWORD
-from src.updates.sword_duckdb.workflow import SWORDWorkflow
+from src.sword_duckdb import SWORD
+from src.sword_duckdb.workflow import SWORDWorkflow
 
 pytestmark = [pytest.mark.integration, pytest.mark.db]
 

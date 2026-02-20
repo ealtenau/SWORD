@@ -302,7 +302,7 @@ def extract_facc_features(
 
     Examples
     --------
-    >>> from updates.sword_duckdb.facc_detection import extract_facc_features
+    >>> from sword_duckdb.facc_detection import extract_facc_features
     >>> features = extract_facc_features("sword_v17c.duckdb", region="NA")
     >>> print(features[features['facc_reach_acc_ratio'] > 10].head())
     """

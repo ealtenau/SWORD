@@ -24,43 +24,43 @@ class TestTriggerImports:
 
     def test_import_install_triggers(self):
         """Test import of install_triggers."""
-        from src.updates.sword_duckdb.triggers import install_triggers
+        from src.sword_duckdb.triggers import install_triggers
 
         assert callable(install_triggers)
 
     def test_import_remove_triggers(self):
         """Test import of remove_triggers."""
-        from src.updates.sword_duckdb.triggers import remove_triggers
+        from src.sword_duckdb.triggers import remove_triggers
 
         assert callable(remove_triggers)
 
     def test_import_get_pending_changes(self):
         """Test import of get_pending_changes."""
-        from src.updates.sword_duckdb.triggers import get_pending_changes
+        from src.sword_duckdb.triggers import get_pending_changes
 
         assert callable(get_pending_changes)
 
     def test_import_get_changed_entities(self):
         """Test import of get_changed_entities."""
-        from src.updates.sword_duckdb.triggers import get_changed_entities
+        from src.sword_duckdb.triggers import get_changed_entities
 
         assert callable(get_changed_entities)
 
     def test_import_mark_changes_synced(self):
         """Test import of mark_changes_synced."""
-        from src.updates.sword_duckdb.triggers import mark_changes_synced
+        from src.sword_duckdb.triggers import mark_changes_synced
 
         assert callable(mark_changes_synced)
 
     def test_import_get_trigger_sql(self):
         """Test import of get_trigger_sql."""
-        from src.updates.sword_duckdb.triggers import get_trigger_sql
+        from src.sword_duckdb.triggers import get_trigger_sql
 
         assert callable(get_trigger_sql)
 
     def test_module_exports(self):
         """Test that functions are exported from package __init__."""
-        from src.updates.sword_duckdb import (
+        from src.sword_duckdb import (
             install_triggers,
             remove_triggers,
             get_pending_changes,
@@ -82,7 +82,7 @@ class TestTriggerSQL:
 
     def test_get_trigger_sql_no_prefix(self):
         """Test SQL generation without prefix."""
-        from src.updates.sword_duckdb.triggers import get_trigger_sql
+        from src.sword_duckdb.triggers import get_trigger_sql
 
         sql = get_trigger_sql()
 
@@ -96,7 +96,7 @@ class TestTriggerSQL:
 
     def test_get_trigger_sql_with_prefix(self):
         """Test SQL generation with prefix."""
-        from src.updates.sword_duckdb.triggers import get_trigger_sql
+        from src.sword_duckdb.triggers import get_trigger_sql
 
         sql = get_trigger_sql(prefix="na_")
 
@@ -107,7 +107,7 @@ class TestTriggerSQL:
 
     def test_trigger_sql_tracks_all_change_types(self):
         """Test that trigger SQL handles INSERT, UPDATE, DELETE."""
-        from src.updates.sword_duckdb.triggers import get_trigger_sql
+        from src.sword_duckdb.triggers import get_trigger_sql
 
         sql = get_trigger_sql()
 
@@ -118,7 +118,7 @@ class TestTriggerSQL:
 
     def test_change_tracking_table_has_required_columns(self):
         """Test that change tracking table has all required columns."""
-        from src.updates.sword_duckdb.triggers import CHANGE_TRACKING_TABLE
+        from src.sword_duckdb.triggers import CHANGE_TRACKING_TABLE
 
         required_columns = [
             "change_id",
@@ -142,7 +142,7 @@ class TestTriggerFunctionSignatures:
 
     def test_install_triggers_signature(self):
         """Test install_triggers has expected parameters."""
-        from src.updates.sword_duckdb.triggers import install_triggers
+        from src.sword_duckdb.triggers import install_triggers
         import inspect
 
         sig = inspect.signature(install_triggers)
@@ -154,7 +154,7 @@ class TestTriggerFunctionSignatures:
 
     def test_get_changed_entities_signature(self):
         """Test get_changed_entities has expected parameters."""
-        from src.updates.sword_duckdb.triggers import get_changed_entities
+        from src.sword_duckdb.triggers import get_changed_entities
         import inspect
 
         sig = inspect.signature(get_changed_entities)
@@ -167,7 +167,7 @@ class TestTriggerFunctionSignatures:
 
     def test_mark_changes_synced_signature(self):
         """Test mark_changes_synced has expected parameters."""
-        from src.updates.sword_duckdb.triggers import mark_changes_synced
+        from src.sword_duckdb.triggers import mark_changes_synced
         import inspect
 
         sig = inspect.signature(mark_changes_synced)
@@ -183,7 +183,7 @@ class TestTriggerSQLSafety:
 
     def test_sql_uses_parameterized_placeholders(self):
         """Test SQL uses %s for parameters, not string formatting for user input."""
-        from src.updates.sword_duckdb.triggers import (
+        from src.sword_duckdb.triggers import (
             REACHES_TRIGGER_FUNCTION,
             NODES_TRIGGER_FUNCTION,
         )
@@ -195,7 +195,7 @@ class TestTriggerSQLSafety:
 
     def test_drop_triggers_is_safe(self):
         """Test DROP statements use IF EXISTS."""
-        from src.updates.sword_duckdb.triggers import DROP_TRIGGERS
+        from src.sword_duckdb.triggers import DROP_TRIGGERS
 
         assert "DROP TRIGGER IF EXISTS" in DROP_TRIGGERS
         assert "DROP FUNCTION IF EXISTS" in DROP_TRIGGERS

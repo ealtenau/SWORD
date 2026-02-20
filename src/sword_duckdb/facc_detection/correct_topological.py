@@ -582,14 +582,14 @@ def main():
 Example usage:
 
   # Dry run (no DB changes)
-  python -m src.updates.sword_duckdb.facc_detection.correct_topological \\
+  python -m src.sword_duckdb.facc_detection.correct_topological \\
       --db data/duckdb/sword_v17c.duckdb \\
       --anomalies output/facc_detection/all_anomalies.geojson \\
       --nofacc-model output/facc_detection/rf_regressor_baseline_nofacc.joblib \\
       --standard-model output/facc_detection/rf_regressor_baseline.joblib
 
   # Apply to DB
-  python -m src.updates.sword_duckdb.facc_detection.correct_topological \\
+  python -m src.sword_duckdb.facc_detection.correct_topological \\
       --db data/duckdb/sword_v17c.duckdb \\
       --anomalies output/facc_detection/all_anomalies.geojson \\
       --nofacc-model output/facc_detection/rf_regressor_baseline_nofacc.joblib \\

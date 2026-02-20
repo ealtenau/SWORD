@@ -8,15 +8,15 @@ Command-line interface for facc anomaly detection and correction.
 
 Usage:
     # Detection
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --region NA
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --all --threshold 0.3
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --evaluate
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --profile-seeds
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --region NA
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --all --threshold 0.3
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --evaluate
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --profile-seeds
 
     # Correction (Phase 2)
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --dry-run
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --region NA
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --rollback --batch-id 1
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --dry-run
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --region NA
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --rollback --batch-id 1
 """
 
 import argparse
@@ -44,19 +44,19 @@ def main():
         epilog="""
 Examples:
   # Detect anomalies in North America
-  python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --region NA
+  python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --region NA
 
   # Detect with custom threshold
-  python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --all --threshold 0.3
+  python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --all --threshold 0.3
 
   # Evaluate against known corrupted reaches
-  python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --evaluate
+  python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --evaluate
 
   # Profile seed reaches
-  python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --profile-seeds
+  python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --profile-seeds
 
   # Compare against T003 lint check
-  python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --compare-t003 --region NA
+  python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --compare-t003 --region NA
         """,
     )
 

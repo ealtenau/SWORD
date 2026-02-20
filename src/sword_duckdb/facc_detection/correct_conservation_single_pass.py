@@ -26,11 +26,11 @@ See docs/facc_conservation_algorithm.md for full details.
 
 Usage:
     # Dry run on NA
-    python -m src.updates.sword_duckdb.facc_detection.correct_conservation_single_pass \
+    python -m src.sword_duckdb.facc_detection.correct_conservation_single_pass \
         --db data/duckdb/sword_v17c.duckdb --v17b data/duckdb/sword_v17b.duckdb --region NA
 
     # Apply to all regions
-    python -m src.updates.sword_duckdb.facc_detection.correct_conservation_single_pass \
+    python -m src.sword_duckdb.facc_detection.correct_conservation_single_pass \
         --db data/duckdb/sword_v17c.duckdb --v17b data/duckdb/sword_v17b.duckdb --all --apply
 """
 

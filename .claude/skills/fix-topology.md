@@ -24,7 +24,7 @@ When the user invokes this skill:
 
 2. **Load reach context from v17c database**
    ```python
-   from updates.sword_duckdb import SWORDWorkflow
+   from sword_duckdb import SWORDWorkflow
 
    workflow = SWORDWorkflow(user_id="fix-topology-skill")
    sword = workflow.load('data/duckdb/sword_v17c.duckdb', region)

@@ -232,7 +232,7 @@ class TestWritableArrayPersistence:
         version = sword_writable.version
         sword_writable.close()
 
-        from src.updates.sword_duckdb import SWORD
+        from src.sword_duckdb import SWORD
 
         sword2 = SWORD(db_path, region, version)
         assert sword2.reaches.dist_out[0] == new_value
@@ -252,7 +252,7 @@ class TestWritableArrayPersistence:
         version = sword_writable.version
         sword_writable.close()
 
-        from src.updates.sword_duckdb import SWORD
+        from src.sword_duckdb import SWORD
 
         sword2 = SWORD(db_path, region, version)
         np.testing.assert_array_almost_equal(sword2.reaches.dist_out[:3], new_values)
@@ -272,7 +272,7 @@ class TestWritableArrayPersistence:
         version = sword_writable.version
         sword_writable.close()
 
-        from src.updates.sword_duckdb import SWORD
+        from src.sword_duckdb import SWORD
 
         sword2 = SWORD(db_path, region, version)
         for idx in indices:
@@ -291,7 +291,7 @@ class TestCenterlinesView:
 
     def test_x_y_are_writable(self, sword_readonly):
         """Test x and y return WritableArray."""
-        from src.updates.sword_duckdb.views import WritableArray
+        from src.sword_duckdb.views import WritableArray
 
         assert isinstance(sword_readonly.centerlines.x, WritableArray)
         assert isinstance(sword_readonly.centerlines.y, WritableArray)
@@ -324,7 +324,7 @@ class TestNodesView:
 
     def test_len_attribute(self, sword_readonly):
         """Test len attribute returns node lengths."""
-        from src.updates.sword_duckdb.views import WritableArray
+        from src.sword_duckdb.views import WritableArray
 
         lens = sword_readonly.nodes.len
         assert isinstance(lens, WritableArray)
@@ -344,7 +344,7 @@ class TestNodesView:
 
     def test_renamed_attributes(self, sword_readonly):
         """Test renamed attributes work (id, len, wth, etc)."""
-        from src.updates.sword_duckdb.views import WritableArray
+        from src.sword_duckdb.views import WritableArray
 
         # id -> node_id
         assert isinstance(sword_readonly.nodes.id, np.ndarray)
@@ -369,7 +369,7 @@ class TestReachesView:
 
     def test_len_attribute(self, sword_readonly):
         """Test len attribute returns reach lengths."""
-        from src.updates.sword_duckdb.views import WritableArray
+        from src.sword_duckdb.views import WritableArray
 
         lens = sword_readonly.reaches.len
         assert isinstance(lens, WritableArray)
@@ -400,7 +400,7 @@ class TestReachesView:
 
     def test_renamed_attributes(self, sword_readonly):
         """Test renamed attributes work."""
-        from src.updates.sword_duckdb.views import WritableArray
+        from src.sword_duckdb.views import WritableArray
 
         # id -> reach_id
         assert isinstance(sword_readonly.reaches.id, np.ndarray)

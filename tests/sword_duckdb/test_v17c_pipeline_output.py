@@ -13,7 +13,7 @@ import shutil
 import pandas as pd
 from pathlib import Path
 
-from src.updates.sword_v17c_pipeline.v17c_pipeline import (
+from src.sword_v17c_pipeline.v17c_pipeline import (
     create_v17c_tables,
     save_to_duckdb,
     save_sections_to_duckdb,

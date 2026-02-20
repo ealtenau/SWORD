@@ -19,7 +19,7 @@
 ## Code Path
 
 ### Primary File
-`/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/assign_attribute.py`
+`/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/assign_attribute.py`
 
 ### Key Functions
 

@@ -1235,7 +1235,7 @@ def correct_facc_anomalies(
 
     Examples
     --------
-    >>> from updates.sword_duckdb.facc_detection import correct_facc_anomalies
+    >>> from sword_duckdb.facc_detection import correct_facc_anomalies
     >>> result = correct_facc_anomalies("sword_v17c.duckdb", region="NA", dry_run=True)
     >>> print(result.summary())
 

@@ -100,7 +100,7 @@ tests/sword_duckdb/
 **ALWAYS use SWORDWorkflow:**
 
 ```python
-from updates.sword_duckdb import SWORDWorkflow
+from sword_duckdb import SWORDWorkflow
 
 workflow = SWORDWorkflow(user_id="jake")
 # IMPORTANT: Use v17c for modifications, v17b is READ-ONLY reference
@@ -265,7 +265,7 @@ workflow.close()
 
 ## v17c Pipeline
 
-**Location:** `src/updates/sword_v17c_pipeline/`
+**Location:** `src/sword_v17c_pipeline/`
 
 **Steps:**
 1. Load v17b topology from DuckDB
@@ -289,13 +289,13 @@ workflow.close()
 **Run:**
 ```bash
 # All regions
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all
+python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all
 
 # Single region
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --region NA
+python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --region NA
 
 # Skip SWOT (faster)
-python -m src.updates.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all --skip-swot
+python -m src.sword_v17c_pipeline.v17c_pipeline --db data/duckdb/sword_v17c.duckdb --all --skip-swot
 ```
 
 **Note:** MILP optimization files archived in `_archived/` - v17c uses original v17b topology.
@@ -352,7 +352,7 @@ Dependency graph auto-recalculates derived attributes:
 
 ## Validation Checks
 
-`src/updates/sword_duckdb/validation.py`:
+`src/sword_duckdb/validation.py`:
 - dist_out decreasing downstream
 - path_freq increasing toward outlets
 - lake sandwich detection
@@ -360,32 +360,32 @@ Dependency graph auto-recalculates derived attributes:
 
 ## Lint Framework
 
-**Location:** `src/updates/sword_duckdb/lint/`
+**Location:** `src/sword_duckdb/lint/`
 
 Comprehensive linting framework with 61 checks across 8 categories (T=Topology, A=Attributes, F=Facc, G=Geometry, C=Classification, V=v17c, FL=Flags, N=Network).
 
 **CLI Usage:**
 ```bash
 # Run all checks
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb
 
 # Filter by region
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
 
 # Specific checks or category
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T001 T002
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T  # all topology
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T001 T002
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --checks T  # all topology
 
 # Output formats
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format markdown -o report.md
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --format markdown -o report.md
 
 # CI mode (exit codes)
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-error   # exit 2 on errors
-python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-warning  # exit 1 on warnings
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-error   # exit 2 on errors
+python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --fail-on-warning  # exit 1 on warnings
 
 # List all checks
-python -m src.updates.sword_duckdb.lint.cli --list-checks
+python -m src.sword_duckdb.lint.cli --list-checks
 ```
 
 **Python API:**
@@ -484,12 +484,12 @@ Test DB: `tests/sword_duckdb/fixtures/sword_test_minimal.duckdb` (100 reaches, 5
 
 | File | Purpose |
 |------|---------|
-| `src/updates/sword_duckdb/workflow.py` | Main entry point (3,511 lines) |
-| `src/updates/sword_duckdb/sword_class.py` | SWORD data class (4,623 lines) |
-| `src/updates/sword_duckdb/schema.py` | Table definitions |
-| `src/updates/sword_duckdb/reactive.py` | Dependency graph |
-| `src/updates/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
-| `src/updates/sword_duckdb/lint/` | Lint framework (50 checks) |
+| `src/sword_duckdb/workflow.py` | Main entry point (3,511 lines) |
+| `src/sword_duckdb/sword_class.py` | SWORD data class (4,623 lines) |
+| `src/sword_duckdb/schema.py` | Table definitions |
+| `src/sword_duckdb/reactive.py` | Dependency graph |
+| `src/sword_duckdb/reconstruction.py` | 35+ attribute reconstructors |
+| `src/sword_duckdb/lint/` | Lint framework (50 checks) |
 | `run_v17c_topology.py` | Topology recalculation script |
 | `rebuild_v17b.py` | Rebuild v17b from NetCDF (if corrupted) |
 | `topology_reviewer.py` | Streamlit GUI for facc/topology fixes |
@@ -571,7 +571,7 @@ Streamlit app for manual QA review of SWORD reaches.
 
 ## Imagery Pipeline
 
-**Location:** `src/updates/sword_duckdb/imagery/`
+**Location:** `src/sword_duckdb/imagery/`
 
 **Water Detection Ensemble (6 methods):**
 - NDWI, MNDWI, AWEI_nsh, AWEI_sh (spectral indices)

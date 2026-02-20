@@ -10,7 +10,7 @@ Usage:
 
 import argparse
 import pandas as pd
-from src.updates.sword_duckdb import SWORDWorkflow
+from src.sword_duckdb import SWORDWorkflow
 
 
 def main():

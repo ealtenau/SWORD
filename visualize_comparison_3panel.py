@@ -51,8 +51,8 @@ def fetch_rgb_basemap(bbox, stac, cog):
 
 
 def main():
-    from src.updates.sword_duckdb.imagery.river_tracer import RiverTracer
-    from src.updates.sword_duckdb.imagery import SentinelSTACClient, COGReader
+    from src.sword_duckdb.imagery.river_tracer import RiverTracer
+    from src.sword_duckdb.imagery import SentinelSTACClient, COGReader
     import duckdb
 
     # Rhine near Cologne - same test region

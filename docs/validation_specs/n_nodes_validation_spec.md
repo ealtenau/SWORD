@@ -475,13 +475,13 @@ def check_n_nodes_length_consistency(conn, region=None, ratio_threshold=0.5):
 
 | Component | File | Lines | Description |
 |-----------|------|-------|-------------|
-| Schema: reaches.n_nodes | `src/updates/sword_duckdb/schema.py` | 219 | Column definition |
-| Schema: nodes | `src/updates/sword_duckdb/schema.py` | 285-290 | Node table schema |
-| Reconstruction (if needed) | `src/updates/sword_duckdb/reconstruction.py` | ~2300-2400 | Would follow existing pattern |
-| Lint: G008 n_nodes consistency | `src/updates/sword_duckdb/lint/checks/geometry.py` | TBD | Proposed check |
-| Lint: G009 n_nodes NULL | `src/updates/sword_duckdb/lint/checks/geometry.py` | TBD | Proposed check |
-| Lint: A011 distribution | `src/updates/sword_duckdb/lint/checks/attributes.py` | TBD | Proposed check |
-| Lint: G010 length ratio | `src/updates/sword_duckdb/lint/checks/geometry.py` | TBD | Proposed check |
+| Schema: reaches.n_nodes | `src/sword_duckdb/schema.py` | 219 | Column definition |
+| Schema: nodes | `src/sword_duckdb/schema.py` | 285-290 | Node table schema |
+| Reconstruction (if needed) | `src/sword_duckdb/reconstruction.py` | ~2300-2400 | Would follow existing pattern |
+| Lint: G008 n_nodes consistency | `src/sword_duckdb/lint/checks/geometry.py` | TBD | Proposed check |
+| Lint: G009 n_nodes NULL | `src/sword_duckdb/lint/checks/geometry.py` | TBD | Proposed check |
+| Lint: A011 distribution | `src/sword_duckdb/lint/checks/attributes.py` | TBD | Proposed check |
+| Lint: G010 length ratio | `src/sword_duckdb/lint/checks/geometry.py` | TBD | Proposed check |
 
 ---
 
@@ -533,7 +533,7 @@ UPDATE reaches SET n_nodes = (
 - [ ] G010 check implemented (length ratio)
 - [ ] All checks run on v17c and pass
 - [ ] Documentation added to CLAUDE.md
-- [ ] Lint framework updated in `src/updates/sword_duckdb/lint/checks/`
+- [ ] Lint framework updated in `src/sword_duckdb/lint/checks/`
 
 ---
 

@@ -37,7 +37,7 @@ This document provides a comprehensive audit of the flag variables in SWORD v17b
 
 **Derivation Method:** Spatial intersection count (MAX)
 
-**Code Path:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**Code Path:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 **Function:** `_reconstruct_reach_swot_obs` (lines 3296-3326)
 
@@ -64,7 +64,7 @@ def _reconstruct_reach_swot_obs(self, ...):
 
 ### 1.4 Attribute Specification
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` (lines 367-374)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` (lines 367-374)
 
 ```python
 "reach.swot_obs": AttributeSpec(
@@ -79,7 +79,7 @@ def _reconstruct_reach_swot_obs(self, ...):
 
 ### 1.5 Related Table: reach_swot_orbits
 
-**Schema:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py` (lines 318-330)
+**Schema:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py` (lines 318-330)
 
 ```python
 REACH_SWOT_ORBITS_TABLE = """
@@ -194,7 +194,7 @@ def check_swot_obs_orbit_consistency(conn, region=None, threshold=None):
 2. **Scalar Column:** `reaches.iceflag` stores a single INTEGER
    - Appears to be a summary/dominant value, NOT the 366-day array
 
-**Schema:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py` (lines 332-343)
+**Schema:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py` (lines 332-343)
 
 ```python
 REACH_ICE_FLAGS_TABLE = """
@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS reach_ice_flags (
 
 **Derivation Method:** SPATIAL_JOIN
 
-**Code Path:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**Code Path:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 **Function:** `_reconstruct_reach_iceflag` (lines 3999-4027)
 
@@ -240,7 +240,7 @@ def _reconstruct_reach_iceflag(self, ...):
 
 ### 2.5 Attribute Specification
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` (lines 376-383)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` (lines 376-383)
 
 ```python
 "reach.iceflag": AttributeSpec(
@@ -357,7 +357,7 @@ def check_iceflag_latitude_sanity(conn, region=None, threshold=None):
 
 **Threshold:** slope < 0.01 m/km (0.00001 m/m)
 
-**Code Path:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**Code Path:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 **Function:** `_reconstruct_reach_low_slope_flag` (lines 3259-3294)
 
@@ -385,7 +385,7 @@ def _reconstruct_reach_low_slope_flag(self, ...):
 
 ### 3.4 Attribute Specification
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` (lines 385-392)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` (lines 385-392)
 
 ```python
 "reach.low_slope_flag": AttributeSpec(
@@ -502,7 +502,7 @@ def check_low_slope_flag_consistency(conn, region=None, threshold=0.01):
 
 **Schema:** VARCHAR (not INTEGER) to support comma-separated values.
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py` (lines 148, 249)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py` (lines 148, 249)
 
 ```python
 edit_flag VARCHAR,           -- comma-separated update codes
@@ -530,7 +530,7 @@ edit_flag VARCHAR,           -- comma-separated update codes
 
 **Derivation Method:** DIRECT (not reconstructable)
 
-**Code Path:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**Code Path:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 **Function:** `_reconstruct_reach_edit_flag` (lines 4093-4120)
 
@@ -553,7 +553,7 @@ def _reconstruct_reach_edit_flag(self, ...):
 
 ### 4.6 Attribute Specification
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` (lines 422-428)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` (lines 422-428)
 
 ```python
 "reach.edit_flag": AttributeSpec(
@@ -651,7 +651,7 @@ def check_edit_flag_valid_codes(conn, region=None, threshold=None):
 
 ### 5.3 Schema Definition
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py` (lines 178, 290)
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py` (lines 178, 290)
 
 ```python
 # In NODES_TABLE (line 178):
@@ -887,9 +887,9 @@ Result:
 ## 9. References
 
 1. SWORD Product Description Document v17b (March 2025)
-2. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
-3. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py`
-4. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/sword_class.py`
+2. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
+3. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py`
+4. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/sword_class.py`
 5. `/Users/jakegearon/projects/SWORD/src/updates/delta_updates/delta_utils.py`
-6. `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py`
+6. `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py`
 7. Yang, X., Pavelsky, T. M., Allen, G. H. (2019). The past and future of global river ice. Nature.

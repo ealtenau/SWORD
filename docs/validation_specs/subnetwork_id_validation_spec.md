@@ -8,7 +8,7 @@
 
 ## Overview
 
-- **Source:** Computed in `src/updates/sword_v17c_pipeline/SWORD_graph.py` during graph building
+- **Source:** Computed in `src/sword_v17c_pipeline/SWORD_graph.py` during graph building
 - **Algorithm:** NetworkX `weakly_connected_components()` on the directed reach-level graph
 - **Purpose:** Identifies connected subgraphs where reaches are connected via topology
 - **Relationship to `network`:** Different ID schemes - `subnetwork_id` may span multiple `network` values
@@ -38,7 +38,7 @@
 ## Algorithm Details
 
 ### Location
-`/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/SWORD_graph.py`, lines 541-553
+`/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/SWORD_graph.py`, lines 541-553
 
 ### Code Path
 
@@ -228,7 +228,7 @@ SELECT COUNT(*) FROM reaches WHERE subnetwork_id IS NULL;
 ```sql
 -- Verify that all reaches in a subnetwork_id can be connected via undirected topology
 -- This requires rebuilding the graph and rechecking connected components
--- See: src/updates/sword_v17c_pipeline/SWORD_graph.py:541-553
+-- See: src/sword_v17c_pipeline/SWORD_graph.py:541-553
 ```
 
 ### Step 3: Document Cross-Network Subnetworks
@@ -323,7 +323,7 @@ Through the pipeline:
 
 - **NetworkX weakly_connected_components:** https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.components.weakly_connected_components.html
 - **Graph component definitions:** https://en.wikipedia.org/wiki/Connected_component_(graph_theory)
-- **SWORD_graph.py implementation:** `src/updates/sword_v17c_pipeline/SWORD_graph.py:541-553`
+- **SWORD_graph.py implementation:** `src/sword_v17c_pipeline/SWORD_graph.py:541-553`
 - **Related validation spec:** `validation_spec_v17c_mainstem_variables.md` (mentions subnetwork relationships)
 
 ## Audit Date

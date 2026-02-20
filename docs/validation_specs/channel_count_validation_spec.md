@@ -33,7 +33,7 @@ The `nchan` attribute in GRWL represents the number of distinct water channels d
 
 ### 1.3 Current Reconstruction Code
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 #### AttributeSpec Definitions (Lines 329-355, 640-656)
 ```python
@@ -219,7 +219,7 @@ divs_dist = reach_length / divs
 
 ### 2.4 Current Reconstruction Code
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 
 **AttributeSpec (Lines 207-213):**
 ```python
@@ -576,4 +576,4 @@ WHERE r.n_chan_max != na.max_nchan;
 - SWORD Product Description Document v17b, Tables 3-5
 - Allen, G. H., & Pavelsky, T. M. (2018). Global extent of rivers and streams. Science, 361(6402), 585-588.
 - RECONSTRUCTION_SPEC.md Section 5.5 (Number of Channels)
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`

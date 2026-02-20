@@ -6,8 +6,8 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import pytest
-from src.updates.sword_duckdb.osm_names.match import match_osm_names, save_osm_names
-from src.updates.sword_duckdb.schema import add_osm_name_columns
+from src.sword_duckdb.osm_names.match import match_osm_names, save_osm_names
+from src.sword_duckdb.schema import add_osm_name_columns
 
 pytestmark = [pytest.mark.db]
 

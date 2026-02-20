@@ -284,7 +284,7 @@ if __name__ == "__main__":
     matches = match_osm_names(conn, args.gpkg, args.region, args.buffer)
     print(f"Found {len(matches)} reach matches")
 
-    from src.updates.sword_duckdb.schema import add_osm_name_columns
+    from src.sword_duckdb.schema import add_osm_name_columns
 
     # Ensure columns exist
     add_osm_name_columns(conn)

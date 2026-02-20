@@ -40,7 +40,7 @@ stream_order = round(np.log(path_freq)) + 1  # where path_freq > 0
 **VERIFIED:** Formula produces exact match with v17b data (100% match rate tested).
 
 ### Code Reference
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 2313-2351
 - **Function:** `_reconstruct_reach_stream_order()`
 
@@ -51,7 +51,7 @@ result_df['stream_order'] = result_df['stream_order'].astype(int)
 ```
 
 ### AttributeSpec
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 468-475
 
 ```python
@@ -103,7 +103,7 @@ From v17b data analysis:
 **IMPORTANT:** Side channels (`main_side = 1` or `2`) have `path_freq = -9999`, which propagates to `stream_order = -9999`. This is by design.
 
 ### Reactive Recalculation
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reactive.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reactive.py`
 - **Status:** NOT IMPLEMENTED
 
 The reactive system does NOT currently recalculate `stream_order` when `path_freq` changes. This is a gap that should be addressed.
@@ -116,7 +116,7 @@ The reactive system does NOT currently recalculate `stream_order` when `path_fre
 > "unique values representing continuous paths from the river outlet to the headwaters. Values are unique within level two Pfafstetter basins. The lowest value is always the longest path from outlet to farthest headwater point in a connected river network. Higher path values branch off from the longest path value to other headwater points."
 
 ### Algorithm (Current Implementation - POTENTIALLY INCORRECT)
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 3702-3742
 - **Function:** `_reconstruct_reach_path_order()`
 
@@ -172,7 +172,7 @@ The path_order values reset to 1 for each path_freq value, which aligns with the
 > "unique values indicating continuous river segments between river junctions. Values are unique within level two Pfafstetter basins."
 
 ### Algorithm (Current Implementation - INCORRECT)
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 3744-3782
 - **Function:** `_reconstruct_reach_path_segs()`
 
@@ -376,6 +376,6 @@ Add to `DependencyGraph`:
 ## References
 
 - SWORD Product Description Document v17b, pages 12-13, 17-18, 23-24
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` lines 2313-2351, 3702-3782
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reactive.py` lines 615-694
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` lines 2313-2351, 3702-3782
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reactive.py` lines 615-694
 - `/Users/jakegearon/projects/SWORD/docs/validation_specs/path_freq_validation_spec.md`

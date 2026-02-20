@@ -384,15 +384,15 @@ def main():
 Examples:
 
   # Dry run for NA
-  python -m src.updates.sword_duckdb.facc_detection.correct_conservation_p2 \\
+  python -m src.sword_duckdb.facc_detection.correct_conservation_p2 \\
       --db data/duckdb/sword_v17c.duckdb --region NA
 
   # Apply to DB
-  python -m src.updates.sword_duckdb.facc_detection.correct_conservation_p2 \\
+  python -m src.sword_duckdb.facc_detection.correct_conservation_p2 \\
       --db data/duckdb/sword_v17c.duckdb --region NA --apply
 
   # All regions
-  python -m src.updates.sword_duckdb.facc_detection.correct_conservation_p2 \\
+  python -m src.sword_duckdb.facc_detection.correct_conservation_p2 \\
       --db data/duckdb/sword_v17c.duckdb --all --apply
         """,
     )

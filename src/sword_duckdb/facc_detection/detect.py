@@ -822,7 +822,7 @@ def detect_facc_anomalies(
 
     Examples
     --------
-    >>> from updates.sword_duckdb.facc_detection import detect_facc_anomalies
+    >>> from sword_duckdb.facc_detection import detect_facc_anomalies
     >>> result = detect_facc_anomalies("sword_v17c.duckdb", region="NA")
     >>> print(result.summary())
     >>> print(result.anomalies.head())

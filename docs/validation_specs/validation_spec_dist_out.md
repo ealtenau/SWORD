@@ -9,7 +9,7 @@
 ## Code Path
 
 ### Primary Reconstruction (ReconstructionEngine)
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 1382-1497 (reach), 1858-1917 / 3400-3431 (node)
 
 ### AttributeSpec Definition
@@ -58,7 +58,7 @@ while queue:
 - **Full (not yet implemented):** Interpolate based on node position within reach
 
 ### Reactive Recalculation (SWORDReactive)
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reactive.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reactive.py`
 - **Lines:** 158-164 (reach), 199-204 (node)
 
 ```python
@@ -139,7 +139,7 @@ for i, idx in enumerate(sorted_indices):
 ## Existing Lint Checks
 
 ### T001: dist_out_monotonicity
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/topology.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/topology.py`
 - **Lines:** 20-100
 - **Severity:** ERROR
 - **Default Threshold:** 100.0 meters tolerance

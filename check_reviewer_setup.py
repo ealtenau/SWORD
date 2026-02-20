@@ -99,15 +99,15 @@ else:
 print()
 print("[5/5] Lint check imports")
 try:
-    from src.updates.sword_duckdb.lint.checks.classification import (
+    from src.sword_duckdb.lint.checks.classification import (
         check_lake_sandwich,
         check_lakeflag_type_consistency,
     )
-    from src.updates.sword_duckdb.lint.checks.topology import (
+    from src.sword_duckdb.lint.checks.topology import (
         check_facc_monotonicity,
         check_orphan_reaches,
     )
-    from src.updates.sword_duckdb.lint.checks.attributes import (
+    from src.sword_duckdb.lint.checks.attributes import (
         check_slope_reasonableness,
         check_end_reach_consistency,
     )

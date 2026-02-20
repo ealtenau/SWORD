@@ -13,18 +13,18 @@
 
 ## Validation Module
 
-**Location:** `src/updates/sword_duckdb/validation.py`
+**Location:** `src/sword_duckdb/validation.py`
 
 **Usage:**
 ```bash
 # Run all checks
-python -m updates.sword_duckdb.validation data/duckdb/sword_v17b.duckdb
+python -m sword_duckdb.validation data/duckdb/sword_v17b.duckdb
 
 # Run specific check on region
-python -m updates.sword_duckdb.validation data/duckdb/sword_v17b.duckdb -r NA -c wse_gradient
+python -m sword_duckdb.validation data/duckdb/sword_v17b.duckdb -r NA -c wse_gradient
 
 # Export issues to CSV
-python -m updates.sword_duckdb.validation data/duckdb/sword_v17b.duckdb -o issues.csv
+python -m sword_duckdb.validation data/duckdb/sword_v17b.duckdb -o issues.csv
 ```
 
 ## Future: CI/CD Integration

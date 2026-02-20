@@ -26,7 +26,7 @@ class TestDependencyGraph:
 
     def test_graph_construction(self):
         """Test that dependency graph builds correctly."""
-        from src.updates.sword_duckdb.reactive import DependencyGraph
+        from src.sword_duckdb.reactive import DependencyGraph
 
         graph = DependencyGraph()
 
@@ -40,7 +40,7 @@ class TestDependencyGraph:
 
     def test_reach_len_depends_on_geometry(self):
         """Test that reach.len depends on centerline.geometry."""
-        from src.updates.sword_duckdb.reactive import DependencyGraph
+        from src.sword_duckdb.reactive import DependencyGraph
 
         graph = DependencyGraph()
         reach_len_node = graph.nodes["reach.len"]
@@ -49,7 +49,7 @@ class TestDependencyGraph:
 
     def test_node_dist_out_depends_on_reach_dist_out(self):
         """Test that node.dist_out depends on reach.dist_out."""
-        from src.updates.sword_duckdb.reactive import DependencyGraph
+        from src.sword_duckdb.reactive import DependencyGraph
 
         graph = DependencyGraph()
         node_dist_out = graph.nodes["node.dist_out"]
@@ -58,7 +58,7 @@ class TestDependencyGraph:
 
     def test_get_downstream_deps(self):
         """Test getting downstream dependencies."""
-        from src.updates.sword_duckdb.reactive import DependencyGraph
+        from src.sword_duckdb.reactive import DependencyGraph
 
         graph = DependencyGraph()
 
@@ -72,7 +72,7 @@ class TestDependencyGraph:
 
     def test_topological_sort_order(self):
         """Test that topological sort produces correct order."""
-        from src.updates.sword_duckdb.reactive import DependencyGraph
+        from src.sword_duckdb.reactive import DependencyGraph
 
         graph = DependencyGraph()
 
@@ -94,7 +94,7 @@ class TestDirtySet:
 
     def test_dirty_set_creation(self):
         """Test creating a dirty set."""
-        from src.updates.sword_duckdb.reactive import DirtySet
+        from src.sword_duckdb.reactive import DirtySet
 
         dirty = DirtySet()
 
@@ -104,7 +104,7 @@ class TestDirtySet:
 
     def test_dirty_set_add_reach_ids(self):
         """Test adding reach IDs to dirty set."""
-        from src.updates.sword_duckdb.reactive import DirtySet
+        from src.sword_duckdb.reactive import DirtySet
 
         dirty = DirtySet()
         dirty.reach_ids.update([123, 456, 789])
@@ -120,7 +120,7 @@ class TestSWORDReactive:
 
     def test_mark_dirty(self, sword_readonly):
         """Test marking attributes as dirty."""
-        from src.updates.sword_duckdb.reactive import SWORDReactive, ChangeType
+        from src.sword_duckdb.reactive import SWORDReactive, ChangeType
 
         reactive = SWORDReactive(sword_readonly)
 
@@ -135,7 +135,7 @@ class TestSWORDReactive:
 
     def test_get_recalc_plan(self, sword_readonly):
         """Test getting recalculation plan."""
-        from src.updates.sword_duckdb.reactive import SWORDReactive, ChangeType
+        from src.sword_duckdb.reactive import SWORDReactive, ChangeType
 
         reactive = SWORDReactive(sword_readonly)
 
@@ -152,7 +152,7 @@ class TestSWORDReactive:
 
     def test_dry_run_recalculate(self, sword_readonly):
         """Test dry run of recalculation."""
-        from src.updates.sword_duckdb.reactive import SWORDReactive, ChangeType
+        from src.sword_duckdb.reactive import SWORDReactive, ChangeType
 
         reactive = SWORDReactive(sword_readonly)
 
@@ -170,7 +170,7 @@ class TestConvenienceFunctions:
 
     def test_mark_geometry_changed(self, sword_readonly):
         """Test mark_geometry_changed function."""
-        from src.updates.sword_duckdb.reactive import (
+        from src.sword_duckdb.reactive import (
             SWORDReactive,
             mark_geometry_changed,
         )
@@ -183,7 +183,7 @@ class TestConvenienceFunctions:
 
     def test_mark_topology_changed(self, sword_readonly):
         """Test mark_topology_changed function."""
-        from src.updates.sword_duckdb.reactive import (
+        from src.sword_duckdb.reactive import (
             SWORDReactive,
             mark_topology_changed,
         )
@@ -206,7 +206,7 @@ class TestGeodesicDistance:
         except ImportError:
             pytest.skip("geopy not installed")
 
-        from src.updates.sword_duckdb.reactive import _get_geodesic_distances
+        from src.sword_duckdb.reactive import _get_geodesic_distances
 
         # Test with simple coordinates (roughly 1 degree = 111km at equator)
         lon = np.array([0.0, 1.0, 2.0])
@@ -226,7 +226,7 @@ class TestGeodesicDistance:
         except ImportError:
             pytest.skip("geopy not installed")
 
-        from src.updates.sword_duckdb.reactive import _get_geodesic_distances
+        from src.sword_duckdb.reactive import _get_geodesic_distances
 
         lon = np.array([0.0])
         lat = np.array([0.0])
@@ -242,7 +242,7 @@ class TestChangeType:
 
     def test_change_types(self):
         """Test that all change types exist."""
-        from src.updates.sword_duckdb.reactive import ChangeType
+        from src.sword_duckdb.reactive import ChangeType
 
         assert hasattr(ChangeType, "GEOMETRY")
         assert hasattr(ChangeType, "TOPOLOGY")

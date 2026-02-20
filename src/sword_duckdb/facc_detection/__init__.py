@@ -15,14 +15,14 @@ Core approach:
 - Use feature engineering + regression for detection and correction
 
 Detection Usage:
-    from updates.sword_duckdb.facc_detection import FaccDetector
+    from sword_duckdb.facc_detection import FaccDetector
 
     detector = FaccDetector("sword_v17c.duckdb")
     result = detector.detect(region="NA", anomaly_threshold=0.5)
     print(result.summary())
 
 Correction Usage (Phase 2):
-    from updates.sword_duckdb.facc_detection import FaccCorrector
+    from sword_duckdb.facc_detection import FaccCorrector
 
     with FaccCorrector("sword_v17c.duckdb") as corrector:
         # Detect anomalies
@@ -37,7 +37,7 @@ Correction Usage (Phase 2):
         print(result.summary())
 
 RF Classifier Usage:
-    from updates.sword_duckdb.facc_detection import RFFeatureExtractor, RFClassifier
+    from sword_duckdb.facc_detection import RFFeatureExtractor, RFClassifier
 
     # Extract features
     extractor = RFFeatureExtractor("sword_v17c.duckdb")
@@ -50,25 +50,25 @@ RF Classifier Usage:
 
 CLI Usage:
     # Detect anomalies
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --region NA
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --region NA
 
     # Dry-run correction
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --region NA
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --region NA
 
     # Apply corrections
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --apply --region NA
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --fix --apply --region NA
 
     # Rollback
-    python -m src.updates.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --rollback --batch-id 1
+    python -m src.sword_duckdb.facc_detection.cli --db sword_v17c.duckdb --rollback --batch-id 1
 
     # RF training
-    python -m src.updates.sword_duckdb.facc_detection.rf_classifier \\
+    python -m src.sword_duckdb.facc_detection.rf_classifier \\
         --features output/facc_detection/rf_features.parquet \\
         --labels output/facc_detection/all_anomalies.geojson \\
         --output output/facc_detection/
 
     # RF evaluation
-    python -m src.updates.sword_duckdb.facc_detection.rf_evaluate \\
+    python -m src.sword_duckdb.facc_detection.rf_evaluate \\
         --predictions output/facc_detection/rf_predictions.parquet \\
         --model output/facc_detection/rf_model.joblib \\
         --output output/facc_detection/

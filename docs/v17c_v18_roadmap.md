@@ -168,4 +168,4 @@ NOW ─────────────────────────�
 - `aggregate_rivers()` - Merge reaches <10km
 - `reach_topology()` - Final ID assignment with Pfafstetter codes
 
-**Modern equivalent:** `SWORD.break_reaches()` in `src/updates/sword_duckdb/sword_class.py:1496`
+**Modern equivalent:** `SWORD.break_reaches()` in `src/sword_duckdb/sword_class.py:1496`

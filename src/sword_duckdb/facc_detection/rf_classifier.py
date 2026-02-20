@@ -21,7 +21,7 @@ Usage:
     predictions = clf.predict(X_test)
 
 CLI:
-    python -m src.updates.sword_duckdb.facc_detection.rf_classifier \\
+    python -m src.sword_duckdb.facc_detection.rf_classifier \\
         --features output/facc_detection/rf_features.parquet \\
         --labels output/facc_detection/all_anomalies.geojson \\
         --output output/facc_detection/

@@ -14,9 +14,9 @@ Usage:
     runner.close()
 
 CLI Usage:
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
-    python -m src.updates.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --region NA
+    python -m src.sword_duckdb.lint.cli --db sword_v17c.duckdb --format json -o report.json
 
 Check IDs:
     Topology (T0xx):

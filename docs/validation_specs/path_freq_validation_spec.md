@@ -21,7 +21,7 @@ stream_order = round(log(path_freq)) + 1  # where path_freq > 0
 ## Code Path
 
 ### Primary Implementation
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 2353-2436
 - **Function:** `_reconstruct_reach_path_freq()`
 
@@ -54,7 +54,7 @@ stream_order = round(log(path_freq)) + 1  # where path_freq > 0
 ```
 
 ### Specification (AttributeSpec)
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py`
 - **Lines:** 441-448
 
 ```python
@@ -80,7 +80,7 @@ Downstream dependents (attributes that depend on path_freq):
 5. `node.path_freq` - Inherited from parent reach
 
 ### Reactive Recalculation
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reactive.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reactive.py`
 - **Lines:** 615-694
 
 The reactive system uses `path_freq` to determine `main_side`:
@@ -163,7 +163,7 @@ path_freq[B] = path_freq[A] + path_freq[C]  # if A and C share no upstream paths
 ## Existing Checks
 
 ### T002: path_freq_monotonicity
-- **File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/topology.py`
+- **File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/topology.py`
 - **Lines:** 91-153
 - **Severity:** WARNING
 - **Description:** Checks that path_freq increases toward outlets
@@ -371,6 +371,6 @@ ORDER BY violations DESC;
 ## References
 
 - SWORD Product Description Document v17b, pages 12-13, 17-18, 23-24
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py` lines 2353-2436
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/topology.py` lines 91-153
-- `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reactive.py` lines 615-694
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py` lines 2353-2436
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/topology.py` lines 91-153
+- `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reactive.py` lines 615-694

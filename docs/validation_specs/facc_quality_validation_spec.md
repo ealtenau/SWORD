@@ -40,7 +40,7 @@
 
 ### 3.1 New Detection Pipeline (2026-02-04)
 
-**Location:** `src/updates/sword_duckdb/facc_detection/`
+**Location:** `src/sword_duckdb/facc_detection/`
 
 The new detection pipeline uses `detect_hybrid()` with multiple detection rules:
 
@@ -53,7 +53,7 @@ The new detection pipeline uses `detect_hybrid()` with multiple detection rules:
 
 **Run command:**
 ```bash
-python -m src.updates.sword_duckdb.facc_detection.cli \
+python -m src.sword_duckdb.facc_detection.cli \
     --db data/duckdb/sword_v17b.duckdb \
     --all \
     --export-geojson \
@@ -64,7 +64,7 @@ python -m src.updates.sword_duckdb.facc_detection.cli \
 
 ### 3.2 RF Regressor Correction (2026-02)
 
-**Location:** `src/updates/sword_duckdb/facc_detection/rf_regressor.py`
+**Location:** `src/sword_duckdb/facc_detection/rf_regressor.py`
 
 Trained RF to predict what facc SHOULD be based on network position, then apply to detected anomalies.
 
@@ -81,7 +81,7 @@ Trained RF to predict what facc SHOULD be based on network position, then apply 
 **Usage:**
 ```bash
 # Train no-facc model
-python -m src.updates.sword_duckdb.facc_detection.train_split_regressor \
+python -m src.sword_duckdb.facc_detection.train_split_regressor \
     --db data/duckdb/sword_v17c.duckdb \
     --output-dir output/facc_detection \
     --exclude-facc-features
@@ -94,7 +94,7 @@ python -m src.updates.sword_duckdb.facc_detection.train_split_regressor \
 
 ### 3.3 Legacy Detection: fix_facc_violations() Method
 
-**Location:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/workflow.py` (lines 3517-3763)
+**Location:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/workflow.py` (lines 3517-3763)
 
 **Algorithm Overview:**
 ```python
@@ -364,7 +364,7 @@ def check_facc_quality_effectiveness(conn, region=None):
 
 ### Main Implementation
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/workflow.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/workflow.py`
 
 **Function:** `fix_facc_violations()` (lines 3517-3763)
 

@@ -20,7 +20,7 @@ import pytest
 
 pytestmark = pytest.mark.db
 
-from src.updates.sword_duckdb.backends import (
+from src.sword_duckdb.backends import (
     BackendType,
     DuckDBBackend,
     PostgresBackend,
@@ -332,7 +332,7 @@ class TestSWORDDatabaseDelegation:
 
     def test_backend_type_duckdb(self):
         """SWORDDatabase(:memory:) reports DuckDB backend type."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db = SWORDDatabase(":memory:")
         assert db.backend_type == BackendType.DUCKDB
@@ -340,7 +340,7 @@ class TestSWORDDatabaseDelegation:
 
     def test_is_duckdb_true(self):
         """is_duckdb is True for DuckDB backend."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db = SWORDDatabase(":memory:")
         assert db.is_duckdb is True
@@ -349,7 +349,7 @@ class TestSWORDDatabaseDelegation:
 
     def test_format_upsert_delegates(self):
         """format_upsert delegates to backend (INSERT OR REPLACE for DuckDB)."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db = SWORDDatabase(":memory:")
         sql = db.format_upsert("test_table", ["id", "name"], ["id"])
@@ -358,7 +358,7 @@ class TestSWORDDatabaseDelegation:
 
     def test_format_array_literal_delegates(self):
         """format_array_literal delegates to backend."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db = SWORDDatabase(":memory:")
         result = db.format_array_literal([1, 2, 3])
@@ -367,7 +367,7 @@ class TestSWORDDatabaseDelegation:
 
     def test_convert_placeholders_identity(self):
         """convert_placeholders is identity for DuckDB (? stays ?)."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db = SWORDDatabase(":memory:")
         sql = "SELECT * FROM t WHERE id = ? AND name = ?"

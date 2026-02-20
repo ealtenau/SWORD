@@ -84,7 +84,7 @@ Both approaches enforce conservation (downstream facc >= sum of upstream facc) a
 
 ### 3.1 Lint Checks Referenced
 
-The pipeline targets specific violations detected by our [lint framework](../src/updates/sword_duckdb/lint/CHECKS.md) (see Section 6 for full results):
+The pipeline targets specific violations detected by our [lint framework](../src/sword_duckdb/lint/CHECKS.md) (see Section 6 for full results):
 
 | Check | What it tests |
 |-------|---------------|
@@ -430,7 +430,7 @@ After Stage A, three independent criteria flag remaining outliers. **These flags
 ### Pipeline Code
 
 ```
-src/updates/sword_duckdb/facc_detection/
+src/sword_duckdb/facc_detection/
   correct_facc_denoise.py       # Biphase pipeline (Stage A + Stage B)
   correct_conservation_single_pass.py  # v2 single-pass (superseded)
   detect.py                     # Anomaly detection rules

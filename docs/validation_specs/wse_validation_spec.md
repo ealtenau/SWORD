@@ -23,7 +23,7 @@
 ## Code Path
 
 ### Node WSE Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:3366-3398`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:3366-3398`
 - **Algorithm:**
   1. Uses existing node wse if available
   2. Falls back to reach wse (`COALESCE(n.wse, r.wse)`)
@@ -37,7 +37,7 @@ JOIN reaches r ON n.reach_id = r.reach_id
 ```
 
 ### Reach WSE Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:1499-1563`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:1499-1563`
 - **Algorithm:**
   1. Query all nodes for each reach
   2. Compute `MEDIAN(n.wse)` grouped by reach_id
@@ -52,7 +52,7 @@ GROUP BY n.reach_id
 ```
 
 ### Reach Slope (derived from WSE)
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:1565-1656`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:1565-1656`
 - **Algorithm:**
   1. Get nodes ordered by dist_out (descending)
   2. Filter out NaN values
@@ -68,16 +68,16 @@ slope = abs(result[0])  # m/km
 ```
 
 ### WSE Variance Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:1923-1946`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:1923-1946`
 - **Algorithm:** `VARIANCE(n.wse)` grouped by reach_id
 
 ### Node WSE Variance Reconstruction
-- **Primary:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/reconstruction.py:3586-3614`
+- **Primary:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/reconstruction.py:3586-3614`
 - **Algorithm:** `VAR_SAMP(c.wse)` from centerlines grouped by node_id
 
 ## Schema Definition
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/schema.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/schema.py`
 
 ### Nodes Table (lines 115-116)
 ```sql
@@ -227,7 +227,7 @@ reaches.slope = linreg(node.wse vs node.dist_out)
 
 ## Existing Check (A001) Analysis
 
-**Location:** `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/attributes.py:20-90`
+**Location:** `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/attributes.py:20-90`
 
 **Current implementation:**
 - Compares upstream wse to downstream neighbor wse via reach_topology

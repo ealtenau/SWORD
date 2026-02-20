@@ -458,7 +458,7 @@ def evaluate_detection(
 
     Examples
     --------
-    >>> from updates.sword_duckdb.facc_detection import evaluate_detection
+    >>> from sword_duckdb.facc_detection import evaluate_detection
     >>> result = evaluate_detection("sword_v17c.duckdb", region="NA")
     >>> print(result.summary())
     """

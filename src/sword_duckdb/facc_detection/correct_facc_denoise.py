@@ -36,16 +36,16 @@ Relationship to Yushan's Integrator:
 Usage::
 
     # Dry run on NA (no DB changes, no UPA re-sampling)
-    python -m src.updates.sword_duckdb.facc_detection.correct_facc_denoise \\
+    python -m src.sword_duckdb.facc_detection.correct_facc_denoise \\
         --db data/duckdb/sword_v17c.duckdb --v17b data/duckdb/sword_v17b.duckdb --region NA
 
     # Full run with UPA re-sampling
-    python -m src.updates.sword_duckdb.facc_detection.correct_facc_denoise \\
+    python -m src.sword_duckdb.facc_detection.correct_facc_denoise \\
         --db data/duckdb/sword_v17c.duckdb --v17b data/duckdb/sword_v17b.duckdb \\
         --region NA --merit /Volumes/SWORD_DATA/data/MERIT_Hydro
 
     # Apply to all regions
-    python -m src.updates.sword_duckdb.facc_detection.correct_facc_denoise \\
+    python -m src.sword_duckdb.facc_detection.correct_facc_denoise \\
         --db data/duckdb/sword_v17c.duckdb --v17b data/duckdb/sword_v17b.duckdb \\
         --all --apply --merit /Volumes/SWORD_DATA/data/MERIT_Hydro
 """

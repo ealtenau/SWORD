@@ -387,7 +387,7 @@ GROUP BY region;
 ### Phase 1: Critical Checks (S002, S003, S004, S006, S007)
 - Data integrity checks
 - Can be implemented in ~30 minutes
-- Python code in `src/updates/sword_duckdb/lint/checks/sections.py`
+- Python code in `src/sword_duckdb/lint/checks/sections.py`
 
 ### Phase 2: Topology Checks (S005, S010, S011)
 - Relationship validation
@@ -472,7 +472,7 @@ WHERE s.region = 'NA';
 
 ## Creation Source Code
 
-**File:** `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/v17c_pipeline.py`
+**File:** `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/v17c_pipeline.py`
 
 **Key Functions:**
 - `build_section_graph()` (lines 178-248) - Main section creation
@@ -562,14 +562,14 @@ Pipeline execution captured:
 
 | File | Purpose |
 |------|---------|
-| `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/v17c_pipeline.py` | Section creation algorithm |
-| `/Users/jakegearon/projects/SWORD/src/updates/sword_v17c_pipeline/README.md` | Pipeline documentation |
+| `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/v17c_pipeline.py` | Section creation algorithm |
+| `/Users/jakegearon/projects/SWORD/src/sword_v17c_pipeline/README.md` | Pipeline documentation |
 | `/Users/jakegearon/projects/SWORD/data/duckdb/sword_v17c.duckdb` | Live database with tables |
 | `/Users/jakegearon/projects/SWORD/docs/validation_specs/validation_spec_v17c_mainstem_variables.md` | Related v17c variables spec |
-| `/Users/jakegearon/projects/SWORD/src/updates/sword_duckdb/lint/checks/` | Where lint checks will live |
+| `/Users/jakegearon/projects/SWORD/src/sword_duckdb/lint/checks/` | Where lint checks will live |
 
 ## See Also
 
 - [v17c Mainstem Variables Validation Spec](validation_spec_v17c_mainstem_variables.md)
-- [v17c Pipeline README](../../src/updates/sword_v17c_pipeline/README.md)
+- [v17c Pipeline README](../../src/sword_v17c_pipeline/README.md)
 - [SWORD Project Instructions - v17c Pipeline](../../CLAUDE.md#v17c-pipeline)

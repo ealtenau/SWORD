@@ -23,7 +23,7 @@ import shutil
 main_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, main_dir)
 
-from src.updates.sword_duckdb import SWORD
+from src.sword_duckdb import SWORD
 
 
 TEST_REGION = "NA"

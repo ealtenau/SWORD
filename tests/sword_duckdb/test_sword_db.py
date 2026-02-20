@@ -17,7 +17,7 @@ class TestSWORDDatabaseInit:
 
     def test_init_with_path_string(self, tmp_path):
         """Test initialization with string path."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = str(tmp_path / "test.duckdb")
         db = SWORDDatabase(db_path)
@@ -30,7 +30,7 @@ class TestSWORDDatabaseInit:
 
     def test_init_with_path_object(self, tmp_path):
         """Test initialization with Path object."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path)
@@ -40,7 +40,7 @@ class TestSWORDDatabaseInit:
 
     def test_init_memory_database(self):
         """Test initialization with in-memory database."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db = SWORDDatabase(":memory:")
         assert db.db_path == ":memory:"
@@ -54,7 +54,7 @@ class TestSWORDDatabaseInit:
 
     def test_init_no_spatial(self, tmp_path):
         """Test initialization without spatial extension."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path, spatial=False)
@@ -70,7 +70,7 @@ class TestSWORDDatabaseConnection:
 
     def test_connect_creates_file(self, tmp_path):
         """Test that connect() creates database file."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "new_db.duckdb"
         assert not db_path.exists()
@@ -83,7 +83,7 @@ class TestSWORDDatabaseConnection:
 
     def test_connect_returns_connection(self, tmp_path):
         """Test that connect() returns a connection object."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
         import duckdb
 
         db_path = tmp_path / "test.duckdb"
@@ -95,7 +95,7 @@ class TestSWORDDatabaseConnection:
 
     def test_connect_reuses_connection(self, tmp_path):
         """Test that connect() reuses existing connection."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path)
@@ -108,7 +108,7 @@ class TestSWORDDatabaseConnection:
 
     def test_conn_property(self, tmp_path):
         """Test conn property is alias for connect()."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path)
@@ -118,7 +118,7 @@ class TestSWORDDatabaseConnection:
 
     def test_close_sets_none(self, tmp_path):
         """Test that close() sets connection to None."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path)
@@ -130,7 +130,7 @@ class TestSWORDDatabaseConnection:
 
     def test_close_resets_spatial_flag(self, tmp_path):
         """Test that close() resets spatial_loaded flag."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path)
@@ -145,7 +145,7 @@ class TestSWORDDatabaseContextManager:
 
     def test_context_manager_connects(self, tmp_path):
         """Test that entering context manager connects."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
 
@@ -154,7 +154,7 @@ class TestSWORDDatabaseContextManager:
 
     def test_context_manager_closes(self, tmp_path):
         """Test that exiting context manager closes connection."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
 
@@ -166,7 +166,7 @@ class TestSWORDDatabaseContextManager:
 
     def test_context_manager_returns_db(self, tmp_path):
         """Test that context manager returns database instance."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
 
@@ -212,7 +212,7 @@ class TestSWORDDatabaseSchema:
 
     def test_init_schema_creates_tables(self, tmp_path):
         """Test that init_schema() creates required tables."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "new.duckdb"
         db = SWORDDatabase(db_path)
@@ -271,7 +271,7 @@ class TestCreateDatabase:
 
     def test_create_new_database(self, tmp_path):
         """Test creating a new database."""
-        from src.updates.sword_duckdb.sword_db import create_database
+        from src.sword_duckdb.sword_db import create_database
 
         db_path = tmp_path / "new.duckdb"
 
@@ -283,7 +283,7 @@ class TestCreateDatabase:
 
     def test_create_existing_raises_error(self, tmp_path):
         """Test that creating existing database raises error."""
-        from src.updates.sword_duckdb.sword_db import create_database
+        from src.sword_duckdb.sword_db import create_database
 
         db_path = tmp_path / "existing.duckdb"
         db_path.touch()  # Create empty file
@@ -293,7 +293,7 @@ class TestCreateDatabase:
 
     def test_create_with_overwrite(self, tmp_path):
         """Test overwrite option."""
-        from src.updates.sword_duckdb.sword_db import create_database
+        from src.sword_duckdb.sword_db import create_database
 
         db_path = tmp_path / "existing.duckdb"
         db_path.touch()  # Create empty file
@@ -306,7 +306,7 @@ class TestCreateDatabase:
 
     def test_create_initializes_schema(self, tmp_path):
         """Test that create_database initializes schema."""
-        from src.updates.sword_duckdb.sword_db import create_database
+        from src.sword_duckdb.sword_db import create_database
 
         db_path = tmp_path / "new.duckdb"
         db = create_database(db_path)
@@ -325,7 +325,7 @@ class TestSWORDDatabaseSpatial:
 
     def test_spatial_loads_by_default(self, tmp_path):
         """Test that spatial extension loads by default."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path)
@@ -338,7 +338,7 @@ class TestSWORDDatabaseSpatial:
 
     def test_spatial_disabled_does_not_load(self, tmp_path):
         """Test that spatial=False prevents loading."""
-        from src.updates.sword_duckdb.sword_db import SWORDDatabase
+        from src.sword_duckdb.sword_db import SWORDDatabase
 
         db_path = tmp_path / "test.duckdb"
         db = SWORDDatabase(db_path, spatial=False)

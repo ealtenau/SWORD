@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, '/Users/jakegearon/projects/SWORD/src')
 
 from pathlib import Path
-from updates.sword_duckdb import SWORDWorkflow
+from sword_duckdb import SWORDWorkflow
 
 DB_PATH = Path('/Users/jakegearon/projects/SWORD/data/duckdb/sword_v17c.duckdb')
 REGIONS = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC']
