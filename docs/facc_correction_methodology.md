@@ -108,12 +108,10 @@ stateDiagram-v2
 
     state "Stage A: Baseline Cleanup" as StageA {
         state "A1 Node denoise" as A1
-        state "A2 Node validation" as A2
         state "A3 Outlier detection" as A3
         state "A4 Baseline isotonic" as A4
 
-        A1 --> A2 : denoised baseline
-        A2 --> A3 : validated baseline
+        A1 --> A3 : denoised baseline
         A3 --> A4 : unchanged + flags
     }
 
@@ -272,7 +270,7 @@ Pass 2 also enforces zero lateral for 1:1 links in bifurcation channels (same tr
 
 Pass 2 adjusts 6,086 reaches globally (3,717 on 1:1 links, 1,211 at bifurcations, 1,158 at junctions), producing the `final_1to1`, `final_bifurc`, `final_bifurc_channel`, and `final_junction` correction types.
 
-The code also includes safety-net steps between Pass 1 and Pass 2 (isotonic smoothing, junction re-flooring, node validation). In practice these find 0 violations because Stage A and Pass 1 already produce a consistent result.
+The code also includes safety-net steps between Pass 1 and Pass 2 (isotonic smoothing, junction re-flooring). In practice these find 0 violations because Stage A and Pass 1 already produce a consistent result.
 
 ### 3.5 Scalability
 
@@ -350,14 +348,14 @@ Correction type breakdown (global totals from summary JSONs):
 | junction_floor | B Pass 1 | 13,107 | Junction conservation enforcement |
 | baseline_isotonic | A4 | 5,203 | Baseline PAVA smoothing on 1:1 chains |
 | bifurc_share | B Pass 1 | 4,453 | Width-proportional bifurcation splitting |
-| bifurc_channel_no_lateral | B Pass 1 | TBD | Zero lateral on 1:1 links inside bifurcation channels |
+| bifurc_channel_no_lateral | B Pass 1 | 8,771 | Zero lateral on 1:1 links inside bifurcation channels |
 | final_1to1 | B Pass 2 | 3,717 | Consistency enforcement on 1:1 links |
 | final_bifurc | B Pass 2 | 1,211 | Consistency enforcement at bifurcations |
-| final_bifurc_channel | B Pass 2 | TBD | Consistency enforcement on bifurc channel 1:1 links |
+| final_bifurc_channel | B Pass 2 | 0 | Consistency enforcement on bifurc channel 1:1 links |
 | final_junction | B Pass 2 | 1,158 | Consistency enforcement at junctions |
 | node_denoise | A1 | 86 | Within-reach node facc variability correction |
-| baseline_node_override | A2 | 3 | Extreme low baseline cap |
-| node_max_override | B | 1 | Post-propagation node cap |
+| ~~baseline_node_override~~ | ~~A2~~ | — | Removed: spiked baseline, seeded inflation |
+| ~~node_max_override~~ | ~~B~~ | — | Removed: caused cascading 5-10x inflation |
 
 **Why are net % changes so large?** The "Net % Change" column reports `(total_facc_after - total_facc_before) / total_facc_before` across all reaches in a region. Large values (e.g., +3,770% for AS) reflect the intended behavior of full lateral propagation: when a bifurcation split lowers one branch, the correction cascades through every downstream 1:1 reach. In Asia's large river systems (Ganges, Mekong, Yangtze deltas), a single bifurcation correction propagates through hundreds of downstream reaches. The old pipeline blocked these cascades, producing smaller net changes but leaving most downstream reaches with inflated UPA values. The net % metric is dominated by a few large rivers and does not indicate that typical reaches changed by thousands of percent.
 

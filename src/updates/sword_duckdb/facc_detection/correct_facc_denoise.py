@@ -379,7 +379,7 @@ def _phase2_topo_correction(
                     0.0
                     if (parent_base > 0 and raw_lateral > parent_base * 10)
                     else raw_lateral
-                )
+                )  # 10x cap: lateral > 10× parent is D8 re-injection, not real drainage
                 new_val = corrected[parent] + lateral
                 corrected[node] = new_val
                 if abs(new_val - base) > 0.01:
@@ -1087,10 +1087,9 @@ def _phase_final_consistency(
                 new_val = corrected[parent] * share
                 corrected[node] = new_val
             elif node in in_bifurc_channel:
-                # Bifurc channel 1:1 link: zero lateral to preserve share
-                new_val = corrected[parent]
-                if new_val > corrected[node] + 1.0:
-                    corrected[node] = new_val
+                # Bifurc channel 1:1 link: unconditionally track parent
+                # (zero lateral — node must equal parent to preserve share)
+                corrected[node] = corrected[parent]
             else:
                 # Normal 1:1 link: propagate parent + lateral
                 parent_base = max(dn_node_facc.get(parent, 0.0), 0.0)
@@ -1099,7 +1098,7 @@ def _phase_final_consistency(
                     0.0
                     if (parent_base > 0 and raw_lateral > parent_base * 10)
                     else raw_lateral
-                )
+                )  # 10x cap: lateral > 10× parent is D8 re-injection, not real drainage
                 new_val = corrected[parent] + lateral
                 if new_val > corrected[node] + 1.0:
                     corrected[node] = new_val
@@ -1805,7 +1804,7 @@ def correct_facc_denoise(
             f"    {len(node_stats)} reaches, {n_noisy} with variability >{variability_threshold}x"
         )
 
-        # Build node MAX lookup for sanity guards
+        # Build node MAX lookup (used by Stage C MERIT re-sampling only)
         node_max_lookup: Dict[int, float] = dict(
             zip(
                 node_stats["reach_id"].astype(int),
