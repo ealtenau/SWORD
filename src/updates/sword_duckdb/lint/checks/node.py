@@ -83,15 +83,20 @@ def check_node_spacing_gap(
 @register_check(
     "N004",
     Category.NETWORK,
-    Severity.ERROR,
-    "Node dist_out must decrease along node_id order within a reach",
+    Severity.WARNING,
+    "Node dist_out must increase along node_id order within a reach",
 )
 def check_node_dist_out_monotonicity(
     conn: duckdb.DuckDBPyConnection,
     region: Optional[str] = None,
     threshold: Optional[float] = None,
 ) -> CheckResult:
-    """Check that node dist_out decreases as node_id increases within each reach."""
+    """Check that node dist_out increases as node_id increases within each reach.
+
+    SWORD convention: higher node_id = farther upstream = higher dist_out.
+    Verified empirically: 89% of NA reaches show strictly increasing dist_out
+    with node_id. Violations indicate node ordering or dist_out errors.
+    """
     where_clause = f"AND n.region = '{region}'" if region else ""
 
     query = f"""
@@ -107,11 +112,11 @@ def check_node_dist_out_monotonicity(
     SELECT
         node_id, prev_node_id, reach_id, region,
         prev_dist_out, dist_out,
-        (dist_out - prev_dist_out) as dist_out_increase
+        (prev_dist_out - dist_out) as dist_out_decrease
     FROM ordered_nodes
     WHERE prev_dist_out IS NOT NULL
-        AND dist_out > prev_dist_out
-    ORDER BY dist_out_increase DESC
+        AND dist_out < prev_dist_out
+    ORDER BY dist_out_decrease DESC
     LIMIT 10000
     """
 
@@ -127,13 +132,13 @@ def check_node_dist_out_monotonicity(
     return CheckResult(
         check_id="N004",
         name="node_dist_out_monotonicity",
-        severity=Severity.ERROR,
+        severity=Severity.WARNING,
         passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description="Nodes where dist_out increases along node_id order (should decrease)",
+        description="Nodes where dist_out decreases along node_id order (should increase)",
     )
 
 
@@ -279,91 +284,6 @@ def check_boundary_dist_out(
 
 
 @register_check(
-    "N007",
-    Category.NETWORK,
-    Severity.WARNING,
-    "Boundary nodes of connected reaches >400m apart geographically",
-    default_threshold=400.0,
-)
-def check_boundary_geolocation(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """Check geographic proximity of boundary nodes at reach junctions."""
-    max_dist = threshold if threshold is not None else 400.0
-    where_clause = f"AND rt.region = '{region}'" if region else ""
-
-    query = f"""
-    WITH last_node AS (
-        SELECT reach_id, region,
-            MAX(node_id) as last_node_id
-        FROM nodes
-        GROUP BY reach_id, region
-    ),
-    first_node AS (
-        SELECT reach_id, region,
-            MIN(node_id) as first_node_id
-        FROM nodes
-        GROUP BY reach_id, region
-    ),
-    boundary_pairs AS (
-        SELECT
-            rt.reach_id as up_reach,
-            rt.neighbor_reach_id as dn_reach,
-            rt.region,
-            n1.x as x1, n1.y as y1,
-            n2.x as x2, n2.y as y2,
-            n1.node_id as up_last_node,
-            n2.node_id as dn_first_node
-        FROM reach_topology rt
-        JOIN last_node ln ON rt.reach_id = ln.reach_id AND rt.region = ln.region
-        JOIN first_node fn ON rt.neighbor_reach_id = fn.reach_id AND rt.region = fn.region
-        JOIN nodes n1 ON ln.last_node_id = n1.node_id AND ln.region = n1.region
-        JOIN nodes n2 ON fn.first_node_id = n2.node_id AND fn.region = n2.region
-        WHERE rt.direction = 'down'
-            {where_clause}
-    )
-    SELECT
-        up_reach, dn_reach, region,
-        up_last_node, dn_first_node,
-        x1, y1, x2, y2,
-        111000.0 * SQRT(
-            POWER((x1 - x2) * COS(RADIANS((y1 + y2) / 2.0)), 2)
-            + POWER(y1 - y2, 2)
-        ) as boundary_dist_m
-    FROM boundary_pairs
-    WHERE 111000.0 * SQRT(
-            POWER((x1 - x2) * COS(RADIANS((y1 + y2) / 2.0)), 2)
-            + POWER(y1 - y2, 2)
-        ) > {max_dist}
-    ORDER BY boundary_dist_m DESC
-    LIMIT 10000
-    """
-
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(*) FROM reach_topology rt
-    WHERE direction = 'down' {where_clause}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="N007",
-        name="boundary_geolocation",
-        severity=Severity.WARNING,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description=f"Boundary nodes >{max_dist:.0f}m apart at reach junctions",
-        threshold=max_dist,
-    )
-
-
-@register_check(
     "N008",
     Category.NETWORK,
     Severity.ERROR,
@@ -420,7 +340,7 @@ def check_node_count_vs_n_nodes(
 @register_check(
     "N010",
     Category.NETWORK,
-    Severity.WARNING,
+    Severity.INFO,
     "Node indexes within a reach are not contiguous",
 )
 def check_node_index_contiguity(
@@ -470,7 +390,7 @@ def check_node_index_contiguity(
     return CheckResult(
         check_id="N010",
         name="node_index_contiguity",
-        severity=Severity.WARNING,
+        severity=Severity.INFO,
         passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),

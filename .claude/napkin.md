@@ -36,6 +36,10 @@
 | 2026-02-19 | self (review) | `conn.register("name", df)` without try/finally leaks on exception — subsequent calls get "Table already exists" | Always wrap `conn.register` / `conn.unregister` in try/finally |
 | 2026-02-19 | self (review) | DuckDB gate opening read-only LintRunner while write connection is active causes stale reads | Call `conn.execute("CHECKPOINT")` before opening a second connection to the same DB |
 
+| 2026-02-20 | user+self | T016 (centroid distance) and N007 (boundary geolocation) overlap with G012 (endpoint alignment) | When adding spatial proximity checks, verify against G012 first. G012 uses actual geometry endpoints — more precise than centroid or node x,y approximations. |
+| 2026-02-20 | user+self | A030 WSE monotonicity had 923 hits (2.4%) — noise, not structural error | WSE from satellite is inherently noisy; demote WSE-derived checks to INFO unless high-confidence data |
+| 2026-02-20 | self | N004 had dist_out direction backwards — assumed dist_out decreases with node_id, but actual SWORD convention is dist_out INCREASES with node_id (higher node_id = farther upstream) | Verified: 0 violations in NA with corrected direction, 89% "violated" with wrong direction. **SWORD node convention: node_id increases upstream.** |
+
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing

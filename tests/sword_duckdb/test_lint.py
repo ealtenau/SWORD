@@ -225,7 +225,6 @@ class TestRegistry:
             "T013",
             "T014",
             "T015",
-            "T016",
             "T017",
             "T018",
             "T019",
@@ -235,7 +234,6 @@ class TestRegistry:
             "N004",
             "N005",
             "N006",
-            "N007",
             "N008",
             "N010",
             "C005",
@@ -1509,53 +1507,6 @@ class TestT015Shortcut:
         conn.close()
 
 
-class TestT016CentroidDistance:
-    """Tests for T016 neighbor_centroid_distance."""
-
-    def test_pass_close(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(
-            conn,
-            [
-                {"reach_id": 1, "x": 0.0, "y": 0.0},
-                {"reach_id": 2, "x": 0.01, "y": 0.0},
-            ],
-        )
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        from src.updates.sword_duckdb.lint.checks.topology import (
-            check_neighbor_centroid_distance,
-        )
-
-        result = check_neighbor_centroid_distance(conn)
-        assert result.passed is True
-        conn.close()
-
-    def test_fail_far(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(
-            conn,
-            [
-                {"reach_id": 1, "x": 0.0, "y": 0.0},
-                {"reach_id": 2, "x": 10.0, "y": 10.0},
-            ],
-        )
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        from src.updates.sword_duckdb.lint.checks.topology import (
-            check_neighbor_centroid_distance,
-        )
-
-        result = check_neighbor_centroid_distance(conn)
-        assert result.passed is False
-        assert result.issues_found >= 1
-        conn.close()
-
-
 class TestT017DistOutJump:
     """Tests for T017 dist_out_jump."""
 
@@ -1917,7 +1868,8 @@ class TestN003NodeSpacingGap:
 class TestN004NodeDistOutMonotonicity:
     """Tests for N004 node_dist_out_monotonicity."""
 
-    def test_pass_decreasing(self, tmp_path):
+    def test_pass_increasing(self, tmp_path):
+        """dist_out should increase with node_id (higher node_id = farther upstream)."""
         conn = _spatial_conn(tmp_path)
         _create_nodes_with_dist_out(
             conn,
@@ -1927,7 +1879,7 @@ class TestN004NodeDistOutMonotonicity:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 4600.0,
                 },
                 {
                     "node_id": 1002,
@@ -1941,7 +1893,7 @@ class TestN004NodeDistOutMonotonicity:
                     "reach_id": 1,
                     "x": 0.002,
                     "y": 0.0,
-                    "dist_out": 4600.0,
+                    "dist_out": 5000.0,
                 },
             ],
         )
@@ -1953,7 +1905,8 @@ class TestN004NodeDistOutMonotonicity:
         assert result.passed is True
         conn.close()
 
-    def test_fail_increasing(self, tmp_path):
+    def test_fail_decreasing(self, tmp_path):
+        """dist_out decreasing with node_id is a violation."""
         conn = _spatial_conn(tmp_path)
         _create_nodes_with_dist_out(
             conn,
@@ -1963,14 +1916,14 @@ class TestN004NodeDistOutMonotonicity:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 5500.0,
                 },
                 {
                     "node_id": 1002,
                     "reach_id": 1,
                     "x": 0.001,
                     "y": 0.0,
-                    "dist_out": 5500.0,
+                    "dist_out": 5000.0,
                 },
             ],
         )
@@ -2135,59 +2088,6 @@ class TestN006BoundaryDistOut:
         from src.updates.sword_duckdb.lint.checks.node import check_boundary_dist_out
 
         result = check_boundary_dist_out(conn)
-        assert result.passed is False
-        assert result.issues_found >= 1
-        conn.close()
-
-
-class TestN007BoundaryGeolocation:
-    """Tests for N007 boundary_geolocation."""
-
-    def test_pass_close_boundary(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        _create_nodes_with_dist_out(
-            conn,
-            [
-                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
-                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
-                {"node_id": 2001, "reach_id": 2, "x": 0.0015, "y": 0.0},
-                {"node_id": 2002, "reach_id": 2, "x": 0.002, "y": 0.0},
-            ],
-        )
-        from src.updates.sword_duckdb.lint.checks.node import (
-            check_boundary_geolocation,
-        )
-
-        result = check_boundary_geolocation(conn)
-        assert result.passed is True
-        conn.close()
-
-    def test_fail_far_boundary(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        _create_nodes_with_dist_out(
-            conn,
-            [
-                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
-                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
-                {"node_id": 2001, "reach_id": 2, "x": 5.0, "y": 5.0},
-                {"node_id": 2002, "reach_id": 2, "x": 5.001, "y": 5.0},
-            ],
-        )
-        from src.updates.sword_duckdb.lint.checks.node import (
-            check_boundary_geolocation,
-        )
-
-        result = check_boundary_geolocation(conn)
         assert result.passed is False
         assert result.issues_found >= 1
         conn.close()
