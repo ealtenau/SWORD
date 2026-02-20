@@ -13,7 +13,7 @@ curl -s -X PUT "$API_URL" \
 OUTPUT_FILE="/tmp/dmux-test-$DMUX_PANE_ID.txt"
 
 # Run targeted tests (sword_duckdb, skip slow/postgres by default)
-if uv run pytest tests/sword_duckdb/ -q --tb=short -m "not slow and not postgres" > "$OUTPUT_FILE" 2>&1; then
+if uv run pytest tests/sword_duckdb/ -m "not slow and not postgres" > "$OUTPUT_FILE" 2>&1; then
   STATUS="passed"
 else
   STATUS="failed"
