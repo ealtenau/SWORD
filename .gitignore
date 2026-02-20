@@ -211,8 +211,7 @@ outputs/
 test_*.py
 !tests/**/test_*.py
 cookies.txt
-ml4floods_models/
-deepwatermap/
+models/
 *.npy
 
 # Session files
