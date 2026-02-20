@@ -338,3 +338,85 @@ def check_lakeflag_type_consistency(
             details=pd.DataFrame(),
             description="Type column not present in database (cannot check consistency)",
         )
+
+
+@register_check(
+    "C005",
+    Category.CLASSIFICATION,
+    Severity.WARNING,
+    "Centerline centroid far from parent reach centroid",
+    default_threshold=5000.0,
+)
+def check_centerline_reach_distance(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag centerlines whose centroid is far from their parent reach centroid."""
+    max_dist = threshold if threshold is not None else 5000.0
+    where_clause = f"AND cl.region = '{region}'" if region else ""
+
+    # Check if centerlines table exists
+    try:
+        conn.execute("SELECT cl_id FROM centerlines LIMIT 0")
+    except (duckdb.CatalogException, duckdb.BinderException):
+        return CheckResult(
+            check_id="C005",
+            name="centerline_reach_distance",
+            severity=Severity.WARNING,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0,
+            details=pd.DataFrame(),
+            description="Skipped: centerlines table not found",
+        )
+
+    query = f"""
+    WITH cl_centroids AS (
+        SELECT
+            reach_id, region,
+            AVG(x) as cl_x, AVG(y) as cl_y,
+            COUNT(*) as cl_count
+        FROM centerlines cl
+        WHERE 1=1 {where_clause}
+        GROUP BY reach_id, region
+    )
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        cc.cl_x, cc.cl_y, cc.cl_count,
+        111000.0 * SQRT(
+            POWER((r.x - cc.cl_x) * COS(RADIANS((r.y + cc.cl_y) / 2.0)), 2)
+            + POWER(r.y - cc.cl_y, 2)
+        ) as dist_m
+    FROM reaches r
+    JOIN cl_centroids cc ON r.reach_id = cc.reach_id AND r.region = cc.region
+    WHERE 111000.0 * SQRT(
+            POWER((r.x - cc.cl_x) * COS(RADIANS((r.y + cc.cl_y) / 2.0)), 2)
+            + POWER(r.y - cc.cl_y, 2)
+        ) > {max_dist}
+    ORDER BY dist_m DESC
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(DISTINCT reach_id)
+    FROM centerlines cl
+    WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="C005",
+        name="centerline_reach_distance",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Centerlines with centroid >{max_dist / 1000:.0f}km from parent reach",
+        threshold=max_dist,
+    )

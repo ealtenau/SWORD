@@ -881,3 +881,59 @@ def check_end_reach_consistency(
         details=issues,
         description="Reaches where end_reach flag doesn't match actual topology",
     )
+
+
+@register_check(
+    "A030",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "WSE should generally decrease downstream (water flows downhill)",
+)
+def check_wse_downstream_monotonicity(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag reaches where wse increases downstream (counterflow)."""
+    where_clause = f"AND r1.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r1.reach_id, r1.region, r1.river_name, r1.x, r1.y,
+        r1.wse as wse_up,
+        r2.wse as wse_down,
+        (r2.wse - r1.wse) as wse_increase
+    FROM reaches r1
+    JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
+    WHERE rt.direction = 'down'
+        AND r1.wse IS NOT NULL AND r1.wse != -9999
+        AND r2.wse IS NOT NULL AND r2.wse != -9999
+        AND r2.wse > r1.wse
+        {where_clause}
+    ORDER BY wse_increase DESC
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r1
+    JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    WHERE rt.direction = 'down'
+        AND r1.wse IS NOT NULL AND r1.wse != -9999
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A030",
+        name="wse_downstream_monotonicity",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reaches where WSE increases downstream (water should flow downhill)",
+    )
