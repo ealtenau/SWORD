@@ -307,6 +307,20 @@ def _phase2_topo_correction(
             for c, w in zip(succs, widths):
                 bifurc_share[(node, c)] = w / total_w
 
+    # Identify reaches in bifurcation channels: downstream of a bifurc
+    # through 1:1 links until a junction.  These get lateral=0 to preserve
+    # the bifurc_share split and prevent D8 re-injection.
+    in_bifurc_channel: Set[int] = set()
+    for node in topo_order:
+        preds = list(G.predecessors(node))
+        if len(preds) != 1:
+            continue  # headwater or junction — not in bifurc channel
+        parent = preds[0]
+        if G.out_degree(parent) >= 2:
+            in_bifurc_channel.add(node)  # direct bifurc child
+        elif parent in in_bifurc_channel and G.out_degree(parent) == 1:
+            in_bifurc_channel.add(node)  # 1:1 continuation of bifurc channel
+
     corrected: Dict[int, float] = {}
     for node in G.nodes():
         corrected[node] = max(dn_node_facc.get(node, 0.0), 0.0)
@@ -347,12 +361,34 @@ def _phase2_topo_correction(
                 corrected[node] = 0.0
                 if base > 0.01:
                     _record(changes, counts, node, base, 0.0, "cascade_zero")
+            elif node in in_bifurc_channel:
+                new_val = corrected[parent]
+                corrected[node] = new_val
+                if abs(new_val - base) > 0.01:
+                    _record(
+                        changes,
+                        counts,
+                        node,
+                        base,
+                        new_val,
+                        "bifurc_channel_no_lateral",
+                    )
             else:
-                lateral = max(base - parent_base, 0.0)
+                raw_lateral = max(base - parent_base, 0.0)
+                lateral = (
+                    0.0
+                    if (parent_base > 0 and raw_lateral > parent_base * 10)
+                    else raw_lateral
+                )
                 new_val = corrected[parent] + lateral
                 corrected[node] = new_val
                 if abs(new_val - base) > 0.01:
-                    _record(changes, counts, node, base, new_val, "lateral_propagate")
+                    tag = (
+                        "lateral_capped"
+                        if (raw_lateral > 0 and lateral == 0.0)
+                        else "lateral_propagate"
+                    )
+                    _record(changes, counts, node, base, new_val, tag)
 
     print("    Phase 2 corrections:")
     for ctype, n in sorted(counts.items()):
@@ -1012,6 +1048,18 @@ def _phase_final_consistency(
             for c, w in zip(succs, widths):
                 bifurc_share[(node, c)] = w / total_w
 
+    # Identify reaches in bifurcation channels (same logic as B1)
+    in_bifurc_channel: Set[int] = set()
+    for node in topo_order:
+        preds_bc = list(G.predecessors(node))
+        if len(preds_bc) != 1:
+            continue
+        parent_bc = preds_bc[0]
+        if G.out_degree(parent_bc) >= 2:
+            in_bifurc_channel.add(node)
+        elif parent_bc in in_bifurc_channel and G.out_degree(parent_bc) == 1:
+            in_bifurc_channel.add(node)
+
     changes: Dict[int, Tuple[float, float, str]] = {}
 
     for node in topo_order:
@@ -1038,10 +1086,20 @@ def _phase_final_consistency(
                 share = bifurc_share.get((parent, node), 1.0 / G.out_degree(parent))
                 new_val = corrected[parent] * share
                 corrected[node] = new_val
+            elif node in in_bifurc_channel:
+                # Bifurc channel 1:1 link: zero lateral to preserve share
+                new_val = corrected[parent]
+                if new_val > corrected[node] + 1.0:
+                    corrected[node] = new_val
             else:
-                # 1:1 link: propagate parent + lateral
+                # Normal 1:1 link: propagate parent + lateral
                 parent_base = max(dn_node_facc.get(parent, 0.0), 0.0)
-                lateral = max(base - parent_base, 0.0)
+                raw_lateral = max(base - parent_base, 0.0)
+                lateral = (
+                    0.0
+                    if (parent_base > 0 and raw_lateral > parent_base * 10)
+                    else raw_lateral
+                )
                 new_val = corrected[parent] + lateral
                 if new_val > corrected[node] + 1.0:
                     corrected[node] = new_val
@@ -1051,6 +1109,8 @@ def _phase_final_consistency(
                 tag = "final_junction"
             elif G.out_degree(preds[0]) >= 2:
                 tag = "final_bifurc"
+            elif node in in_bifurc_channel:
+                tag = "final_bifurc_channel"
             else:
                 tag = "final_1to1"
             changes[node] = (old_val, corrected[node], tag)
@@ -1830,13 +1890,17 @@ def correct_facc_denoise(
         n_final_bifurc = sum(
             1 for _, _, t in final_changes.values() if t == "final_bifurc"
         )
+        n_final_bifurc_ch = sum(
+            1 for _, _, t in final_changes.values() if t == "final_bifurc_channel"
+        )
         n_final_1to1 = sum(1 for _, _, t in final_changes.values() if t == "final_1to1")
         print(f"    Phase 2 changes: {len(changes)}")
         print(f"    Isotonic adjusted: {len(adjusted)}")
         print(f"    Junctions re-floored: {len(floored)}")
         print(
             f"    Final consistency: {len(final_changes)} "
-            f"({n_final_junc} junc, {n_final_bifurc} bifurc, {n_final_1to1} 1:1)"
+            f"({n_final_junc} junc, {n_final_bifurc} bifurc, "
+            f"{n_final_bifurc_ch} bifurc_ch, {n_final_1to1} 1:1)"
         )
 
         # ==============================================================
@@ -1880,6 +1944,11 @@ def correct_facc_denoise(
                 n_final_bifurc = sum(
                     1 for _, _, t in final_changes.values() if t == "final_bifurc"
                 )
+                n_final_bifurc_ch = sum(
+                    1
+                    for _, _, t in final_changes.values()
+                    if t == "final_bifurc_channel"
+                )
                 n_final_1to1 = sum(
                     1 for _, _, t in final_changes.values() if t == "final_1to1"
                 )
@@ -1889,7 +1958,7 @@ def correct_facc_denoise(
                 print(
                     f"    Final consistency: {len(final_changes)} "
                     f"({n_final_junc} junc, {n_final_bifurc} bifurc, "
-                    f"{n_final_1to1} 1:1)"
+                    f"{n_final_bifurc_ch} bifurc_ch, {n_final_1to1} 1:1)"
                 )
         else:
             print("    SKIPPED (no MERIT path provided)")
@@ -2074,6 +2143,7 @@ def correct_facc_denoise(
             "final_consistency_changes": len(final_changes),
             "final_junctions": n_final_junc,
             "final_bifurc": n_final_bifurc,
+            "final_bifurc_channel": n_final_bifurc_ch,
             "final_1to1": n_final_1to1,
             "node_facc_updated": n_node_written,
             "validation": validation,

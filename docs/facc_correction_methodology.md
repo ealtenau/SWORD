@@ -172,7 +172,7 @@ Stage B takes the clean baseline from Stage A and propagates topology-aware corr
 
 #### Pass 1 — Topology propagation
 
-Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Stage A, before any topology correction) and the **corrected** value (the output of this step). Four cases:
+Process all reaches in topological order (headwaters first, outlets last). This guarantees that every reach's upstream neighbors are already corrected before we visit it. We define two values per reach: the **baseline** (facc from Stage A, before any topology correction) and the **corrected** value (the output of this step). Five cases:
 
 **Headwaters** (no upstream neighbors): Keep the baseline facc. Nothing upstream to correct against.
 
@@ -207,7 +207,35 @@ The tradeoff: in the clone case we lose the real ~10K lateral drainage (zeroed a
 
 **Bifurcation children** (parent has 2+ downstream children): `corrected = corrected_parent * (width_child / sum_sibling_widths)`. Instead of every child getting 100% of the parent's facc (the UPA cloning error), each child gets its share proportional to channel width. If a child has no width data, children split equally as a fallback.
 
-**1:1 links where the parent was lowered** (parent's corrected < parent's baseline, meaning a bifurcation split propagated down to it): `corrected = corrected_parent + max(baseline - baseline_parent, 0)`. This lateral-increment logic matters because bifurcation corrections need to propagate. When a bifurcation split lowers a parent's facc, the child on a 1:1 link should inherit that lower value — otherwise the correction stops at the first reach downstream and the rest of the river still carries the inflated UPA value.
+**1:1 links in bifurcation channels** (reach is downstream of a bifurcation through 1:1 links, before the next junction): `corrected = corrected_parent` — lateral is forced to zero. These reaches are identified by a pre-pass over the topological order: a reach enters the bifurcation channel set if its sole parent is a bifurcation point (out_degree >= 2), or if its sole parent is itself in the bifurcation channel set and has out_degree 1. The channel ends when a junction (in_degree >= 2) is reached.
+
+The reason: D8 assigns the full parent river's UPA to every reach in both branches of a bifurcation. After `bifurc_share` correctly splits flow (e.g., 600K / 400K), the raw baseline for downstream 1:1 reaches still carries the full river's D8 value (~1M). Normal lateral computation (`base - parent_base`) would re-inject the D8 value, undoing the split:
+
+```
+  Bifurcation parent (baseline 1,000,000 km²)
+       |
+       ├── Child A (60% share) → corrected to 600,000
+       |      |
+       |      Reach Y (1:1 link, baseline 1,000,000 km² from D8)
+       |
+       |      Normal lateral: max(1,000,000 - 1,000,000, 0) = 0  ← OK here
+       |      But corrected[parent] = 600,000, so:
+       |      corrected_Y = 600,000 + 0 = 600,000  ✓
+       |
+       └── Child B (40% share) → corrected to 400,000
+              |
+              Reach Z (1:1 link, baseline 1,010,000 km² from D8)
+
+              Normal lateral: max(1,010,000 - 1,000,000, 0) = 10,000  ← D8 re-injection!
+              corrected_Z = 400,000 + 10,000 = 410,000  ← inflated
+
+              With bifurc channel zero-lateral:
+              corrected_Z = 400,000  ✓ (preserves share)
+```
+
+At reconvergence junctions, `floor = sum(upstream shares)` correctly reconstructs approximately the parent value instead of double-counting inflated channels.
+
+**1:1 links outside bifurcation channels where the parent was lowered** (parent's corrected < parent's baseline, meaning a bifurcation split propagated down to it): `corrected = corrected_parent + max(baseline - baseline_parent, 0)`. This lateral-increment logic matters because bifurcation corrections need to propagate. When a bifurcation split lowers a parent's facc, the child on a 1:1 link should inherit that lower value — otherwise the correction stops at the first reach downstream and the rest of the river still carries the inflated UPA value.
 
 ```
   Bifurcation parent (baseline 1,000,000 km²)
@@ -240,7 +268,9 @@ Pass 1 blocks raise cascading to prevent exponential inflation, but this leaves 
 
 This does propagate raises through 1:1 chains, but it does **not** compound at junctions. By the time Pass 2 runs, Pass 1 has already set all junction values via `sum(corrected_upstream) + lateral`. Pass 2 only lifts reaches that are strictly below their upstream corrected values — it never re-sums at junctions, so there is no doubling.
 
-Pass 2 adjusts 6,086 reaches globally (3,717 on 1:1 links, 1,211 at bifurcations, 1,158 at junctions), producing the `final_1to1`, `final_bifurc`, and `final_junction` correction types.
+Pass 2 also enforces zero lateral for 1:1 links in bifurcation channels (same tracking as Pass 1), ensuring that isotonic smoothing or junction re-flooring between passes did not re-inject D8 values into bifurcation branches.
+
+Pass 2 adjusts 6,086 reaches globally (3,717 on 1:1 links, 1,211 at bifurcations, 1,158 at junctions), producing the `final_1to1`, `final_bifurc`, `final_bifurc_channel`, and `final_junction` correction types.
 
 The code also includes safety-net steps between Pass 1 and Pass 2 (isotonic smoothing, junction re-flooring, node validation). In practice these find 0 violations because Stage A and Pass 1 already produce a consistent result.
 
@@ -320,8 +350,10 @@ Correction type breakdown (global totals from summary JSONs):
 | junction_floor | B Pass 1 | 13,107 | Junction conservation enforcement |
 | baseline_isotonic | A4 | 5,203 | Baseline PAVA smoothing on 1:1 chains |
 | bifurc_share | B Pass 1 | 4,453 | Width-proportional bifurcation splitting |
+| bifurc_channel_no_lateral | B Pass 1 | TBD | Zero lateral on 1:1 links inside bifurcation channels |
 | final_1to1 | B Pass 2 | 3,717 | Consistency enforcement on 1:1 links |
 | final_bifurc | B Pass 2 | 1,211 | Consistency enforcement at bifurcations |
+| final_bifurc_channel | B Pass 2 | TBD | Consistency enforcement on bifurc channel 1:1 links |
 | final_junction | B Pass 2 | 1,158 | Consistency enforcement at junctions |
 | node_denoise | A1 | 86 | Within-reach node facc variability correction |
 | baseline_node_override | A2 | 3 | Extreme low baseline cap |
