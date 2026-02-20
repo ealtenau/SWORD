@@ -40,6 +40,8 @@
 | 2026-02-20 | user+self | A030 WSE monotonicity had 923 hits (2.4%) — noise, not structural error | WSE from satellite is inherently noisy; demote WSE-derived checks to INFO unless high-confidence data |
 | 2026-02-20 | self | N004 had dist_out direction backwards — assumed dist_out decreases with node_id, but actual SWORD convention is dist_out INCREASES with node_id (higher node_id = farther upstream) | Verified: 0 violations in NA with corrected direction, 89% "violated" with wrong direction. **SWORD node convention: node_id increases upstream.** |
 | 2026-02-20 | review | N006 boundary node selection used MAX(node_id) for upstream reach and MIN for downstream — wrong ends after N004 fix. Was comparing upstream-most of A to downstream-most of B instead of the actual junction boundary. | When fixing a convention (like node_id ordering), audit ALL checks that depend on the same assumption. N006 went from ~10K false positives to 2,598 real issues after swapping MIN/MAX. |
+| 2026-02-20 | self | N010 assumed step=1 node suffixes but SWORD uses step=10 (001, 011, 021, ..., 991). ALL 10K "violations" were false positives. | Use `(max - min) / 10 + 1` for expected count, not `max - min + 1`. Always verify check assumptions against real data distribution. |
+| 2026-02-20 | self | N006 threshold=1000m too low — typical reaches are ~10km, so 1km boundary gaps are normal. 10K hits at 1km → 1,037 at 10km. | Set boundary gap thresholds relative to typical reach scale, not absolute small values. |
 
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
