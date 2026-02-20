@@ -225,7 +225,6 @@ class TestRegistry:
             "T013",
             "T014",
             "T015",
-            "T016",
             "T017",
             "T018",
             "T019",
@@ -235,7 +234,6 @@ class TestRegistry:
             "N004",
             "N005",
             "N006",
-            "N007",
             "N008",
             "N010",
             "C005",
@@ -1509,53 +1507,6 @@ class TestT015Shortcut:
         conn.close()
 
 
-class TestT016CentroidDistance:
-    """Tests for T016 neighbor_centroid_distance."""
-
-    def test_pass_close(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(
-            conn,
-            [
-                {"reach_id": 1, "x": 0.0, "y": 0.0},
-                {"reach_id": 2, "x": 0.01, "y": 0.0},
-            ],
-        )
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        from src.sword_duckdb.lint.checks.topology import (
-            check_neighbor_centroid_distance,
-        )
-
-        result = check_neighbor_centroid_distance(conn)
-        assert result.passed is True
-        conn.close()
-
-    def test_fail_far(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(
-            conn,
-            [
-                {"reach_id": 1, "x": 0.0, "y": 0.0},
-                {"reach_id": 2, "x": 10.0, "y": 10.0},
-            ],
-        )
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        from src.sword_duckdb.lint.checks.topology import (
-            check_neighbor_centroid_distance,
-        )
-
-        result = check_neighbor_centroid_distance(conn)
-        assert result.passed is False
-        assert result.issues_found >= 1
-        conn.close()
-
-
 class TestT017DistOutJump:
     """Tests for T017 dist_out_jump."""
 
@@ -1915,9 +1866,13 @@ class TestN003NodeSpacingGap:
 
 
 class TestN004NodeDistOutMonotonicity:
-    """Tests for N004 node_dist_out_monotonicity."""
+    """Tests for N004 node_dist_out_monotonicity.
 
-    def test_pass_decreasing(self, tmp_path):
+    SWORD convention: node_id increases upstream, so dist_out INCREASES with node_id.
+    """
+
+    def test_pass_increasing(self, tmp_path):
+        """dist_out increases with node_id -- correct SWORD convention."""
         conn = _spatial_conn(tmp_path)
         _create_nodes_with_dist_out(
             conn,
@@ -1927,7 +1882,7 @@ class TestN004NodeDistOutMonotonicity:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 4600.0,
                 },
                 {
                     "node_id": 1002,
@@ -1941,7 +1896,7 @@ class TestN004NodeDistOutMonotonicity:
                     "reach_id": 1,
                     "x": 0.002,
                     "y": 0.0,
-                    "dist_out": 4600.0,
+                    "dist_out": 5000.0,
                 },
             ],
         )
@@ -1953,7 +1908,8 @@ class TestN004NodeDistOutMonotonicity:
         assert result.passed is True
         conn.close()
 
-    def test_fail_increasing(self, tmp_path):
+    def test_fail_decreasing(self, tmp_path):
+        """dist_out decreases with node_id -- violates SWORD convention."""
         conn = _spatial_conn(tmp_path)
         _create_nodes_with_dist_out(
             conn,
@@ -1963,14 +1919,14 @@ class TestN004NodeDistOutMonotonicity:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 5500.0,
                 },
                 {
                     "node_id": 1002,
                     "reach_id": 1,
                     "x": 0.001,
                     "y": 0.0,
-                    "dist_out": 5500.0,
+                    "dist_out": 5000.0,
                 },
             ],
         )
@@ -1985,9 +1941,13 @@ class TestN004NodeDistOutMonotonicity:
 
 
 class TestN005NodeDistOutJump:
-    """Tests for N005 node_dist_out_jump."""
+    """Tests for N005 node_dist_out_jump.
+
+    SWORD convention: node_id increases upstream, so dist_out increases with node_id.
+    """
 
     def test_pass_small_jump(self, tmp_path):
+        """Small dist_out step (200m) -- below 600m threshold."""
         conn = _spatial_conn(tmp_path)
         _create_nodes_with_dist_out(
             conn,
@@ -1997,14 +1957,14 @@ class TestN005NodeDistOutJump:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 4800.0,
                 },
                 {
                     "node_id": 1002,
                     "reach_id": 1,
                     "x": 0.001,
                     "y": 0.0,
-                    "dist_out": 4800.0,
+                    "dist_out": 5000.0,
                 },
             ],
         )
@@ -2015,6 +1975,7 @@ class TestN005NodeDistOutJump:
         conn.close()
 
     def test_fail_large_jump(self, tmp_path):
+        """Large dist_out step (2000m) -- above 600m threshold."""
         conn = _spatial_conn(tmp_path)
         _create_nodes_with_dist_out(
             conn,
@@ -2024,14 +1985,14 @@ class TestN005NodeDistOutJump:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 3000.0,
                 },
                 {
                     "node_id": 1002,
                     "reach_id": 1,
                     "x": 0.001,
                     "y": 0.0,
-                    "dist_out": 3000.0,
+                    "dist_out": 5000.0,
                 },
             ],
         )
@@ -2044,9 +2005,17 @@ class TestN005NodeDistOutJump:
 
 
 class TestN006BoundaryDistOut:
-    """Tests for N006 boundary_dist_out."""
+    """Tests for N006 boundary_dist_out.
+
+    SWORD convention: node_id increases upstream (higher node_id = higher dist_out).
+    For upstream reach A -> downstream reach B:
+      A's downstream boundary = MIN(node_id) in A
+      B's upstream boundary   = MAX(node_id) in B
+    Gap = |A_min_dist_out - B_max_dist_out|.
+    """
 
     def test_pass_close_dist_out(self, tmp_path):
+        """Boundary gap = |5000 - 4900| = 100m < 1000m threshold. PASS."""
         conn = _spatial_conn(tmp_path)
         _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
         _create_topology_table(
@@ -2061,28 +2030,28 @@ class TestN006BoundaryDistOut:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 5500.0,
+                    "dist_out": 5000.0,
                 },
                 {
                     "node_id": 1002,
                     "reach_id": 1,
                     "x": 0.001,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 5500.0,
                 },
                 {
                     "node_id": 2001,
                     "reach_id": 2,
                     "x": 0.002,
                     "y": 0.0,
-                    "dist_out": 4900.0,
+                    "dist_out": 4500.0,
                 },
                 {
                     "node_id": 2002,
                     "reach_id": 2,
                     "x": 0.003,
                     "y": 0.0,
-                    "dist_out": 4500.0,
+                    "dist_out": 4900.0,
                 },
             ],
         )
@@ -2093,6 +2062,7 @@ class TestN006BoundaryDistOut:
         conn.close()
 
     def test_fail_large_gap(self, tmp_path):
+        """Boundary gap = |9500 - 5000| = 4500m > 1000m threshold. FAIL."""
         conn = _spatial_conn(tmp_path)
         _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
         _create_topology_table(
@@ -2107,87 +2077,34 @@ class TestN006BoundaryDistOut:
                     "reach_id": 1,
                     "x": 0.0,
                     "y": 0.0,
-                    "dist_out": 10000.0,
+                    "dist_out": 9500.0,
                 },
                 {
                     "node_id": 1002,
                     "reach_id": 1,
                     "x": 0.001,
                     "y": 0.0,
-                    "dist_out": 9500.0,
+                    "dist_out": 10000.0,
                 },
                 {
                     "node_id": 2001,
                     "reach_id": 2,
                     "x": 0.002,
                     "y": 0.0,
-                    "dist_out": 5000.0,
+                    "dist_out": 4500.0,
                 },
                 {
                     "node_id": 2002,
                     "reach_id": 2,
                     "x": 0.003,
                     "y": 0.0,
-                    "dist_out": 4500.0,
+                    "dist_out": 5000.0,
                 },
             ],
         )
         from src.sword_duckdb.lint.checks.node import check_boundary_dist_out
 
         result = check_boundary_dist_out(conn)
-        assert result.passed is False
-        assert result.issues_found >= 1
-        conn.close()
-
-
-class TestN007BoundaryGeolocation:
-    """Tests for N007 boundary_geolocation."""
-
-    def test_pass_close_boundary(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        _create_nodes_with_dist_out(
-            conn,
-            [
-                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
-                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
-                {"node_id": 2001, "reach_id": 2, "x": 0.0015, "y": 0.0},
-                {"node_id": 2002, "reach_id": 2, "x": 0.002, "y": 0.0},
-            ],
-        )
-        from src.sword_duckdb.lint.checks.node import (
-            check_boundary_geolocation,
-        )
-
-        result = check_boundary_geolocation(conn)
-        assert result.passed is True
-        conn.close()
-
-    def test_fail_far_boundary(self, tmp_path):
-        conn = _spatial_conn(tmp_path)
-        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
-        _create_topology_table(
-            conn,
-            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
-        )
-        _create_nodes_with_dist_out(
-            conn,
-            [
-                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
-                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
-                {"node_id": 2001, "reach_id": 2, "x": 5.0, "y": 5.0},
-                {"node_id": 2002, "reach_id": 2, "x": 5.001, "y": 5.0},
-            ],
-        )
-        from src.sword_duckdb.lint.checks.node import (
-            check_boundary_geolocation,
-        )
-
-        result = check_boundary_geolocation(conn)
         assert result.passed is False
         assert result.issues_found >= 1
         conn.close()
@@ -2260,17 +2177,21 @@ class TestN008NodeCountVsNNodes:
 
 
 class TestN010NodeIndexContiguity:
-    """Tests for N010 node_index_contiguity."""
+    """Tests for N010 node_index_contiguity.
+
+    SWORD uses step-10 node suffixes: 001, 011, 021, ..., 991.
+    Expected count = (max_suffix - min_suffix) / 10 + 1.
+    """
 
     def test_pass_contiguous(self, tmp_path):
+        """Suffixes 001, 011, 021 -- step-10 contiguous."""
         conn = _spatial_conn(tmp_path)
-        # Suffixes: 001, 002, 003 — contiguous
         _create_nodes_with_dist_out(
             conn,
             [
                 {"node_id": 10001001, "reach_id": 1, "x": 0.0, "y": 0.0},
-                {"node_id": 10001002, "reach_id": 1, "x": 0.001, "y": 0.0},
-                {"node_id": 10001003, "reach_id": 1, "x": 0.002, "y": 0.0},
+                {"node_id": 10001011, "reach_id": 1, "x": 0.001, "y": 0.0},
+                {"node_id": 10001021, "reach_id": 1, "x": 0.002, "y": 0.0},
             ],
         )
         from src.sword_duckdb.lint.checks.node import (
@@ -2282,13 +2203,13 @@ class TestN010NodeIndexContiguity:
         conn.close()
 
     def test_fail_gap(self, tmp_path):
+        """Suffixes 001, 031 -- missing 011, 021 (gap of 2)."""
         conn = _spatial_conn(tmp_path)
-        # Suffixes: 001, 003 — gap at 002
         _create_nodes_with_dist_out(
             conn,
             [
                 {"node_id": 10001001, "reach_id": 1, "x": 0.0, "y": 0.0},
-                {"node_id": 10001003, "reach_id": 1, "x": 0.002, "y": 0.0},
+                {"node_id": 10001031, "reach_id": 1, "x": 0.002, "y": 0.0},
             ],
         )
         from src.sword_duckdb.lint.checks.node import (

@@ -36,6 +36,10 @@
 | 2026-02-19 | self (review) | `conn.register("name", df)` without try/finally leaks on exception — subsequent calls get "Table already exists" | Always wrap `conn.register` / `conn.unregister` in try/finally |
 | 2026-02-19 | self (review) | DuckDB gate opening read-only LintRunner while write connection is active causes stale reads | Call `conn.execute("CHECKPOINT")` before opening a second connection to the same DB |
 
+| 2026-02-20 | code review | N006 boundary_dist_out used MAX(node_id) for upstream reach's downstream boundary and MIN(node_id) for downstream reach's upstream boundary — backwards given SWORD convention (node_id increases upstream) | Upstream reach's downstream boundary = MIN(node_id); downstream reach's upstream boundary = MAX(node_id). Keep threshold at 1000m. |
+| 2026-02-20 | code review | N010 node_index_contiguity used `max - min + 1` formula assuming step-1 suffixes, but SWORD uses step-10 (001, 011, 021, ..., 991) | Use `(max - min) / 10 + 1` for expected count |
+| 2026-02-20 | user decision | N006 threshold discussed — 1000m kept as-is per user preference | Do not change N006 threshold from 1000m |
+
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing

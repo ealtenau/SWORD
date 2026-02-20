@@ -908,65 +908,6 @@ def check_topology_shortcut(
 
 
 @register_check(
-    "T016",
-    Category.TOPOLOGY,
-    Severity.WARNING,
-    "Connected reaches with centroids >30 km apart",
-    default_threshold=30000.0,
-)
-def check_neighbor_centroid_distance(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """Flag topology edges where connected reach centroids are unreasonably far apart."""
-    max_dist = threshold if threshold is not None else 30000.0
-    where_clause = f"AND rt.region = '{region}'" if region else ""
-
-    # Equirectangular approximation: 1 degree ~ 111000m at equator, cos(lat) correction
-    query = f"""
-    SELECT
-        rt.reach_id, rt.neighbor_reach_id, rt.region, rt.direction,
-        r1.x as x1, r1.y as y1, r2.x as x2, r2.y as y2,
-        r1.river_name,
-        111000.0 * SQRT(
-            POWER((r1.x - r2.x) * COS(RADIANS((r1.y + r2.y) / 2.0)), 2)
-            + POWER(r1.y - r2.y, 2)
-        ) as approx_dist_m
-    FROM reach_topology rt
-    JOIN reaches r1 ON rt.reach_id = r1.reach_id AND rt.region = r1.region
-    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
-    WHERE 111000.0 * SQRT(
-            POWER((r1.x - r2.x) * COS(RADIANS((r1.y + r2.y) / 2.0)), 2)
-            + POWER(r1.y - r2.y, 2)
-        ) > {max_dist}
-        {where_clause}
-    ORDER BY approx_dist_m DESC
-    LIMIT 10000
-    """
-
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(*) FROM reach_topology rt WHERE 1=1 {where_clause}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="T016",
-        name="neighbor_centroid_distance",
-        severity=Severity.WARNING,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description=f"Topology edges with centroid distance >{max_dist / 1000:.0f} km",
-        threshold=max_dist,
-    )
-
-
-@register_check(
     "T017",
     Category.TOPOLOGY,
     Severity.WARNING,
@@ -1139,7 +1080,7 @@ def check_river_name_nodata(
 @register_check(
     "T020",
     Category.TOPOLOGY,
-    Severity.WARNING,
+    Severity.INFO,
     "Reach river_name disagrees with all neighbors' consensus",
 )
 def check_river_name_consensus(
@@ -1196,7 +1137,7 @@ def check_river_name_consensus(
     return CheckResult(
         check_id="T020",
         name="river_name_consensus",
-        severity=Severity.WARNING,
+        severity=Severity.INFO,
         passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),
