@@ -7,7 +7,6 @@ Validates topology consistency and flow direction properties.
 from typing import Optional
 
 import duckdb
-import pandas as pd
 
 from ..core import (
     register_check,
@@ -77,7 +76,7 @@ def check_dist_out_monotonicity(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r1
     WHERE dist_out > 0 AND dist_out != -9999
-    {where_clause.replace('r1.', '')}
+    {where_clause.replace("r1.", "")}
     """
     total = conn.execute(total_query).fetchone()[0]
 
@@ -144,7 +143,7 @@ def check_path_freq_monotonicity(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r1
     WHERE path_freq > 0 AND path_freq != -9999
-    {where_clause.replace('r1.', '')}
+    {where_clause.replace("r1.", "")}
     """
     total = conn.execute(total_query).fetchone()[0]
 
@@ -213,7 +212,7 @@ def check_facc_monotonicity(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r1
     WHERE facc > 0 AND facc != -9999
-    {where_clause.replace('r1.', '')}
+    {where_clause.replace("r1.", "")}
     """
     total = conn.execute(total_query).fetchone()[0]
 
@@ -751,4 +750,457 @@ def check_topology_referential_integrity(
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
         description="Topology edges referencing non-existent reach_ids (dangling references)",
+    )
+
+
+@register_check(
+    "T013",
+    Category.TOPOLOGY,
+    Severity.ERROR,
+    "Reach must not reference itself as neighbor",
+)
+def check_self_referential_topology(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Check that no reach lists itself as a neighbor in reach_topology."""
+    where_clause = f"AND rt.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        rt.reach_id, rt.region, rt.direction, rt.neighbor_rank,
+        r.river_name, r.x, r.y
+    FROM reach_topology rt
+    JOIN reaches r ON rt.reach_id = r.reach_id AND rt.region = r.region
+    WHERE rt.reach_id = rt.neighbor_reach_id
+        {where_clause}
+    ORDER BY rt.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reach_topology rt WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T013",
+        name="self_referential_topology",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Topology edges where reach references itself as neighbor",
+    )
+
+
+@register_check(
+    "T014",
+    Category.TOPOLOGY,
+    Severity.ERROR,
+    "Same pair must not appear in both up and down directions",
+)
+def check_bidirectional_topology(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Check that no reach pair has edges in both directions (A upstream of B AND A downstream of B)."""
+    where_clause = f"AND rt1.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        rt1.reach_id, rt1.neighbor_reach_id, rt1.region,
+        r.river_name, r.x, r.y
+    FROM reach_topology rt1
+    JOIN reach_topology rt2
+        ON rt1.reach_id = rt2.reach_id
+        AND rt1.neighbor_reach_id = rt2.neighbor_reach_id
+        AND rt1.region = rt2.region
+    JOIN reaches r ON rt1.reach_id = r.reach_id AND rt1.region = r.region
+    WHERE rt1.direction = 'up' AND rt2.direction = 'down'
+        {where_clause}
+    ORDER BY rt1.reach_id
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(DISTINCT reach_id) FROM reach_topology rt1 WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T014",
+        name="bidirectional_topology",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reach pairs that appear as both upstream and downstream neighbors",
+    )
+
+
+@register_check(
+    "T015",
+    Category.TOPOLOGY,
+    Severity.INFO,
+    "Shortcut edges bypassing intermediate reach (A→B→C and A→C)",
+)
+def check_topology_shortcut(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Find shortcut edges: A→C downstream where A→B→C also exists."""
+    where_clause = f"AND rt1.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        rt1.reach_id as reach_a,
+        rt2.reach_id as reach_b,
+        rt3.neighbor_reach_id as reach_c,
+        rt1.region,
+        r.river_name, r.x, r.y
+    FROM reach_topology rt1
+    JOIN reach_topology rt2
+        ON rt1.neighbor_reach_id = rt2.reach_id
+        AND rt1.region = rt2.region
+    JOIN reach_topology rt3
+        ON rt1.reach_id = rt3.reach_id
+        AND rt2.neighbor_reach_id = rt3.neighbor_reach_id
+        AND rt1.region = rt3.region
+    JOIN reaches r ON rt1.reach_id = r.reach_id AND rt1.region = r.region
+    WHERE rt1.direction = 'down'
+        AND rt2.direction = 'down'
+        AND rt3.direction = 'down'
+        AND rt1.neighbor_reach_id != rt3.neighbor_reach_id
+        {where_clause}
+    ORDER BY rt1.reach_id
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(DISTINCT reach_id) FROM reach_topology rt1
+    WHERE direction = 'down' {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T015",
+        name="topology_shortcut",
+        severity=Severity.INFO,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Shortcut edges where A→C exists alongside A→B→C",
+    )
+
+
+@register_check(
+    "T016",
+    Category.TOPOLOGY,
+    Severity.WARNING,
+    "Connected reaches with centroids >30 km apart",
+    default_threshold=30000.0,
+)
+def check_neighbor_centroid_distance(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag topology edges where connected reach centroids are unreasonably far apart."""
+    max_dist = threshold if threshold is not None else 30000.0
+    where_clause = f"AND rt.region = '{region}'" if region else ""
+
+    # Equirectangular approximation: 1 degree ~ 111000m at equator, cos(lat) correction
+    query = f"""
+    SELECT
+        rt.reach_id, rt.neighbor_reach_id, rt.region, rt.direction,
+        r1.x as x1, r1.y as y1, r2.x as x2, r2.y as y2,
+        r1.river_name,
+        111000.0 * SQRT(
+            POWER((r1.x - r2.x) * COS(RADIANS((r1.y + r2.y) / 2.0)), 2)
+            + POWER(r1.y - r2.y, 2)
+        ) as approx_dist_m
+    FROM reach_topology rt
+    JOIN reaches r1 ON rt.reach_id = r1.reach_id AND rt.region = r1.region
+    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
+    WHERE 111000.0 * SQRT(
+            POWER((r1.x - r2.x) * COS(RADIANS((r1.y + r2.y) / 2.0)), 2)
+            + POWER(r1.y - r2.y, 2)
+        ) > {max_dist}
+        {where_clause}
+    ORDER BY approx_dist_m DESC
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reach_topology rt WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T016",
+        name="neighbor_centroid_distance",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Topology edges with centroid distance >{max_dist / 1000:.0f} km",
+        threshold=max_dist,
+    )
+
+
+@register_check(
+    "T017",
+    Category.TOPOLOGY,
+    Severity.WARNING,
+    "dist_out jump >30 km between connected reaches",
+    default_threshold=30000.0,
+)
+def check_dist_out_jump(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag downstream pairs where dist_out changes by more than threshold."""
+    max_jump = threshold if threshold is not None else 30000.0
+    where_clause = f"AND r1.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r1.reach_id, r1.region, r1.river_name, r1.x, r1.y,
+        r1.dist_out as dist_out_up,
+        r2.dist_out as dist_out_down,
+        ABS(r1.dist_out - r2.dist_out) as dist_out_jump
+    FROM reaches r1
+    JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
+    WHERE rt.direction = 'down'
+        AND r1.dist_out != -9999 AND r2.dist_out != -9999
+        AND r1.dist_out > 0 AND r2.dist_out > 0
+        AND ABS(r1.dist_out - r2.dist_out) > {max_jump}
+        {where_clause}
+    ORDER BY dist_out_jump DESC
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r1
+    JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
+    WHERE rt.direction = 'down'
+        AND r1.dist_out != -9999 AND r2.dist_out != -9999
+        AND r1.dist_out > 0 AND r2.dist_out > 0
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T017",
+        name="dist_out_jump",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Connected reaches with dist_out jump >{max_jump / 1000:.0f} km",
+        threshold=max_jump,
+    )
+
+
+@register_check(
+    "T018",
+    Category.TOPOLOGY,
+    Severity.ERROR,
+    "Reach IDs must be 11 digits ending in 1/3/4/5/6; node IDs must be 14 digits",
+)
+def check_id_format(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Validate reach_id and node_id format conventions."""
+    where_reach = f"AND r.region = '{region}'" if region else ""
+    where_node = f"AND n.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT reach_id as entity_id, region, 'reach' as issue_type,
+        CASE
+            WHEN LENGTH(CAST(reach_id AS VARCHAR)) != 11 THEN 'wrong_length'
+            WHEN CAST(reach_id AS VARCHAR)[-1:] NOT IN ('1','3','4','5','6') THEN 'bad_suffix'
+        END as reason
+    FROM reaches r
+    WHERE (
+        LENGTH(CAST(reach_id AS VARCHAR)) != 11
+        OR CAST(reach_id AS VARCHAR)[-1:] NOT IN ('1','3','4','5','6')
+    )
+        {where_reach}
+    UNION ALL
+    SELECT node_id as entity_id, region, 'node' as issue_type,
+        CASE
+            WHEN LENGTH(CAST(node_id AS VARCHAR)) != 14 THEN 'wrong_length'
+        END as reason
+    FROM nodes n
+    WHERE LENGTH(CAST(node_id AS VARCHAR)) != 14
+        {where_node}
+    ORDER BY issue_type, entity_id
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT
+        (SELECT COUNT(*) FROM reaches r WHERE 1=1 {where_reach})
+        + (SELECT COUNT(*) FROM nodes n WHERE 1=1 {where_node})
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T018",
+        name="id_format",
+        severity=Severity.ERROR,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="IDs with invalid format (reach: 11 digits ending 1/3/4/5/6; node: 14 digits)",
+    )
+
+
+@register_check(
+    "T019",
+    Category.TOPOLOGY,
+    Severity.INFO,
+    "Reaches with river_name = 'NODATA' (unnamed)",
+)
+def check_river_name_nodata(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Report coverage of unnamed reaches (river_name = 'NODATA')."""
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r.region, COUNT(*) as nodata_count
+    FROM reaches r
+    WHERE r.river_name = 'NODATA'
+        {where_clause}
+    GROUP BY r.region
+    ORDER BY nodata_count DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    nodata_total = int(issues["nodata_count"].sum()) if len(issues) > 0 else 0
+
+    return CheckResult(
+        check_id="T019",
+        name="river_name_nodata",
+        severity=Severity.INFO,
+        passed=True,  # Informational
+        total_checked=total,
+        issues_found=nodata_total,
+        issue_pct=100 * nodata_total / total if total > 0 else 0,
+        details=issues,
+        description=f"Reaches with river_name='NODATA': {nodata_total} ({100 * nodata_total / total:.1f}%)"
+        if total > 0
+        else "No reaches found",
+    )
+
+
+@register_check(
+    "T020",
+    Category.TOPOLOGY,
+    Severity.WARNING,
+    "Reach river_name disagrees with all neighbors' consensus",
+)
+def check_river_name_consensus(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag reaches whose river_name differs from ALL their neighbors (consensus mismatch)."""
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    nn_where = f"AND rt.region = '{region}'" if region else ""
+
+    query = f"""
+    WITH neighbor_names AS (
+        SELECT
+            rt.reach_id, rt.region,
+            r2.river_name as neighbor_name
+        FROM reach_topology rt
+        JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
+        WHERE r2.river_name != 'NODATA'
+            {nn_where}
+    ),
+    consensus AS (
+        SELECT
+            reach_id, region,
+            MODE(neighbor_name) as consensus_name,
+            COUNT(DISTINCT neighbor_name) as distinct_names,
+            COUNT(*) as total_neighbors
+        FROM neighbor_names
+        GROUP BY reach_id, region
+    )
+    SELECT
+        r.reach_id, r.region, r.river_name, r.x, r.y,
+        c.consensus_name, c.distinct_names, c.total_neighbors
+    FROM reaches r
+    JOIN consensus c ON r.reach_id = c.reach_id AND r.region = c.region
+    WHERE r.river_name != 'NODATA'
+        AND c.distinct_names = 1
+        AND r.river_name != c.consensus_name
+        {where_clause}
+    ORDER BY c.total_neighbors DESC
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r
+    WHERE river_name != 'NODATA'
+    {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T020",
+        name="river_name_consensus",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Reaches where river_name disagrees with all neighbors' consensus",
     )

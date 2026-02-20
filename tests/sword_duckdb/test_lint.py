@@ -222,6 +222,23 @@ class TestRegistry:
             "FL004",
             "N001",
             "N002",
+            "T013",
+            "T014",
+            "T015",
+            "T016",
+            "T017",
+            "T018",
+            "T019",
+            "T020",
+            "A030",
+            "N003",
+            "N004",
+            "N005",
+            "N006",
+            "N007",
+            "N008",
+            "N010",
+            "C005",
         ]
         registry = get_registry()
         for check_id in required:
@@ -1361,4 +1378,1003 @@ class TestG021ReachOverlap:
 
         result = check_reach_overlap(conn)
         assert result.passed is True
+        conn.close()
+
+
+# =============================================================================
+# T013-T020 Topology Check Tests
+# =============================================================================
+
+
+class TestT013SelfReferential:
+    """Tests for T013 self_referential_topology."""
+
+    def test_pass_no_self_ref(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_self_referential_topology,
+        )
+
+        result = check_self_referential_topology(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_self_ref(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}])
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 1}],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_self_referential_topology,
+        )
+
+        result = check_self_referential_topology(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+
+class TestT014Bidirectional:
+    """Tests for T014 bidirectional_topology."""
+
+    def test_pass_normal(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+                {"reach_id": 2, "direction": "up", "neighbor_reach_id": 1},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_bidirectional_topology,
+        )
+
+        result = check_bidirectional_topology(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_both_directions(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "up", "neighbor_reach_id": 2},
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_bidirectional_topology,
+        )
+
+        result = check_bidirectional_topology(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestT015Shortcut:
+    """Tests for T015 topology_shortcut."""
+
+    def test_pass_no_shortcut(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}, {"reach_id": 3}])
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+                {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_topology_shortcut,
+        )
+
+        result = check_topology_shortcut(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_shortcut(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}, {"reach_id": 3}])
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+                {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
+                {
+                    "reach_id": 1,
+                    "direction": "down",
+                    "neighbor_reach_id": 3,
+                    "neighbor_rank": 1,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_topology_shortcut,
+        )
+
+        result = check_topology_shortcut(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestT016CentroidDistance:
+    """Tests for T016 neighbor_centroid_distance."""
+
+    def test_pass_close(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "x": 0.0, "y": 0.0},
+                {"reach_id": 2, "x": 0.01, "y": 0.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_neighbor_centroid_distance,
+        )
+
+        result = check_neighbor_centroid_distance(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_far(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "x": 0.0, "y": 0.0},
+                {"reach_id": 2, "x": 10.0, "y": 10.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_neighbor_centroid_distance,
+        )
+
+        result = check_neighbor_centroid_distance(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestT017DistOutJump:
+    """Tests for T017 dist_out_jump."""
+
+    def test_pass_small_jump(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "dist_out": 10000.0},
+                {"reach_id": 2, "dist_out": 5000.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_dist_out_jump,
+        )
+
+        result = check_dist_out_jump(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_large_jump(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "dist_out": 100000.0},
+                {"reach_id": 2, "dist_out": 5000.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_dist_out_jump,
+        )
+
+        result = check_dist_out_jump(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestT018IdFormat:
+    """Tests for T018 id_format."""
+
+    def test_pass_valid_ids(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 12345678901}])
+        _create_nodes_table(
+            conn,
+            [
+                {
+                    "node_id": 12345678901001,
+                    "reach_id": 12345678901,
+                    "x": 0,
+                    "y": 0,
+                }
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import check_id_format
+
+        result = check_id_format(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_bad_reach_id(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        # 10-digit reach_id — wrong length
+        _create_reaches_table(conn, [{"reach_id": 1234567890}])
+        _create_nodes_table(
+            conn,
+            [
+                {
+                    "node_id": 12345678901001,
+                    "reach_id": 1234567890,
+                    "x": 0,
+                    "y": 0,
+                }
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import check_id_format
+
+        result = check_id_format(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestT019NameNodata:
+    """Tests for T019 river_name_nodata."""
+
+    def test_reports_nodata(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "river_name": "NODATA"},
+                {"reach_id": 2, "river_name": "Rhine"},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_river_name_nodata,
+        )
+
+        result = check_river_name_nodata(conn)
+        assert result.passed is True  # Informational
+        assert result.issues_found == 1
+        conn.close()
+
+    def test_no_nodata(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [{"reach_id": 1, "river_name": "Rhine"}],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_river_name_nodata,
+        )
+
+        result = check_river_name_nodata(conn)
+        assert result.issues_found == 0
+        conn.close()
+
+
+class TestT020NameConsensus:
+    """Tests for T020 river_name_consensus."""
+
+    def test_pass_same_name(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "river_name": "Rhine"},
+                {"reach_id": 2, "river_name": "Rhine"},
+                {"reach_id": 3, "river_name": "Rhine"},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 2},
+                {"reach_id": 2, "direction": "up", "neighbor_reach_id": 1},
+                {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
+                {"reach_id": 3, "direction": "up", "neighbor_reach_id": 2},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_river_name_consensus,
+        )
+
+        result = check_river_name_consensus(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_disagrees(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [
+                {"reach_id": 1, "river_name": "Rhine"},
+                {"reach_id": 2, "river_name": "Danube"},
+                {"reach_id": 3, "river_name": "Rhine"},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [
+                {"reach_id": 2, "direction": "up", "neighbor_reach_id": 1},
+                {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.topology import (
+            check_river_name_consensus,
+        )
+
+        result = check_river_name_consensus(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+# =============================================================================
+# A030 WSE Monotonicity Tests
+# =============================================================================
+
+
+def _create_reaches_with_wse(conn, rows):
+    """Create reaches table with wse column."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reaches (
+            reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+            geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+            lakeflag INTEGER, dist_out DOUBLE, river_name VARCHAR,
+            n_rch_up INTEGER DEFAULT 0, n_rch_down INTEGER DEFAULT 0,
+            wse DOUBLE DEFAULT -9999
+        )
+    """)
+    for r in rows:
+        conn.execute(
+            """INSERT INTO reaches (reach_id, region, x, y, reach_length, width,
+               lakeflag, dist_out, river_name, n_rch_up, n_rch_down, wse)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            [
+                r.get("reach_id"),
+                r.get("region", "NA"),
+                r.get("x", 0.0),
+                r.get("y", 0.0),
+                r.get("reach_length", 5000.0),
+                r.get("width", 100.0),
+                r.get("lakeflag", 0),
+                r.get("dist_out", 50000.0),
+                r.get("river_name", "Test"),
+                r.get("n_rch_up", 0),
+                r.get("n_rch_down", 0),
+                r.get("wse", -9999),
+            ],
+        )
+
+
+class TestA030WseMonotonicity:
+    """Tests for A030 wse_downstream_monotonicity."""
+
+    def test_pass_decreasing(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_with_wse(
+            conn,
+            [
+                {"reach_id": 1, "wse": 100.0},
+                {"reach_id": 2, "wse": 50.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.attributes import (
+            check_wse_downstream_monotonicity,
+        )
+
+        result = check_wse_downstream_monotonicity(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_increasing(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_with_wse(
+            conn,
+            [
+                {"reach_id": 1, "wse": 50.0},
+                {"reach_id": 2, "wse": 100.0},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.attributes import (
+            check_wse_downstream_monotonicity,
+        )
+
+        result = check_wse_downstream_monotonicity(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+    def test_sentinel_skipped(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_with_wse(
+            conn,
+            [
+                {"reach_id": 1, "wse": -9999},
+                {"reach_id": 2, "wse": -9999},
+            ],
+        )
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        from src.updates.sword_duckdb.lint.checks.attributes import (
+            check_wse_downstream_monotonicity,
+        )
+
+        result = check_wse_downstream_monotonicity(conn)
+        assert result.passed is True
+        assert result.total_checked == 0
+        conn.close()
+
+
+# =============================================================================
+# N003-N010 Node Check Tests
+# =============================================================================
+
+
+def _create_nodes_with_dist_out(conn, rows):
+    """Create nodes table with dist_out column."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS nodes (
+            node_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+            geom GEOMETRY, reach_id BIGINT, node_length DOUBLE,
+            dist_out DOUBLE DEFAULT -9999
+        )
+    """)
+    for n in rows:
+        conn.execute(
+            "INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?)",
+            [
+                n["node_id"],
+                n.get("region", "NA"),
+                n["x"],
+                n["y"],
+                n.get("geom"),
+                n["reach_id"],
+                n.get("node_length", 200.0),
+                n.get("dist_out", -9999),
+            ],
+        )
+
+
+class TestN003NodeSpacingGap:
+    """Tests for N003 node_spacing_gap."""
+
+    def test_pass_close_nodes(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import check_node_spacing_gap
+
+        result = check_node_spacing_gap(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_far_nodes(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 1002, "reach_id": 1, "x": 1.0, "y": 0.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import check_node_spacing_gap
+
+        result = check_node_spacing_gap(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestN004NodeDistOutMonotonicity:
+    """Tests for N004 node_dist_out_monotonicity."""
+
+    def test_pass_decreasing(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {
+                    "node_id": 1001,
+                    "reach_id": 1,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "dist_out": 5000.0,
+                },
+                {
+                    "node_id": 1002,
+                    "reach_id": 1,
+                    "x": 0.001,
+                    "y": 0.0,
+                    "dist_out": 4800.0,
+                },
+                {
+                    "node_id": 1003,
+                    "reach_id": 1,
+                    "x": 0.002,
+                    "y": 0.0,
+                    "dist_out": 4600.0,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_node_dist_out_monotonicity,
+        )
+
+        result = check_node_dist_out_monotonicity(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_increasing(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {
+                    "node_id": 1001,
+                    "reach_id": 1,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "dist_out": 5000.0,
+                },
+                {
+                    "node_id": 1002,
+                    "reach_id": 1,
+                    "x": 0.001,
+                    "y": 0.0,
+                    "dist_out": 5500.0,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_node_dist_out_monotonicity,
+        )
+
+        result = check_node_dist_out_monotonicity(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestN005NodeDistOutJump:
+    """Tests for N005 node_dist_out_jump."""
+
+    def test_pass_small_jump(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {
+                    "node_id": 1001,
+                    "reach_id": 1,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "dist_out": 5000.0,
+                },
+                {
+                    "node_id": 1002,
+                    "reach_id": 1,
+                    "x": 0.001,
+                    "y": 0.0,
+                    "dist_out": 4800.0,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import check_node_dist_out_jump
+
+        result = check_node_dist_out_jump(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_large_jump(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {
+                    "node_id": 1001,
+                    "reach_id": 1,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "dist_out": 5000.0,
+                },
+                {
+                    "node_id": 1002,
+                    "reach_id": 1,
+                    "x": 0.001,
+                    "y": 0.0,
+                    "dist_out": 3000.0,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import check_node_dist_out_jump
+
+        result = check_node_dist_out_jump(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestN006BoundaryDistOut:
+    """Tests for N006 boundary_dist_out."""
+
+    def test_pass_close_dist_out(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {
+                    "node_id": 1001,
+                    "reach_id": 1,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "dist_out": 5500.0,
+                },
+                {
+                    "node_id": 1002,
+                    "reach_id": 1,
+                    "x": 0.001,
+                    "y": 0.0,
+                    "dist_out": 5000.0,
+                },
+                {
+                    "node_id": 2001,
+                    "reach_id": 2,
+                    "x": 0.002,
+                    "y": 0.0,
+                    "dist_out": 4900.0,
+                },
+                {
+                    "node_id": 2002,
+                    "reach_id": 2,
+                    "x": 0.003,
+                    "y": 0.0,
+                    "dist_out": 4500.0,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import check_boundary_dist_out
+
+        result = check_boundary_dist_out(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_large_gap(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {
+                    "node_id": 1001,
+                    "reach_id": 1,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "dist_out": 10000.0,
+                },
+                {
+                    "node_id": 1002,
+                    "reach_id": 1,
+                    "x": 0.001,
+                    "y": 0.0,
+                    "dist_out": 9500.0,
+                },
+                {
+                    "node_id": 2001,
+                    "reach_id": 2,
+                    "x": 0.002,
+                    "y": 0.0,
+                    "dist_out": 5000.0,
+                },
+                {
+                    "node_id": 2002,
+                    "reach_id": 2,
+                    "x": 0.003,
+                    "y": 0.0,
+                    "dist_out": 4500.0,
+                },
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import check_boundary_dist_out
+
+        result = check_boundary_dist_out(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestN007BoundaryGeolocation:
+    """Tests for N007 boundary_geolocation."""
+
+    def test_pass_close_boundary(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
+                {"node_id": 2001, "reach_id": 2, "x": 0.0015, "y": 0.0},
+                {"node_id": 2002, "reach_id": 2, "x": 0.002, "y": 0.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_boundary_geolocation,
+        )
+
+        result = check_boundary_geolocation(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_far_boundary(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}, {"reach_id": 2}])
+        _create_topology_table(
+            conn,
+            [{"reach_id": 1, "direction": "down", "neighbor_reach_id": 2}],
+        )
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
+                {"node_id": 2001, "reach_id": 2, "x": 5.0, "y": 5.0},
+                {"node_id": 2002, "reach_id": 2, "x": 5.001, "y": 5.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_boundary_geolocation,
+        )
+
+        result = check_boundary_geolocation(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestN008NodeCountVsNNodes:
+    """Tests for N008 node_count_vs_n_nodes."""
+
+    def test_pass_matching_count(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, dist_out DOUBLE, river_name VARCHAR,
+                n_rch_up INTEGER DEFAULT 0, n_rch_down INTEGER DEFAULT 0,
+                n_nodes INTEGER DEFAULT 3
+            )
+        """)
+        conn.execute(
+            "INSERT INTO reaches (reach_id, region, river_name, n_nodes) "
+            "VALUES (1, 'NA', 'Test', 3)"
+        )
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
+                {"node_id": 1003, "reach_id": 1, "x": 0.002, "y": 0.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_node_count_vs_n_nodes,
+        )
+
+        result = check_node_count_vs_n_nodes(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_mismatch(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, dist_out DOUBLE, river_name VARCHAR,
+                n_rch_up INTEGER DEFAULT 0, n_rch_down INTEGER DEFAULT 0,
+                n_nodes INTEGER DEFAULT 5
+            )
+        """)
+        conn.execute(
+            "INSERT INTO reaches (reach_id, region, river_name, n_nodes) "
+            "VALUES (1, 'NA', 'Test', 5)"
+        )
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 1002, "reach_id": 1, "x": 0.001, "y": 0.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_node_count_vs_n_nodes,
+        )
+
+        result = check_node_count_vs_n_nodes(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+class TestN010NodeIndexContiguity:
+    """Tests for N010 node_index_contiguity."""
+
+    def test_pass_contiguous(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        # Suffixes: 001, 002, 003 — contiguous
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {"node_id": 10001001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 10001002, "reach_id": 1, "x": 0.001, "y": 0.0},
+                {"node_id": 10001003, "reach_id": 1, "x": 0.002, "y": 0.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_node_index_contiguity,
+        )
+
+        result = check_node_index_contiguity(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_gap(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        # Suffixes: 001, 003 — gap at 002
+        _create_nodes_with_dist_out(
+            conn,
+            [
+                {"node_id": 10001001, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"node_id": 10001003, "reach_id": 1, "x": 0.002, "y": 0.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.node import (
+            check_node_index_contiguity,
+        )
+
+        result = check_node_index_contiguity(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+
+# =============================================================================
+# C005 Centerline Distance Tests
+# =============================================================================
+
+
+def _create_centerlines_table(conn, rows):
+    """Create minimal centerlines table."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS centerlines (
+            cl_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+            reach_id BIGINT
+        )
+    """)
+    for cl in rows:
+        conn.execute(
+            "INSERT INTO centerlines VALUES (?,?,?,?,?)",
+            [
+                cl["cl_id"],
+                cl.get("region", "NA"),
+                cl["x"],
+                cl["y"],
+                cl["reach_id"],
+            ],
+        )
+
+
+class TestC005CenterlineReachDistance:
+    """Tests for C005 centerline_reach_distance."""
+
+    def test_pass_close(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1, "x": 0.0, "y": 0.0}])
+        _create_centerlines_table(
+            conn,
+            [
+                {"cl_id": 101, "reach_id": 1, "x": 0.001, "y": 0.001},
+                {"cl_id": 102, "reach_id": 1, "x": -0.001, "y": -0.001},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.classification import (
+            check_centerline_reach_distance,
+        )
+
+        result = check_centerline_reach_distance(conn)
+        assert result.passed is True
+        conn.close()
+
+    def test_fail_far(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1, "x": 0.0, "y": 0.0}])
+        _create_centerlines_table(
+            conn,
+            [
+                {"cl_id": 101, "reach_id": 1, "x": 5.0, "y": 5.0},
+                {"cl_id": 102, "reach_id": 1, "x": 6.0, "y": 6.0},
+            ],
+        )
+        from src.updates.sword_duckdb.lint.checks.classification import (
+            check_centerline_reach_distance,
+        )
+
+        result = check_centerline_reach_distance(conn)
+        assert result.passed is False
+        assert result.issues_found >= 1
+        conn.close()
+
+    def test_skip_no_centerlines(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(conn, [{"reach_id": 1}])
+        from src.updates.sword_duckdb.lint.checks.classification import (
+            check_centerline_reach_distance,
+        )
+
+        result = check_centerline_reach_distance(conn)
+        assert result.passed is True
+        assert result.total_checked == 0
         conn.close()

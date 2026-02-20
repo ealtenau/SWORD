@@ -107,24 +107,32 @@ class LintRunner:
                 if check in registry:
                     # Exact match
                     specs.append(registry[check])
+                elif check == "FL":
+                    specs.extend(get_checks_by_category(Category.FLAGS))
+                elif check == "F":
+                    # Special case: F checks are in ATTRIBUTES but filtered by ID
+                    all_attrs = get_checks_by_category(Category.ATTRIBUTES)
+                    specs.extend([s for s in all_attrs if s.check_id.startswith("F")])
                 elif len(check) == 1:
-                    # Category prefix (T, A, G, C, V, F)
-                    # Note: F (facc) checks are registered under ATTRIBUTES category
+                    # Category prefix (T, A, G, C, V, N)
                     prefix_map = {
                         "T": Category.TOPOLOGY,
                         "A": Category.ATTRIBUTES,
                         "G": Category.GEOMETRY,
                         "C": Category.CLASSIFICATION,
                         "V": Category.V17C,
+                        "N": Category.NETWORK,
                     }
                     if check in prefix_map:
-                        specs.extend(get_checks_by_category(prefix_map[check]))
-                    elif check == "F":
-                        # Special case: F checks are in ATTRIBUTES but filtered by ID
-                        all_attrs = get_checks_by_category(Category.ATTRIBUTES)
-                        specs.extend(
-                            [s for s in all_attrs if s.check_id.startswith("F")]
-                        )
+                        cat_specs = get_checks_by_category(prefix_map[check])
+                        if check == "A":
+                            # Exclude F-prefixed facc checks that share Category.ATTRIBUTES
+                            cat_specs = [
+                                s for s in cat_specs if s.check_id.startswith("A")
+                            ]
+                        specs.extend(cat_specs)
+                    else:
+                        raise ValueError(f"Unknown check prefix: {check}")
                 else:
                     # Unknown check
                     raise ValueError(f"Unknown check ID or prefix: {check}")
