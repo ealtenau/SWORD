@@ -1403,47 +1403,8 @@ class SWORD:
 
         nodes_df = pd.DataFrame(nodes_data)
 
-        # Reorder columns to match INSERT statement
-        cols = [
-            "node_id",
-            "region",
-            "x",
-            "y",
-            "cl_id_min",
-            "cl_id_max",
-            "reach_id",
-            "node_length",
-            "wse",
-            "wse_var",
-            "width",
-            "width_var",
-            "max_width",
-            "facc",
-            "dist_out",
-            "lakeflag",
-            "obstr_type",
-            "grod_id",
-            "hfalls_id",
-            "n_chan_max",
-            "n_chan_mod",
-            "wth_coef",
-            "ext_dist_coef",
-            "meander_length",
-            "sinuosity",
-            "river_name",
-            "manual_add",
-            "edit_flag",
-            "trib_flag",
-            "path_freq",
-            "path_order",
-            "path_segs",
-            "stream_order",
-            "main_side",
-            "end_reach",
-            "network",
-            "add_flag",
-            "version",
-        ]
+        # Reorder columns to match canonical order (only columns present in df)
+        cols = [c for c in NODES_COLUMN_ORDER if c in nodes_df.columns]
         nodes_df = nodes_df[cols]
 
         # Insert nodes using executemany for reliability
@@ -1545,52 +1506,8 @@ class SWORD:
 
         reaches_df = pd.DataFrame(reaches_data)
 
-        # Reorder columns to match INSERT statement
-        cols = [
-            "reach_id",
-            "region",
-            "x",
-            "y",
-            "x_min",
-            "x_max",
-            "y_min",
-            "y_max",
-            "cl_id_min",
-            "cl_id_max",
-            "reach_length",
-            "n_nodes",
-            "wse",
-            "wse_var",
-            "width",
-            "width_var",
-            "slope",
-            "max_width",
-            "facc",
-            "dist_out",
-            "lakeflag",
-            "obstr_type",
-            "grod_id",
-            "hfalls_id",
-            "n_chan_max",
-            "n_chan_mod",
-            "n_rch_up",
-            "n_rch_down",
-            "swot_obs",
-            "iceflag",
-            "low_slope_flag",
-            "river_name",
-            "edit_flag",
-            "trib_flag",
-            "path_freq",
-            "path_order",
-            "path_segs",
-            "stream_order",
-            "main_side",
-            "end_reach",
-            "network",
-            "add_flag",
-            "version",
-        ]
+        # Reorder columns to match canonical order (only columns present in df)
+        cols = [c for c in REACHES_COLUMN_ORDER if c in reaches_df.columns]
         reaches_df = reaches_df[cols]
 
         # Insert main reaches using executemany for reliability
