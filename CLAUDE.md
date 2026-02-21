@@ -412,7 +412,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
     results = runner.run(region="NA", severity=Severity.ERROR)
 ```
 
-**Check IDs (61 total):**
+**Check IDs (58 total):**
 
 | ID | Name | Severity | Description |
 |----|------|----------|-------------|
