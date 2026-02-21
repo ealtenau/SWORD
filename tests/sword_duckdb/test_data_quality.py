@@ -3,7 +3,6 @@
 Ported from src/_legacy/updates/formatting_scripts/.
 """
 
-
 import pandas as pd
 import pytest
 
