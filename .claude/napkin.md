@@ -42,6 +42,8 @@
 
 | 2026-02-20 | self | Initially designed dn_node_id/up_node_id using MIN/MAX(node_id), but test fixture had opposite convention from production | Always use dist_out for semantic ordering, not node_id — flow direction changes can reorder node IDs |
 
+| 2026-02-20 | self | Lint redundancy audit: F012 was exact duplicate of F006, G019/G020 were strict subsets of G012 | Before adding a new lint check, search for existing checks on the same join pattern + condition. Duplicate checks waste runtime and confuse the issue count. |
+
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing
