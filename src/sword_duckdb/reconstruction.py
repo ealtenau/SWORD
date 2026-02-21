@@ -3160,37 +3160,86 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        STUB: Preserve existing trib_flag values.
+        """Reconstruct node trib_flag from MHV spatial join."""
+        mhv_dir = self._source_data_dir / "MHV_SWORD" if self._source_data_dir else None
+        if mhv_dir is None or not mhv_dir.exists():
+            logger.warning("node.trib_flag: MHV data not found. Preserving values.")
+            return {
+                "status": "skipped",
+                "reason": "MHV not found",
+                "updated": 0,
+                "dry_run": dry_run,
+            }
 
-        trib_flag indicates EXTERNAL tributaries from MERIT Hydro-Vector (MHV)
-        that are NOT represented in SWORD but contribute flow to a node.
+        import geopandas as gpd
+        from scipy.spatial import cKDTree
 
-        IMPORTANT: trib_flag != (n_rch_up > 1)
-        - n_rch_up > 1 = SWORD junction (multiple SWORD reaches converge)
-        - trib_flag = 1 = External tributary from MHV enters at this node
+        logger.info("Reconstructing node.trib_flag from MHV spatial join")
 
-        Original algorithm (Add_Trib_Flag.py):
-        1. Load MHV points where sword_flag=0 AND strmorder >= 3
-        2. Build cKDTree from MHV points
-        3. Query SWORD nodes with k=10 neighbors
-        4. Flag node if nearest MHV point <= 0.003 degrees (~333m at equator)
+        where_clause = ""
+        params = [self._region]
+        if node_ids is not None:
+            placeholders = ", ".join(["?"] * len(node_ids))
+            where_clause = f"AND node_id IN ({placeholders})"
+            params.extend(node_ids)
 
-        This stub preserves existing values since full reconstruction requires
-        external MHV data files (data/inputs/MHV_SWORD/).
-        """
-        logger.warning(
-            "node.trib_flag reconstruction requires external MERIT Hydro-Vector data. "
-            "Preserving existing values."
+        nodes_df = self._conn.execute(
+            f"SELECT node_id, x, y, reach_id FROM nodes WHERE region = ? {where_clause}",
+            params,
+        ).fetchdf()
+        if nodes_df.empty:
+            return {"status": "ok", "updated": 0, "dry_run": dry_run}
+
+        nodes_df["basin"] = nodes_df["node_id"].astype(str).str[:2].astype(int)
+        needed_basins = nodes_df["basin"].unique()
+
+        mhv_files = sorted(mhv_dir.glob("*pts*"))
+        if not mhv_files:
+            mhv_files = sorted(mhv_dir.glob("*.gpkg")) + sorted(mhv_dir.glob("*.shp"))
+
+        trib_flag = np.zeros(len(nodes_df), dtype=np.int32)
+
+        for mhv_file in mhv_files:
+            fname = mhv_file.stem
+            basin_candidates = [
+                int(s) for s in fname.split("_") if s.isdigit() and len(s) <= 2
+            ]
+            if not basin_candidates:
+                continue
+            file_basin = basin_candidates[-1]
+            if file_basin not in needed_basins:
+                continue
+
+            try:
+                mhv = gpd.read_file(mhv_file)
+            except Exception as e:
+                logger.warning(f"Failed to read {mhv_file}: {e}")
+                continue
+
+            if "sword_flag" in mhv.columns and "strmorder" in mhv.columns:
+                mhv = mhv[(mhv["sword_flag"] == 0) & (mhv["strmorder"] >= 3)]
+            if mhv.empty or "x" not in mhv.columns or "y" not in mhv.columns:
+                continue
+
+            kdt = cKDTree(np.column_stack([mhv["x"].values, mhv["y"].values]))
+            basin_mask = nodes_df["basin"] == file_basin
+            if not basin_mask.any():
+                continue
+            node_pts = np.column_stack(
+                [
+                    nodes_df.loc[basin_mask, "x"].values,
+                    nodes_df.loc[basin_mask, "y"].values,
+                ]
+            )
+            distances, _ = kdt.query(node_pts, k=1)
+            trib_flag[basin_mask.values] = np.where(
+                distances <= 0.003, 1, trib_flag[basin_mask.values]
+            )
+
+        nodes_df["trib_flag"] = trib_flag
+        return self._update_node_attribute(
+            "trib_flag", nodes_df[["node_id", "trib_flag"]], dry_run
         )
-
-        # Return empty result to preserve existing values
-        return {
-            "status": "skipped",
-            "reason": "trib_flag requires external MHV data - preserving existing values",
-            "updated": 0,
-            "dry_run": dry_run,
-        }
 
     def _reconstruct_node_obstr_type(
         self,
@@ -3982,40 +4031,19 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        STUB: Preserve existing trib_flag values.
-
-        trib_flag indicates EXTERNAL tributaries from MERIT Hydro-Vector (MHV)
-        that are NOT represented in SWORD but contribute flow to a reach.
-
-        IMPORTANT: trib_flag != (n_rch_up > 1)
-        - n_rch_up > 1 = SWORD junction (multiple SWORD reaches converge)
-        - trib_flag = 1 = External tributary from MHV enters here
-
-        From v17b data:
-        - 15,133 reaches have trib_flag=1 but n_rch_up <= 1 (true external tribs)
-        - 17,482 reaches have n_rch_up > 1 but trib_flag=0 (junctions w/o external trib)
-
-        Original algorithm (Add_Trib_Flag.py):
-        1. Load MHV points where sword_flag=0 AND strmorder >= 3
-        2. For each SWORD node, find MHV points within 0.003 degrees (~333m)
-        3. Flag reach if any node has nearby MHV tributary
-
-        This stub preserves existing values since full reconstruction requires
-        external MHV data files (data/inputs/MHV_SWORD/).
-        """
-        logger.warning(
-            "reach.trib_flag reconstruction requires external MERIT Hydro-Vector data. "
-            "Preserving existing values."
-        )
-
-        # Return empty result to preserve existing values
-        return {
-            "status": "skipped",
-            "reason": "trib_flag requires external MHV data - preserving existing values",
-            "updated": 0,
-            "dry_run": dry_run,
-        }
+        """Reconstruct reach trib_flag as MAX of node trib_flags."""
+        logger.info("Reconstructing reach.trib_flag from node max")
+        where_clause = ""
+        params = [self._region]
+        if reach_ids is not None:
+            placeholders = ", ".join(["?"] * len(reach_ids))
+            where_clause = f"AND n.reach_id IN ({placeholders})"
+            params.extend(reach_ids)
+        result_df = self._conn.execute(
+            f"SELECT n.reach_id, MAX(n.trib_flag) as trib_flag FROM nodes n WHERE n.region = ? {where_clause} GROUP BY n.reach_id",
+            params,
+        ).fetchdf()
+        return self._update_reach_attribute("trib_flag", result_df, dry_run)
 
     # =========================================================================
     # STUB RECONSTRUCTORS (require external data)

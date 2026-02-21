@@ -889,3 +889,48 @@ class TestPathSegs:
         assert n_unique_ids == n_combos, (
             f"{n_combos} distinct combos but only {n_unique_ids} unique path_segs IDs"
         )
+
+
+class TestTribFlag:
+    def test_not_stub_when_data_present(self, sword_writable, tmp_path):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        node = sword_writable._db.execute(
+            "SELECT node_id, x, y FROM nodes WHERE region = 'NA' LIMIT 1"
+        ).fetchone()
+        node_id, nx, ny = node
+
+        mhv_dir = tmp_path / "MHV_SWORD"
+        mhv_dir.mkdir()
+        basin = int(str(node_id)[:2])
+        gdf = gpd.GeoDataFrame(
+            {
+                "x": [nx + 0.001],
+                "y": [ny + 0.001],
+                "sword_flag": [0],
+                "strmorder": [4],
+                "geometry": [Point(nx + 0.001, ny + 0.001)],
+            }
+        )
+        gdf.to_file(mhv_dir / f"mhv_pts_{basin:02d}.gpkg", driver="GPKG")
+
+        engine = ReconstructionEngine(sword_writable, source_data_dir=str(tmp_path))
+        result = engine._reconstruct_node_trib_flag(node_ids=[node_id], dry_run=True)
+        assert result.get("status") != "skipped"
+
+    def test_values_binary(self, sword_writable, tmp_path):
+        import numpy as np
+
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        mhv_dir = tmp_path / "MHV_SWORD"
+        mhv_dir.mkdir()
+        engine = ReconstructionEngine(sword_writable, source_data_dir=str(tmp_path))
+        result = engine._reconstruct_node_trib_flag(dry_run=True)
+        if result.get("status") == "skipped":
+            pytest.skip("No MHV data")
+        vals = set(np.array(result["values"]).astype(int))
+        assert vals.issubset({0, 1})
