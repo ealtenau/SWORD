@@ -3247,42 +3247,44 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct node obstr_type from GROD.
-
-        Based on Attach_Fill_Variables.py:
-        - obstr_type: 0=none, 1=dam, 2=lock, 3=low-perm, 4=waterfall
-        - Values >4 are reset to 0
-
-        Note: Full implementation requires GROD spatial join.
-        This inherits from reach obstr_type as a fallback.
-        """
-        logger.info("Reconstructing node.obstr_type from parent reach")
-
+        """Reconstruct node obstr_type from GROD spatial join (0=none, 1=dam, 2=lock, 3=low-perm, 4=waterfall)."""
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
             placeholders = ", ".join(["?"] * len(node_ids))
-            where_clause = f"AND n.node_id IN ({placeholders})"
+            where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        # Inherit from reach, clamping values >4 to 0
-        result_df = self._conn.execute(
-            f"""
-            SELECT
-                n.node_id,
-                CASE
-                    WHEN r.obstr_type > 4 THEN 0
-                    ELSE COALESCE(r.obstr_type, 0)
-                END as obstr_type
-            FROM nodes n
-            JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
-            WHERE n.region = ? {where_clause}
-        """,
-            params,
+        nodes_df = self._conn.execute(
+            f"SELECT node_id, x, y FROM nodes WHERE region = ? {where_clause}", params
         ).fetchdf()
+        if nodes_df.empty:
+            return {"status": "ok", "updated": 0, "dry_run": dry_run}
 
-        return self._update_node_attribute("obstr_type", result_df, dry_run)
+        _, obstr_types = self._load_grod_data(nodes_df)
+        if obstr_types is None:
+            logger.info(
+                "Reconstructing node.obstr_type from parent reach (no GROD data)"
+            )
+            where_node = where_clause.replace("node_id", "n.node_id")
+            result_df = self._conn.execute(
+                f"""
+                SELECT n.node_id,
+                       CASE WHEN r.obstr_type > 4 THEN 0
+                            ELSE COALESCE(r.obstr_type, 0) END as obstr_type
+                FROM nodes n
+                JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
+                WHERE n.region = ? {where_node}
+            """,
+                [self._region] + (list(node_ids) if node_ids else []),
+            ).fetchdf()
+            return self._update_node_attribute("obstr_type", result_df, dry_run)
+
+        logger.info("Reconstructing node.obstr_type from GROD spatial join")
+        nodes_df["obstr_type"] = obstr_types
+        return self._update_node_attribute(
+            "obstr_type", nodes_df[["node_id", "obstr_type"]], dry_run
+        )
 
     def _reconstruct_reach_max_width(
         self,
@@ -4051,22 +4053,79 @@ class ReconstructionEngine:
     # These reconstructors are stubs that document the requirement for external
     # data sources. They preserve existing values or return defaults.
 
+    def _load_grod_data(self, nodes_df):
+        """Load GROD data and spatial-join to nodes. Returns (grod_ids, obstr_types) arrays."""
+        grod_dir = self._source_data_dir / "GROD" if self._source_data_dir else None
+        if grod_dir is None or not grod_dir.exists():
+            return None, None
+
+        import geopandas as gpd
+        from scipy.spatial import cKDTree
+
+        grod_files = sorted(grod_dir.glob("*.gpkg")) + sorted(grod_dir.glob("*.shp"))
+        if not grod_files:
+            return None, None
+
+        all_grod = []
+        for f in grod_files:
+            try:
+                all_grod.append(gpd.read_file(f))
+            except Exception as e:
+                logger.warning(f"Failed to read {f}: {e}")
+        if not all_grod:
+            return None, None
+
+        import pandas as pd
+
+        grod = pd.concat(all_grod, ignore_index=True)
+
+        # Normalize column names
+        col_map = {}
+        for c in grod.columns:
+            if c.lower() == "grod_id":
+                col_map[c] = "grod_id"
+            elif c.lower() == "type":
+                col_map[c] = "obstr_type"
+        grod = grod.rename(columns=col_map)
+
+        if "geometry" in grod.columns:
+            grod["_x"] = grod.geometry.centroid.x
+            grod["_y"] = grod.geometry.centroid.y
+        elif "x" in grod.columns and "y" in grod.columns:
+            grod["_x"] = grod["x"]
+            grod["_y"] = grod["y"]
+        else:
+            return None, None
+
+        grod = grod.dropna(subset=["_x", "_y"])
+        if grod.empty:
+            return None, None
+
+        kdt = cKDTree(np.column_stack([grod["_x"].values, grod["_y"].values]))
+        node_pts = np.column_stack([nodes_df["x"].values, nodes_df["y"].values])
+        distances, indices = kdt.query(node_pts, k=1)
+
+        grod_ids = np.zeros(len(nodes_df), dtype=np.int64)
+        obstr_types = np.zeros(len(nodes_df), dtype=np.int32)
+
+        matched = distances <= 0.005
+        if matched.any():
+            if "grod_id" in grod.columns:
+                grod_ids[matched] = grod["grod_id"].values[indices[matched]]
+            if "obstr_type" in grod.columns:
+                raw_types = grod["obstr_type"].values[indices[matched]].astype(np.int32)
+                raw_types[raw_types > 4] = 0
+                obstr_types[matched] = raw_types
+
+        return grod_ids, obstr_types
+
     def _reconstruct_node_grod_id(
         self,
         node_ids: Optional[List[int]] = None,
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct node grod_id from GROD spatial join.
-
-        REQUIRES EXTERNAL DATA: GROD (Global River Obstruction Database)
-        This is a stub - preserves existing values.
-        """
-        logger.warning(
-            "node.grod_id requires external GROD data - preserving existing values"
-        )
-
+        """Reconstruct node grod_id from GROD spatial join."""
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
@@ -4074,16 +4133,26 @@ class ReconstructionEngine:
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(
-            f"""
-            SELECT node_id, COALESCE(grod_id, 0) as grod_id
-            FROM nodes
-            WHERE region = ? {where_clause}
-        """,
-            params,
+        nodes_df = self._conn.execute(
+            f"SELECT node_id, x, y FROM nodes WHERE region = ? {where_clause}", params
         ).fetchdf()
+        if nodes_df.empty:
+            return {"status": "ok", "updated": 0, "dry_run": dry_run}
 
-        return self._update_node_attribute("grod_id", result_df, dry_run)
+        grod_ids, _ = self._load_grod_data(nodes_df)
+        if grod_ids is None:
+            logger.warning("node.grod_id: GROD data not found. Preserving values.")
+            result_df = self._conn.execute(
+                f"SELECT node_id, COALESCE(grod_id, 0) as grod_id FROM nodes WHERE region = ? {where_clause}",
+                params,
+            ).fetchdf()
+            return self._update_node_attribute("grod_id", result_df, dry_run)
+
+        logger.info("Reconstructing node.grod_id from GROD spatial join")
+        nodes_df["grod_id"] = grod_ids
+        return self._update_node_attribute(
+            "grod_id", nodes_df[["node_id", "grod_id"]], dry_run
+        )
 
     def _reconstruct_node_hfalls_id(
         self,
@@ -4159,32 +4228,18 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct reach grod_id from GROD spatial join.
-
-        REQUIRES EXTERNAL DATA: GROD (Global River Obstruction Database)
-        This is a stub - preserves existing values.
-        """
-        logger.warning(
-            "reach.grod_id requires external GROD data - preserving existing values"
-        )
-
+        """Reconstruct reach grod_id as MAX of node grod_ids."""
+        logger.info("Reconstructing reach.grod_id from node max")
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
             placeholders = ", ".join(["?"] * len(reach_ids))
-            where_clause = f"AND reach_id IN ({placeholders})"
+            where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
-
         result_df = self._conn.execute(
-            f"""
-            SELECT reach_id, COALESCE(grod_id, 0) as grod_id
-            FROM reaches
-            WHERE region = ? {where_clause}
-        """,
+            f"SELECT n.reach_id, MAX(n.grod_id) as grod_id FROM nodes n WHERE n.region = ? {where_clause} GROUP BY n.reach_id",
             params,
         ).fetchdf()
-
         return self._update_reach_attribute("grod_id", result_df, dry_run)
 
     def _reconstruct_reach_hfalls_id(

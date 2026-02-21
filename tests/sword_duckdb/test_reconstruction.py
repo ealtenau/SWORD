@@ -934,3 +934,30 @@ class TestTribFlag:
             pytest.skip("No MHV data")
         vals = set(np.array(result["values"]).astype(int))
         assert vals.issubset({0, 1})
+
+
+class TestGrodId:
+    def test_from_external_data(self, sword_writable, tmp_path):
+        import geopandas as gpd
+        from shapely.geometry import Point
+
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        node = sword_writable._db.execute(
+            "SELECT node_id, x, y FROM nodes WHERE region = 'NA' LIMIT 1"
+        ).fetchone()
+        grod_dir = tmp_path / "GROD"
+        grod_dir.mkdir()
+        gdf = gpd.GeoDataFrame(
+            {
+                "GROD_ID": [12345],
+                "Type": [1],
+                "geometry": [Point(node[1] + 0.0005, node[2] + 0.0005)],
+            }
+        )
+        gdf.to_file(grod_dir / "GROD.gpkg", driver="GPKG")
+
+        engine = ReconstructionEngine(sword_writable, source_data_dir=str(tmp_path))
+        result = engine._reconstruct_node_grod_id(node_ids=[node[0]], dry_run=True)
+        vals = dict(zip(result["entity_ids"], result["values"]))
+        assert vals.get(node[0]) == 12345
