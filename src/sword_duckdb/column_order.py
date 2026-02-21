@@ -12,7 +12,11 @@ Grouping: variable-group ordering — related measurements adjacent.
 
 from __future__ import annotations
 
+from typing import TypeVar
+
 import pandas as pd
+
+_DF = TypeVar("_DF", bound=pd.DataFrame)
 
 # ── Reaches ──────────────────────────────────────────────────────────────────
 
@@ -214,7 +218,7 @@ def get_column_order(table_name: str) -> tuple[str, ...]:
         ) from None
 
 
-def reorder_columns(df: pd.DataFrame, table_name: str) -> pd.DataFrame:
+def reorder_columns(df: _DF, table_name: str) -> _DF:
     """Reorder DataFrame columns to match canonical order.
 
     - Columns in the canonical list come first, in canonical order.
