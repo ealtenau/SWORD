@@ -139,7 +139,9 @@ workflow.close()
 **Core Tables:**
 - **centerlines** - PK: (cl_id, region) - river path points
 - **nodes** - PK: (node_id, region) - measurement points at ~200m intervals
+  - `node_order`: 1-based position within reach (1=downstream, n=upstream, by dist_out)
 - **reaches** - PK: reach_id - river segments between junctions
+  - `dn_node_id`, `up_node_id`: downstream/upstream boundary node IDs (by dist_out, not node_id)
 
 **Topology:**
 - **reach_topology** - upstream/downstream neighbors, normalized from NetCDF [4,N] arrays
