@@ -548,7 +548,7 @@ python -m src.sword_duckdb.facc_detection.correct_facc_denoise \
 
 ### v3 Results (NA, bidirectional isotonic)
 
-Results with relaxed anchors (bifurc-children only) and F012 bifurc-child exclusion:
+Results with relaxed anchors (bifurc-children only) and F006 bifurc-child exclusion:
 
 | Metric | v3 (original anchors) | v3 (bidirectional) |
 |--------|----------------------|-------------------|

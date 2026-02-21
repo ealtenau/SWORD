@@ -91,7 +91,7 @@ The pipeline targets specific violations detected by our [lint framework](../src
 | **T003** | Facc monotonicity — downstream facc < upstream facc on non-bifurcation edges |
 | **F006** | Junction conservation — facc < sum(upstream facc) at junctions with 2+ inputs |
 | **F007** | Bifurcation balance — children facc don't sum to parent facc |
-| **F012** | Non-negative incremental area — facc < sum(upstream facc) at any reach |
+| **F012** | Non-negative incremental area — removed, merged into F006 (same condition) |
 
 ### 3.2 Pipeline Architecture Overview
 
@@ -289,7 +289,7 @@ Topological sort is O(V + E). Isotonic regression is O(k) per chain. Total runti
 | **Runtime** | <1s per basin | ~48 sec global |
 | **Manual setup** | Basin delineation, constraint reach IDs | None (auto from topology) |
 | **Bifurcation handling** | Implicit in A matrix structure | Explicit width-proportional split |
-| **Monotonicity** | Not enforced (same as F006/F012 only) | Enforced via baseline isotonic (T003 = 0) |
+| **Monotonicity** | Not enforced (same as F006 only) | Enforced via baseline isotonic (T003 = 0) |
 | **Outlier handling** | Tukey IQR + re-solve with downweighting | Tukey IQR + baseline cleanup |
 | **Output** | Incremental areas (x) -> total facc | Corrected total facc directly |
 | **Dependencies** | CVXPY, OSQP/ECOS solvers | NetworkX, NumPy |
@@ -368,7 +368,7 @@ Correction type breakdown (global totals from summary JSONs):
 | Constraint | Status | Count | Enforced by |
 |------------|--------|-------|-------------|
 | **Junction conservation** (F006): facc >= sum(upstream) at every junction | **Fully enforced** | 0 violations | Stage B Pass 1 + Pass 2 |
-| **Non-negative incremental area** (F012): facc >= sum(upstream) at every reach | **Fully enforced** | 0 violations | Stage B Pass 1 lateral clamp + Pass 2 |
+| **Non-negative incremental area** (F006): facc >= sum(upstream) at every junction | **Fully enforced** | 0 violations | Stage B Pass 1 lateral clamp + Pass 2 |
 | **1:1 monotonicity** (T003): downstream facc >= upstream on non-bifurcation edges | **Fully enforced** | 0 violations | Stage A4 baseline isotonic + Stage B propagation |
 | **Bifurcation partitioning**: children sum to parent facc | **Enforced** (width-proportional) | ~246 residual (missing width data, <0.1%) | Stage B Pass 1 bifurc split |
 
@@ -403,7 +403,7 @@ After Stage A, three independent criteria flag remaining outliers. **These flags
 |-------|-------------|--------|
 | T003 | Facc monotonicity (non-bifurcation edges) | **0 violations** |
 | F006 | Junction conservation (facc >= sum upstream) | **0 violations** |
-| F012 | Non-negative incremental area (facc >= sum upstream, all reaches) | **0 violations** |
+| F006 | Non-negative incremental area (now merged into F006) | **0 violations** |
 | F007 | Bifurcation balance (children sum / parent) | ~246 (missing width data) |
 | T001 | dist_out monotonicity | 0 violations |
 | T005 | Neighbor count consistency | 0 violations |

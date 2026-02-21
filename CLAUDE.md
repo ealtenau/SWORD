@@ -412,7 +412,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
     results = runner.run(region="NA", severity=Severity.ERROR)
 ```
 
-**Check IDs (61 total):**
+**Check IDs (58 total):**
 
 | ID | Name | Severity | Description |
 |----|------|----------|-------------|
@@ -439,11 +439,10 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | A010 | end_reach_consistency | WARNING | end_reach matches topology |
 | F001 | facc_width_ratio_anomaly | WARNING | facc/width > 50000 (extreme outliers) |
 | F002 | facc_jump_ratio | WARNING | facc >> sum(upstream), entry points |
-| F006 | facc_junction_conservation | ERROR | facc < sum(upstream) at junctions |
+| F006 | facc_junction_conservation | ERROR | facc < sum(upstream) at junctions (incl. incremental area) |
 | F009 | facc_quality_coverage | INFO | facc_quality tag distribution |
 | F010 | junction_raise_drop | INFO | facc drop downstream of raised junction |
 | F011 | facc_link_monotonicity | INFO | 1:1 link facc drop (D8 artifact) |
-| F012 | incremental_area_nonneg | ERROR | facc >= sum(upstream) all reaches (x>=0) |
 | G001 | reach_length_bounds | INFO | 100m-50km, excl end_reach |
 | G002 | node_length_consistency | WARNING | Node sum ≈ reach length |
 | G003 | zero_length_reaches | INFO | Zero/negative length |
@@ -454,7 +453,7 @@ with LintRunner("sword_v17c.duckdb") as runner:
 | G009 | geom_is_valid | ERROR | ST_IsValid = FALSE |
 | G010 | geom_min_points | ERROR | ST_NPoints < 2 |
 | G011 | bbox_consistency | WARNING | Centroid outside bbox or inverted min/max |
-| G012 | endpoint_alignment | INFO | Connected reach endpoints >500m apart |
+| G012 | endpoint_alignment | INFO | Connected reach endpoints >500m apart (incl. confluences/bifurcations) |
 | C001 | lake_sandwich | WARNING | River between lakes |
 | C002 | lakeflag_distribution | INFO | Lakeflag values |
 | C003 | type_distribution | INFO | Type field values |

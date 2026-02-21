@@ -212,8 +212,6 @@ class TestRegistry:
             "G016",
             "G017",
             "G018",
-            "G019",
-            "G020",
             "G021",
             "C001",
             "FL001",
@@ -1096,12 +1094,17 @@ class TestG018DistOutVsReachLength:
         conn.close()
 
 
-class TestG019ConfluenceGeometry:
-    """Tests for G019 confluence_geometry."""
+class TestG012ConfluenceAndBifurcation:
+    """Tests for G012 endpoint_alignment at confluences and bifurcations.
 
-    def test_pass_close_endpoints(self, tmp_path):
+    G019 (confluence_geometry) and G020 (bifurcation_geometry) were removed
+    as strict subsets of G012. These tests verify G012 catches the same
+    scenarios.
+    """
+
+    def test_confluence_close_endpoints_pass(self, tmp_path):
+        """G012 passes when confluence upstream endpoints are near downstream."""
         conn = _spatial_conn(tmp_path)
-        # Two upstream reaches meeting at a downstream reach, endpoints close
         conn.execute("""
             CREATE TABLE reaches (
                 reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
@@ -1115,28 +1118,23 @@ class TestG019ConfluenceGeometry:
             (2,'NA',0,0.01,ST_GeomFromText('LINESTRING(0 0.01, 0.01 0)'),5000,100,0,0,1)""")
         conn.execute("""INSERT INTO reaches VALUES
             (3,'NA',0.01,0,ST_GeomFromText('LINESTRING(0.01 0, 0.02 0)'),5000,100,0,2,0)""")
+        # Topology: 1→3 (down), 2→3 (down)
         _create_topology_table(
             conn,
             [
-                {"reach_id": 3, "direction": "up", "neighbor_reach_id": 1},
-                {
-                    "reach_id": 3,
-                    "direction": "up",
-                    "neighbor_rank": 1,
-                    "neighbor_reach_id": 2,
-                },
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 3},
+                {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
             ],
         )
 
-        from src.sword_duckdb.lint.checks.geometry import (
-            check_confluence_geometry,
-        )
+        from src.sword_duckdb.lint.checks.geometry import check_endpoint_alignment
 
-        result = check_confluence_geometry(conn)
+        result = check_endpoint_alignment(conn)
         assert result.passed is True
         conn.close()
 
-    def test_fail_far_endpoints(self, tmp_path):
+    def test_confluence_far_endpoints_fail(self, tmp_path):
+        """G012 flags when a confluence upstream reach is far from downstream."""
         conn = _spatial_conn(tmp_path)
         conn.execute("""
             CREATE TABLE reaches (
@@ -1145,7 +1143,6 @@ class TestG019ConfluenceGeometry:
                 lakeflag INTEGER, n_rch_up INTEGER, n_rch_down INTEGER
             )
         """)
-        # Upstream reach 1 ends ~1000km from downstream reach 3 start
         conn.execute("""INSERT INTO reaches VALUES
             (1,'NA',10,10,ST_GeomFromText('LINESTRING(10 10, 11 11)'),5000,100,0,0,1)""")
         conn.execute("""INSERT INTO reaches VALUES
@@ -1155,30 +1152,20 @@ class TestG019ConfluenceGeometry:
         _create_topology_table(
             conn,
             [
-                {"reach_id": 3, "direction": "up", "neighbor_reach_id": 1},
-                {
-                    "reach_id": 3,
-                    "direction": "up",
-                    "neighbor_rank": 1,
-                    "neighbor_reach_id": 2,
-                },
+                {"reach_id": 1, "direction": "down", "neighbor_reach_id": 3},
+                {"reach_id": 2, "direction": "down", "neighbor_reach_id": 3},
             ],
         )
 
-        from src.sword_duckdb.lint.checks.geometry import (
-            check_confluence_geometry,
-        )
+        from src.sword_duckdb.lint.checks.geometry import check_endpoint_alignment
 
-        result = check_confluence_geometry(conn)
+        result = check_endpoint_alignment(conn)
         assert result.passed is False
         assert result.issues_found >= 1
         conn.close()
 
-
-class TestG020BifurcationGeometry:
-    """Tests for G020 bifurcation_geometry."""
-
-    def test_pass_close_endpoints(self, tmp_path):
+    def test_bifurcation_close_endpoints_pass(self, tmp_path):
+        """G012 passes when bifurcation downstream endpoints are near upstream."""
         conn = _spatial_conn(tmp_path)
         conn.execute("""
             CREATE TABLE reaches (
@@ -1187,7 +1174,6 @@ class TestG020BifurcationGeometry:
                 lakeflag INTEGER, n_rch_up INTEGER, n_rch_down INTEGER
             )
         """)
-        # Upstream reach 1 splits into reaches 2 and 3
         conn.execute("""INSERT INTO reaches VALUES
             (1,'NA',0,0,ST_GeomFromText('LINESTRING(0 0, 0.01 0)'),5000,100,0,0,2)""")
         conn.execute("""INSERT INTO reaches VALUES
@@ -1207,15 +1193,14 @@ class TestG020BifurcationGeometry:
             ],
         )
 
-        from src.sword_duckdb.lint.checks.geometry import (
-            check_bifurcation_geometry,
-        )
+        from src.sword_duckdb.lint.checks.geometry import check_endpoint_alignment
 
-        result = check_bifurcation_geometry(conn)
+        result = check_endpoint_alignment(conn)
         assert result.passed is True
         conn.close()
 
-    def test_fail_far_endpoints(self, tmp_path):
+    def test_bifurcation_far_endpoints_fail(self, tmp_path):
+        """G012 flags when a bifurcation downstream reach is far from upstream."""
         conn = _spatial_conn(tmp_path)
         conn.execute("""
             CREATE TABLE reaches (
@@ -1243,11 +1228,9 @@ class TestG020BifurcationGeometry:
             ],
         )
 
-        from src.sword_duckdb.lint.checks.geometry import (
-            check_bifurcation_geometry,
-        )
+        from src.sword_duckdb.lint.checks.geometry import check_endpoint_alignment
 
-        result = check_bifurcation_geometry(conn)
+        result = check_endpoint_alignment(conn)
         assert result.passed is False
         assert result.issues_found >= 1
         conn.close()
