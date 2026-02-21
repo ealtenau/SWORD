@@ -294,14 +294,7 @@ class TestReconstructorRegistry:
     """Test the reconstructor function registry."""
 
     def test_reach_dist_out_is_reconstructable(self):
-        from src.sword_duckdb.reconstruction import ReconstructionEngine
 
-        # Check the registry has dist_out
-        assert (
-            "reach.dist_out" in ReconstructionEngine.__dict__.get("_reconstructors", {})
-            or True
-        )
-        # Alternative: check ATTRIBUTE_SOURCES
         from src.sword_duckdb import ATTRIBUTE_SOURCES
 
         assert "reach.dist_out" in ATTRIBUTE_SOURCES
@@ -829,12 +822,15 @@ class TestPathOrder:
         dist_outs["path_order"] = dist_outs["reach_id"].map(po_map)
 
         violations = 0
+        groups_tested = 0
         for pf, group in dist_outs.groupby("path_freq"):
             if len(group) < 2 or pf <= 0:
                 continue
+            groups_tested += 1
             sorted_g = group.sort_values("dist_out")
             if not sorted_g["path_order"].is_monotonic_increasing:
                 violations += 1
+        assert groups_tested > 0, "No path_freq groups with 2+ members to test"
         assert violations == 0, f"{violations} groups have non-monotonic path_order"
 
 
@@ -885,6 +881,9 @@ class TestPathSegs:
         valid = reaches[reaches["path_freq"] > 0]
         combos = valid.groupby(["path_order", "path_freq"])["path_segs"].first()
         n_combos = len(combos)
+        assert n_combos > 1, (
+            "Need at least 2 (path_order, path_freq) combos for meaningful test"
+        )
         n_unique_ids = combos.nunique()
         assert n_unique_ids == n_combos, (
             f"{n_combos} distinct combos but only {n_unique_ids} unique path_segs IDs"
@@ -920,6 +919,10 @@ class TestTribFlag:
         engine = ReconstructionEngine(sword_writable, source_data_dir=str(tmp_path))
         result = engine._reconstruct_node_trib_flag(node_ids=[node_id], dry_run=True)
         assert result.get("status") != "skipped"
+        vals = dict(zip(result["entity_ids"], result["values"]))
+        assert vals[node_id] == 1, (
+            f"Node near MHV point should have trib_flag=1, got {vals[node_id]}"
+        )
 
     def test_values_binary(self, sword_writable, tmp_path):
         import numpy as np
@@ -998,8 +1001,9 @@ class TestRiverName:
         # Empty dir with no files -> all should be NODATA
         engine = ReconstructionEngine(sword_writable, source_data_dir=str(tmp_path))
         result = engine._reconstruct_reach_river_name(dry_run=True)
-        if result.get("status") == "skipped":
-            pytest.skip("No names data")
+        assert result.get("status") != "skipped", (
+            "river_name should not skip with source_data_dir set"
+        )
         # Every value should be exactly "NODATA" when no names files are present
         for v in result["values"]:
             assert v == "NODATA", f"Expected 'NODATA' but got '{v}'"

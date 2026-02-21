@@ -3989,8 +3989,8 @@ class ReconstructionEngine:
         """
         Reconstruct path_segs: unique segment ID per (path_order, path_freq) combo.
 
-        Per legacy stream_order.py, path_segs is a sequential ID assigned to each
-        unique (path_order, path_freq) combination, numbered from outlet upstream.
+        Approximation of legacy stream_order.py. Assigns a sequential ID to each
+        unique (path_order, path_freq) combination, ordered by path_order then path_freq.
         Reaches with invalid path_freq get path_segs=-9999.
         """
         logger.info("Reconstructing reach.path_segs from (path_order, path_freq)")
@@ -4084,7 +4084,7 @@ class ReconstructionEngine:
         for c in grod.columns:
             if c.lower() == "grod_id":
                 col_map[c] = "grod_id"
-            elif c.lower() == "type":
+            elif c.lower() in ("type", "obstr_type", "obstruction_type"):
                 col_map[c] = "obstr_type"
         grod = grod.rename(columns=col_map)
 
@@ -4441,8 +4441,13 @@ class ReconstructionEngine:
                             value_name="iceflag",
                         )
                         melted["julian_day"] = (
-                            melted["jd"].str.extract(r"(\d+)").astype(int)
+                            melted["jd"].str.extract(r"(\d+)")[0].astype(int)
                         )
+                        melted = melted.dropna(
+                            subset=["reach_id", "julian_day", "iceflag"]
+                        )
+                        if melted.empty:
+                            continue
                         self._conn.executemany(
                             "INSERT INTO reach_ice_flags VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
                             melted[
