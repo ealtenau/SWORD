@@ -42,7 +42,10 @@
 
 | 2026-02-20 | self | Initially designed dn_node_id/up_node_id using MIN/MAX(node_id), but test fixture had opposite convention from production | Always use dist_out for semantic ordering, not node_id — flow direction changes can reorder node IDs |
 
+| 2026-02-20 | self | Conflict marker hook (`^={7}`) triggers on RST docstring underlines (e.g. `===============`) | Change RST underlines to dashes, or ensure docstring headers don't start at column 0 with 7+ `=` chars |
+
 ## Patterns That Work
+- `SWORDWorkflow.__new__(SWORDWorkflow)` creates uninitialized workflow for testing aggregation methods in isolation with raw DuckDB connections
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing
 - Parallel agents editing same file works if they touch non-overlapping string regions (Edit tool uses string match, not line numbers)
