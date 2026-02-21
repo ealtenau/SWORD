@@ -19,7 +19,7 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.5.0"  # Updated for SWOT observation statistics
+SCHEMA_VERSION = "1.6.0"  # Added dn_node_id, up_node_id, node_order
 
 # Valid region codes (uppercase)
 VALID_REGIONS = frozenset(["NA", "SA", "EU", "AF", "AS", "OC"])
@@ -112,6 +112,9 @@ CREATE TABLE IF NOT EXISTS nodes (
 
     -- Parent reach
     reach_id BIGINT NOT NULL,
+
+    -- Position within reach (1=downstream, n=upstream, ordered by dist_out)
+    node_order INTEGER,
 
     -- Core measurements
     node_length DOUBLE,          -- len
@@ -213,6 +216,11 @@ CREATE TABLE IF NOT EXISTS reaches (
     -- Core measurements
     reach_length DOUBLE,         -- len (m)
     n_nodes INTEGER,             -- rch_n_nodes
+
+    -- Boundary node IDs (downstream/upstream ends of reach)
+    dn_node_id BIGINT,               -- downstream boundary node ID
+    up_node_id BIGINT,               -- upstream boundary node ID
+
     wse DOUBLE,                  -- water surface elevation (m)
     wse_var DOUBLE,              -- wse variance (m^2)
     width DOUBLE,                -- wth (m)
@@ -1022,6 +1030,52 @@ def add_osm_name_columns(conn) -> bool:
                 added = True
     except Exception:
         pass
+
+    return added
+
+
+def add_node_boundary_columns(conn) -> bool:
+    """
+    Add node boundary and ordering columns to existing tables.
+
+    Adds dn_node_id/up_node_id to reaches and node_order to nodes.
+    Safe to call multiple times - checks if columns already exist.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active DuckDB connection.
+
+    Returns
+    -------
+    bool
+        True if any columns were added, False if all already existed.
+    """
+    added = False
+
+    reaches_columns = [
+        ("dn_node_id", "BIGINT"),
+        ("up_node_id", "BIGINT"),
+    ]
+    nodes_columns = [
+        ("node_order", "INTEGER"),
+    ]
+
+    for table, columns in [("reaches", reaches_columns), ("nodes", nodes_columns)]:
+        try:
+            result = conn.execute(
+                f"SELECT column_name FROM information_schema.columns "
+                f"WHERE table_name = '{table}'"
+            ).fetchall()
+            existing = {row[0].lower() for row in result}
+            for col_name, col_type in columns:
+                if col_name.lower() not in existing:
+                    conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                    )
+                    added = True
+        except Exception:
+            pass
 
     return added
 
