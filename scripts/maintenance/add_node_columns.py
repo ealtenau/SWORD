@@ -74,17 +74,18 @@ def populate_reach_boundary_nodes(con: duckdb.DuckDBPyConnection) -> int:
     """Set dn_node_id/up_node_id from dist_out ordering."""
     result = con.execute("""
         WITH boundary AS (
-            SELECT reach_id,
+            SELECT reach_id, region,
                 FIRST(node_id ORDER BY dist_out ASC) AS dn_nid,
                 FIRST(node_id ORDER BY dist_out DESC) AS up_nid
             FROM nodes
-            GROUP BY reach_id
+            GROUP BY reach_id, region
         )
         UPDATE reaches
         SET dn_node_id = boundary.dn_nid,
             up_node_id = boundary.up_nid
         FROM boundary
         WHERE reaches.reach_id = boundary.reach_id
+          AND reaches.region = boundary.region
     """)
     count = result.fetchone()[0]
     print(f"Updated {count} reaches with boundary node IDs")
@@ -97,7 +98,7 @@ def populate_node_order(con: duckdb.DuckDBPyConnection) -> int:
         WITH ordered AS (
             SELECT node_id, region,
                 ROW_NUMBER() OVER (
-                    PARTITION BY reach_id ORDER BY dist_out ASC
+                    PARTITION BY reach_id, region ORDER BY dist_out ASC
                 ) AS rn
             FROM nodes
         )
@@ -131,11 +132,10 @@ def verify(con: duckdb.DuckDBPyConnection) -> bool:
     # 2. Boundary nodes exist in nodes table
     bad_refs = con.execute("""
         SELECT COUNT(*) FROM reaches r
-        WHERE r.dn_node_id IS NOT NULL
-          AND (
-            r.dn_node_id NOT IN (SELECT node_id FROM nodes)
-            OR r.up_node_id NOT IN (SELECT node_id FROM nodes)
-          )
+        WHERE (r.dn_node_id IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.node_id = r.dn_node_id))
+           OR (r.up_node_id IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM nodes n WHERE n.node_id = r.up_node_id))
     """).fetchone()[0]
     if bad_refs > 0:
         print(f"FAIL: {bad_refs} reaches reference non-existent nodes")

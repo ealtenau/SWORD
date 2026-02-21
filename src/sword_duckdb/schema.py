@@ -1034,6 +1034,52 @@ def add_osm_name_columns(conn) -> bool:
     return added
 
 
+def add_node_boundary_columns(conn) -> bool:
+    """
+    Add node boundary and ordering columns to existing tables.
+
+    Adds dn_node_id/up_node_id to reaches and node_order to nodes.
+    Safe to call multiple times - checks if columns already exist.
+
+    Parameters
+    ----------
+    conn : duckdb.DuckDBPyConnection
+        Active DuckDB connection.
+
+    Returns
+    -------
+    bool
+        True if any columns were added, False if all already existed.
+    """
+    added = False
+
+    reaches_columns = [
+        ("dn_node_id", "BIGINT"),
+        ("up_node_id", "BIGINT"),
+    ]
+    nodes_columns = [
+        ("node_order", "INTEGER"),
+    ]
+
+    for table, columns in [("reaches", reaches_columns), ("nodes", nodes_columns)]:
+        try:
+            result = conn.execute(
+                f"SELECT column_name FROM information_schema.columns "
+                f"WHERE table_name = '{table}'"
+            ).fetchall()
+            existing = {row[0].lower() for row in result}
+            for col_name, col_type in columns:
+                if col_name.lower() not in existing:
+                    conn.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                    )
+                    added = True
+        except Exception:
+            pass
+
+    return added
+
+
 def create_v17c_tables(conn) -> None:
     """
     Create v17c-specific tables for section data and slope validation.
