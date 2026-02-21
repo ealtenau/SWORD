@@ -4172,6 +4172,629 @@ class SWORDWorkflow:
         return result
 
     # =========================================================================
+    # DATA QUALITY METHODS (ported from legacy formatting_scripts)
+    # =========================================================================
+
+    def fill_zero_width_nodes(
+        self,
+        region: Optional[str] = None,
+        dry_run: bool = False,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Fill zero/negative node widths with the median width of their reach.
+
+        Parameters
+        ----------
+        region : str, optional
+            Region filter (e.g. 'NA'). Uses loaded region if None.
+        dry_run : bool
+            If True, return issues without modifying data.
+        reason : str, optional
+            Reason logged to provenance.
+
+        Returns
+        -------
+        dict
+            'issues': DataFrame of zero-width nodes found,
+            'filled_count': number of nodes updated (0 if dry_run).
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        region = region or self._region
+        conn = self._sword.db.conn
+        where = f"AND n.region = '{region}'" if region else ""
+
+        # Find zero-width nodes and their reach medians
+        issues_df = conn.execute(
+            f"""
+            WITH zero_nodes AS (
+                SELECT node_id, reach_id, region, width
+                FROM nodes n
+                WHERE width <= 0 {where}
+            ),
+            reach_medians AS (
+                SELECT reach_id, region, MEDIAN(width) AS median_width
+                FROM nodes n
+                WHERE width > 0 {where}
+                GROUP BY reach_id, region
+            )
+            SELECT z.node_id, z.reach_id, z.region, z.width AS old_width,
+                   rm.median_width
+            FROM zero_nodes z
+            JOIN reach_medians rm
+              ON z.reach_id = rm.reach_id AND z.region = rm.region
+            ORDER BY z.reach_id, z.node_id
+            """
+        ).fetchdf()
+
+        if dry_run or len(issues_df) == 0:
+            return {
+                "issues": issues_df,
+                "filled_count": 0,
+            }
+
+        # RTREE drop → UPDATE → RTREE recreate
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        indexes = conn.execute(
+            "SELECT index_name, table_name, sql FROM duckdb_indexes() "
+            "WHERE sql LIKE '%RTREE%' AND table_name = 'nodes'"
+        ).fetchall()
+        for idx_name, _, _ in indexes:
+            conn.execute(f'DROP INDEX "{idx_name}"')
+
+        try:
+            if self._provenance and self._enable_provenance:
+                entity_ids = issues_df["node_id"].tolist()
+                with self._provenance.operation(
+                    "UPDATE",
+                    table_name="nodes",
+                    entity_ids=entity_ids,
+                    region=region,
+                    reason=reason or "Fill zero-width nodes with reach median",
+                    details={"count": len(issues_df)},
+                    affected_columns=["width"],
+                ):
+                    conn.execute(
+                        f"""
+                        UPDATE nodes SET width = sub.median_width
+                        FROM (
+                            SELECT reach_id, region, MEDIAN(width) AS median_width
+                            FROM nodes n
+                            WHERE width > 0 {where}
+                            GROUP BY reach_id, region
+                        ) sub
+                        WHERE nodes.reach_id = sub.reach_id
+                          AND nodes.region = sub.region
+                          AND nodes.width <= 0
+                        """
+                    )
+            else:
+                conn.execute(
+                    f"""
+                    UPDATE nodes SET width = sub.median_width
+                    FROM (
+                        SELECT reach_id, region, MEDIAN(width) AS median_width
+                        FROM nodes n
+                        WHERE width > 0 {where}
+                        GROUP BY reach_id, region
+                    ) sub
+                    WHERE nodes.reach_id = sub.reach_id
+                      AND nodes.region = sub.region
+                      AND nodes.width <= 0
+                    """
+                )
+        finally:
+            for _, _, sql in indexes:
+                conn.execute(sql)
+
+        logger.info(f"Filled {len(issues_df)} zero-width nodes")
+        return {
+            "issues": issues_df,
+            "filled_count": len(issues_df),
+        }
+
+    def remove_duplicate_centerline_points(
+        self,
+        region: Optional[str] = None,
+        dry_run: bool = False,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Remove duplicate centerline points (same reach_id, x, y).
+
+        Keeps the row with the smallest cl_id for each duplicate group.
+
+        Parameters
+        ----------
+        region : str, optional
+            Region filter. Uses loaded region if None.
+        dry_run : bool
+            If True, return duplicates without deleting.
+        reason : str, optional
+            Reason logged to provenance.
+
+        Returns
+        -------
+        dict
+            'duplicates': DataFrame of duplicate points found,
+            'duplicate_count': number found,
+            'removed_count': number deleted (0 if dry_run).
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        region = region or self._region
+        conn = self._sword.db.conn
+        where = f"AND c.region = '{region}'" if region else ""
+
+        # Check centerlines table exists
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables"
+            ).fetchall()
+        }
+        if "centerlines" not in tables:
+            import pandas as pd
+
+            return {
+                "duplicates": pd.DataFrame(),
+                "duplicate_count": 0,
+                "removed_count": 0,
+            }
+
+        # Find duplicates (keep lowest cl_id per group)
+        dup_df = conn.execute(
+            f"""
+            WITH ranked AS (
+                SELECT cl_id, reach_id, region, x, y,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY reach_id, region, x, y
+                           ORDER BY cl_id
+                       ) AS rn
+                FROM centerlines c
+                WHERE 1=1 {where}
+            )
+            SELECT cl_id, reach_id, region, x, y
+            FROM ranked WHERE rn > 1
+            ORDER BY reach_id, cl_id
+            """
+        ).fetchdf()
+
+        if dry_run or len(dup_df) == 0:
+            return {
+                "duplicates": dup_df,
+                "duplicate_count": len(dup_df),
+                "removed_count": 0,
+            }
+
+        # RTREE drop → DELETE → RTREE recreate
+        conn.execute("INSTALL spatial; LOAD spatial;")
+        indexes = conn.execute(
+            "SELECT index_name, table_name, sql FROM duckdb_indexes() "
+            "WHERE sql LIKE '%RTREE%' AND table_name = 'centerlines'"
+        ).fetchall()
+        for idx_name, _, _ in indexes:
+            conn.execute(f'DROP INDEX "{idx_name}"')
+
+        try:
+            if self._provenance and self._enable_provenance:
+                entity_ids = dup_df["cl_id"].tolist()
+                with self._provenance.operation(
+                    "DELETE",
+                    table_name="centerlines",
+                    entity_ids=entity_ids,
+                    region=region,
+                    reason=reason or "Remove duplicate centerline points",
+                    details={"count": len(dup_df)},
+                ):
+                    conn.execute(
+                        f"""
+                        DELETE FROM centerlines
+                        WHERE cl_id IN (
+                            SELECT cl_id FROM (
+                                SELECT cl_id,
+                                       ROW_NUMBER() OVER (
+                                           PARTITION BY reach_id, region, x, y
+                                           ORDER BY cl_id
+                                       ) AS rn
+                                FROM centerlines c
+                                WHERE 1=1 {where}
+                            ) WHERE rn > 1
+                        )
+                        """
+                    )
+            else:
+                conn.execute(
+                    f"""
+                    DELETE FROM centerlines
+                    WHERE cl_id IN (
+                        SELECT cl_id FROM (
+                            SELECT cl_id,
+                                   ROW_NUMBER() OVER (
+                                       PARTITION BY reach_id, region, x, y
+                                       ORDER BY cl_id
+                                   ) AS rn
+                            FROM centerlines c
+                            WHERE 1=1 {where}
+                        ) WHERE rn > 1
+                    )
+                    """
+                )
+        finally:
+            for _, _, sql in indexes:
+                conn.execute(sql)
+
+        logger.info(f"Removed {len(dup_df)} duplicate centerline points")
+        return {
+            "duplicates": dup_df,
+            "duplicate_count": len(dup_df),
+            "removed_count": len(dup_df),
+        }
+
+    def find_and_merge_single_node_reaches(
+        self,
+        region: Optional[str] = None,
+        dry_run: bool = True,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Find reaches with exactly 1 node and determine merge targets.
+
+        Excludes ghost (type=6) and dam (type=4) reaches. For each candidate:
+        - If 1 downstream neighbor with n_rch_up=1 → merge downstream
+        - Elif 1 upstream neighbor with n_rch_down=1 → merge upstream
+        - Else → skip (unresolvable)
+
+        Parameters
+        ----------
+        region : str, optional
+            Region filter. Uses loaded region if None.
+        dry_run : bool
+            If True (default), only report candidates without merging.
+        reason : str, optional
+            Reason logged to provenance.
+
+        Returns
+        -------
+        dict
+            'candidates': DataFrame(reach_id, merge_target, direction, status),
+            'merged_count': number actually merged (0 if dry_run).
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        import pandas as pd
+
+        region = region or self._region
+        conn = self._sword.db.conn
+        where = f"AND r.region = '{region}'" if region else ""
+
+        # Check if type column exists (test DB may lack it)
+        cols = {
+            row[0]
+            for row in conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'reaches'"
+            ).fetchall()
+        }
+        type_filter = "AND r.type NOT IN (4, 6)" if "type" in cols else ""
+
+        # Find single-node reaches
+        candidates = conn.execute(
+            f"""
+            SELECT r.reach_id, r.region, r.n_nodes
+            FROM reaches r
+            WHERE r.n_nodes = 1 {type_filter} {where}
+            ORDER BY r.reach_id
+            """
+        ).fetchdf()
+
+        if len(candidates) == 0:
+            empty = pd.DataFrame(
+                columns=["reach_id", "merge_target", "direction", "status"]
+            )
+            return {"candidates": empty, "merged_count": 0}
+
+        # For each candidate, determine merge target
+        rows = []
+        for _, cand in candidates.iterrows():
+            rid = int(cand["reach_id"])
+
+            # Check downstream neighbors
+            dn = conn.execute(
+                """
+                SELECT neighbor_reach_id FROM reach_topology
+                WHERE reach_id = ? AND direction = 'down' AND region = ?
+                  AND neighbor_reach_id != 0
+                """,
+                [rid, region],
+            ).fetchall()
+
+            # Check upstream neighbors
+            up = conn.execute(
+                """
+                SELECT neighbor_reach_id FROM reach_topology
+                WHERE reach_id = ? AND direction = 'up' AND region = ?
+                  AND neighbor_reach_id != 0
+                """,
+                [rid, region],
+            ).fetchall()
+
+            if len(dn) == 1:
+                dn_id = dn[0][0]
+                # Check downstream's n_rch_up
+                n_up = conn.execute(
+                    "SELECT n_rch_up FROM reaches WHERE reach_id = ? AND region = ?",
+                    [dn_id, region],
+                ).fetchone()
+                if n_up and n_up[0] == 1:
+                    rows.append(
+                        {
+                            "reach_id": rid,
+                            "merge_target": dn_id,
+                            "direction": "downstream",
+                            "status": "mergeable",
+                        }
+                    )
+                    continue
+
+            if len(up) == 1:
+                up_id = up[0][0]
+                n_dn = conn.execute(
+                    "SELECT n_rch_down FROM reaches WHERE reach_id = ? AND region = ?",
+                    [up_id, region],
+                ).fetchone()
+                if n_dn and n_dn[0] == 1:
+                    rows.append(
+                        {
+                            "reach_id": rid,
+                            "merge_target": up_id,
+                            "direction": "upstream",
+                            "status": "mergeable",
+                        }
+                    )
+                    continue
+
+            rows.append(
+                {
+                    "reach_id": rid,
+                    "merge_target": 0,
+                    "direction": "none",
+                    "status": "unresolvable",
+                }
+            )
+
+        result_df = pd.DataFrame(rows)
+        mergeable = result_df[result_df["status"] == "mergeable"]
+
+        if dry_run or len(mergeable) == 0:
+            return {"candidates": result_df, "merged_count": 0}
+
+        # Actually merge
+        merged = 0
+        for _, row in mergeable.iterrows():
+            try:
+                self.merge_reach(
+                    source_reach_id=int(row["reach_id"]),
+                    target_reach_id=int(row["merge_target"]),
+                    reason=reason or "Merge single-node reach",
+                )
+                merged += 1
+            except Exception as e:
+                logger.warning(
+                    f"Failed to merge {row['reach_id']} → {row['merge_target']}: {e}"
+                )
+                result_df.loc[result_df["reach_id"] == row["reach_id"], "status"] = (
+                    f"error: {e}"
+                )
+
+        logger.info(f"Merged {merged}/{len(mergeable)} single-node reaches")
+        return {"candidates": result_df, "merged_count": merged}
+
+    def rederive_nodes(
+        self,
+        reach_ids: List[int],
+        region: Optional[str] = None,
+        dry_run: bool = False,
+        reason: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Re-derive node positions from centerlines using even spatial partitioning.
+
+        For each reach: sort centerlines by cl_id, compute cumulative distances,
+        divide into N groups (N = current node count), update node x/y/node_length.
+
+        Parameters
+        ----------
+        reach_ids : list of int
+            Reach IDs to re-derive nodes for.
+        region : str, optional
+            Region filter. Uses loaded region if None.
+        dry_run : bool
+            If True, report what would change without modifying.
+        reason : str, optional
+            Reason logged to provenance.
+
+        Returns
+        -------
+        dict
+            'reaches_processed': count of reaches updated,
+            'details': per-reach info.
+        """
+        if not self.is_loaded:
+            raise RuntimeError("No database loaded. Call load() first.")
+
+        import math
+
+        region = region or self._region
+        conn = self._sword.db.conn
+        details = []
+
+        for reach_id in reach_ids:
+            # Get centerlines sorted by cl_id
+            cl_df = conn.execute(
+                """
+                SELECT cl_id, x, y FROM centerlines
+                WHERE reach_id = ? AND region = ?
+                ORDER BY cl_id
+                """,
+                [reach_id, region],
+            ).fetchdf()
+
+            if len(cl_df) == 0:
+                details.append(
+                    {"reach_id": reach_id, "status": "no_centerlines", "nodes": 0}
+                )
+                continue
+
+            # Get current node count
+            node_count = conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE reach_id = ? AND region = ?",
+                [reach_id, region],
+            ).fetchone()[0]
+
+            if node_count == 0:
+                details.append({"reach_id": reach_id, "status": "no_nodes", "nodes": 0})
+                continue
+
+            # Compute cumulative distances (equirectangular approximation)
+            xs = cl_df["x"].values
+            ys = cl_df["y"].values
+            dists = [0.0]
+            for i in range(1, len(xs)):
+                dx = (xs[i] - xs[i - 1]) * math.cos(
+                    math.radians((ys[i] + ys[i - 1]) / 2.0)
+                )
+                dy = ys[i] - ys[i - 1]
+                dists.append(dists[-1] + 111000.0 * math.sqrt(dx**2 + dy**2))
+            total_dist = dists[-1]
+
+            # Divide into node_count groups
+            interval = total_dist / node_count if node_count > 0 else total_dist
+            groups = []
+            current_group = []
+            group_idx = 0
+            for i in range(len(dists)):
+                current_group.append(i)
+                if group_idx < node_count - 1 and dists[i] >= interval * (
+                    group_idx + 1
+                ):
+                    groups.append(current_group)
+                    current_group = []
+                    group_idx += 1
+            if current_group:
+                groups.append(current_group)
+
+            # Pad or merge to ensure exactly node_count groups
+            while len(groups) < node_count and len(groups) > 0:
+                groups.append(groups[-1][-1:])
+            while len(groups) > node_count and len(groups) > 1:
+                last = groups.pop()
+                groups[-1].extend(last)
+
+            # Compute per-group stats
+            new_nodes = []
+            for g_idx, g_points in enumerate(groups):
+                g_xs = [xs[p] for p in g_points]
+                g_ys = [ys[p] for p in g_points]
+                g_x = float(np.median(g_xs))
+                g_y = float(np.median(g_ys))
+
+                # Node length = distance span of this group
+                if len(g_points) > 1:
+                    g_len = dists[g_points[-1]] - dists[g_points[0]]
+                else:
+                    g_len = interval
+
+                cl_min = int(cl_df.iloc[g_points[0]]["cl_id"])
+                cl_max = int(cl_df.iloc[g_points[-1]]["cl_id"])
+
+                new_nodes.append(
+                    {
+                        "x": g_x,
+                        "y": g_y,
+                        "node_length": g_len,
+                        "cl_id_min": cl_min,
+                        "cl_id_max": cl_max,
+                    }
+                )
+
+            details.append(
+                {
+                    "reach_id": reach_id,
+                    "status": "ok" if not dry_run else "dry_run",
+                    "nodes": len(new_nodes),
+                }
+            )
+
+            if dry_run:
+                continue
+
+            # Get existing node IDs to preserve them
+            existing = conn.execute(
+                """
+                SELECT node_id FROM nodes
+                WHERE reach_id = ? AND region = ?
+                ORDER BY node_id
+                """,
+                [reach_id, region],
+            ).fetchall()
+            node_ids = [r[0] for r in existing]
+
+            # RTREE drop → UPDATE → RTREE recreate
+            conn.execute("INSTALL spatial; LOAD spatial;")
+            indexes = conn.execute(
+                "SELECT index_name, table_name, sql FROM duckdb_indexes() "
+                "WHERE sql LIKE '%RTREE%' AND table_name = 'nodes'"
+            ).fetchall()
+            for idx_name, _, _ in indexes:
+                conn.execute(f'DROP INDEX "{idx_name}"')
+
+            try:
+                for i, (nid, nd) in enumerate(zip(node_ids, new_nodes)):
+                    conn.execute(
+                        """
+                        UPDATE nodes
+                        SET x = ?, y = ?, node_length = ?,
+                            cl_id_min = ?, cl_id_max = ?
+                        WHERE node_id = ? AND region = ?
+                        """,
+                        [
+                            nd["x"],
+                            nd["y"],
+                            nd["node_length"],
+                            nd["cl_id_min"],
+                            nd["cl_id_max"],
+                            nid,
+                            region,
+                        ],
+                    )
+            finally:
+                for _, _, sql in indexes:
+                    conn.execute(sql)
+
+            if self._provenance and self._enable_provenance:
+                with self._provenance.operation(
+                    "UPDATE",
+                    table_name="nodes",
+                    entity_ids=node_ids,
+                    region=region,
+                    reason=reason or f"Re-derive nodes for reach {reach_id}",
+                    details={"reach_id": reach_id, "node_count": len(new_nodes)},
+                    affected_columns=[
+                        "x",
+                        "y",
+                        "node_length",
+                        "cl_id_min",
+                        "cl_id_max",
+                    ],
+                ):
+                    pass  # already updated above
+
+        processed = sum(1 for d in details if d["status"] == "ok")
+        logger.info(f"Re-derived nodes for {processed}/{len(reach_ids)} reaches")
+        return {"reaches_processed": processed, "details": details}
+
+    # =========================================================================
     # IMAGERY METHODS
     # =========================================================================
 
