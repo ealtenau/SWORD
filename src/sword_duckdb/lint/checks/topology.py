@@ -1144,3 +1144,71 @@ def check_river_name_consensus(
         details=issues,
         description="Reaches where river_name disagrees with all neighbors' consensus",
     )
+
+
+@register_check(
+    "T021",
+    Category.TOPOLOGY,
+    Severity.WARNING,
+    "dist_out increases on ANY downstream edge (bifurcation bug)",
+    default_threshold=100.0,
+)
+def check_dist_out_bifurcation_monotonicity(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """
+    Check per-edge dist_out monotonicity at bifurcations.
+
+    T001 checks MIN(downstream dist_out) — true topology errors where no
+    branch decreases. This check finds bifurcations where at least one
+    downstream branch has HIGHER dist_out (the other branch decreases
+    correctly). These are caused by UNC's dist_out algorithm settling for
+    a partially-computed downstream value instead of waiting for MAX.
+    """
+    tolerance = threshold if threshold is not None else 100.0
+    where_clause = f"AND r1.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        r1.reach_id, r1.region, r1.river_name, r1.x, r1.y,
+        r1.dist_out as dist_out_up,
+        r2.dist_out as dist_out_down,
+        r2.reach_id as downstream_reach_id,
+        (r2.dist_out - r1.dist_out) as dist_out_increase,
+        r1.n_rch_down
+    FROM reaches r1
+    JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
+    WHERE rt.direction = 'down'
+        AND r1.dist_out > 0 AND r1.dist_out != -9999
+        AND r2.dist_out > 0 AND r2.dist_out != -9999
+        AND r2.dist_out > r1.dist_out + {tolerance}
+        {where_clause}
+    ORDER BY dist_out_increase DESC
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r1
+    JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    WHERE rt.direction = 'down'
+        AND r1.dist_out > 0 AND r1.dist_out != -9999
+        {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="T021",
+        name="dist_out_bifurcation_monotonicity",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Downstream edges where dist_out increases (bifurcation bug)",
+        threshold=tolerance,
+    )
