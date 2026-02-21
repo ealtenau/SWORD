@@ -40,6 +40,8 @@
 | 2026-02-20 | code review | N010 node_index_contiguity used `max - min + 1` formula assuming step-1 suffixes, but SWORD uses step-10 (001, 011, 021, ..., 991) | Use `(max - min) / 10 + 1` for expected count |
 | 2026-02-20 | user decision | N006 threshold discussed — 1000m kept as-is per user preference | Do not change N006 threshold from 1000m |
 
+| 2026-02-20 | self | Initially designed dn_node_id/up_node_id using MIN/MAX(node_id), but test fixture had opposite convention from production | Always use dist_out for semantic ordering, not node_id — flow direction changes can reorder node IDs |
+
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing
