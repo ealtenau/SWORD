@@ -987,3 +987,19 @@ class TestHfallsId:
         result = engine._reconstruct_node_hfalls_id(node_ids=[node[0]], dry_run=True)
         vals = dict(zip(result["entity_ids"], result["values"]))
         assert vals.get(node[0]) == 99999
+
+
+class TestRiverName:
+    def test_default_nodata_when_no_files(self, sword_writable, tmp_path):
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        names_dir = tmp_path / "river_names"
+        names_dir.mkdir()
+        # Empty dir with no files -> all should be NODATA
+        engine = ReconstructionEngine(sword_writable, source_data_dir=str(tmp_path))
+        result = engine._reconstruct_reach_river_name(dry_run=True)
+        if result.get("status") == "skipped":
+            pytest.skip("No names data")
+        # Every value should be exactly "NODATA" when no names files are present
+        for v in result["values"]:
+            assert v == "NODATA", f"Expected 'NODATA' but got '{v}'"

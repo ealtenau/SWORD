@@ -4270,32 +4270,23 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct node river_name from river names shapefile spatial join.
-
-        REQUIRES EXTERNAL DATA: River names shapefile
-        This is a stub - preserves existing values.
-        """
-        logger.warning(
-            "node.river_name requires external river names data - preserving existing values"
-        )
-
+        """Reconstruct node river_name inherited from parent reach."""
+        logger.info("Reconstructing node.river_name from parent reach")
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
             placeholders = ", ".join(["?"] * len(node_ids))
-            where_clause = f"AND node_id IN ({placeholders})"
+            where_clause = f"AND n.node_id IN ({placeholders})"
             params.extend(node_ids)
-
         result_df = self._conn.execute(
             f"""
-            SELECT node_id, COALESCE(river_name, '') as river_name
-            FROM nodes
-            WHERE region = ? {where_clause}
+            SELECT n.node_id, COALESCE(r.river_name, 'NODATA') as river_name
+            FROM nodes n
+            JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
+            WHERE n.region = ? {where_clause}
         """,
             params,
         ).fetchdf()
-
         return self._update_node_attribute("river_name", result_df, dry_run)
 
     def _reconstruct_reach_grod_id(
@@ -4344,14 +4335,9 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct reach river_name from river names shapefile spatial join.
-
-        REQUIRES EXTERNAL DATA: River names shapefile
-        This is a stub - preserves existing values.
-        """
-        logger.warning(
-            "reach.river_name requires external river names data - preserving existing values"
+        """Reconstruct reach river_name from external names data or default NODATA."""
+        names_dir = (
+            self._source_data_dir / "river_names" if self._source_data_dir else None
         )
 
         where_clause = ""
@@ -4361,16 +4347,66 @@ class ReconstructionEngine:
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(
-            f"""
-            SELECT reach_id, COALESCE(river_name, '') as river_name
-            FROM reaches
-            WHERE region = ? {where_clause}
-        """,
+        reaches_df = self._conn.execute(
+            f"SELECT reach_id, x, y FROM reaches WHERE region = ? {where_clause}",
             params,
         ).fetchdf()
+        if reaches_df.empty:
+            return {"status": "ok", "updated": 0, "dry_run": dry_run}
 
-        return self._update_reach_attribute("river_name", result_df, dry_run)
+        # Default all to NODATA
+        reaches_df["river_name"] = "NODATA"
+
+        if names_dir is not None and names_dir.exists():
+            import geopandas as gpd
+            from scipy.spatial import cKDTree
+
+            name_files = sorted(names_dir.glob("*.gpkg")) + sorted(
+                names_dir.glob("*.shp")
+            )
+            if name_files:
+                import pandas as pd
+
+                all_names = []
+                for f in name_files:
+                    try:
+                        all_names.append(gpd.read_file(f))
+                    except Exception as e:
+                        logger.warning(f"Failed to read {f}: {e}")
+                if all_names:
+                    names = pd.concat(all_names, ignore_index=True)
+                    # Find the name column
+                    name_col = None
+                    for c in names.columns:
+                        if c.lower() in ("river_name", "name", "river_nam"):
+                            name_col = c
+                            break
+                    if name_col and "geometry" in names.columns:
+                        names["_x"] = names.geometry.centroid.x
+                        names["_y"] = names.geometry.centroid.y
+                        names = names.dropna(subset=["_x", "_y", name_col])
+                        if not names.empty:
+                            logger.info(
+                                "Reconstructing reach.river_name from names spatial join"
+                            )
+                            kdt = cKDTree(
+                                np.column_stack(
+                                    [names["_x"].values, names["_y"].values]
+                                )
+                            )
+                            reach_pts = np.column_stack(
+                                [reaches_df["x"].values, reaches_df["y"].values]
+                            )
+                            distances, indices = kdt.query(reach_pts, k=1)
+                            matched = distances <= 0.01
+                            if matched.any():
+                                reaches_df.loc[matched, "river_name"] = names[
+                                    name_col
+                                ].values[indices[matched]]
+
+        return self._update_reach_attribute(
+            "river_name", reaches_df[["reach_id", "river_name"]], dry_run
+        )
 
     def _reconstruct_reach_iceflag(
         self,
