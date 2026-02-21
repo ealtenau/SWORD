@@ -26,11 +26,22 @@ Quality flag bits (slope_obs_q):
 - 16: below noise floor (clipped to positive)
 """
 
-import duckdb
+import argparse
 import glob
 import os
-import argparse
-from pathlib import Path
+
+import duckdb
+
+from sword_duckdb.swot_filters import (
+    DARK_FRAC_MAX,
+    QUALITY_MAX,
+    SENTINEL,
+    WIDTH_MAX,
+    WSE_MAX,
+    WSE_MIN,
+    XTRACK_MAX,
+    XTRACK_MIN,
+)
 
 
 def compute_reach_swot_obs(
@@ -44,12 +55,12 @@ def compute_reach_swot_obs(
     """
     Compute reach-level SWOT observations (slope, wse, width) from node data.
 
-    Quality filters (matching SWOT_slopes.py):
-    - WSE sentinel removal (wse != -999999999999)
-    - WSE quality <= 1 (good/suspect only)
-    - Dark water fraction <= 0.5 or NULL
-    - Cross-track distance 10-60km or NULL
-    - Crossover calibration quality <= 1 or NULL
+    Quality filters (from swot_filters module):
+    - WSE sentinel removal (wse != SENTINEL)
+    - WSE quality <= QUALITY_MAX
+    - Dark water fraction <= DARK_FRAC_MAX or NULL
+    - Cross-track distance XTRACK_MIN-XTRACK_MAX or NULL
+    - Crossover calibration quality <= QUALITY_MAX or NULL
     - Ice climatology = 0 (likely not ice covered)
     - Valid time_str
 
@@ -67,8 +78,9 @@ def compute_reach_swot_obs(
 
     # Find parquet files
     parquet_files = [
-        f for f in glob.glob(os.path.join(swot_node_dir, '*.parquet'))
-        if not os.path.basename(f).startswith('._')
+        f
+        for f in glob.glob(os.path.join(swot_node_dir, "*.parquet"))
+        if not os.path.basename(f).startswith("._")
     ]
 
     if not parquet_files:
@@ -89,18 +101,18 @@ def compute_reach_swot_obs(
 
     con.register("sword_reaches", reach_ids)
 
-    SENTINEL = -999999999999.0
-
-    # Detect available columns for dynamic filtering (matching SWOT_slopes.py)
+    # Detect available columns for dynamic filtering
     # Use union_by_name to handle schema differences between old/new parquet files
-    sample_query = f"SELECT * FROM read_parquet({files_sql}, union_by_name=true) LIMIT 1"
+    sample_query = (
+        f"SELECT * FROM read_parquet({files_sql}, union_by_name=true) LIMIT 1"
+    )
     try:
         sample_df = con.execute(sample_query).df()
         colnames = set(c.lower() for c in sample_df.columns.tolist())
-    except:
+    except Exception:
         colnames = set()
 
-    # Build dynamic filtering conditions
+    # Build dynamic filtering conditions using swot_filters constants
     conditions = []
 
     # WSE column detection (prefer new names, fallback to old)
@@ -111,35 +123,46 @@ def compute_reach_swot_obs(
     # WSE sentinel filter
     conditions.append(f"NULLIF({wse_col}, {SENTINEL}) IS NOT NULL")
 
-    # WSE quality filter (wse_q or wse_sm_q <= 1)
-    has_wse_q = "wse_q" in colnames
-    has_wse_sm_q = "wse_sm_q" in colnames
-    if has_wse_q:
-        conditions.append("COALESCE(wse_q, 3) <= 1")
-    elif has_wse_sm_q:
-        conditions.append("COALESCE(wse_sm_q, 3) <= 1")
+    # WSE quality filter
+    if "wse_q" in colnames:
+        conditions.append(f"COALESCE(wse_q, 3) <= {QUALITY_MAX}")
+    elif "wse_sm_q" in colnames:
+        conditions.append(f"COALESCE(wse_sm_q, 3) <= {QUALITY_MAX}")
 
-    # Dark water fraction filter (<= 0.5 or NULL)
+    # Dark water fraction filter
     if "dark_frac" in colnames and "dark_water_frac" in colnames:
-        conditions.append("((COALESCE(dark_frac, dark_water_frac) <= 0.5) OR (dark_frac IS NULL AND dark_water_frac IS NULL))")
+        conditions.append(
+            f"((COALESCE(dark_frac, dark_water_frac) <= {DARK_FRAC_MAX})"
+            " OR (dark_frac IS NULL AND dark_water_frac IS NULL))"
+        )
     elif "dark_frac" in colnames:
-        conditions.append("((dark_frac <= 0.5) OR (dark_frac IS NULL))")
+        conditions.append(f"((dark_frac <= {DARK_FRAC_MAX}) OR (dark_frac IS NULL))")
     elif "dark_water_frac" in colnames:
-        conditions.append("((dark_water_frac <= 0.5) OR (dark_water_frac IS NULL))")
+        conditions.append(
+            f"((dark_water_frac <= {DARK_FRAC_MAX}) OR (dark_water_frac IS NULL))"
+        )
 
-    # Cross-track distance filter (10-60km or NULL)
+    # Cross-track distance filter
     if "xtrk_dist" in colnames and "cross_track_dist" in colnames:
-        conditions.append("((ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN 10000 AND 60000) OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))")
+        conditions.append(
+            f"((ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN {XTRACK_MIN} AND {XTRACK_MAX})"
+            " OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))"
+        )
     elif "xtrk_dist" in colnames:
-        conditions.append("((ABS(xtrk_dist) BETWEEN 10000 AND 60000) OR (xtrk_dist IS NULL))")
+        conditions.append(
+            f"((ABS(xtrk_dist) BETWEEN {XTRACK_MIN} AND {XTRACK_MAX}) OR (xtrk_dist IS NULL))"
+        )
     elif "cross_track_dist" in colnames:
-        conditions.append("((ABS(cross_track_dist) BETWEEN 10000 AND 60000) OR (cross_track_dist IS NULL))")
+        conditions.append(
+            f"((ABS(cross_track_dist) BETWEEN {XTRACK_MIN} AND {XTRACK_MAX})"
+            " OR (cross_track_dist IS NULL))"
+        )
 
-    # Crossover calibration quality filter (<= 1 or NULL)
+    # Crossover calibration quality filter
     if "xovr_cal_q" in colnames:
-        conditions.append("(xovr_cal_q <= 1 OR xovr_cal_q IS NULL)")
+        conditions.append(f"(xovr_cal_q <= {QUALITY_MAX} OR xovr_cal_q IS NULL)")
 
-    # Ice climatology filter (= 0: likely not ice covered)
+    # Ice climatology filter
     if "ice_clim_f" in colnames:
         conditions.append("ice_clim_f = 0")
 
@@ -148,9 +171,9 @@ def compute_reach_swot_obs(
         conditions.append("time_str IS NOT NULL AND time_str != ''")
 
     # Reach filter (no continent filter - rely on reach_id matching to SWORD region)
-    # This handles SWOT continent codes (NA, SA, EU, AF, AS, AU, SI, AR, GR) mapping
-    # to SWORD regions (NA, SA, EU, AF, AS, OC) via reach_id
-    conditions.append("CAST(reach_id AS BIGINT) IN (SELECT reach_id FROM sword_reaches)")
+    conditions.append(
+        "CAST(reach_id AS BIGINT) IN (SELECT reach_id FROM sword_reaches)"
+    )
 
     where_clause = " AND ".join(conditions)
 
@@ -173,8 +196,8 @@ def compute_reach_swot_obs(
     -- Filter for valid bounds (prevents STDDEV_SAMP overflow)
     bounded_nodes AS (
         SELECT * FROM filtered_nodes
-        WHERE width > 0 AND width < 100000
-          AND wse > -1000 AND wse < 10000
+        WHERE width > 0 AND width < {WIDTH_MAX}
+          AND wse > {WSE_MIN} AND wse < {WSE_MAX}
     ),
 
     -- Aggregate WSE/width per reach (all observations)
@@ -324,11 +347,7 @@ def compute_reach_swot_obs(
 
     result = con.execute(query).fetchdf()
 
-    return {
-        'stats': result,
-        'n_reaches': len(result),
-        'region': region
-    }
+    return {"stats": result, "n_reaches": len(result), "region": region}
 
 
 def update_sword_db(sword_db_path: str, stats_df, region: str):
@@ -353,26 +372,26 @@ def update_sword_db(sword_db_path: str, stats_df, region: str):
 
     new_cols = [
         # Slope stats
-        ('slope_obs_mean', 'DOUBLE'),
-        ('slope_obs_std', 'DOUBLE'),
-        ('slope_obs_median', 'DOUBLE'),
-        ('slope_obs_range', 'DOUBLE'),
-        ('slope_obs_n', 'INTEGER'),
-        ('slope_obs_n_passes', 'INTEGER'),
-        ('slope_obs_q', 'INTEGER'),
+        ("slope_obs_mean", "DOUBLE"),
+        ("slope_obs_std", "DOUBLE"),
+        ("slope_obs_median", "DOUBLE"),
+        ("slope_obs_range", "DOUBLE"),
+        ("slope_obs_n", "INTEGER"),
+        ("slope_obs_n_passes", "INTEGER"),
+        ("slope_obs_q", "INTEGER"),
         # WSE stats
-        ('wse_obs_mean', 'DOUBLE'),
-        ('wse_obs_median', 'DOUBLE'),
-        ('wse_obs_std', 'DOUBLE'),
-        ('wse_obs_range', 'DOUBLE'),
+        ("wse_obs_mean", "DOUBLE"),
+        ("wse_obs_median", "DOUBLE"),
+        ("wse_obs_std", "DOUBLE"),
+        ("wse_obs_range", "DOUBLE"),
         # Width stats
-        ('width_obs_mean', 'DOUBLE'),
-        ('width_obs_median', 'DOUBLE'),
-        ('width_obs_std', 'DOUBLE'),
-        ('width_obs_range', 'DOUBLE'),
+        ("width_obs_mean", "DOUBLE"),
+        ("width_obs_median", "DOUBLE"),
+        ("width_obs_std", "DOUBLE"),
+        ("width_obs_range", "DOUBLE"),
         # Observation count and source
-        ('n_obs', 'INTEGER'),
-        ('swot_obs_source', 'VARCHAR'),
+        ("n_obs", "INTEGER"),
+        ("swot_obs_source", "VARCHAR"),
     ]
 
     for col_name, col_type in new_cols:
@@ -421,26 +440,45 @@ def update_sword_db(sword_db_path: str, stats_df, region: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Compute reach-level SWOT observations (slope, wse, width)')
-    parser.add_argument('--db', required=True, help='Path to SWORD DuckDB')
-    parser.add_argument('--swot-dir', default='/Volumes/SWORD_DATA/data/swot/parquet_lake_D/nodes',
-                        help='Path to SWOT node parquet directory')
-    parser.add_argument('--region', help='Region code (NA, SA, EU, AF, AS, OC)')
-    parser.add_argument('--all', action='store_true', help='Process all regions')
-    parser.add_argument('--min-nodes', type=int, default=3,
-                        help='Min nodes per pass for valid slope (default: 3)')
-    parser.add_argument('--noise-floor', type=float, default=0.1,
-                        help='Noise floor threshold in m/km (default: 0.1)')
-    parser.add_argument('--noise-clip', type=float, default=1e-5,
-                        help='Value to clip noise floor slopes to (default: 1e-5)')
-    parser.add_argument('--dry-run', action='store_true', help='Compute stats but do not update DB')
+    parser = argparse.ArgumentParser(
+        description="Compute reach-level SWOT observations (slope, wse, width)"
+    )
+    parser.add_argument("--db", required=True, help="Path to SWORD DuckDB")
+    parser.add_argument(
+        "--swot-dir",
+        default="/Volumes/SWORD_DATA/data/swot/parquet_lake_D/nodes",
+        help="Path to SWOT node parquet directory",
+    )
+    parser.add_argument("--region", help="Region code (NA, SA, EU, AF, AS, OC)")
+    parser.add_argument("--all", action="store_true", help="Process all regions")
+    parser.add_argument(
+        "--min-nodes",
+        type=int,
+        default=3,
+        help="Min nodes per pass for valid slope (default: 3)",
+    )
+    parser.add_argument(
+        "--noise-floor",
+        type=float,
+        default=0.1,
+        help="Noise floor threshold in m/km (default: 0.1)",
+    )
+    parser.add_argument(
+        "--noise-clip",
+        type=float,
+        default=1e-5,
+        help="Value to clip noise floor slopes to (default: 1e-5)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Compute stats but do not update DB"
+    )
 
     args = parser.parse_args()
 
     if not args.all and not args.region:
         parser.error("Either --region or --all is required")
 
-    regions = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'] if args.all else [args.region]
+    regions = ["NA", "SA", "EU", "AF", "AS", "OC"] if args.all else [args.region]
 
     for region in regions:
         print(f"\nProcessing region: {region}")
@@ -456,20 +494,24 @@ def main():
 
         print(f"  Computed SWOT obs for {result['n_reaches']} reaches")
 
-        if result['n_reaches'] > 0:
-            stats = result['stats']
-            slope_valid = stats['slope_obs_mean'].notna().sum()
-            wse_valid = stats['wse_obs_mean'].notna().sum()
-            width_valid = stats['width_obs_mean'].notna().sum()
-            print(f"  slope: {slope_valid}, wse: {wse_valid}, width: {width_valid} reaches")
+        if result["n_reaches"] > 0:
+            stats = result["stats"]
+            slope_valid = stats["slope_obs_mean"].notna().sum()
+            wse_valid = stats["wse_obs_mean"].notna().sum()
+            width_valid = stats["width_obs_mean"].notna().sum()
+            print(
+                f"  slope: {slope_valid}, wse: {wse_valid}, width: {width_valid} reaches"
+            )
             if slope_valid > 0:
-                print(f"  slope_obs_mean range: [{stats['slope_obs_mean'].min():.6f}, {stats['slope_obs_mean'].max():.6f}]")
+                print(
+                    f"  slope_obs_mean range: [{stats['slope_obs_mean'].min():.6f}, {stats['slope_obs_mean'].max():.6f}]"
+                )
 
-        if not args.dry_run and result['n_reaches'] > 0:
-            update_sword_db(args.db, result['stats'], region)
+        if not args.dry_run and result["n_reaches"] > 0:
+            update_sword_db(args.db, result["stats"], region)
         elif args.dry_run:
             print("  (dry-run, DB not updated)")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

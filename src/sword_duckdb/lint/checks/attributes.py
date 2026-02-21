@@ -567,7 +567,7 @@ def check_outlet_facc(
     "A021",
     Category.ATTRIBUTES,
     Severity.WARNING,
-    "wse_obs_median should be close to wse",
+    "wse_obs_p50 should be close to wse",
     default_threshold=10.0,  # meters
 )
 def check_wse_obs_vs_wse(
@@ -576,14 +576,12 @@ def check_wse_obs_vs_wse(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """
-    Check that SWOT-observed WSE median is close to the reference WSE.
+    Check that SWOT-observed WSE p50 (median) is close to the reference WSE.
 
     Large differences suggest measurement issues or temporal variability.
     """
-    if not _column_exists(conn, "wse_obs_median"):
-        return _skip_result(
-            "A021", "wse_obs_vs_wse", Severity.WARNING, "wse_obs_median"
-        )
+    if not _column_exists(conn, "wse_obs_p50"):
+        return _skip_result("A021", "wse_obs_vs_wse", Severity.WARNING, "wse_obs_p50")
 
     max_diff = threshold if threshold is not None else 10.0
     where_clause = f"AND r.region = '{region}'" if region else ""
@@ -591,16 +589,16 @@ def check_wse_obs_vs_wse(
     query = f"""
     SELECT
         r.reach_id, r.region, r.river_name, r.x, r.y,
-        r.wse, r.wse_obs_median,
-        ROUND(ABS(r.wse_obs_median - r.wse), 3) as wse_diff,
+        r.wse, r.wse_obs_p50,
+        ROUND(ABS(r.wse_obs_p50 - r.wse), 3) as wse_diff,
         r.lakeflag
     FROM reaches r
     WHERE r.wse IS NOT NULL AND r.wse != -9999
-        AND r.wse_obs_median IS NOT NULL AND r.wse_obs_median != -9999
-        AND ABS(r.wse_obs_median - r.wse) > {max_diff}
+        AND r.wse_obs_p50 IS NOT NULL AND r.wse_obs_p50 != -9999
+        AND ABS(r.wse_obs_p50 - r.wse) > {max_diff}
         AND r.lakeflag = 0
         {where_clause}
-    ORDER BY ABS(r.wse_obs_median - r.wse) DESC
+    ORDER BY ABS(r.wse_obs_p50 - r.wse) DESC
     """
 
     issues = conn.execute(query).fetchdf()
@@ -608,7 +606,7 @@ def check_wse_obs_vs_wse(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r
     WHERE wse IS NOT NULL AND wse != -9999
-        AND wse_obs_median IS NOT NULL AND wse_obs_median != -9999
+        AND wse_obs_p50 IS NOT NULL AND wse_obs_p50 != -9999
         AND lakeflag = 0
     {where_clause}
     """
@@ -623,7 +621,7 @@ def check_wse_obs_vs_wse(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description=f"Reaches where |wse_obs_median - wse| > {max_diff}m",
+        description=f"Reaches where |wse_obs_p50 - wse| > {max_diff}m",
         threshold=max_diff,
     )
 
@@ -632,7 +630,7 @@ def check_wse_obs_vs_wse(
     "A024",
     Category.ATTRIBUTES,
     Severity.INFO,
-    "width_obs_median should be reasonable vs width",
+    "width_obs_p50 should be reasonable vs width",
     default_threshold=3.0,  # ratio
 )
 def check_width_obs_vs_width(
@@ -641,14 +639,14 @@ def check_width_obs_vs_width(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """
-    Check that SWOT-observed width median is reasonable vs reference width.
+    Check that SWOT-observed width p50 (median) is reasonable vs reference width.
 
-    Flags reaches where the ratio width_obs_median/width is very large or
+    Flags reaches where the ratio width_obs_p50/width is very large or
     very small, suggesting measurement or classification issues.
     """
-    if not _column_exists(conn, "width_obs_median"):
+    if not _column_exists(conn, "width_obs_p50"):
         return _skip_result(
-            "A024", "width_obs_vs_width", Severity.INFO, "width_obs_median"
+            "A024", "width_obs_vs_width", Severity.INFO, "width_obs_p50"
         )
 
     max_ratio = threshold if threshold is not None else 3.0
@@ -657,18 +655,18 @@ def check_width_obs_vs_width(
     query = f"""
     SELECT
         r.reach_id, r.region, r.river_name, r.x, r.y,
-        r.width, r.width_obs_median,
-        ROUND(r.width_obs_median / r.width, 3) as width_ratio,
+        r.width, r.width_obs_p50,
+        ROUND(r.width_obs_p50 / r.width, 3) as width_ratio,
         r.lakeflag
     FROM reaches r
     WHERE r.width IS NOT NULL AND r.width > 0 AND r.width != -9999
-        AND r.width_obs_median IS NOT NULL AND r.width_obs_median > 0
-            AND r.width_obs_median != -9999
+        AND r.width_obs_p50 IS NOT NULL AND r.width_obs_p50 > 0
+            AND r.width_obs_p50 != -9999
         AND r.lakeflag = 0
-        AND (r.width_obs_median / r.width > {max_ratio}
-             OR r.width_obs_median / r.width < 1.0 / {max_ratio})
+        AND (r.width_obs_p50 / r.width > {max_ratio}
+             OR r.width_obs_p50 / r.width < 1.0 / {max_ratio})
         {where_clause}
-    ORDER BY ABS(LN(r.width_obs_median / r.width)) DESC
+    ORDER BY ABS(LN(r.width_obs_p50 / r.width)) DESC
     """
 
     issues = conn.execute(query).fetchdf()
@@ -676,8 +674,8 @@ def check_width_obs_vs_width(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r
     WHERE width IS NOT NULL AND width > 0 AND width != -9999
-        AND width_obs_median IS NOT NULL AND width_obs_median > 0
-            AND width_obs_median != -9999
+        AND width_obs_p50 IS NOT NULL AND width_obs_p50 > 0
+            AND width_obs_p50 != -9999
         AND lakeflag = 0
     {where_clause}
     """
@@ -692,7 +690,7 @@ def check_width_obs_vs_width(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description=f"Reaches where width_obs_median/width ratio outside [1/{max_ratio:.0f}, {max_ratio:.0f}]",
+        description=f"Reaches where width_obs_p50/width ratio outside [1/{max_ratio:.0f}, {max_ratio:.0f}]",
         threshold=max_ratio,
     )
 
@@ -701,7 +699,7 @@ def check_width_obs_vs_width(
     "A026",
     Category.ATTRIBUTES,
     Severity.ERROR,
-    "slope_obs_mean must be non-negative",
+    "slope_obs_p50 must be non-negative",
 )
 def check_slope_obs_nonneg(
     conn: duckdb.DuckDBPyConnection,
@@ -709,35 +707,33 @@ def check_slope_obs_nonneg(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """
-    Check that SWOT-observed slope mean is non-negative.
+    Check that SWOT-observed slope p50 (median) is non-negative.
 
     Negative observed slopes indicate measurement artifacts or processing
     errors in SWOT data aggregation.
     """
-    if not _column_exists(conn, "slope_obs_mean"):
-        return _skip_result(
-            "A026", "slope_obs_nonneg", Severity.ERROR, "slope_obs_mean"
-        )
+    if not _column_exists(conn, "slope_obs_p50"):
+        return _skip_result("A026", "slope_obs_nonneg", Severity.ERROR, "slope_obs_p50")
 
     where_clause = f"AND r.region = '{region}'" if region else ""
 
     query = f"""
     SELECT
         r.reach_id, r.region, r.river_name, r.x, r.y,
-        r.slope_obs_mean, r.slope, r.wse, r.lakeflag
+        r.slope_obs_p50, r.slope, r.wse, r.lakeflag
     FROM reaches r
-    WHERE r.slope_obs_mean IS NOT NULL
-        AND r.slope_obs_mean != -9999
-        AND r.slope_obs_mean < 0
+    WHERE r.slope_obs_p50 IS NOT NULL
+        AND r.slope_obs_p50 != -9999
+        AND r.slope_obs_p50 < 0
         {where_clause}
-    ORDER BY r.slope_obs_mean ASC
+    ORDER BY r.slope_obs_p50 ASC
     """
 
     issues = conn.execute(query).fetchdf()
 
     total_query = f"""
     SELECT COUNT(*) FROM reaches r
-    WHERE slope_obs_mean IS NOT NULL AND slope_obs_mean != -9999
+    WHERE slope_obs_p50 IS NOT NULL AND slope_obs_p50 != -9999
     {where_clause}
     """
     total = conn.execute(total_query).fetchone()[0]
@@ -751,7 +747,7 @@ def check_slope_obs_nonneg(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description="Reaches with negative slope_obs_mean",
+        description="Reaches with negative slope_obs_p50",
     )
 
 
@@ -759,7 +755,7 @@ def check_slope_obs_nonneg(
     "A027",
     Category.ATTRIBUTES,
     Severity.WARNING,
-    "slope_obs_mean should be < 50 m/km",
+    "slope_obs_p50 should be < 50 m/km",
     default_threshold=50.0,  # m/km
 )
 def check_slope_obs_extreme(
@@ -768,14 +764,14 @@ def check_slope_obs_extreme(
     threshold: Optional[float] = None,
 ) -> CheckResult:
     """
-    Check that SWOT-observed slope mean is not unreasonably high.
+    Check that SWOT-observed slope p50 (median) is not unreasonably high.
 
     Slopes >50 m/km are extremely rare for rivers and likely indicate
     measurement error or reach geometry issues.
     """
-    if not _column_exists(conn, "slope_obs_mean"):
+    if not _column_exists(conn, "slope_obs_p50"):
         return _skip_result(
-            "A027", "slope_obs_extreme", Severity.WARNING, "slope_obs_mean"
+            "A027", "slope_obs_extreme", Severity.WARNING, "slope_obs_p50"
         )
 
     max_slope = threshold if threshold is not None else 50.0
@@ -784,21 +780,21 @@ def check_slope_obs_extreme(
     query = f"""
     SELECT
         r.reach_id, r.region, r.river_name, r.x, r.y,
-        r.slope_obs_mean, r.slope, r.reach_length, r.lakeflag
+        r.slope_obs_p50, r.slope, r.reach_length, r.lakeflag
     FROM reaches r
-    WHERE r.slope_obs_mean IS NOT NULL
-        AND r.slope_obs_mean != -9999
-        AND r.slope_obs_mean > {max_slope}
+    WHERE r.slope_obs_p50 IS NOT NULL
+        AND r.slope_obs_p50 != -9999
+        AND r.slope_obs_p50 > {max_slope}
         AND r.lakeflag = 0
         {where_clause}
-    ORDER BY r.slope_obs_mean DESC
+    ORDER BY r.slope_obs_p50 DESC
     """
 
     issues = conn.execute(query).fetchdf()
 
     total_query = f"""
     SELECT COUNT(*) FROM reaches r
-    WHERE slope_obs_mean IS NOT NULL AND slope_obs_mean != -9999 AND lakeflag = 0
+    WHERE slope_obs_p50 IS NOT NULL AND slope_obs_p50 != -9999 AND lakeflag = 0
     {where_clause}
     """
     total = conn.execute(total_query).fetchone()[0]
@@ -812,7 +808,7 @@ def check_slope_obs_extreme(
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
         details=issues,
-        description=f"Reaches with slope_obs_mean > {max_slope} m/km",
+        description=f"Reaches with slope_obs_p50 > {max_slope} m/km",
         threshold=max_slope,
     )
 
