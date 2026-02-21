@@ -937,3 +937,48 @@ def check_wse_downstream_monotonicity(
         details=issues,
         description="Reaches where WSE increases downstream (water should flow downhill)",
     )
+
+
+@register_check(
+    "A031",
+    Category.ATTRIBUTES,
+    Severity.WARNING,
+    "Nodes with width <= 0",
+)
+def check_zero_node_width(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Find nodes whose width is zero or negative.
+
+    These nodes need their width filled (e.g. from the reach median).
+    """
+    where_clause = f"AND n.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT n.node_id, n.reach_id, n.region, n.width
+    FROM nodes n
+    WHERE n.width <= 0
+        {where_clause}
+    ORDER BY n.reach_id, n.node_id
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM nodes n WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="A031",
+        name="zero_node_width",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Nodes with width <= 0 that need filling",
+    )

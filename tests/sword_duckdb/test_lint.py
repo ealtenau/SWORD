@@ -237,6 +237,10 @@ class TestRegistry:
             "N008",
             "N010",
             "C005",
+            "A031",
+            "N011",
+            "G022",
+            "G023",
         ]
         registry = get_registry()
         for check_id in required:
@@ -2296,6 +2300,260 @@ class TestC005CenterlineReachDistance:
         )
 
         result = check_centerline_reach_distance(conn)
+        assert result.passed is True
+        assert result.total_checked == 0
+        conn.close()
+
+
+# =============================================================================
+# A031 Zero Node Width Tests
+# =============================================================================
+
+
+class TestA031ZeroNodeWidth:
+    """Tests for A031 zero_node_width."""
+
+    def test_a031_registered(self):
+        check = get_check("A031")
+        assert check is not None
+        assert check.name == "zero_node_width"
+        assert check.category == Category.ATTRIBUTES
+        assert check.severity == Severity.WARNING
+
+    def test_a031_runs(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1, "reach_id": 1, "x": 0, "y": 0, "node_length": 200},
+            ],
+        )
+        # Add width column to nodes (helper doesn't include it)
+        conn.execute("ALTER TABLE nodes ADD COLUMN width DOUBLE DEFAULT 100.0")
+        conn.execute("UPDATE nodes SET width = 100.0")
+
+        from src.sword_duckdb.lint.checks.attributes import check_zero_node_width
+
+        result = check_zero_node_width(conn)
+        assert result.check_id == "A031"
+        assert result.passed is True
+        conn.close()
+
+    def test_a031_finds_zero_width(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1, "reach_id": 1, "x": 0, "y": 0, "node_length": 200},
+                {"node_id": 2, "reach_id": 1, "x": 0.001, "y": 0, "node_length": 200},
+            ],
+        )
+        conn.execute("ALTER TABLE nodes ADD COLUMN width DOUBLE DEFAULT 100.0")
+        conn.execute("UPDATE nodes SET width = 100.0 WHERE node_id = 1")
+        conn.execute("UPDATE nodes SET width = 0.0 WHERE node_id = 2")
+
+        from src.sword_duckdb.lint.checks.attributes import check_zero_node_width
+
+        result = check_zero_node_width(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+
+# =============================================================================
+# N011 Node Ordering Problems Tests
+# =============================================================================
+
+
+class TestN011NodeOrdering:
+    """Tests for N011 node_ordering_problems."""
+
+    def test_n011_registered(self):
+        check = get_check("N011")
+        assert check is not None
+        assert check.name == "node_ordering_problems"
+        assert check.category == Category.NETWORK
+        assert check.severity == Severity.WARNING
+
+    def test_n011_runs(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1, "reach_id": 1, "x": 0, "y": 0, "node_length": 200},
+            ],
+        )
+        from src.sword_duckdb.lint.checks.node import check_node_ordering_problems
+
+        result = check_node_ordering_problems(conn)
+        assert result.check_id == "N011"
+        assert result.passed is True
+        conn.close()
+
+    def test_n011_finds_zero_length(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1, "reach_id": 1, "x": 0, "y": 0, "node_length": 0},
+            ],
+        )
+        from src.sword_duckdb.lint.checks.node import check_node_ordering_problems
+
+        result = check_node_ordering_problems(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+    def test_n011_finds_excessive_length(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_nodes_table(
+            conn,
+            [
+                {"node_id": 1, "reach_id": 1, "x": 0, "y": 0, "node_length": 5000},
+            ],
+        )
+        from src.sword_duckdb.lint.checks.node import check_node_ordering_problems
+
+        result = check_node_ordering_problems(conn)
+        assert result.passed is False
+        assert result.issues_found == 1
+        conn.close()
+
+
+# =============================================================================
+# G022 Single Node Reaches Tests
+# =============================================================================
+
+
+class TestG022SingleNodeReaches:
+    """Tests for G022 single_node_reaches."""
+
+    def test_g022_registered(self):
+        check = get_check("G022")
+        assert check is not None
+        assert check.name == "single_node_reaches"
+        assert check.category == Category.GEOMETRY
+        assert check.severity == Severity.INFO
+
+    def test_g022_runs(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_reaches_table(
+            conn,
+            [{"reach_id": 1, "n_rch_up": 0, "n_rch_down": 0}],
+        )
+        from src.sword_duckdb.lint.checks.geometry import check_single_node_reaches
+
+        result = check_single_node_reaches(conn)
+        assert result.check_id == "G022"
+        conn.close()
+
+    def test_g022_finds_single_node(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0, n_nodes INTEGER DEFAULT 5,
+                type INTEGER DEFAULT 1
+            )
+        """)
+        conn.execute("""INSERT INTO reaches
+            (reach_id, region, n_nodes, type)
+            VALUES (1, 'NA', 1, 1)""")
+        conn.execute("""INSERT INTO reaches
+            (reach_id, region, n_nodes, type)
+            VALUES (2, 'NA', 5, 1)""")
+
+        from src.sword_duckdb.lint.checks.geometry import check_single_node_reaches
+
+        result = check_single_node_reaches(conn)
+        assert result.issues_found == 1
+        conn.close()
+
+    def test_g022_excludes_ghost_and_dam(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        conn.execute("""
+            CREATE TABLE reaches (
+                reach_id BIGINT, region VARCHAR, x DOUBLE, y DOUBLE,
+                geom GEOMETRY, reach_length DOUBLE, width DOUBLE,
+                lakeflag INTEGER, n_rch_up INTEGER DEFAULT 0,
+                n_rch_down INTEGER DEFAULT 0, n_nodes INTEGER DEFAULT 5,
+                type INTEGER DEFAULT 1
+            )
+        """)
+        # ghost (type=6) and dam (type=4) with 1 node should be excluded
+        conn.execute("""INSERT INTO reaches
+            (reach_id, region, n_nodes, type) VALUES (1, 'NA', 1, 6)""")
+        conn.execute("""INSERT INTO reaches
+            (reach_id, region, n_nodes, type) VALUES (2, 'NA', 1, 4)""")
+
+        from src.sword_duckdb.lint.checks.geometry import check_single_node_reaches
+
+        result = check_single_node_reaches(conn)
+        assert result.issues_found == 0
+        conn.close()
+
+
+# =============================================================================
+# G023 Duplicate Centerline Points Tests
+# =============================================================================
+
+
+class TestG023DuplicateCenterlines:
+    """Tests for G023 duplicate_centerline_points."""
+
+    def test_g023_registered(self):
+        check = get_check("G023")
+        assert check is not None
+        assert check.name == "duplicate_centerline_points"
+        assert check.category == Category.GEOMETRY
+        assert check.severity == Severity.INFO
+
+    def test_g023_runs(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_centerlines_table(
+            conn,
+            [
+                {"cl_id": 1, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"cl_id": 2, "reach_id": 1, "x": 0.001, "y": 0.001},
+            ],
+        )
+        from src.sword_duckdb.lint.checks.geometry import (
+            check_duplicate_centerline_points,
+        )
+
+        result = check_duplicate_centerline_points(conn)
+        assert result.check_id == "G023"
+        assert result.issues_found == 0
+        conn.close()
+
+    def test_g023_finds_duplicate(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        _create_centerlines_table(
+            conn,
+            [
+                {"cl_id": 1, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"cl_id": 2, "reach_id": 1, "x": 0.0, "y": 0.0},
+                {"cl_id": 3, "reach_id": 1, "x": 0.001, "y": 0.001},
+            ],
+        )
+        from src.sword_duckdb.lint.checks.geometry import (
+            check_duplicate_centerline_points,
+        )
+
+        result = check_duplicate_centerline_points(conn)
+        assert result.issues_found == 1
+        conn.close()
+
+    def test_g023_no_centerlines_table(self, tmp_path):
+        conn = _spatial_conn(tmp_path)
+        from src.sword_duckdb.lint.checks.geometry import (
+            check_duplicate_centerline_points,
+        )
+
+        result = check_duplicate_centerline_points(conn)
         assert result.passed is True
         assert result.total_checked == 0
         conn.close()

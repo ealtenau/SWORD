@@ -1563,3 +1563,138 @@ def check_reach_overlap(
         details=issues,
         description="Topologically distant reach pairs with crossing geometry",
     )
+
+
+@register_check(
+    "G022",
+    Category.GEOMETRY,
+    Severity.INFO,
+    "Non-ghost non-dam reaches with exactly 1 node (candidates for merge)",
+)
+def check_single_node_reaches(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Find reaches with exactly 1 node that are not ghost (type=6) or dam (type=4).
+
+    These are candidates for merging into an adjacent reach.
+    Falls back gracefully if the ``type`` column does not exist.
+    """
+    where_clause = f"AND r.region = '{region}'" if region else ""
+
+    # Check whether the type column exists
+    cols = {
+        row[0]
+        for row in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'reaches'"
+        ).fetchall()
+    }
+    type_filter = "AND r.type NOT IN (4, 6)" if "type" in cols else ""
+
+    query = f"""
+    SELECT r.reach_id, r.region, r.n_nodes
+    FROM reaches r
+    WHERE r.n_nodes = 1
+        {type_filter}
+        {where_clause}
+    ORDER BY r.reach_id
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reaches r WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G022",
+        name="single_node_reaches",
+        severity=Severity.INFO,
+        passed=True,  # INFO: always passes, just reports
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Non-ghost non-dam reaches with exactly 1 node (merge candidates)",
+    )
+
+
+@register_check(
+    "G023",
+    Category.GEOMETRY,
+    Severity.INFO,
+    "Duplicate centerline points (same x,y within a reach)",
+)
+def check_duplicate_centerline_points(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Find centerline points that share the same (x, y) within a reach.
+
+    Uses ROW_NUMBER to identify duplicates. Falls back gracefully if the
+    centerlines table does not exist.
+    """
+    where_clause = f"AND c.region = '{region}'" if region else ""
+
+    # Check centerlines table exists
+    tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT table_name FROM information_schema.tables"
+        ).fetchall()
+    }
+    if "centerlines" not in tables:
+        return CheckResult(
+            check_id="G023",
+            name="duplicate_centerline_points",
+            severity=Severity.INFO,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0.0,
+            details=pd.DataFrame(),
+            description="SKIPPED – centerlines table not found",
+        )
+
+    query = f"""
+    WITH ranked AS (
+        SELECT
+            c.cl_id,
+            c.reach_id,
+            c.region,
+            c.x,
+            c.y,
+            ROW_NUMBER() OVER (
+                PARTITION BY c.reach_id, c.x, c.y ORDER BY c.cl_id
+            ) AS rn
+        FROM centerlines c
+        WHERE 1=1 {where_clause}
+    )
+    SELECT cl_id, reach_id, region, x, y
+    FROM ranked
+    WHERE rn > 1
+    ORDER BY reach_id, cl_id
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM centerlines c WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="G023",
+        name="duplicate_centerline_points",
+        severity=Severity.INFO,
+        passed=True,  # INFO: always passes, just reports
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Duplicate centerline points sharing the same (x,y) within a reach",
+    )

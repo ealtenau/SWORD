@@ -505,3 +505,60 @@ def check_node_index_contiguity(
         details=issues,
         description="Reaches with non-contiguous node index suffixes (gaps in step-10 numbering)",
     )
+
+
+@register_check(
+    "N011",
+    Category.NETWORK,
+    Severity.WARNING,
+    "Nodes with ordering problems (zero length or length > 1000m)",
+    default_threshold=1000.0,
+)
+def check_node_ordering_problems(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Find nodes with zero/negative length or excessively long length.
+
+    Both indicate ordering or derivation problems that should be fixed
+    by re-deriving node positions from centerlines.
+    """
+    max_length = threshold or 1000.0
+    where_clause = f"AND n.region = '{region}'" if region else ""
+
+    query = f"""
+    SELECT
+        n.node_id,
+        n.reach_id,
+        n.region,
+        n.node_length,
+        CASE
+            WHEN n.node_length <= 0 THEN 'zero_length'
+            ELSE 'excessive_length'
+        END AS issue_type
+    FROM nodes n
+    WHERE (n.node_length <= 0 OR n.node_length > {max_length})
+        {where_clause}
+    ORDER BY n.reach_id, n.node_id
+    LIMIT 10000
+    """
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM nodes n WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="N011",
+        name="node_ordering_problems",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Nodes with zero/negative length or length exceeding threshold",
+        threshold=max_length,
+    )
