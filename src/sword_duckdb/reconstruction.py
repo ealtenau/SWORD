@@ -2448,12 +2448,44 @@ class ReconstructionEngine:
                     if upstream_id not in visited:
                         queue.append(upstream_id)
 
+        # Repair connected reaches still at path_freq=0 (side channels, topology gaps)
+        needs_repair = {
+            rid
+            for rid in all_reaches
+            if path_freq[rid] == 0 and (rid in upstream_map or rid in downstream_map)
+        }
+        for _ in range(10):
+            if not needs_repair:
+                break
+            repaired = set()
+            for rid in needs_repair:
+                # Try downstream neighbor's path_freq first
+                dn_pf = [
+                    path_freq[n]
+                    for n in downstream_map.get(rid, [])
+                    if path_freq[n] > 0
+                ]
+                if dn_pf:
+                    path_freq[rid] = max(dn_pf)
+                    repaired.add(rid)
+                    continue
+                # Try summing upstream neighbors
+                up_neighbors = upstream_map.get(rid, [])
+                if up_neighbors and all(path_freq[n] > 0 for n in up_neighbors):
+                    path_freq[rid] = sum(path_freq[n] for n in up_neighbors)
+                    repaired.add(rid)
+            needs_repair -= repaired
+            if not repaired:
+                break
+        if needs_repair:
+            logger.warning(
+                f"path_freq: {len(needs_repair)} reaches still at 0 after repair"
+            )
+
         # Filter to requested reach_ids
         if reach_ids is not None:
             path_freq = {k: v for k, v in path_freq.items() if k in reach_ids}
 
-        result_df = self._conn.execute("SELECT 1").fetchdf()  # Dummy to get structure
-        result_df = result_df.iloc[:0]  # Empty
         result_df = self._conn.execute(
             f"""
             SELECT reach_id FROM reaches WHERE region = ?

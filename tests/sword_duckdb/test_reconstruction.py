@@ -718,3 +718,63 @@ class TestEndReachBifurcation:
         assert vals[bifurc_id] == 3, (
             f"Bifurcation should be junction (3), got {vals[bifurc_id]}"
         )
+
+
+class TestPathFreqRepair:
+    """Test that path_freq repair eliminates zeros on connected reaches."""
+
+    def test_unreachable_connected_reach_repaired(self, sword_writable):
+        """A reach with only downstream topology but not reachable from outlets
+        via upstream links should still get a nonzero path_freq after repair."""
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        # Find an outlet (reach with no downstream neighbors)
+        outlet = sword_writable._db.execute("""
+            SELECT r.reach_id FROM reaches r
+            WHERE r.region = 'NA'
+              AND r.reach_id NOT IN (
+                SELECT reach_id FROM reach_topology
+                WHERE region = 'NA' AND direction = 'down'
+              )
+            LIMIT 1
+        """).fetchone()
+        assert outlet is not None, "Need at least one outlet in fixture"
+        outlet_id = outlet[0]
+
+        # Find a reach not already connected to the outlet
+        other = sword_writable._db.execute(
+            """
+            SELECT reach_id FROM reaches WHERE region = 'NA'
+              AND reach_id != ? LIMIT 1
+        """,
+            [outlet_id],
+        ).fetchone()
+        assert other is not None
+        orphan_id = other[0]
+
+        # Isolate orphan: remove all topology involving it, then add only
+        # a downstream link. BFS goes upstream from outlets, so orphan won't
+        # be visited (no reach has 'up' pointing to orphan).
+        sword_writable._db.execute(
+            "DELETE FROM reach_topology WHERE reach_id = ? AND region = 'NA'",
+            [orphan_id],
+        )
+        sword_writable._db.execute(
+            "DELETE FROM reach_topology WHERE neighbor_reach_id = ? AND region = 'NA'",
+            [orphan_id],
+        )
+        sword_writable._db.execute(
+            """
+            INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+            VALUES (?, 'NA', 'down', 0, ?)
+        """,
+            [orphan_id, outlet_id],
+        )
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_path_freq(dry_run=True)
+        pf_map = dict(zip(result["entity_ids"], result["values"]))
+
+        assert pf_map.get(orphan_id, 0) > 0, (
+            f"Orphan reach {orphan_id} should have path_freq > 0 after repair"
+        )
