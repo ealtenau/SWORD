@@ -301,8 +301,13 @@ def _migrate_nodes(conn, nodes, region: str, version: str, batch_size: int) -> i
 
     df = pd.DataFrame(df_dict)
 
+    # Reorder columns to canonical order
+    from .column_order import reorder_columns
+
+    df = reorder_columns(df, "nodes")
+
     # Get column list for insert
-    columns = list(df_dict.keys())
+    columns = list(df.columns)
     placeholders = ", ".join(columns)
 
     # Insert in batches
@@ -377,8 +382,13 @@ def _migrate_reaches(conn, reaches, region: str, version: str, batch_size: int) 
 
     df = pd.DataFrame(df_dict)
 
+    # Reorder columns to canonical order
+    from .column_order import reorder_columns
+
+    df = reorder_columns(df, "reaches")
+
     # Get column list for insert
-    columns = list(df_dict.keys())
+    columns = list(df.columns)
     placeholders = ", ".join(columns)
 
     # Insert in batches
