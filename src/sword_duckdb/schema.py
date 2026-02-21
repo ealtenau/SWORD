@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 SWORD DuckDB Schema Definitions
-===============================
+-------------------------------
 
 This module defines the DuckDB schema for the SWOT River Database (SWORD).
 It normalizes the multi-dimensional NetCDF arrays into proper relational tables.
@@ -19,7 +19,7 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.6.0"  # Added dn_node_id, up_node_id, node_order
+SCHEMA_VERSION = "1.7.0"  # SWOT obs: percentiles p10-p90, MAD, remove mean/std
 
 # Valid region codes (uppercase)
 VALID_REGIONS = frozenset(["NA", "SA", "EU", "AF", "AS", "OC"])
@@ -170,14 +170,28 @@ CREATE TABLE IF NOT EXISTS nodes (
     pathlen_out DOUBLE,          -- cumulative path length to outlet
 
     -- SWOT observation statistics (computed from L2 RiverSP data)
-    wse_obs_mean DOUBLE,         -- mean observed WSE
-    wse_obs_median DOUBLE,       -- median observed WSE
-    wse_obs_std DOUBLE,          -- std dev of observed WSE
+    wse_obs_p10 DOUBLE,          -- 10th percentile observed WSE
+    wse_obs_p20 DOUBLE,          -- 20th percentile observed WSE
+    wse_obs_p30 DOUBLE,          -- 30th percentile observed WSE
+    wse_obs_p40 DOUBLE,          -- 40th percentile observed WSE
+    wse_obs_p50 DOUBLE,          -- 50th percentile (median) observed WSE
+    wse_obs_p60 DOUBLE,          -- 60th percentile observed WSE
+    wse_obs_p70 DOUBLE,          -- 70th percentile observed WSE
+    wse_obs_p80 DOUBLE,          -- 80th percentile observed WSE
+    wse_obs_p90 DOUBLE,          -- 90th percentile observed WSE
     wse_obs_range DOUBLE,        -- range (max-min) of observed WSE
-    width_obs_mean DOUBLE,       -- mean observed width
-    width_obs_median DOUBLE,     -- median observed width
-    width_obs_std DOUBLE,        -- std dev of observed width
+    wse_obs_mad DOUBLE,          -- median absolute deviation of WSE
+    width_obs_p10 DOUBLE,        -- 10th percentile observed width
+    width_obs_p20 DOUBLE,        -- 20th percentile observed width
+    width_obs_p30 DOUBLE,        -- 30th percentile observed width
+    width_obs_p40 DOUBLE,        -- 40th percentile observed width
+    width_obs_p50 DOUBLE,        -- 50th percentile (median) observed width
+    width_obs_p60 DOUBLE,        -- 60th percentile observed width
+    width_obs_p70 DOUBLE,        -- 70th percentile observed width
+    width_obs_p80 DOUBLE,        -- 80th percentile observed width
+    width_obs_p90 DOUBLE,        -- 90th percentile observed width
     width_obs_range DOUBLE,      -- range (max-min) of observed width
+    width_obs_mad DOUBLE,        -- median absolute deviation of width
     n_obs INTEGER,               -- count of SWOT observations
 
     -- Addition flag (optional, may not exist in older versions)
@@ -283,23 +297,44 @@ CREATE TABLE IF NOT EXISTS reaches (
     rch_id_dn_main BIGINT,           -- main downstream reach ID
 
     -- SWOT observation statistics (computed from L2 RiverSP data)
-    wse_obs_mean DOUBLE,             -- mean observed WSE
-    wse_obs_median DOUBLE,           -- median observed WSE
-    wse_obs_std DOUBLE,              -- std dev of observed WSE
+    wse_obs_p10 DOUBLE,              -- 10th percentile observed WSE
+    wse_obs_p20 DOUBLE,              -- 20th percentile observed WSE
+    wse_obs_p30 DOUBLE,              -- 30th percentile observed WSE
+    wse_obs_p40 DOUBLE,              -- 40th percentile observed WSE
+    wse_obs_p50 DOUBLE,              -- 50th percentile (median) observed WSE
+    wse_obs_p60 DOUBLE,              -- 60th percentile observed WSE
+    wse_obs_p70 DOUBLE,              -- 70th percentile observed WSE
+    wse_obs_p80 DOUBLE,              -- 80th percentile observed WSE
+    wse_obs_p90 DOUBLE,              -- 90th percentile observed WSE
     wse_obs_range DOUBLE,            -- range (max-min) of observed WSE
-    width_obs_mean DOUBLE,           -- mean observed width
-    width_obs_median DOUBLE,         -- median observed width
-    width_obs_std DOUBLE,            -- std dev of observed width
+    wse_obs_mad DOUBLE,              -- median absolute deviation of WSE
+    width_obs_p10 DOUBLE,            -- 10th percentile observed width
+    width_obs_p20 DOUBLE,            -- 20th percentile observed width
+    width_obs_p30 DOUBLE,            -- 30th percentile observed width
+    width_obs_p40 DOUBLE,            -- 40th percentile observed width
+    width_obs_p50 DOUBLE,            -- 50th percentile (median) observed width
+    width_obs_p60 DOUBLE,            -- 60th percentile observed width
+    width_obs_p70 DOUBLE,            -- 70th percentile observed width
+    width_obs_p80 DOUBLE,            -- 80th percentile observed width
+    width_obs_p90 DOUBLE,            -- 90th percentile observed width
     width_obs_range DOUBLE,          -- range (max-min) of observed width
-    slope_obs_mean DOUBLE,           -- mean observed slope (raw, may be negative)
-    slope_obs_median DOUBLE,         -- median observed slope
-    slope_obs_std DOUBLE,            -- std dev of observed slope
+    width_obs_mad DOUBLE,            -- median absolute deviation of width
+    slope_obs_p10 DOUBLE,            -- 10th percentile observed slope
+    slope_obs_p20 DOUBLE,            -- 20th percentile observed slope
+    slope_obs_p30 DOUBLE,            -- 30th percentile observed slope
+    slope_obs_p40 DOUBLE,            -- 40th percentile observed slope
+    slope_obs_p50 DOUBLE,            -- 50th percentile (median) observed slope
+    slope_obs_p60 DOUBLE,            -- 60th percentile observed slope
+    slope_obs_p70 DOUBLE,            -- 70th percentile observed slope
+    slope_obs_p80 DOUBLE,            -- 80th percentile observed slope
+    slope_obs_p90 DOUBLE,            -- 90th percentile observed slope
     slope_obs_range DOUBLE,          -- range (max-min) of observed slope
-    slope_obs_adj DOUBLE,            -- noise-adjusted slope: 1e-5 for noise, keeps significant negatives
-    slope_obs_slopeF DOUBLE,         -- weighted sign fraction (-1 to +1): positive = consistent positive slopes
-    slope_obs_reliable BOOLEAN,      -- TRUE if |slopeF| > 0.5 AND slope_obs_mean > noise floor
-    slope_obs_quality VARCHAR,       -- quality category: reliable, high_uncertainty, below_noise,
-                                     -- moderate_negative, large_negative, flat_water_noise, etc.
+    slope_obs_mad DOUBLE,            -- median absolute deviation of slope
+    slope_obs_adj DOUBLE,            -- GREATEST(p50, 0) clipped slope
+    slope_obs_slopeF DOUBLE,         -- weighted sign fraction (-1 to +1)
+    slope_obs_reliable BOOLEAN,      -- |slopeF| > 0.5 AND |p50| > ref_uncertainty
+    slope_obs_quality VARCHAR,       -- categorical: reliable, below_ref_uncertainty,
+                                     -- high_uncertainty, negative
     n_obs INTEGER,                   -- count of SWOT observations
 
     -- Addition flag (optional)
@@ -908,8 +943,10 @@ def add_swot_obs_columns(conn) -> bool:
     Add SWOT observation statistics columns to existing nodes and reaches tables.
 
     This migration helper adds columns for aggregated SWOT L2 RiverSP statistics
-    (mean, median, std, range) for WSE, width, and slope observations.
+    (p10-p90 percentiles, range, MAD) for WSE, width, and slope observations.
     Safe to call multiple times - checks if columns already exist.
+
+    Also drops legacy mean/median/std columns if they exist.
 
     Parameters
     ----------
@@ -919,56 +956,52 @@ def add_swot_obs_columns(conn) -> bool:
     Returns
     -------
     bool
-        True if any columns were added, False if all already existed.
+        True if any columns were added or dropped, False if schema unchanged.
     """
     added = False
 
-    # SWOT observation columns for nodes table
-    nodes_swot_columns = [
-        ("wse_obs_mean", "DOUBLE"),
-        ("wse_obs_median", "DOUBLE"),
-        ("wse_obs_std", "DOUBLE"),
-        ("wse_obs_range", "DOUBLE"),
-        ("width_obs_mean", "DOUBLE"),
-        ("width_obs_median", "DOUBLE"),
-        ("width_obs_std", "DOUBLE"),
-        ("width_obs_range", "DOUBLE"),
-        ("n_obs", "INTEGER"),
+    _PERCENTILES = ["p10", "p20", "p30", "p40", "p50", "p60", "p70", "p80", "p90"]
+
+    def _var_cols(var: str) -> list[tuple[str, str]]:
+        cols = [(f"{var}_obs_{p}", "DOUBLE") for p in _PERCENTILES]
+        cols.append((f"{var}_obs_range", "DOUBLE"))
+        cols.append((f"{var}_obs_mad", "DOUBLE"))
+        return cols
+
+    # Nodes: WSE(11) + width(11) + n_obs(1) = 23
+    nodes_swot_columns = _var_cols("wse") + _var_cols("width") + [("n_obs", "INTEGER")]
+
+    # Reaches: WSE(11) + width(11) + slope(11) + derived(4) + n_obs(1) = 38
+    reaches_swot_columns = (
+        _var_cols("wse")
+        + _var_cols("width")
+        + _var_cols("slope")
+        + [
+            ("slope_obs_adj", "DOUBLE"),
+            ("slope_obs_slopeF", "DOUBLE"),
+            ("slope_obs_reliable", "BOOLEAN"),
+            ("slope_obs_quality", "VARCHAR"),
+            ("n_obs", "INTEGER"),
+        ]
+    )
+
+    # Legacy columns to drop
+    _LEGACY_SUFFIXES = ["_obs_mean", "_obs_median", "_obs_std"]
+    _LEGACY_NODE_COLS = [f"{v}{s}" for v in ("wse", "width") for s in _LEGACY_SUFFIXES]
+    _LEGACY_REACH_COLS = [
+        f"{v}{s}" for v in ("wse", "width", "slope") for s in _LEGACY_SUFFIXES
     ]
 
-    # SWOT observation columns for reaches table (includes slope)
-    reaches_swot_columns = [
-        ("wse_obs_mean", "DOUBLE"),
-        ("wse_obs_median", "DOUBLE"),
-        ("wse_obs_std", "DOUBLE"),
-        ("wse_obs_range", "DOUBLE"),
-        ("width_obs_mean", "DOUBLE"),
-        ("width_obs_median", "DOUBLE"),
-        ("width_obs_std", "DOUBLE"),
-        ("width_obs_range", "DOUBLE"),
-        ("slope_obs_mean", "DOUBLE"),
-        ("slope_obs_median", "DOUBLE"),
-        ("slope_obs_std", "DOUBLE"),
-        ("slope_obs_range", "DOUBLE"),
-        ("slope_obs_adj", "DOUBLE"),
-        (
-            "slope_obs_slopeF",
-            "DOUBLE",
-        ),  # Weighted sign fraction (-1 to +1) for consistency
-        ("slope_obs_reliable", "BOOLEAN"),
-        ("slope_obs_quality", "VARCHAR"),
-        ("n_obs", "INTEGER"),
-    ]
-
-    def _add_columns_to_table(table_name: str, columns: list) -> bool:
-        """Add columns to a table if they don't exist."""
-        nonlocal added
-        # Get existing columns
+    def _get_existing(table_name: str) -> set[str]:
         result = conn.execute(
-            f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"
+            f"SELECT column_name FROM information_schema.columns "
+            f"WHERE table_name = '{table_name}'"
         ).fetchall()
-        existing = {row[0].lower() for row in result}
+        return {row[0].lower() for row in result}
 
+    def _add_columns_to_table(table_name: str, columns: list) -> None:
+        nonlocal added
+        existing = _get_existing(table_name)
         for col_name, col_type in columns:
             if col_name.lower() not in existing:
                 conn.execute(
@@ -976,20 +1009,25 @@ def add_swot_obs_columns(conn) -> bool:
                 )
                 added = True
 
-        return added
+    def _drop_legacy_columns(table_name: str, legacy_cols: list[str]) -> None:
+        nonlocal added
+        existing = _get_existing(table_name)
+        for col in legacy_cols:
+            if col.lower() in existing:
+                conn.execute(f"ALTER TABLE {table_name} DROP COLUMN {col}")
+                added = True
 
-    # Add columns to nodes table
+    # Add new columns
     try:
         _add_columns_to_table("nodes", nodes_swot_columns)
+        _drop_legacy_columns("nodes", _LEGACY_NODE_COLS)
     except Exception:
-        # Table may not exist yet
         pass
 
-    # Add columns to reaches table
     try:
         _add_columns_to_table("reaches", reaches_swot_columns)
+        _drop_legacy_columns("reaches", _LEGACY_REACH_COLS)
     except Exception:
-        # Table may not exist yet
         pass
 
     return added

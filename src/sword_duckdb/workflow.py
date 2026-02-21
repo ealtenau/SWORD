@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 SWORD Workflow Orchestration
-============================
+----------------------------
 
 This module provides high-level workflow orchestration for SWORD database operations.
 It ties together loading, modification tracking, provenance logging, reactive
@@ -1656,8 +1656,8 @@ class SWORDWorkflow:
         """
         Aggregate SWOT L2 RiverSP observations into summary statistics.
 
-        Reads all parquet files from the SWOT data lake and computes mean, median,
-        std, and range for WSE and width (nodes) and slope (reaches).
+        Reads all parquet files from the SWOT data lake and computes p10-p90
+        percentiles, range, and MAD for WSE and width (nodes) and slope (reaches).
 
         Parameters
         ----------
@@ -1768,7 +1768,7 @@ class SWORDWorkflow:
     def _aggregate_node_observations(
         self, conn, nodes_path: Path, region_filter: Optional[str] = None
     ) -> Dict[str, int]:
-        """Aggregate node-level SWOT observations.
+        """Aggregate node-level SWOT observations (p10-p90 percentiles, range, MAD).
 
         Parameters
         ----------
@@ -1776,11 +1776,13 @@ class SWORDWorkflow:
         nodes_path : Path to nodes parquet directory
         region_filter : Optional region to filter updates (None = all regions)
         """
+        from .swot_filters import build_node_filter_sql
+
         glob_pattern = str(nodes_path / "SWOT*.parquet")
 
         logger.info(f"Aggregating node observations from: {glob_pattern}")
 
-        # Detect available columns for dynamic filtering (matching reach_swot_obs.py)
+        # Detect available columns
         try:
             sample_df = conn.execute(
                 f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1"
@@ -1789,83 +1791,50 @@ class SWORDWorkflow:
         except Exception:
             colnames = set()
 
-        # Build dynamic quality filter conditions
-        SENTINEL = -999_999_999_999.0
-        conditions = []
+        where_clause, wse_col = build_node_filter_sql(colnames)
 
-        # WSE column (prefer new name, fallback to old)
-        wse_col = "wse" if "wse" in colnames else "wse_sm"
-        conditions.append(f"{wse_col} IS NOT NULL")
-        conditions.append(f"NULLIF({wse_col}, {SENTINEL}) IS NOT NULL")
-        conditions.append(f"{wse_col} > -1000 AND {wse_col} < 10000")
-        conditions.append(f"isfinite({wse_col})")
-
-        # Width filters
-        conditions.append("width IS NOT NULL")
-        conditions.append(f"NULLIF(width, {SENTINEL}) IS NOT NULL")
-        conditions.append("width > 0 AND width < 100000")
-        conditions.append("isfinite(width)")
-
-        # WSE quality filter
-        if "wse_q" in colnames:
-            conditions.append("COALESCE(wse_q, 3) <= 1")
-        elif "wse_sm_q" in colnames:
-            conditions.append("COALESCE(wse_sm_q, 3) <= 1")
-
-        # Dark water fraction filter
-        if "dark_frac" in colnames and "dark_water_frac" in colnames:
-            conditions.append(
-                "(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))"
-            )
-        elif "dark_frac" in colnames:
-            conditions.append("(dark_frac <= 0.5 OR dark_frac IS NULL)")
-        elif "dark_water_frac" in colnames:
-            conditions.append("(dark_water_frac <= 0.5 OR dark_water_frac IS NULL)")
-
-        # Cross-track distance filter
-        if "xtrk_dist" in colnames and "cross_track_dist" in colnames:
-            conditions.append(
-                "(ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN 10000 AND 60000 OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))"
-            )
-        elif "xtrk_dist" in colnames:
-            conditions.append(
-                "(ABS(xtrk_dist) BETWEEN 10000 AND 60000 OR xtrk_dist IS NULL)"
-            )
-        elif "cross_track_dist" in colnames:
-            conditions.append(
-                "(ABS(cross_track_dist) BETWEEN 10000 AND 60000 OR cross_track_dist IS NULL)"
-            )
-
-        # Crossover calibration quality filter
-        if "xovr_cal_q" in colnames:
-            conditions.append("(xovr_cal_q <= 1 OR xovr_cal_q IS NULL)")
-
-        # Ice climatology filter
-        if "ice_clim_f" in colnames:
-            conditions.append("ice_clim_f = 0")
-
-        # Valid time filter
-        if "time_str" in colnames:
-            conditions.append("time_str IS NOT NULL AND time_str != ''")
-
-        where_clause = " AND ".join(conditions)
-
+        # Two-pass: first compute medians, then join for MAD
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE node_obs_agg AS
-            SELECT
-                CAST(node_id AS BIGINT) as node_id,
-                AVG({wse_col}) as wse_obs_mean,
-                MEDIAN({wse_col}) as wse_obs_median,
-                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP({wse_col}) ELSE NULL END as wse_obs_std,
-                MAX({wse_col}) - MIN({wse_col}) as wse_obs_range,
-                AVG(width) as width_obs_mean,
-                MEDIAN(width) as width_obs_median,
-                CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
-                MAX(width) - MIN(width) as width_obs_range,
+            WITH filtered AS (
+                SELECT CAST(node_id AS BIGINT) as node_id,
+                       {wse_col} as wse, width
+                FROM read_parquet('{glob_pattern}', union_by_name=true)
+                WHERE {where_clause}
+            ),
+            medians AS (
+                SELECT node_id,
+                    QUANTILE_CONT(wse, 0.5) as med_wse,
+                    QUANTILE_CONT(width, 0.5) as med_width
+                FROM filtered GROUP BY node_id
+            )
+            SELECT f.node_id,
+                QUANTILE_CONT(f.wse, 0.1) as wse_obs_p10,
+                QUANTILE_CONT(f.wse, 0.2) as wse_obs_p20,
+                QUANTILE_CONT(f.wse, 0.3) as wse_obs_p30,
+                QUANTILE_CONT(f.wse, 0.4) as wse_obs_p40,
+                QUANTILE_CONT(f.wse, 0.5) as wse_obs_p50,
+                QUANTILE_CONT(f.wse, 0.6) as wse_obs_p60,
+                QUANTILE_CONT(f.wse, 0.7) as wse_obs_p70,
+                QUANTILE_CONT(f.wse, 0.8) as wse_obs_p80,
+                QUANTILE_CONT(f.wse, 0.9) as wse_obs_p90,
+                MAX(f.wse) - MIN(f.wse) as wse_obs_range,
+                MEDIAN(ABS(f.wse - m.med_wse)) as wse_obs_mad,
+                QUANTILE_CONT(f.width, 0.1) as width_obs_p10,
+                QUANTILE_CONT(f.width, 0.2) as width_obs_p20,
+                QUANTILE_CONT(f.width, 0.3) as width_obs_p30,
+                QUANTILE_CONT(f.width, 0.4) as width_obs_p40,
+                QUANTILE_CONT(f.width, 0.5) as width_obs_p50,
+                QUANTILE_CONT(f.width, 0.6) as width_obs_p60,
+                QUANTILE_CONT(f.width, 0.7) as width_obs_p70,
+                QUANTILE_CONT(f.width, 0.8) as width_obs_p80,
+                QUANTILE_CONT(f.width, 0.9) as width_obs_p90,
+                MAX(f.width) - MIN(f.width) as width_obs_range,
+                MEDIAN(ABS(f.width - m.med_width)) as width_obs_mad,
                 COUNT(*) as n_obs
-            FROM read_parquet('{glob_pattern}', union_by_name=true)
-            WHERE {where_clause}
-            GROUP BY node_id
+            FROM filtered f
+            JOIN medians m ON f.node_id = m.node_id
+            GROUP BY f.node_id
         """
 
         conn.execute(agg_sql)
@@ -1880,14 +1849,28 @@ class SWORDWorkflow:
         update_sql = f"""
             UPDATE nodes
             SET
-                wse_obs_mean = node_obs_agg.wse_obs_mean,
-                wse_obs_median = node_obs_agg.wse_obs_median,
-                wse_obs_std = node_obs_agg.wse_obs_std,
+                wse_obs_p10 = node_obs_agg.wse_obs_p10,
+                wse_obs_p20 = node_obs_agg.wse_obs_p20,
+                wse_obs_p30 = node_obs_agg.wse_obs_p30,
+                wse_obs_p40 = node_obs_agg.wse_obs_p40,
+                wse_obs_p50 = node_obs_agg.wse_obs_p50,
+                wse_obs_p60 = node_obs_agg.wse_obs_p60,
+                wse_obs_p70 = node_obs_agg.wse_obs_p70,
+                wse_obs_p80 = node_obs_agg.wse_obs_p80,
+                wse_obs_p90 = node_obs_agg.wse_obs_p90,
                 wse_obs_range = node_obs_agg.wse_obs_range,
-                width_obs_mean = node_obs_agg.width_obs_mean,
-                width_obs_median = node_obs_agg.width_obs_median,
-                width_obs_std = node_obs_agg.width_obs_std,
+                wse_obs_mad = node_obs_agg.wse_obs_mad,
+                width_obs_p10 = node_obs_agg.width_obs_p10,
+                width_obs_p20 = node_obs_agg.width_obs_p20,
+                width_obs_p30 = node_obs_agg.width_obs_p30,
+                width_obs_p40 = node_obs_agg.width_obs_p40,
+                width_obs_p50 = node_obs_agg.width_obs_p50,
+                width_obs_p60 = node_obs_agg.width_obs_p60,
+                width_obs_p70 = node_obs_agg.width_obs_p70,
+                width_obs_p80 = node_obs_agg.width_obs_p80,
+                width_obs_p90 = node_obs_agg.width_obs_p90,
                 width_obs_range = node_obs_agg.width_obs_range,
+                width_obs_mad = node_obs_agg.width_obs_mad,
                 n_obs = node_obs_agg.n_obs
             FROM node_obs_agg
             WHERE nodes.node_id = node_obs_agg.node_id
@@ -1912,12 +1895,10 @@ class SWORDWorkflow:
     def _aggregate_reach_observations(
         self, conn, reaches_path: Path, region_filter: Optional[str] = None
     ) -> Dict[str, int]:
-        """Aggregate reach-level SWOT observations using weighted mean.
+        """Aggregate reach-level SWOT observations (p10-p90, range, MAD, slope derived).
 
-        Uses n_good_nod (number of good nodes) as weight for slope aggregation,
-        similar to section-level slope calculation. Also computes slopeF
-        (weighted fraction of observations with same sign as mean) for
-        consistency assessment.
+        Percentiles are unweighted for all three variables.
+        slopeF uses n_good_nod weight for sign-consistency assessment.
 
         Parameters
         ----------
@@ -1925,11 +1906,13 @@ class SWORDWorkflow:
         reaches_path : Path to reaches parquet directory
         region_filter : Optional region to filter updates (None = all regions)
         """
+        from .swot_filters import SLOPE_REF_UNCERTAINTY, build_reach_filter_sql
+
         glob_pattern = str(reaches_path / "SWOT*.parquet")
 
         logger.info(f"Aggregating reach observations from: {glob_pattern}")
 
-        # Detect available columns for dynamic filtering
+        # Detect available columns
         try:
             sample_df = conn.execute(
                 f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1"
@@ -1938,106 +1921,108 @@ class SWORDWorkflow:
         except Exception:
             colnames = set()
 
-        # Build dynamic quality filter conditions
-        SENTINEL = -999_999_999_999.0
-        conditions = []
-
-        # Basic value filters
-        conditions.append("wse IS NOT NULL")
-        conditions.append(f"NULLIF(wse, {SENTINEL}) IS NOT NULL")
-        conditions.append("wse > -1000 AND wse < 10000")
-        conditions.append("width IS NOT NULL")
-        conditions.append(f"NULLIF(width, {SENTINEL}) IS NOT NULL")
-        conditions.append("width > 0 AND width < 100000")
-        conditions.append("slope IS NOT NULL")
-        conditions.append(f"NULLIF(slope, {SENTINEL}) IS NOT NULL")
-        conditions.append("slope > -1e10 AND slope < 1e10")
-        conditions.append("isfinite(wse) AND isfinite(width) AND isfinite(slope)")
-
-        # Reach quality filter
-        if "reach_q" in colnames:
-            conditions.append("(reach_q IS NULL OR reach_q <= 1)")
-
-        # Dark water fraction filter
-        if "dark_frac" in colnames and "dark_water_frac" in colnames:
-            conditions.append(
-                "(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))"
-            )
-        elif "dark_frac" in colnames:
-            conditions.append("(dark_frac <= 0.5 OR dark_frac IS NULL)")
-        elif "dark_water_frac" in colnames:
-            conditions.append("(dark_water_frac <= 0.5 OR dark_water_frac IS NULL)")
-
-        # Crossover calibration quality filter
-        if "xovr_cal_q" in colnames:
-            conditions.append("(xovr_cal_q <= 1 OR xovr_cal_q IS NULL)")
-
-        # Ice climatology filter
-        if "ice_clim_f" in colnames:
-            conditions.append("ice_clim_f = 0")
-
-        where_clause = " AND ".join(conditions)
+        where_clause = build_reach_filter_sql(colnames)
+        ref_u = SLOPE_REF_UNCERTAINTY
 
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE reach_obs_agg AS
-            WITH valid_obs AS (
+            WITH filtered AS (
                 SELECT
                     CAST(reach_id AS BIGINT) as reach_id,
-                    wse, width, slope, slope_u,
+                    wse, width, slope,
                     COALESCE(n_good_nod, 1) as weight
                 FROM read_parquet('{glob_pattern}', union_by_name=true)
                 WHERE {where_clause}
             ),
-            weighted_stats AS (
-                SELECT
-                    reach_id,
-                    -- WSE stats (unweighted)
-                    AVG(wse) as wse_obs_mean,
-                    MEDIAN(wse) as wse_obs_median,
-                    CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(wse) ELSE NULL END as wse_obs_std,
-                    MAX(wse) - MIN(wse) as wse_obs_range,
-                    -- Width stats (unweighted)
-                    AVG(width) as width_obs_mean,
-                    MEDIAN(width) as width_obs_median,
-                    CASE WHEN COUNT(*) > 1 THEN STDDEV_SAMP(width) ELSE NULL END as width_obs_std,
-                    MAX(width) - MIN(width) as width_obs_range,
-                    -- Slope stats (weighted by n_good_nod)
-                    SUM(weight) as sum_w,
-                    SUM(weight * slope) as sum_wx,
-                    SUM(weight * slope * slope) as sum_wx2,
-                    -- slopeF: weighted fraction of positive slopes
-                    SUM(weight * CASE WHEN slope > 0 THEN 1
-                                      WHEN slope < 0 THEN -1
-                                      ELSE 0 END) as signed_sum,
-                    MEDIAN(slope) as slope_obs_median,
-                    MAX(slope) - MIN(slope) as slope_obs_range,
+            medians AS (
+                SELECT reach_id,
+                    QUANTILE_CONT(wse, 0.5) as med_wse,
+                    QUANTILE_CONT(width, 0.5) as med_width,
+                    QUANTILE_CONT(slope, 0.5) as med_slope
+                FROM filtered GROUP BY reach_id
+            ),
+            percentiles AS (
+                SELECT f.reach_id,
+                    -- WSE percentiles
+                    QUANTILE_CONT(f.wse, 0.1) as wse_obs_p10,
+                    QUANTILE_CONT(f.wse, 0.2) as wse_obs_p20,
+                    QUANTILE_CONT(f.wse, 0.3) as wse_obs_p30,
+                    QUANTILE_CONT(f.wse, 0.4) as wse_obs_p40,
+                    QUANTILE_CONT(f.wse, 0.5) as wse_obs_p50,
+                    QUANTILE_CONT(f.wse, 0.6) as wse_obs_p60,
+                    QUANTILE_CONT(f.wse, 0.7) as wse_obs_p70,
+                    QUANTILE_CONT(f.wse, 0.8) as wse_obs_p80,
+                    QUANTILE_CONT(f.wse, 0.9) as wse_obs_p90,
+                    MAX(f.wse) - MIN(f.wse) as wse_obs_range,
+                    MEDIAN(ABS(f.wse - m.med_wse)) as wse_obs_mad,
+                    -- Width percentiles
+                    QUANTILE_CONT(f.width, 0.1) as width_obs_p10,
+                    QUANTILE_CONT(f.width, 0.2) as width_obs_p20,
+                    QUANTILE_CONT(f.width, 0.3) as width_obs_p30,
+                    QUANTILE_CONT(f.width, 0.4) as width_obs_p40,
+                    QUANTILE_CONT(f.width, 0.5) as width_obs_p50,
+                    QUANTILE_CONT(f.width, 0.6) as width_obs_p60,
+                    QUANTILE_CONT(f.width, 0.7) as width_obs_p70,
+                    QUANTILE_CONT(f.width, 0.8) as width_obs_p80,
+                    QUANTILE_CONT(f.width, 0.9) as width_obs_p90,
+                    MAX(f.width) - MIN(f.width) as width_obs_range,
+                    MEDIAN(ABS(f.width - m.med_width)) as width_obs_mad,
+                    -- Slope percentiles (unweighted)
+                    QUANTILE_CONT(f.slope, 0.1) as slope_obs_p10,
+                    QUANTILE_CONT(f.slope, 0.2) as slope_obs_p20,
+                    QUANTILE_CONT(f.slope, 0.3) as slope_obs_p30,
+                    QUANTILE_CONT(f.slope, 0.4) as slope_obs_p40,
+                    QUANTILE_CONT(f.slope, 0.5) as slope_obs_p50,
+                    QUANTILE_CONT(f.slope, 0.6) as slope_obs_p60,
+                    QUANTILE_CONT(f.slope, 0.7) as slope_obs_p70,
+                    QUANTILE_CONT(f.slope, 0.8) as slope_obs_p80,
+                    QUANTILE_CONT(f.slope, 0.9) as slope_obs_p90,
+                    MAX(f.slope) - MIN(f.slope) as slope_obs_range,
+                    MEDIAN(ABS(f.slope - m.med_slope)) as slope_obs_mad,
+                    -- slopeF: weighted sign fraction (uses n_good_nod weight)
+                    SUM(f.weight) as sum_w,
+                    SUM(f.weight * CASE WHEN f.slope > 0 THEN 1
+                                        WHEN f.slope < 0 THEN -1
+                                        ELSE 0 END) as signed_sum,
                     COUNT(*) as n_obs
-                FROM valid_obs
-                GROUP BY reach_id
+                FROM filtered f
+                JOIN medians m ON f.reach_id = m.reach_id
+                GROUP BY f.reach_id
             )
             SELECT
                 reach_id,
-                wse_obs_mean, wse_obs_median, wse_obs_std, wse_obs_range,
-                width_obs_mean, width_obs_median, width_obs_std, width_obs_range,
-                -- Weighted mean slope
-                CASE WHEN sum_w > 0 THEN sum_wx / sum_w ELSE NULL END as slope_obs_mean,
-                slope_obs_median,
-                -- Weighted std: sqrt(E[X^2] - E[X]^2)
-                CASE WHEN sum_w > 0 AND n_obs > 1
-                     THEN SQRT(GREATEST(sum_wx2 / sum_w - POWER(sum_wx / sum_w, 2), 0))
-                     ELSE NULL END as slope_obs_std,
-                slope_obs_range,
-                -- Noise-adjusted slope: clip negatives to 0 (SWOT noise ~1.7 cm/km)
-                GREATEST(CASE WHEN sum_w > 0 THEN sum_wx / sum_w ELSE 0 END, 0.0) as slope_obs_adj,
-                -- slopeF: weighted sign fraction (-1 to +1), positive means consistent positive slopes
+                wse_obs_p10, wse_obs_p20, wse_obs_p30, wse_obs_p40, wse_obs_p50,
+                wse_obs_p60, wse_obs_p70, wse_obs_p80, wse_obs_p90,
+                wse_obs_range, wse_obs_mad,
+                width_obs_p10, width_obs_p20, width_obs_p30, width_obs_p40, width_obs_p50,
+                width_obs_p60, width_obs_p70, width_obs_p80, width_obs_p90,
+                width_obs_range, width_obs_mad,
+                slope_obs_p10, slope_obs_p20, slope_obs_p30, slope_obs_p40, slope_obs_p50,
+                slope_obs_p60, slope_obs_p70, slope_obs_p80, slope_obs_p90,
+                slope_obs_range, slope_obs_mad,
+                -- Derived: adj = GREATEST(p50, 0)
+                GREATEST(slope_obs_p50, 0.0) as slope_obs_adj,
+                -- slopeF
                 CASE WHEN sum_w > 0 THEN signed_sum / sum_w ELSE 0 END as slope_obs_slopeF,
-                -- Reliable if |slopeF| > 0.5 (majority agree on sign) AND mean > noise floor
+                -- Reliable: |slopeF| > 0.5 AND |p50| > ref_uncertainty
                 CASE WHEN sum_w > 0
                      AND ABS(signed_sum / sum_w) > 0.5
-                     AND ABS(sum_wx / sum_w) > 0.000017
+                     AND ABS(slope_obs_p50) > {ref_u}
                      THEN TRUE ELSE FALSE END as slope_obs_reliable,
+                -- Quality category
+                CASE
+                    WHEN slope_obs_p50 < -{ref_u}
+                         AND sum_w > 0 AND ABS(signed_sum / sum_w) > 0.5
+                        THEN 'negative'
+                    WHEN ABS(slope_obs_p50) <= {ref_u}
+                        THEN 'below_ref_uncertainty'
+                    WHEN sum_w > 0 AND ABS(signed_sum / sum_w) <= 0.5
+                         AND ABS(slope_obs_p50) > {ref_u}
+                        THEN 'high_uncertainty'
+                    ELSE 'reliable'
+                END as slope_obs_quality,
                 n_obs
-            FROM weighted_stats
+            FROM percentiles
         """
 
         conn.execute(agg_sql)
@@ -2054,21 +2039,43 @@ class SWORDWorkflow:
         update_sql = f"""
             UPDATE reaches
             SET
-                wse_obs_mean = reach_obs_agg.wse_obs_mean,
-                wse_obs_median = reach_obs_agg.wse_obs_median,
-                wse_obs_std = reach_obs_agg.wse_obs_std,
+                wse_obs_p10 = reach_obs_agg.wse_obs_p10,
+                wse_obs_p20 = reach_obs_agg.wse_obs_p20,
+                wse_obs_p30 = reach_obs_agg.wse_obs_p30,
+                wse_obs_p40 = reach_obs_agg.wse_obs_p40,
+                wse_obs_p50 = reach_obs_agg.wse_obs_p50,
+                wse_obs_p60 = reach_obs_agg.wse_obs_p60,
+                wse_obs_p70 = reach_obs_agg.wse_obs_p70,
+                wse_obs_p80 = reach_obs_agg.wse_obs_p80,
+                wse_obs_p90 = reach_obs_agg.wse_obs_p90,
                 wse_obs_range = reach_obs_agg.wse_obs_range,
-                width_obs_mean = reach_obs_agg.width_obs_mean,
-                width_obs_median = reach_obs_agg.width_obs_median,
-                width_obs_std = reach_obs_agg.width_obs_std,
+                wse_obs_mad = reach_obs_agg.wse_obs_mad,
+                width_obs_p10 = reach_obs_agg.width_obs_p10,
+                width_obs_p20 = reach_obs_agg.width_obs_p20,
+                width_obs_p30 = reach_obs_agg.width_obs_p30,
+                width_obs_p40 = reach_obs_agg.width_obs_p40,
+                width_obs_p50 = reach_obs_agg.width_obs_p50,
+                width_obs_p60 = reach_obs_agg.width_obs_p60,
+                width_obs_p70 = reach_obs_agg.width_obs_p70,
+                width_obs_p80 = reach_obs_agg.width_obs_p80,
+                width_obs_p90 = reach_obs_agg.width_obs_p90,
                 width_obs_range = reach_obs_agg.width_obs_range,
-                slope_obs_mean = reach_obs_agg.slope_obs_mean,
-                slope_obs_median = reach_obs_agg.slope_obs_median,
-                slope_obs_std = reach_obs_agg.slope_obs_std,
+                width_obs_mad = reach_obs_agg.width_obs_mad,
+                slope_obs_p10 = reach_obs_agg.slope_obs_p10,
+                slope_obs_p20 = reach_obs_agg.slope_obs_p20,
+                slope_obs_p30 = reach_obs_agg.slope_obs_p30,
+                slope_obs_p40 = reach_obs_agg.slope_obs_p40,
+                slope_obs_p50 = reach_obs_agg.slope_obs_p50,
+                slope_obs_p60 = reach_obs_agg.slope_obs_p60,
+                slope_obs_p70 = reach_obs_agg.slope_obs_p70,
+                slope_obs_p80 = reach_obs_agg.slope_obs_p80,
+                slope_obs_p90 = reach_obs_agg.slope_obs_p90,
                 slope_obs_range = reach_obs_agg.slope_obs_range,
+                slope_obs_mad = reach_obs_agg.slope_obs_mad,
                 slope_obs_adj = reach_obs_agg.slope_obs_adj,
                 slope_obs_slopeF = reach_obs_agg.slope_obs_slopeF,
                 slope_obs_reliable = reach_obs_agg.slope_obs_reliable,
+                slope_obs_quality = reach_obs_agg.slope_obs_quality,
                 n_obs = reach_obs_agg.n_obs
             FROM reach_obs_agg
             WHERE reaches.reach_id = reach_obs_agg.reach_id
