@@ -51,12 +51,11 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 
 if TYPE_CHECKING:
-    import duckdb
     from .sword_class import SWORD
     from .provenance import ProvenanceLogger
 
@@ -66,66 +65,66 @@ logger = logging.getLogger(__name__)
 class SourceDataset(Enum):
     """Known source datasets for SWORD reconstruction."""
 
-    GRWL = "GRWL"                    # Global River Widths from Landsat
-    MERIT_HYDRO = "MERIT_HYDRO"      # Multi-Error-Removed Improved-Terrain Hydro
-    HYDROBASINS = "HYDROBASINS"      # HydroBASINS watersheds
-    HYDROLAKES = "HYDROLAKES"        # HydroLAKES lake extents
-    HYDROFALLS = "HYDROFALLS"        # HydroFALLS waterfall database
-    GRAND = "GRAND"                  # Global Reservoir and Dam database
-    GROD = "GROD"                    # Global River Obstruction Database
-    SWOT_TRACKS = "SWOT_TRACKS"      # SWOT satellite orbit tracks
-    ICE_FLAGS = "ICE_FLAGS"          # Ice flag dataset (external CSV)
-    RIVER_NAMES = "RIVER_NAMES"      # River names database
+    GRWL = "GRWL"  # Global River Widths from Landsat
+    MERIT_HYDRO = "MERIT_HYDRO"  # Multi-Error-Removed Improved-Terrain Hydro
+    HYDROBASINS = "HYDROBASINS"  # HydroBASINS watersheds
+    HYDROLAKES = "HYDROLAKES"  # HydroLAKES lake extents
+    HYDROFALLS = "HYDROFALLS"  # HydroFALLS waterfall database
+    GRAND = "GRAND"  # Global Reservoir and Dam database
+    GROD = "GROD"  # Global River Obstruction Database
+    SWOT_TRACKS = "SWOT_TRACKS"  # SWOT satellite orbit tracks
+    ICE_FLAGS = "ICE_FLAGS"  # Ice flag dataset (external CSV)
+    RIVER_NAMES = "RIVER_NAMES"  # River names database
     MAX_WIDTH_RASTER = "MAX_WIDTH_RASTER"  # Max width raster (post-processing)
-    COMPUTED = "COMPUTED"            # Computed from other SWORD attributes
-    MANUAL = "MANUAL"                # Manual edits
-    INHERITED = "INHERITED"          # Inherited from parent entity (reach → node)
+    COMPUTED = "COMPUTED"  # Computed from other SWORD attributes
+    MANUAL = "MANUAL"  # Manual edits
+    INHERITED = "INHERITED"  # Inherited from parent entity (reach → node)
 
 
 class DerivationMethod(Enum):
     """Methods used to derive attributes from source data."""
 
-    DIRECT = "direct"                # Direct value from source
-    INTERPOLATED = "interpolated"    # Interpolated between source points
-    AGGREGATED = "aggregated"        # Aggregated from multiple source values
-    MEAN = "mean"                    # Mean of source values
-    MEDIAN = "median"                # Median of source values
-    MODE = "mode"                    # Most frequent value (for categorical)
-    MAX = "max"                      # Maximum of source values
-    MIN = "min"                      # Minimum of source values
-    VARIANCE = "variance"            # Variance of source values
-    COUNT = "count"                  # Count of entities
-    SUM = "sum"                      # Sum of values
+    DIRECT = "direct"  # Direct value from source
+    INTERPOLATED = "interpolated"  # Interpolated between source points
+    AGGREGATED = "aggregated"  # Aggregated from multiple source values
+    MEAN = "mean"  # Mean of source values
+    MEDIAN = "median"  # Median of source values
+    MODE = "mode"  # Most frequent value (for categorical)
+    MAX = "max"  # Maximum of source values
+    MIN = "min"  # Minimum of source values
+    VARIANCE = "variance"  # Variance of source values
+    COUNT = "count"  # Count of entities
+    SUM = "sum"  # Sum of values
     LINEAR_REGRESSION = "linear_regression"  # Linear regression fit
     LOG_TRANSFORM = "log_transform"  # Logarithmic transformation
-    SPATIAL_JOIN = "spatial_join"    # Spatial intersection/join
+    SPATIAL_JOIN = "spatial_join"  # Spatial intersection/join
     SPATIAL_PROXIMITY = "spatial_proximity"  # cKDTree-based proximity search
     GRAPH_TRAVERSAL = "graph_traversal"  # Network graph traversal
     PATH_ACCUMULATION = "path_accumulation"  # Cumulative along paths
-    COMPUTED = "computed"            # Computed from other attributes
-    INHERITED = "inherited"          # Inherited from parent entity
+    COMPUTED = "computed"  # Computed from other attributes
+    INHERITED = "inherited"  # Inherited from parent entity
 
 
 @dataclass
 class AttributeSpec:
     """Specification for how an attribute is derived."""
 
-    name: str                        # Full attribute name (e.g., "reach.wse")
-    source: SourceDataset            # Primary source dataset
-    method: DerivationMethod         # How it's derived
-    source_columns: List[str]        # Columns in source needed
-    dependencies: List[str]          # Other SWORD attributes needed
-    description: str                 # Human-readable description
+    name: str  # Full attribute name (e.g., "reach.wse")
+    source: SourceDataset  # Primary source dataset
+    method: DerivationMethod  # How it's derived
+    source_columns: List[str]  # Columns in source needed
+    dependencies: List[str]  # Other SWORD attributes needed
+    description: str  # Human-readable description
 
     @property
     def entity_type(self) -> str:
         """Extract entity type from name (reach, node, centerline)."""
-        return self.name.split('.')[0]
+        return self.name.split(".")[0]
 
     @property
     def attribute_name(self) -> str:
         """Extract attribute name without entity prefix."""
-        return self.name.split('.')[1]
+        return self.name.split(".")[1]
 
 
 # =============================================================================
@@ -139,7 +138,6 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
     # =========================================================================
     # REACH ATTRIBUTES
     # =========================================================================
-
     # --- Basic Geometry ---
     "reach.x": AttributeSpec(
         name="reach.x",
@@ -147,72 +145,64 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MEAN,
         source_columns=["lon"],
         dependencies=["centerline.x"],
-        description="Reach centroid longitude: np.mean(lon[reach_centerlines])"
+        description="Reach centroid longitude: np.mean(lon[reach_centerlines])",
     ),
-
     "reach.y": AttributeSpec(
         name="reach.y",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MEAN,
         source_columns=["lat"],
         dependencies=["centerline.y"],
-        description="Reach centroid latitude: np.mean(lat[reach_centerlines])"
+        description="Reach centroid latitude: np.mean(lat[reach_centerlines])",
     ),
-
     "reach.x_min": AttributeSpec(
         name="reach.x_min",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MIN,
         source_columns=["lon"],
         dependencies=["centerline.x"],
-        description="Reach bounding box minimum longitude"
+        description="Reach bounding box minimum longitude",
     ),
-
     "reach.x_max": AttributeSpec(
         name="reach.x_max",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MAX,
         source_columns=["lon"],
         dependencies=["centerline.x"],
-        description="Reach bounding box maximum longitude"
+        description="Reach bounding box maximum longitude",
     ),
-
     "reach.y_min": AttributeSpec(
         name="reach.y_min",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MIN,
         source_columns=["lat"],
         dependencies=["centerline.y"],
-        description="Reach bounding box minimum latitude"
+        description="Reach bounding box minimum latitude",
     ),
-
     "reach.y_max": AttributeSpec(
         name="reach.y_max",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MAX,
         source_columns=["lat"],
         dependencies=["centerline.y"],
-        description="Reach bounding box maximum latitude"
+        description="Reach bounding box maximum latitude",
     ),
-
     "reach.reach_length": AttributeSpec(
         name="reach.reach_length",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.SUM,
         source_columns=[],
         dependencies=["centerline.x", "centerline.y"],
-        description="Reach length: sum of Euclidean distances between consecutive centerline points"
+        description="Reach length: sum of Euclidean distances between consecutive centerline points",
     ),
-
     "reach.n_nodes": AttributeSpec(
         name="reach.n_nodes",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COUNT,
         source_columns=[],
         dependencies=["node.reach_id"],
-        description="Number of nodes in reach: len(unique(node_id[reach]))"
+        description="Number of nodes in reach: len(unique(node_id[reach]))",
     ),
-
     # --- Water Surface Elevation ---
     "reach.wse": AttributeSpec(
         name="reach.wse",
@@ -220,27 +210,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MEDIAN,
         source_columns=["elevation"],
         dependencies=["centerline.x", "centerline.y"],
-        description="Water surface elevation: np.median(elevation[reach_centerlines])"
+        description="Water surface elevation: np.median(elevation[reach_centerlines])",
     ),
-
     "reach.wse_var": AttributeSpec(
         name="reach.wse_var",
         source=SourceDataset.MERIT_HYDRO,
         method=DerivationMethod.VARIANCE,
         source_columns=["elevation"],
         dependencies=["centerline.x", "centerline.y"],
-        description="WSE variance: np.var(elevation[reach_centerlines])"
+        description="WSE variance: np.var(elevation[reach_centerlines])",
     ),
-
     "reach.slope": AttributeSpec(
         name="reach.slope",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.LINEAR_REGRESSION,
         source_columns=[],
         dependencies=["node.wse", "node.dist_out"],
-        description="Water surface slope: np.linalg.lstsq(dist/1000, elevation) in m/km"
+        description="Water surface slope: np.linalg.lstsq(dist/1000, elevation) in m/km",
     ),
-
     # --- Width ---
     "reach.width": AttributeSpec(
         name="reach.width",
@@ -248,27 +235,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MEDIAN,
         source_columns=["width"],
         dependencies=["centerline.width"],
-        description="River width: np.median(width[reach_centerlines])"
+        description="River width: np.median(width[reach_centerlines])",
     ),
-
     "reach.width_var": AttributeSpec(
         name="reach.width_var",
         source=SourceDataset.GRWL,
         method=DerivationMethod.VARIANCE,
         source_columns=["width"],
         dependencies=["centerline.width"],
-        description="Width variance: np.var(width[reach_centerlines])"
+        description="Width variance: np.var(width[reach_centerlines])",
     ),
-
     "reach.max_width": AttributeSpec(
         name="reach.max_width",
         source=SourceDataset.MAX_WIDTH_RASTER,
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["max_width"],
         dependencies=["reach.geom"],
-        description="Maximum width from post-processing spatial join with max width raster"
+        description="Maximum width from post-processing spatial join with max width raster",
     ),
-
     # --- Flow & Hydrology ---
     "reach.facc": AttributeSpec(
         name="reach.facc",
@@ -276,27 +260,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MAX,
         source_columns=["facc"],
         dependencies=["centerline.x", "centerline.y"],
-        description="Flow accumulation (km²): np.max(facc[reach_centerlines]) - downstream has highest"
+        description="Flow accumulation (km²): np.max(facc[reach_centerlines]) - downstream has highest",
     ),
-
     "reach.dist_out": AttributeSpec(
         name="reach.dist_out",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.PATH_ACCUMULATION,
         source_columns=[],
         dependencies=["reach.reach_length", "reach_topology"],
-        description="Distance from outlet (m): graph traversal from outlet upstream, accumulating reach lengths"
+        description="Distance from outlet (m): graph traversal from outlet upstream, accumulating reach lengths",
     ),
-
     "reach.lakeflag": AttributeSpec(
         name="reach.lakeflag",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MODE,
         source_columns=["lake_flag"],
         dependencies=["centerline.lakeflag"],
-        description="Lake flag mode: 0=river, 1=lake, 2=canal, 3=tidal"
+        description="Lake flag mode: 0=river, 1=lake, 2=canal, 3=tidal",
     ),
-
     # --- Obstructions ---
     "reach.obstr_type": AttributeSpec(
         name="reach.obstr_type",
@@ -304,27 +285,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MAX,
         source_columns=["obstruction_type"],
         dependencies=["centerline.grod"],
-        description="Obstruction type: np.max(GROD[reach]), values >4 reset to 0. 0=none, 1=dam, 2=lock, 3=low-perm, 4=waterfall"
+        description="Obstruction type: np.max(GROD[reach]), values >4 reset to 0. 0=none, 1=dam, 2=lock, 3=low-perm, 4=waterfall",
     ),
-
     "reach.grod_id": AttributeSpec(
         name="reach.grod_id",
         source=SourceDataset.GROD,
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["grod_fid"],
         dependencies=["reach.obstr_type"],
-        description="GROD database ID at max obstruction point"
+        description="GROD database ID at max obstruction point",
     ),
-
     "reach.hfalls_id": AttributeSpec(
         name="reach.hfalls_id",
         source=SourceDataset.HYDROFALLS,
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["hfalls_fid"],
         dependencies=["reach.obstr_type"],
-        description="HydroFALLS ID (only if obstr_type == 4)"
+        description="HydroFALLS ID (only if obstr_type == 4)",
     ),
-
     # --- Channel Information ---
     "reach.n_chan_max": AttributeSpec(
         name="reach.n_chan_max",
@@ -332,18 +310,16 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MAX,
         source_columns=["nchan"],
         dependencies=["centerline.nchan"],
-        description="Maximum number of channels: np.max(nchan[reach_centerlines])"
+        description="Maximum number of channels: np.max(nchan[reach_centerlines])",
     ),
-
     "reach.n_chan_mod": AttributeSpec(
         name="reach.n_chan_mod",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MODE,
         source_columns=["nchan"],
         dependencies=["centerline.nchan"],
-        description="Mode of channel count: most frequent nchan value"
+        description="Mode of channel count: most frequent nchan value",
     ),
-
     # --- Topology ---
     "reach.n_rch_up": AttributeSpec(
         name="reach.n_rch_up",
@@ -351,18 +327,16 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.COUNT,
         source_columns=[],
         dependencies=["reach_topology"],
-        description="Count of upstream reaches after flow filtering"
+        description="Count of upstream reaches after flow filtering",
     ),
-
     "reach.n_rch_down": AttributeSpec(
         name="reach.n_rch_down",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COUNT,
         source_columns=[],
         dependencies=["reach_topology"],
-        description="Count of downstream reaches after flow filtering"
+        description="Count of downstream reaches after flow filtering",
     ),
-
     # --- SWOT Observations ---
     "reach.swot_obs": AttributeSpec(
         name="reach.swot_obs",
@@ -370,45 +344,40 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MAX,
         source_columns=["num_observations"],
         dependencies=["reach.geom"],
-        description="Max SWOT observations: np.max(num_obs[reach]) in 21-day cycle"
+        description="Max SWOT observations: np.max(num_obs[reach]) in 21-day cycle",
     ),
-
     "reach.iceflag": AttributeSpec(
         name="reach.iceflag",
         source=SourceDataset.ICE_FLAGS,
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["ice_flag"],
         dependencies=["reach.reach_id"],
-        description="Ice flag: 366-day array per reach from external CSV spatial join"
+        description="Ice flag: 366-day array per reach from external CSV spatial join",
     ),
-
     "reach.low_slope_flag": AttributeSpec(
         name="reach.low_slope_flag",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["reach.slope"],
-        description="Low slope flag: 1 if slope too low for discharge estimation"
+        description="Low slope flag: 1 if slope too low for discharge estimation",
     ),
-
     "reach.sinuosity": AttributeSpec(
         name="reach.sinuosity",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["centerline.x", "centerline.y"],
-        description="Reach sinuosity: arc_length / straight_line_distance from centerline geometry"
+        description="Reach sinuosity: arc_length / straight_line_distance from centerline geometry",
     ),
-
     "reach.coastal_flag": AttributeSpec(
         name="reach.coastal_flag",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["node.lakeflag"],
-        description="Coastal/tidal flag: 1 if >25% of nodes have lakeflag >= 3 (tidal)"
+        description="Coastal/tidal flag: 1 if >25% of nodes have lakeflag >= 3 (tidal)",
     ),
-
     # --- Metadata ---
     "reach.river_name": AttributeSpec(
         name="reach.river_name",
@@ -416,27 +385,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["name"],
         dependencies=["reach.geom"],
-        description="River name(s): spatial join with names shapefile, semicolon-separated"
+        description="River name(s): spatial join with names shapefile, semicolon-separated",
     ),
-
     "reach.edit_flag": AttributeSpec(
         name="reach.edit_flag",
         source=SourceDataset.MANUAL,
         method=DerivationMethod.DIRECT,
         source_columns=[],
         dependencies=[],
-        description="Edit flag: comma-separated codes tracking post-processing modifications"
+        description="Edit flag: comma-separated codes tracking post-processing modifications",
     ),
-
     "reach.trib_flag": AttributeSpec(
         name="reach.trib_flag",
         source=SourceDataset.MERIT_HYDRO,
         method=DerivationMethod.SPATIAL_PROXIMITY,
         source_columns=["stream_order"],
         dependencies=["reach.geom"],
-        description="STUB: External tributary from MHV (NOT n_rch_up>1). Requires MHV data files."
+        description="STUB: External tributary from MHV (NOT n_rch_up>1). Requires MHV data files.",
     ),
-
     # --- Network Analysis (Path Variables) ---
     "reach.path_freq": AttributeSpec(
         name="reach.path_freq",
@@ -444,67 +410,59 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.GRAPH_TRAVERSAL,
         source_columns=[],
         dependencies=["reach_topology"],
-        description="Path frequency: flow traversal count from outlet to headwater"
+        description="Path frequency: flow traversal count from outlet to headwater",
     ),
-
     "reach.path_order": AttributeSpec(
         name="reach.path_order",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.GRAPH_TRAVERSAL,
         source_columns=[],
         dependencies=["reach_topology", "reach.path_freq"],
-        description="Path order: 1=longest to N=shortest during pathway construction"
+        description="Path order: 1=longest to N=shortest during pathway construction",
     ),
-
     "reach.path_segs": AttributeSpec(
         name="reach.path_segs",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["reach.path_order", "reach.path_freq"],
-        description="Path segments: unique segment IDs between junctions"
+        description="Path segments: unique segment IDs between junctions",
     ),
-
     "reach.stream_order": AttributeSpec(
         name="reach.stream_order",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.LOG_TRANSFORM,
         source_columns=[],
         dependencies=["reach.path_freq"],
-        description="Stream order: round(log(path_freq)) + 1 where path_freq > 0"
+        description="Stream order: round(log(path_freq)) + 1 where path_freq > 0",
     ),
-
     "reach.main_side": AttributeSpec(
         name="reach.main_side",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.GRAPH_TRAVERSAL,
         source_columns=[],
         dependencies=["reach_topology", "reach.path_freq"],
-        description="Main/side channel: 0=main, 1=side, 2=secondary outlet"
+        description="Main/side channel: 0=main, 1=side, 2=secondary outlet",
     ),
-
     "reach.end_reach": AttributeSpec(
         name="reach.end_reach",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.GRAPH_TRAVERSAL,
         source_columns=[],
         dependencies=["reach_topology"],
-        description="End reach type: 0=main, 1=headwater, 2=outlet, 3=junction"
+        description="End reach type: 0=main, 1=headwater, 2=outlet, 3=junction",
     ),
-
     "reach.network": AttributeSpec(
         name="reach.network",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.GRAPH_TRAVERSAL,
         source_columns=[],
         dependencies=["reach_topology"],
-        description="Connected network ID: groups of hydrologically connected reaches"
+        description="Connected network ID: groups of hydrologically connected reaches",
     ),
-
     # =========================================================================
     # NODE ATTRIBUTES
     # =========================================================================
-
     # --- Basic Geometry ---
     "node.x": AttributeSpec(
         name="node.x",
@@ -512,27 +470,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MEAN,
         source_columns=["lon"],
         dependencies=["centerline.x", "centerline.node_id"],
-        description="Node longitude: np.mean(lon[node_centerlines])"
+        description="Node longitude: np.mean(lon[node_centerlines])",
     ),
-
     "node.y": AttributeSpec(
         name="node.y",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MEAN,
         source_columns=["lat"],
         dependencies=["centerline.y", "centerline.node_id"],
-        description="Node latitude: np.mean(lat[node_centerlines])"
+        description="Node latitude: np.mean(lat[node_centerlines])",
     ),
-
     "node.node_length": AttributeSpec(
         name="node.node_length",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.DIRECT,
         source_columns=[],
         dependencies=["centerline.node_dist"],
-        description="Node length (~200m): unique(node_dist[node_centerlines])[0]"
+        description="Node length (~200m): unique(node_dist[node_centerlines])[0]",
     ),
-
     # --- Water Surface Elevation ---
     "node.wse": AttributeSpec(
         name="node.wse",
@@ -540,18 +495,16 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MEDIAN,
         source_columns=["elevation"],
         dependencies=["centerline.x", "centerline.y", "centerline.node_id"],
-        description="Node WSE: np.median(elevation[node_centerlines])"
+        description="Node WSE: np.median(elevation[node_centerlines])",
     ),
-
     "node.wse_var": AttributeSpec(
         name="node.wse_var",
         source=SourceDataset.MERIT_HYDRO,
         method=DerivationMethod.VARIANCE,
         source_columns=["elevation"],
         dependencies=["centerline.x", "centerline.y", "centerline.node_id"],
-        description="Node WSE variance: np.var(elevation[node_centerlines])"
+        description="Node WSE variance: np.var(elevation[node_centerlines])",
     ),
-
     # --- Width ---
     "node.width": AttributeSpec(
         name="node.width",
@@ -559,27 +512,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MEDIAN,
         source_columns=["width"],
         dependencies=["centerline.width", "centerline.node_id"],
-        description="Node width: np.median(width[node_centerlines])"
+        description="Node width: np.median(width[node_centerlines])",
     ),
-
     "node.width_var": AttributeSpec(
         name="node.width_var",
         source=SourceDataset.GRWL,
         method=DerivationMethod.VARIANCE,
         source_columns=["width"],
         dependencies=["centerline.width", "centerline.node_id"],
-        description="Node width variance: np.var(width[node_centerlines])"
+        description="Node width variance: np.var(width[node_centerlines])",
     ),
-
     "node.max_width": AttributeSpec(
         name="node.max_width",
         source=SourceDataset.MAX_WIDTH_RASTER,
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["max_width"],
         dependencies=["node.geom"],
-        description="Node max width: spatial join, ratio-adjusted for multichannel"
+        description="Node max width: spatial join, ratio-adjusted for multichannel",
     ),
-
     # --- Flow & Hydrology ---
     "node.facc": AttributeSpec(
         name="node.facc",
@@ -587,27 +537,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MAX,
         source_columns=["facc"],
         dependencies=["centerline.x", "centerline.y", "centerline.node_id"],
-        description="Node flow accumulation (km²): np.max(facc[node_centerlines])"
+        description="Node flow accumulation (km²): np.max(facc[node_centerlines])",
     ),
-
     "node.dist_out": AttributeSpec(
         name="node.dist_out",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.INTERPOLATED,
         source_columns=[],
         dependencies=["reach.dist_out", "node.reach_id"],
-        description="Node distance from outlet: interpolated from reach dist_out by position"
+        description="Node distance from outlet: interpolated from reach dist_out by position",
     ),
-
     "node.lakeflag": AttributeSpec(
         name="node.lakeflag",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MODE,
         source_columns=["lake_flag"],
         dependencies=["centerline.lakeflag", "centerline.node_id"],
-        description="Node lake flag mode: 0=river, 1=lake, 2=canal, 3=tidal"
+        description="Node lake flag mode: 0=river, 1=lake, 2=canal, 3=tidal",
     ),
-
     # --- Obstructions ---
     "node.obstr_type": AttributeSpec(
         name="node.obstr_type",
@@ -615,27 +562,24 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MAX,
         source_columns=["obstruction_type"],
         dependencies=["centerline.grod", "centerline.node_id"],
-        description="Node obstruction type: np.max(GROD[node_centerlines])"
+        description="Node obstruction type: np.max(GROD[node_centerlines])",
     ),
-
     "node.grod_id": AttributeSpec(
         name="node.grod_id",
         source=SourceDataset.GROD,
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["grod_fid"],
         dependencies=["node.obstr_type"],
-        description="Node GROD database ID"
+        description="Node GROD database ID",
     ),
-
     "node.hfalls_id": AttributeSpec(
         name="node.hfalls_id",
         source=SourceDataset.HYDROFALLS,
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["hfalls_fid"],
         dependencies=["node.obstr_type"],
-        description="Node HydroFALLS ID (only if obstr_type == 4)"
+        description="Node HydroFALLS ID (only if obstr_type == 4)",
     ),
-
     # --- Channel Information ---
     "node.n_chan_max": AttributeSpec(
         name="node.n_chan_max",
@@ -643,18 +587,16 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.MAX,
         source_columns=["nchan"],
         dependencies=["centerline.nchan", "centerline.node_id"],
-        description="Node max channel count: np.max(nchan[node_centerlines])"
+        description="Node max channel count: np.max(nchan[node_centerlines])",
     ),
-
     "node.n_chan_mod": AttributeSpec(
         name="node.n_chan_mod",
         source=SourceDataset.GRWL,
         method=DerivationMethod.MODE,
         source_columns=["nchan"],
         dependencies=["centerline.nchan", "centerline.node_id"],
-        description="Node channel count mode"
+        description="Node channel count mode",
     ),
-
     # --- SWOT Search Parameters ---
     "node.wth_coef": AttributeSpec(
         name="node.wth_coef",
@@ -662,18 +604,16 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.DIRECT,
         source_columns=[],
         dependencies=[],
-        description="Width coefficient for SWOT search window: default 0.5"
+        description="Width coefficient for SWOT search window: default 0.5",
     ),
-
     "node.ext_dist_coef": AttributeSpec(
         name="node.ext_dist_coef",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["node.max_width", "node.width"],
-        description="Max search window coefficient: default 5, adjusted by max_wth/width ratio"
+        description="Max search window coefficient: default 5, adjusted by max_wth/width ratio",
     ),
-
     # --- Morphology ---
     "node.meander_length": AttributeSpec(
         name="node.meander_length",
@@ -681,18 +621,16 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["centerline.x", "centerline.y", "centerline.node_id"],
-        description="Meander length (m) computed from centerline geometry"
+        description="Meander length (m) computed from centerline geometry",
     ),
-
     "node.sinuosity": AttributeSpec(
         name="node.sinuosity",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["node.node_length", "node.meander_length"],
-        description="Sinuosity ratio: actual_length / straight_line_distance"
+        description="Sinuosity ratio: actual_length / straight_line_distance",
     ),
-
     # --- Metadata ---
     "node.river_name": AttributeSpec(
         name="node.river_name",
@@ -700,36 +638,32 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.SPATIAL_JOIN,
         source_columns=["name"],
         dependencies=["node.geom"],
-        description="Node river name: spatial join with names shapefile"
+        description="Node river name: spatial join with names shapefile",
     ),
-
     "node.manual_add": AttributeSpec(
         name="node.manual_add",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["node.width"],
-        description="Manual add flag: 1 if width == 1 (indicating manual addition)"
+        description="Manual add flag: 1 if width == 1 (indicating manual addition)",
     ),
-
     "node.edit_flag": AttributeSpec(
         name="node.edit_flag",
         source=SourceDataset.MANUAL,
         method=DerivationMethod.DIRECT,
         source_columns=[],
         dependencies=[],
-        description="Edit flag: comma-separated update codes"
+        description="Edit flag: comma-separated update codes",
     ),
-
     "node.trib_flag": AttributeSpec(
         name="node.trib_flag",
         source=SourceDataset.MERIT_HYDRO,
         method=DerivationMethod.SPATIAL_PROXIMITY,
         source_columns=["stream_order"],
         dependencies=["node.geom"],
-        description="STUB: External tributary from MHV (NOT n_rch_up>1). Requires MHV data files."
+        description="STUB: External tributary from MHV (NOT n_rch_up>1). Requires MHV data files.",
     ),
-
     # --- Network Analysis (inherited from reach) ---
     "node.path_freq": AttributeSpec(
         name="node.path_freq",
@@ -737,101 +671,90 @@ ATTRIBUTE_SOURCES: Dict[str, AttributeSpec] = {
         method=DerivationMethod.INHERITED,
         source_columns=[],
         dependencies=["reach.path_freq", "node.reach_id"],
-        description="Path frequency: inherited from parent reach"
+        description="Path frequency: inherited from parent reach",
     ),
-
     "node.path_order": AttributeSpec(
         name="node.path_order",
         source=SourceDataset.INHERITED,
         method=DerivationMethod.INHERITED,
         source_columns=[],
         dependencies=["reach.path_order", "node.reach_id"],
-        description="Path order: inherited from parent reach"
+        description="Path order: inherited from parent reach",
     ),
-
     "node.path_segs": AttributeSpec(
         name="node.path_segs",
         source=SourceDataset.INHERITED,
         method=DerivationMethod.INHERITED,
         source_columns=[],
         dependencies=["reach.path_segs", "node.reach_id"],
-        description="Path segments: inherited from parent reach"
+        description="Path segments: inherited from parent reach",
     ),
-
     "node.stream_order": AttributeSpec(
         name="node.stream_order",
         source=SourceDataset.INHERITED,
         method=DerivationMethod.INHERITED,
         source_columns=[],
         dependencies=["reach.stream_order", "node.reach_id"],
-        description="Stream order: inherited from parent reach"
+        description="Stream order: inherited from parent reach",
     ),
-
     "node.main_side": AttributeSpec(
         name="node.main_side",
         source=SourceDataset.INHERITED,
         method=DerivationMethod.INHERITED,
         source_columns=[],
         dependencies=["reach.main_side", "node.reach_id"],
-        description="Main/side channel: inherited from parent reach"
+        description="Main/side channel: inherited from parent reach",
     ),
-
     "node.end_reach": AttributeSpec(
         name="node.end_reach",
         source=SourceDataset.INHERITED,
         method=DerivationMethod.INHERITED,
         source_columns=[],
         dependencies=["reach.end_reach", "node.reach_id"],
-        description="End reach type: inherited from parent reach"
+        description="End reach type: inherited from parent reach",
     ),
-
     "node.network": AttributeSpec(
         name="node.network",
         source=SourceDataset.INHERITED,
         method=DerivationMethod.INHERITED,
         source_columns=[],
         dependencies=["reach.network", "node.reach_id"],
-        description="Network ID: inherited from parent reach"
+        description="Network ID: inherited from parent reach",
     ),
-
     # =========================================================================
     # CENTERLINE ATTRIBUTES
     # =========================================================================
-
     "centerline.x": AttributeSpec(
         name="centerline.x",
         source=SourceDataset.GRWL,
         method=DerivationMethod.DIRECT,
         source_columns=["lon"],
         dependencies=[],
-        description="Centerline longitude from GRWL river centerlines"
+        description="Centerline longitude from GRWL river centerlines",
     ),
-
     "centerline.y": AttributeSpec(
         name="centerline.y",
         source=SourceDataset.GRWL,
         method=DerivationMethod.DIRECT,
         source_columns=["lat"],
         dependencies=[],
-        description="Centerline latitude from GRWL river centerlines"
+        description="Centerline latitude from GRWL river centerlines",
     ),
-
     "centerline.reach_id": AttributeSpec(
         name="centerline.reach_id",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["centerline.x", "centerline.y"],
-        description="Parent reach ID assigned during reach definition"
+        description="Parent reach ID assigned during reach definition",
     ),
-
     "centerline.node_id": AttributeSpec(
         name="centerline.node_id",
         source=SourceDataset.COMPUTED,
         method=DerivationMethod.COMPUTED,
         source_columns=[],
         dependencies=["centerline.x", "centerline.y"],
-        description="Parent node ID assigned during node definition (~200m intervals)"
+        description="Parent node ID assigned during node definition (~200m intervals)",
     ),
 }
 
@@ -863,8 +786,8 @@ class ReconstructionEngine:
 
     def __init__(
         self,
-        sword: 'SWORD',
-        provenance: Optional['ProvenanceLogger'] = None,
+        sword: "SWORD",
+        provenance: Optional["ProvenanceLogger"] = None,
         source_data_dir: Optional[Union[str, Path]] = None,
     ):
         self._sword = sword
@@ -1060,8 +983,7 @@ class ReconstructionEngine:
         if not self.can_reconstruct(attribute):
             available = self.list_reconstructable_attributes()
             raise ValueError(
-                f"Cannot reconstruct '{attribute}'. "
-                f"Available: {available}"
+                f"Cannot reconstruct '{attribute}'. Available: {available}"
             )
 
         logger.info(f"Reconstructing {attribute} for region {self._region}")
@@ -1073,20 +995,20 @@ class ReconstructionEngine:
         if self._provenance:
             spec = self.get_source_info(attribute)
             with self._provenance.operation(
-                'RECONSTRUCT',
-                table_name=spec.entity_type + 's' if spec else None,
+                "RECONSTRUCT",
+                table_name=spec.entity_type + "s" if spec else None,
                 entity_ids=entity_ids,
                 region=self._region,
                 reason=reason or f"Reconstruct {attribute}",
                 details={
-                    'attribute': attribute,
-                    'source': spec.source.value if spec else 'UNKNOWN',
-                    'method': spec.method.value if spec else 'UNKNOWN',
+                    "attribute": attribute,
+                    "source": spec.source.value if spec else "UNKNOWN",
+                    "method": spec.method.value if spec else "UNKNOWN",
                 },
-                affected_columns=[attribute.split('.')[1]],
+                affected_columns=[attribute.split(".")[1]],
             ) as op_id:
                 result = reconstructor(entity_ids, force)
-                result['operation_id'] = op_id
+                result["operation_id"] = op_id
         else:
             result = reconstructor(entity_ids, force)
 
@@ -1121,10 +1043,10 @@ class ReconstructionEngine:
         """
         # Default attributes derived from centerlines
         centerline_derived = [
-            'reach.wse',
-            'reach.slope',
-            'reach.reach_length',
-            'reach.facc',
+            "reach.wse",
+            "reach.slope",
+            "reach.reach_length",
+            "reach.facc",
         ]
 
         if attributes is None:
@@ -1139,7 +1061,7 @@ class ReconstructionEngine:
                     )
                 except Exception as e:
                     logger.error(f"Failed to reconstruct {attr}: {e}")
-                    results[attr] = {'error': str(e)}
+                    results[attr] = {"error": str(e)}
 
         return results
 
@@ -1178,8 +1100,8 @@ class ReconstructionEngine:
             raise ValueError(f"Cannot validate '{attribute}' - no reconstructor")
 
         spec = self.get_source_info(attribute)
-        entity_type = spec.entity_type if spec else attribute.split('.')[0]
-        attr_name = attribute.split('.')[1]
+        entity_type = spec.entity_type if spec else attribute.split(".")[0]
+        attr_name = attribute.split(".")[1]
 
         # Get current values
         view = self._get_view(entity_type)
@@ -1193,15 +1115,17 @@ class ReconstructionEngine:
 
         # Reconstruct without saving
         reconstructor = self._reconstructors[attribute]
-        result = reconstructor(list(entity_ids_all) if entity_ids else None, force=True, dry_run=True)
+        result = reconstructor(
+            list(entity_ids_all) if entity_ids else None, force=True, dry_run=True
+        )
 
-        if 'values' not in result:
+        if "values" not in result:
             return {
-                'passed': False,
-                'error': 'Reconstructor did not return values for validation'
+                "passed": False,
+                "error": "Reconstructor did not return values for validation",
             }
 
-        reconstructed_values = result['values']
+        reconstructed_values = result["values"]
 
         # Compare
         # Handle NaN values
@@ -1209,30 +1133,32 @@ class ReconstructionEngine:
 
         if not np.any(valid_mask):
             return {
-                'passed': True,
-                'total': len(current_values),
-                'within_tolerance': 0,
-                'note': 'All values are NaN'
+                "passed": True,
+                "total": len(current_values),
+                "within_tolerance": 0,
+                "note": "All values are NaN",
             }
 
         current_valid = current_values[valid_mask]
         reconstructed_valid = reconstructed_values[valid_mask]
 
         # Relative difference (avoid division by zero)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            rel_diff = np.abs(current_valid - reconstructed_valid) / np.maximum(np.abs(current_valid), 1e-10)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rel_diff = np.abs(current_valid - reconstructed_valid) / np.maximum(
+                np.abs(current_valid), 1e-10
+            )
 
         within_tol = rel_diff <= tolerance
         failures = entity_ids_all[valid_mask][~within_tol]
 
         return {
-            'passed': np.all(within_tol),
-            'total': len(current_valid),
-            'within_tolerance': int(np.sum(within_tol)),
-            'max_difference': float(np.max(rel_diff)) if len(rel_diff) > 0 else 0,
-            'mean_difference': float(np.mean(rel_diff)) if len(rel_diff) > 0 else 0,
-            'failures': list(failures[:100]),  # Limit to first 100
-            'tolerance': tolerance,
+            "passed": np.all(within_tol),
+            "total": len(current_valid),
+            "within_tolerance": int(np.sum(within_tol)),
+            "max_difference": float(np.max(rel_diff)) if len(rel_diff) > 0 else 0,
+            "mean_difference": float(np.mean(rel_diff)) if len(rel_diff) > 0 else 0,
+            "failures": list(failures[:100]),  # Limit to first 100
+            "tolerance": tolerance,
         }
 
     # =========================================================================
@@ -1274,7 +1200,7 @@ class ReconstructionEngine:
         # Compute script hash if path provided
         script_hash = None
         if script_path and Path(script_path).exists():
-            with open(script_path, 'rb') as f:
+            with open(script_path, "rb") as f:
                 script_hash = hashlib.sha256(f.read()).hexdigest()
 
         # Get next ID
@@ -1287,7 +1213,8 @@ class ReconstructionEngine:
         target_sql = f"[{', '.join(repr(a) for a in target_attributes)}]"
         sources_sql = f"[{', '.join(repr(s) for s in required_sources)}]"
 
-        self._conn.execute(f"""
+        self._conn.execute(
+            f"""
             INSERT INTO sword_reconstruction_recipes (
                 recipe_id, name, description,
                 target_attributes, required_sources,
@@ -1297,11 +1224,16 @@ class ReconstructionEngine:
                 {target_sql}, {sources_sql},
                 ?, ?, ?
             )
-        """, [
-            recipe_id, name, description,
-            script_path, script_hash,
-            json.dumps(parameters) if parameters else None,
-        ])
+        """,
+            [
+                recipe_id,
+                name,
+                description,
+                script_path,
+                script_hash,
+                json.dumps(parameters) if parameters else None,
+            ],
+        )
 
         logger.info(f"Registered recipe '{name}' (ID: {recipe_id})")
         return recipe_id
@@ -1320,25 +1252,28 @@ class ReconstructionEngine:
         dict or None
             Recipe details
         """
-        result = self._conn.execute("""
+        result = self._conn.execute(
+            """
             SELECT recipe_id, name, description, target_attributes,
                    required_sources, script_path, script_hash, parameters
             FROM sword_reconstruction_recipes
             WHERE name = ?
-        """, [name]).fetchone()
+        """,
+            [name],
+        ).fetchone()
 
         if not result:
             return None
 
         return {
-            'recipe_id': result[0],
-            'name': result[1],
-            'description': result[2],
-            'target_attributes': result[3],
-            'required_sources': result[4],
-            'script_path': result[5],
-            'script_hash': result[6],
-            'parameters': json.loads(result[7]) if result[7] else None,
+            "recipe_id": result[0],
+            "name": result[1],
+            "description": result[2],
+            "target_attributes": result[3],
+            "required_sources": result[4],
+            "script_path": result[5],
+            "script_hash": result[6],
+            "parameters": json.loads(result[7]) if result[7] else None,
         }
 
     def list_recipes(self) -> List[Dict[str, Any]]:
@@ -1358,10 +1293,10 @@ class ReconstructionEngine:
 
         return [
             {
-                'recipe_id': r[0],
-                'name': r[1],
-                'description': r[2],
-                'target_attributes': r[3],
+                "recipe_id": r[0],
+                "name": r[1],
+                "description": r[2],
+                "target_attributes": r[3],
             }
             for r in results
         ]
@@ -1373,9 +1308,9 @@ class ReconstructionEngine:
     def _get_view(self, entity_type: str) -> Any:
         """Get the view for an entity type."""
         view_map = {
-            'reach': self._sword.reaches,
-            'node': self._sword.nodes,
-            'centerline': self._sword.centerlines,
+            "reach": self._sword.reaches,
+            "node": self._sword.nodes,
+            "centerline": self._sword.centerlines,
         }
         return view_map[entity_type]
 
@@ -1396,29 +1331,35 @@ class ReconstructionEngine:
         logger.info("Reconstructing reach.dist_out via graph traversal")
 
         # Get topology
-        topology_df = self._conn.execute("""
+        topology_df = self._conn.execute(
+            """
             SELECT reach_id, direction, neighbor_reach_id
             FROM reach_topology
             WHERE region = ?
-        """, [self._region]).fetchdf()
+        """,
+            [self._region],
+        ).fetchdf()
 
         # Get reach lengths
-        reaches_df = self._conn.execute("""
+        reaches_df = self._conn.execute(
+            """
             SELECT reach_id, reach_length, dist_out
             FROM reaches
             WHERE region = ?
-        """, [self._region]).fetchdf()
+        """,
+            [self._region],
+        ).fetchdf()
 
         # Build upstream adjacency (for each reach, who is upstream of it)
         upstream_map = {}  # reach_id -> list of upstream reach_ids
         downstream_map = {}  # reach_id -> list of downstream reach_ids
 
         for _, row in topology_df.iterrows():
-            reach = row['reach_id']
-            neighbor = row['neighbor_reach_id']
-            direction = row['direction']
+            reach = row["reach_id"]
+            neighbor = row["neighbor_reach_id"]
+            direction = row["direction"]
 
-            if direction == 'up':
+            if direction == "up":
                 if reach not in upstream_map:
                     upstream_map[reach] = []
                 upstream_map[reach].append(neighbor)
@@ -1428,17 +1369,17 @@ class ReconstructionEngine:
                 downstream_map[reach].append(neighbor)
 
         # Find outlets (reaches with no downstream neighbors)
-        all_reaches = set(reaches_df['reach_id'])
+        all_reaches = set(reaches_df["reach_id"])
         outlets = all_reaches - set(downstream_map.keys())
 
         # Also consider reaches already marked as outlets
-        outlet_mask = reaches_df['dist_out'] == 0
-        outlets.update(reaches_df[outlet_mask]['reach_id'].tolist())
+        outlet_mask = reaches_df["dist_out"] == 0
+        outlets.update(reaches_df[outlet_mask]["reach_id"].tolist())
 
         logger.info(f"Found {len(outlets)} outlet reaches")
 
         # BFS from outlets upstream
-        reach_lengths = dict(zip(reaches_df['reach_id'], reaches_df['reach_length']))
+        reach_lengths = dict(zip(reaches_df["reach_id"], reaches_df["reach_length"]))
         new_dist_out = {}
 
         # Initialize outlets with dist_out = 0
@@ -1470,17 +1411,20 @@ class ReconstructionEngine:
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': 'reach.dist_out',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": "reach.dist_out",
+                "values": result_values,
             }
 
         # Update the database
         for reach_id, dist in new_dist_out.items():
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 UPDATE reaches SET dist_out = ? WHERE reach_id = ? AND region = ?
-            """, [dist, reach_id, self._region])
+            """,
+                [dist, reach_id, self._region],
+            )
 
         # Update in-memory array
         if len(result_ids) > 0:
@@ -1491,9 +1435,9 @@ class ReconstructionEngine:
                     reach_view.dist_out._data[idx[0]] = dist
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': 'reach.dist_out',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": "reach.dist_out",
         }
 
     def _reconstruct_reach_wse(
@@ -1516,11 +1460,12 @@ class ReconstructionEngine:
         params = [self._region]
 
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.reach_id,
                 MEDIAN(n.wse) as median_wse
@@ -1528,25 +1473,30 @@ class ReconstructionEngine:
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
             HAVING COUNT(*) > 0
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        result_ids = result_df['reach_id'].tolist()
-        result_values = result_df['median_wse'].values
+        result_ids = result_df["reach_id"].tolist()
+        result_values = result_df["median_wse"].values
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': 'reach.wse',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": "reach.wse",
+                "values": result_values,
             }
 
         # Update database
         for reach_id, wse in zip(result_ids, result_values):
             if wse is not None and not np.isnan(wse):
-                self._conn.execute("""
+                self._conn.execute(
+                    """
                     UPDATE reaches SET wse = ? WHERE reach_id = ? AND region = ?
-                """, [float(wse), reach_id, self._region])
+                """,
+                    [float(wse), reach_id, self._region],
+                )
 
         # Update in-memory array
         reach_view = self._sword.reaches
@@ -1557,9 +1507,9 @@ class ReconstructionEngine:
                     reach_view.wse._data[idx[0]] = wse
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': 'reach.wse',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": "reach.wse",
         }
 
     def _reconstruct_reach_slope(
@@ -1584,30 +1534,33 @@ class ReconstructionEngine:
         params = [self._region]
 
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Get nodes for each reach, ordered by dist_out
-        nodes_df = self._conn.execute(f"""
+        nodes_df = self._conn.execute(
+            f"""
             SELECT reach_id, node_id, wse, dist_out
             FROM nodes
             WHERE region = ? {where_clause}
             ORDER BY reach_id, dist_out DESC
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
         # Compute slope for each reach
         result_ids = []
         result_values = []
 
-        for reach_id in nodes_df['reach_id'].unique():
-            reach_nodes = nodes_df[nodes_df['reach_id'] == reach_id]
+        for reach_id in nodes_df["reach_id"].unique():
+            reach_nodes = nodes_df[nodes_df["reach_id"] == reach_id]
 
             if len(reach_nodes) < 2:
                 continue
 
-            dist = reach_nodes['dist_out'].values
-            wse = reach_nodes['wse'].values
+            dist = reach_nodes["dist_out"].values
+            wse = reach_nodes["wse"].values
 
             # Filter out NaN values
             valid = ~(np.isnan(dist) | np.isnan(wse))
@@ -1636,17 +1589,20 @@ class ReconstructionEngine:
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': 'reach.slope',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": "reach.slope",
+                "values": result_values,
             }
 
         # Update database
         for reach_id, slope in zip(result_ids, result_values):
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 UPDATE reaches SET slope = ? WHERE reach_id = ? AND region = ?
-            """, [float(slope), reach_id, self._region])
+            """,
+                [float(slope), reach_id, self._region],
+            )
 
         # Update in-memory array
         reach_view = self._sword.reaches
@@ -1656,9 +1612,9 @@ class ReconstructionEngine:
                 reach_view.slope._data[idx[0]] = slope
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': 'reach.slope',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": "reach.slope",
         }
 
     def _reconstruct_reach_facc(
@@ -1676,36 +1632,42 @@ class ReconstructionEngine:
         params = [self._region]
 
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.reach_id,
                 MAX(n.facc) as max_facc
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        result_ids = result_df['reach_id'].tolist()
-        result_values = result_df['max_facc'].values
+        result_ids = result_df["reach_id"].tolist()
+        result_values = result_df["max_facc"].values
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': 'reach.facc',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": "reach.facc",
+                "values": result_values,
             }
 
         # Update database
         for reach_id, facc in zip(result_ids, result_values):
             if facc is not None and not np.isnan(facc):
-                self._conn.execute("""
+                self._conn.execute(
+                    """
                     UPDATE reaches SET facc = ? WHERE reach_id = ? AND region = ?
-                """, [float(facc), reach_id, self._region])
+                """,
+                    [float(facc), reach_id, self._region],
+                )
 
         # Update in-memory array
         reach_view = self._sword.reaches
@@ -1716,9 +1678,9 @@ class ReconstructionEngine:
                     reach_view.facc._data[idx[0]] = facc
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': 'reach.facc',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": "reach.facc",
         }
 
     def _reconstruct_reach_length(
@@ -1740,29 +1702,32 @@ class ReconstructionEngine:
         params = [self._region]
 
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Get centerlines ordered by cl_id within each reach
-        cl_df = self._conn.execute(f"""
+        cl_df = self._conn.execute(
+            f"""
             SELECT reach_id, cl_id, x, y
             FROM centerlines
             WHERE region = ? {where_clause}
             ORDER BY reach_id, cl_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
         result_ids = []
         result_values = []
 
-        for reach_id in cl_df['reach_id'].unique():
-            reach_cl = cl_df[cl_df['reach_id'] == reach_id].sort_values('cl_id')
+        for reach_id in cl_df["reach_id"].unique():
+            reach_cl = cl_df[cl_df["reach_id"] == reach_id].sort_values("cl_id")
 
             if len(reach_cl) < 2:
                 continue
 
-            x = reach_cl['x'].values
-            y = reach_cl['y'].values
+            x = reach_cl["x"].values
+            y = reach_cl["y"].values
 
             # Calculate distances (approximate using Euclidean at small scales)
             # For more accuracy, would need to project to meters
@@ -1788,17 +1753,20 @@ class ReconstructionEngine:
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': 'reach.reach_length',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": "reach.reach_length",
+                "values": result_values,
             }
 
         # Update database
         for reach_id, length in zip(result_ids, result_values):
-            self._conn.execute("""
+            self._conn.execute(
+                """
                 UPDATE reaches SET reach_length = ? WHERE reach_id = ? AND region = ?
-            """, [float(length), reach_id, self._region])
+            """,
+                [float(length), reach_id, self._region],
+            )
 
         # Update in-memory array
         reach_view = self._sword.reaches
@@ -1808,9 +1776,9 @@ class ReconstructionEngine:
                 reach_view.reach_length._data[idx[0]] = length
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': 'reach.reach_length',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": "reach.reach_length",
         }
 
     def _reconstruct_node_wse(
@@ -1829,10 +1797,10 @@ class ReconstructionEngine:
 
         # Without source data, we can only return existing values
         return {
-            'reconstructed': 0,
-            'entity_ids': [],
-            'attribute': 'node.wse',
-            'note': 'Requires MERIT Hydro source data',
+            "reconstructed": 0,
+            "entity_ids": [],
+            "attribute": "node.wse",
+            "note": "Requires MERIT Hydro source data",
         }
 
     def _reconstruct_node_facc(
@@ -1849,10 +1817,10 @@ class ReconstructionEngine:
         logger.info("Node facc reconstruction requires MERIT Hydro source data")
 
         return {
-            'reconstructed': 0,
-            'entity_ids': [],
-            'attribute': 'node.facc',
-            'note': 'Requires MERIT Hydro source data',
+            "reconstructed": 0,
+            "entity_ids": [],
+            "attribute": "node.facc",
+            "note": "Requires MERIT Hydro source data",
         }
 
     def _reconstruct_node_dist_out(
@@ -1870,37 +1838,43 @@ class ReconstructionEngine:
         params = [self._region]
 
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND n.node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Get reach dist_out for each node
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.node_id,
                 r.dist_out as reach_dist_out
             FROM nodes n
             JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
             WHERE n.region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        result_ids = result_df['node_id'].tolist()
-        result_values = result_df['reach_dist_out'].values
+        result_ids = result_df["node_id"].tolist()
+        result_values = result_df["reach_dist_out"].values
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': 'node.dist_out',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": "node.dist_out",
+                "values": result_values,
             }
 
         # Update database
         for node_id, dist in zip(result_ids, result_values):
             if dist is not None and not np.isnan(dist):
-                self._conn.execute("""
+                self._conn.execute(
+                    """
                     UPDATE nodes SET dist_out = ? WHERE node_id = ? AND region = ?
-                """, [float(dist), node_id, self._region])
+                """,
+                    [float(dist), node_id, self._region],
+                )
 
         # Update in-memory array
         node_view = self._sword.nodes
@@ -1911,9 +1885,9 @@ class ReconstructionEngine:
                     node_view.dist_out._data[idx[0]] = dist
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': 'node.dist_out',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": "node.dist_out",
         }
 
     # =========================================================================
@@ -1932,18 +1906,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT n.reach_id, VARIANCE(n.wse) as wse_var
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('wse_var', result_df, dry_run)
+        return self._update_reach_attribute("wse_var", result_df, dry_run)
 
     def _reconstruct_reach_width(
         self,
@@ -1957,18 +1934,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT n.reach_id, MEDIAN(n.width) as width
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('width', result_df, dry_run)
+        return self._update_reach_attribute("width", result_df, dry_run)
 
     def _reconstruct_reach_width_var(
         self,
@@ -1982,18 +1962,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT n.reach_id, VARIANCE(n.width) as width_var
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('width_var', result_df, dry_run)
+        return self._update_reach_attribute("width_var", result_df, dry_run)
 
     def _reconstruct_reach_x(
         self,
@@ -2007,18 +1990,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND c.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.reach_id, AVG(c.x) as x
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('x', result_df, dry_run)
+        return self._update_reach_attribute("x", result_df, dry_run)
 
     def _reconstruct_reach_y(
         self,
@@ -2032,18 +2018,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND c.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.reach_id, AVG(c.y) as y
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('y', result_df, dry_run)
+        return self._update_reach_attribute("y", result_df, dry_run)
 
     def _reconstruct_reach_x_min(
         self,
@@ -2057,18 +2046,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND c.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.reach_id, MIN(c.x) as x_min
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('x_min', result_df, dry_run)
+        return self._update_reach_attribute("x_min", result_df, dry_run)
 
     def _reconstruct_reach_x_max(
         self,
@@ -2082,18 +2074,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND c.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.reach_id, MAX(c.x) as x_max
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('x_max', result_df, dry_run)
+        return self._update_reach_attribute("x_max", result_df, dry_run)
 
     def _reconstruct_reach_y_min(
         self,
@@ -2107,18 +2102,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND c.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.reach_id, MIN(c.y) as y_min
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('y_min', result_df, dry_run)
+        return self._update_reach_attribute("y_min", result_df, dry_run)
 
     def _reconstruct_reach_y_max(
         self,
@@ -2132,18 +2130,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND c.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.reach_id, MAX(c.y) as y_max
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('y_max', result_df, dry_run)
+        return self._update_reach_attribute("y_max", result_df, dry_run)
 
     def _reconstruct_reach_n_nodes(
         self,
@@ -2157,18 +2158,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT n.reach_id, COUNT(DISTINCT n.node_id) as n_nodes
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('n_nodes', result_df, dry_run)
+        return self._update_reach_attribute("n_nodes", result_df, dry_run)
 
     def _reconstruct_reach_n_rch_up(
         self,
@@ -2182,18 +2186,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND t.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT t.reach_id, COUNT(*) as n_rch_up
             FROM reach_topology t
             WHERE t.region = ? AND t.direction = 'up' {where_clause}
             GROUP BY t.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('n_rch_up', result_df, dry_run)
+        return self._update_reach_attribute("n_rch_up", result_df, dry_run)
 
     def _reconstruct_reach_n_rch_down(
         self,
@@ -2207,18 +2214,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND t.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT t.reach_id, COUNT(*) as n_rch_down
             FROM reach_topology t
             WHERE t.region = ? AND t.direction = 'down' {where_clause}
             GROUP BY t.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('n_rch_down', result_df, dry_run)
+        return self._update_reach_attribute("n_rch_down", result_df, dry_run)
 
     def _reconstruct_reach_lakeflag(
         self,
@@ -2232,12 +2242,13 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Mode = most frequent value
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, lakeflag
             FROM (
                 SELECT n.reach_id, n.lakeflag, COUNT(*) as cnt,
@@ -2247,9 +2258,11 @@ class ReconstructionEngine:
                 GROUP BY n.reach_id, n.lakeflag
             )
             WHERE rn = 1
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('lakeflag', result_df, dry_run)
+        return self._update_reach_attribute("lakeflag", result_df, dry_run)
 
     def _reconstruct_reach_n_chan_max(
         self,
@@ -2263,18 +2276,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT n.reach_id, MAX(n.n_chan_max) as n_chan_max
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('n_chan_max', result_df, dry_run)
+        return self._update_reach_attribute("n_chan_max", result_df, dry_run)
 
     def _reconstruct_reach_n_chan_mod(
         self,
@@ -2288,11 +2304,12 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, n_chan_mod
             FROM (
                 SELECT n.reach_id, n.n_chan_mod, COUNT(*) as cnt,
@@ -2302,9 +2319,11 @@ class ReconstructionEngine:
                 GROUP BY n.reach_id, n.n_chan_mod
             )
             WHERE rn = 1
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('n_chan_mod', result_df, dry_run)
+        return self._update_reach_attribute("n_chan_mod", result_df, dry_run)
 
     # =========================================================================
     # NETWORK ANALYSIS RECONSTRUCTORS
@@ -2326,29 +2345,32 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Get path_freq values
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, path_freq
             FROM reaches
             WHERE region = ? AND path_freq > 0 {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
         if len(result_df) == 0:
             return {
-                'reconstructed': 0,
-                'entity_ids': [],
-                'attribute': 'reach.stream_order',
+                "reconstructed": 0,
+                "entity_ids": [],
+                "attribute": "reach.stream_order",
             }
 
         # Compute stream_order = round(log(path_freq)) + 1
-        result_df['stream_order'] = np.round(np.log(result_df['path_freq'])) + 1
-        result_df['stream_order'] = result_df['stream_order'].astype(int)
+        result_df["stream_order"] = np.round(np.log(result_df["path_freq"])) + 1
+        result_df["stream_order"] = result_df["stream_order"].astype(int)
 
-        return self._update_reach_attribute('stream_order', result_df, dry_run)
+        return self._update_reach_attribute("stream_order", result_df, dry_run)
 
     def _reconstruct_reach_path_freq(
         self,
@@ -2367,22 +2389,25 @@ class ReconstructionEngine:
         logger.info("Reconstructing reach.path_freq via graph traversal")
 
         # Get topology
-        topology_df = self._conn.execute("""
+        topology_df = self._conn.execute(
+            """
             SELECT reach_id, direction, neighbor_reach_id
             FROM reach_topology
             WHERE region = ?
-        """, [self._region]).fetchdf()
+        """,
+            [self._region],
+        ).fetchdf()
 
         # Build adjacency maps
         upstream_map = {}  # reach_id -> list of upstream reach_ids
         downstream_map = {}  # reach_id -> list of downstream reach_ids
 
         for _, row in topology_df.iterrows():
-            reach = row['reach_id']
-            neighbor = row['neighbor_reach_id']
-            direction = row['direction']
+            reach = row["reach_id"]
+            neighbor = row["neighbor_reach_id"]
+            direction = row["direction"]
 
-            if direction == 'up':
+            if direction == "up":
                 if reach not in upstream_map:
                     upstream_map[reach] = []
                 upstream_map[reach].append(neighbor)
@@ -2392,10 +2417,13 @@ class ReconstructionEngine:
                 downstream_map[reach].append(neighbor)
 
         # Get all reaches
-        reaches_df = self._conn.execute("""
+        reaches_df = self._conn.execute(
+            """
             SELECT reach_id FROM reaches WHERE region = ?
-        """, [self._region]).fetchdf()
-        all_reaches = set(reaches_df['reach_id'])
+        """,
+            [self._region],
+        ).fetchdf()
+        all_reaches = set(reaches_df["reach_id"])
 
         # Find outlets (no downstream neighbors)
         outlets = all_reaches - set(downstream_map.keys())
@@ -2426,14 +2454,17 @@ class ReconstructionEngine:
 
         result_df = self._conn.execute("SELECT 1").fetchdf()  # Dummy to get structure
         result_df = result_df.iloc[:0]  # Empty
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id FROM reaches WHERE region = ?
-            {'AND reach_id IN (' + ','.join(['?']*len(reach_ids)) + ')' if reach_ids else ''}
-        """, [self._region] + (list(reach_ids) if reach_ids else [])).fetchdf()
+            {"AND reach_id IN (" + ",".join(["?"] * len(reach_ids)) + ")" if reach_ids else ""}
+        """,
+            [self._region] + (list(reach_ids) if reach_ids else []),
+        ).fetchdf()
 
-        result_df['path_freq'] = result_df['reach_id'].map(path_freq)
+        result_df["path_freq"] = result_df["reach_id"].map(path_freq)
 
-        return self._update_reach_attribute('path_freq', result_df, dry_run)
+        return self._update_reach_attribute("path_freq", result_df, dry_run)
 
     def _reconstruct_reach_end_reach(
         self,
@@ -2449,7 +2480,8 @@ class ReconstructionEngine:
         logger.info("Reconstructing reach.end_reach from topology")
 
         # Get topology counts
-        topology_df = self._conn.execute("""
+        topology_df = self._conn.execute(
+            """
             SELECT
                 r.reach_id,
                 COALESCE(up.n_up, 0) as n_up,
@@ -2468,12 +2500,14 @@ class ReconstructionEngine:
                 GROUP BY reach_id
             ) down ON r.reach_id = down.reach_id
             WHERE r.region = ?
-        """, [self._region, self._region, self._region]).fetchdf()
+        """,
+            [self._region, self._region, self._region],
+        ).fetchdf()
 
         # Classify: headwater (no upstream), outlet (no downstream), junction (multiple up), main (else)
         def classify_reach(row):
-            n_up = row['n_up']
-            n_down = row['n_down']
+            n_up = row["n_up"]
+            n_down = row["n_down"]
             if n_up == 0:
                 return 1  # headwater
             elif n_down == 0:
@@ -2483,12 +2517,12 @@ class ReconstructionEngine:
             else:
                 return 0  # main
 
-        topology_df['end_reach'] = topology_df.apply(classify_reach, axis=1)
+        topology_df["end_reach"] = topology_df.apply(classify_reach, axis=1)
 
         if reach_ids is not None:
-            topology_df = topology_df[topology_df['reach_id'].isin(reach_ids)]
+            topology_df = topology_df[topology_df["reach_id"].isin(reach_ids)]
 
-        return self._update_reach_attribute('end_reach', topology_df, dry_run)
+        return self._update_reach_attribute("end_reach", topology_df, dry_run)
 
     def _reconstruct_reach_network(
         self,
@@ -2504,23 +2538,29 @@ class ReconstructionEngine:
         logger.info("Reconstructing reach.network via connected components")
 
         # Get topology
-        topology_df = self._conn.execute("""
+        topology_df = self._conn.execute(
+            """
             SELECT reach_id, neighbor_reach_id
             FROM reach_topology
             WHERE region = ?
-        """, [self._region]).fetchdf()
+        """,
+            [self._region],
+        ).fetchdf()
 
         # Get all reaches
-        reaches_df = self._conn.execute("""
+        reaches_df = self._conn.execute(
+            """
             SELECT reach_id FROM reaches WHERE region = ?
-        """, [self._region]).fetchdf()
-        all_reaches = set(reaches_df['reach_id'])
+        """,
+            [self._region],
+        ).fetchdf()
+        all_reaches = set(reaches_df["reach_id"])
 
         # Build adjacency (undirected)
         adjacency = {rid: set() for rid in all_reaches}
         for _, row in topology_df.iterrows():
-            reach = row['reach_id']
-            neighbor = row['neighbor_reach_id']
+            reach = row["reach_id"]
+            neighbor = row["neighbor_reach_id"]
             if reach in adjacency and neighbor in all_reaches:
                 adjacency[reach].add(neighbor)
                 adjacency[neighbor].add(reach)
@@ -2557,12 +2597,12 @@ class ReconstructionEngine:
 
         # Build result dataframe
         result_df = reaches_df.copy()
-        result_df['network'] = result_df['reach_id'].map(network_ids)
+        result_df["network"] = result_df["reach_id"].map(network_ids)
 
         if reach_ids is not None:
-            result_df = result_df[result_df['reach_id'].isin(reach_ids)]
+            result_df = result_df[result_df["reach_id"].isin(reach_ids)]
 
-        return self._update_reach_attribute('network', result_df, dry_run)
+        return self._update_reach_attribute("network", result_df, dry_run)
 
     # =========================================================================
     # SINUOSITY AND MEANDER RECONSTRUCTORS
@@ -2594,42 +2634,47 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Get centerline points per node, ordered
-        cl_df = self._conn.execute(f"""
+        cl_df = self._conn.execute(
+            f"""
             SELECT c.node_id, c.x, c.y, c.cl_id
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             ORDER BY c.node_id, c.cl_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
         if len(cl_df) == 0:
-            return {'reconstructed': 0, 'entity_ids': [], 'attribute': 'node.sinuosity'}
+            return {"reconstructed": 0, "entity_ids": [], "attribute": "node.sinuosity"}
 
         # Calculate sinuosity per node
         sinuosity_results = []
-        for node_id, group in cl_df.groupby('node_id'):
-            x = group['x'].values
-            y = group['y'].values
+        for node_id, group in cl_df.groupby("node_id"):
+            x = group["x"].values
+            y = group["y"].values
 
             if len(x) < 2:
-                sinuosity_results.append({'node_id': node_id, 'sinuosity': 1.0})
+                sinuosity_results.append({"node_id": node_id, "sinuosity": 1.0})
                 continue
 
             # Calculate arc length (cumulative distance along centerline)
             dx = np.diff(x)
             dy = np.diff(y)
             # Convert to approximate meters (rough, assuming ~111km per degree)
-            segment_lengths = np.sqrt((dx * 111000)**2 + (dy * 111000 * np.cos(np.radians(np.mean(y))))**2)
+            segment_lengths = np.sqrt(
+                (dx * 111000) ** 2 + (dy * 111000 * np.cos(np.radians(np.mean(y)))) ** 2
+            )
             arc_length = np.sum(segment_lengths)
 
             # Calculate straight-line distance between endpoints
             straight_line = np.sqrt(
-                ((x[-1] - x[0]) * 111000)**2 +
-                ((y[-1] - y[0]) * 111000 * np.cos(np.radians(np.mean(y))))**2
+                ((x[-1] - x[0]) * 111000) ** 2
+                + ((y[-1] - y[0]) * 111000 * np.cos(np.radians(np.mean(y)))) ** 2
             )
 
             # Sinuosity = arc / straight (minimum 1.0)
@@ -2638,12 +2683,13 @@ class ReconstructionEngine:
             else:
                 sinuosity = 1.0
 
-            sinuosity_results.append({'node_id': node_id, 'sinuosity': sinuosity})
+            sinuosity_results.append({"node_id": node_id, "sinuosity": sinuosity})
 
         import pandas as pd
+
         result_df = pd.DataFrame(sinuosity_results)
 
-        return self._update_node_attribute('sinuosity', result_df, dry_run)
+        return self._update_node_attribute("sinuosity", result_df, dry_run)
 
     def _reconstruct_node_meander_length(
         self,
@@ -2662,18 +2708,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # meander_length = 10 * width
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT node_id, width * 10 as meander_length
             FROM nodes
             WHERE region = ? AND width > 0 {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('meander_length', result_df, dry_run)
+        return self._update_node_attribute("meander_length", result_df, dry_run)
 
     def _reconstruct_node_node_length(
         self,
@@ -2689,46 +2738,53 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Get centerline points per node
-        cl_df = self._conn.execute(f"""
+        cl_df = self._conn.execute(
+            f"""
             SELECT c.node_id, c.x, c.y, c.cl_id
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             ORDER BY c.node_id, c.cl_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
         if len(cl_df) == 0:
-            return {'reconstructed': 0, 'entity_ids': [], 'attribute': 'node.node_length'}
+            return {
+                "reconstructed": 0,
+                "entity_ids": [],
+                "attribute": "node.node_length",
+            }
 
         # Calculate length per node
         length_results = []
-        for node_id, group in cl_df.groupby('node_id'):
-            x = group['x'].values
-            y = group['y'].values
+        for node_id, group in cl_df.groupby("node_id"):
+            x = group["x"].values
+            y = group["y"].values
 
             if len(x) < 2:
-                length_results.append({'node_id': node_id, 'node_length': 0.0})
+                length_results.append({"node_id": node_id, "node_length": 0.0})
                 continue
 
             # Calculate arc length in meters
             dx = np.diff(x)
             dy = np.diff(y)
             segment_lengths = np.sqrt(
-                (dx * 111000)**2 +
-                (dy * 111000 * np.cos(np.radians(np.mean(y))))**2
+                (dx * 111000) ** 2 + (dy * 111000 * np.cos(np.radians(np.mean(y)))) ** 2
             )
             arc_length = np.sum(segment_lengths)
 
-            length_results.append({'node_id': node_id, 'node_length': arc_length})
+            length_results.append({"node_id": node_id, "node_length": arc_length})
 
         import pandas as pd
+
         result_df = pd.DataFrame(length_results)
 
-        return self._update_node_attribute('node_length', result_df, dry_run)
+        return self._update_node_attribute("node_length", result_df, dry_run)
 
     # =========================================================================
     # ADDITIONAL NODE RECONSTRUCTORS
@@ -2746,18 +2802,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.node_id, AVG(c.x) as x
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.node_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('x', result_df, dry_run)
+        return self._update_node_attribute("x", result_df, dry_run)
 
     def _reconstruct_node_y(
         self,
@@ -2771,18 +2830,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT c.node_id, AVG(c.y) as y
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.node_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('y', result_df, dry_run)
+        return self._update_node_attribute("y", result_df, dry_run)
 
     def _reconstruct_node_inherited(self, attr_name: str) -> Callable:
         """
@@ -2790,6 +2852,7 @@ class ReconstructionEngine:
 
         These attributes are copied directly from the parent reach.
         """
+
         def reconstructor(
             node_ids: Optional[List[int]] = None,
             force: bool = False,
@@ -2801,16 +2864,19 @@ class ReconstructionEngine:
             where_clause = ""
             params: List[Any] = [self._region]
             if node_ids is not None:
-                placeholders = ', '.join(['?'] * len(node_ids))
+                placeholders = ", ".join(["?"] * len(node_ids))
                 where_clause = f"AND n.node_id IN ({placeholders})"
                 params.extend(node_ids)
 
-            result_df = self._conn.execute(f"""
+            result_df = self._conn.execute(
+                f"""
                 SELECT n.node_id, r.{attr_name} as {attr_name}
                 FROM nodes n
                 JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
                 WHERE n.region = ? {where_clause}
-            """, params).fetchdf()
+            """,
+                params,
+            ).fetchdf()
 
             return self._update_node_attribute(attr_name, result_df, dry_run)
 
@@ -2827,39 +2893,49 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """Helper to update a reach attribute from a result dataframe."""
-        result_ids = result_df['reach_id'].tolist()
+        result_ids = result_df["reach_id"].tolist()
         result_values = result_df[attr_name].values
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': f'reach.{attr_name}',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": f"reach.{attr_name}",
+                "values": result_values,
             }
 
         # Update database
         for reach_id, value in zip(result_ids, result_values):
             if value is not None and not (isinstance(value, float) and np.isnan(value)):
-                self._conn.execute(f"""
+                self._conn.execute(
+                    f"""
                     UPDATE reaches SET {attr_name} = ? WHERE reach_id = ? AND region = ?
-                """, [float(value) if isinstance(value, (int, float, np.integer, np.floating)) else value,
-                      reach_id, self._region])
+                """,
+                    [
+                        float(value)
+                        if isinstance(value, (int, float, np.integer, np.floating))
+                        else value,
+                        reach_id,
+                        self._region,
+                    ],
+                )
 
         # Update in-memory array
         reach_view = self._sword.reaches
         if hasattr(reach_view, attr_name):
             attr_array = getattr(reach_view, attr_name)
             for reach_id, value in zip(result_ids, result_values):
-                if value is not None and not (isinstance(value, float) and np.isnan(value)):
+                if value is not None and not (
+                    isinstance(value, float) and np.isnan(value)
+                ):
                     idx = np.where(reach_view.id == reach_id)[0]
                     if len(idx) > 0:
                         attr_array._data[idx[0]] = value
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': f'reach.{attr_name}',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": f"reach.{attr_name}",
         }
 
     def _update_node_attribute(
@@ -2869,39 +2945,49 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """Helper to update a node attribute from a result dataframe."""
-        result_ids = result_df['node_id'].tolist()
+        result_ids = result_df["node_id"].tolist()
         result_values = result_df[attr_name].values
 
         if dry_run:
             return {
-                'reconstructed': len(result_ids),
-                'entity_ids': result_ids,
-                'attribute': f'node.{attr_name}',
-                'values': result_values,
+                "reconstructed": len(result_ids),
+                "entity_ids": result_ids,
+                "attribute": f"node.{attr_name}",
+                "values": result_values,
             }
 
         # Update database
         for node_id, value in zip(result_ids, result_values):
             if value is not None and not (isinstance(value, float) and np.isnan(value)):
-                self._conn.execute(f"""
+                self._conn.execute(
+                    f"""
                     UPDATE nodes SET {attr_name} = ? WHERE node_id = ? AND region = ?
-                """, [float(value) if isinstance(value, (int, float, np.integer, np.floating)) else value,
-                      node_id, self._region])
+                """,
+                    [
+                        float(value)
+                        if isinstance(value, (int, float, np.integer, np.floating))
+                        else value,
+                        node_id,
+                        self._region,
+                    ],
+                )
 
         # Update in-memory array
         node_view = self._sword.nodes
         if hasattr(node_view, attr_name):
             attr_array = getattr(node_view, attr_name)
             for node_id, value in zip(result_ids, result_values):
-                if value is not None and not (isinstance(value, float) and np.isnan(value)):
+                if value is not None and not (
+                    isinstance(value, float) and np.isnan(value)
+                ):
                     idx = np.where(node_view.id == node_id)[0]
                     if len(idx) > 0:
                         attr_array._data[idx[0]] = value
 
         return {
-            'reconstructed': len(result_ids),
-            'entity_ids': result_ids,
-            'attribute': f'node.{attr_name}',
+            "reconstructed": len(result_ids),
+            "entity_ids": result_ids,
+            "attribute": f"node.{attr_name}",
         }
 
     # =========================================================================
@@ -2926,12 +3012,13 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # wth_coef = max_width / width, with safeguards
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 node_id,
                 CASE
@@ -2940,9 +3027,11 @@ class ReconstructionEngine:
                 END as wth_coef
             FROM nodes
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('wth_coef', result_df, dry_run)
+        return self._update_node_attribute("wth_coef", result_df, dry_run)
 
     def _reconstruct_node_ext_dist_coef(
         self,
@@ -2968,12 +3057,13 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Simplified logic based on lakeflag
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 node_id,
                 CASE
@@ -2983,9 +3073,11 @@ class ReconstructionEngine:
                 END as ext_dist_coef
             FROM nodes
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('ext_dist_coef', result_df, dry_run)
+        return self._update_node_attribute("ext_dist_coef", result_df, dry_run)
 
     def _reconstruct_node_max_width(
         self,
@@ -3007,13 +3099,14 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Simplified: max_width = width for single channel
         # Multi-channel would need external raster
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 node_id,
                 CASE
@@ -3022,9 +3115,11 @@ class ReconstructionEngine:
                 END as max_width
             FROM nodes
             WHERE region = ? AND width > 0 {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('max_width', result_df, dry_run)
+        return self._update_node_attribute("max_width", result_df, dry_run)
 
     def _reconstruct_node_trib_flag(
         self,
@@ -3085,12 +3180,13 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND n.node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Inherit from reach, clamping values >4 to 0
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.node_id,
                 CASE
@@ -3100,9 +3196,11 @@ class ReconstructionEngine:
             FROM nodes n
             JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
             WHERE n.region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('obstr_type', result_df, dry_run)
+        return self._update_node_attribute("obstr_type", result_df, dry_run)
 
     def _reconstruct_reach_max_width(
         self,
@@ -3121,20 +3219,23 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.reach_id,
                 MAX(n.max_width) as max_width
             FROM nodes n
             WHERE n.region = ? AND n.max_width > 0 {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('max_width', result_df, dry_run)
+        return self._update_reach_attribute("max_width", result_df, dry_run)
 
     def _reconstruct_reach_sinuosity(
         self,
@@ -3156,28 +3257,35 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND c.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Get reach centerlines
-        cl_df = self._conn.execute(f"""
+        cl_df = self._conn.execute(
+            f"""
             SELECT c.reach_id, c.x, c.y, c.cl_id
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             ORDER BY c.reach_id, c.cl_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
         if len(cl_df) == 0:
-            return {'reconstructed': 0, 'entity_ids': [], 'attribute': 'reach.sinuosity'}
+            return {
+                "reconstructed": 0,
+                "entity_ids": [],
+                "attribute": "reach.sinuosity",
+            }
 
         sinuosity_results = []
-        for reach_id, group in cl_df.groupby('reach_id'):
-            x = group['x'].values
-            y = group['y'].values
+        for reach_id, group in cl_df.groupby("reach_id"):
+            x = group["x"].values
+            y = group["y"].values
 
             if len(x) < 2:
-                sinuosity_results.append({'reach_id': reach_id, 'sinuosity': 1.0})
+                sinuosity_results.append({"reach_id": reach_id, "sinuosity": 1.0})
                 continue
 
             # Arc length (sum of segment lengths)
@@ -3185,8 +3293,7 @@ class ReconstructionEngine:
             dy = np.diff(y)
             mean_lat = np.mean(y)
             segment_lengths = np.sqrt(
-                (dx * 111000)**2 +
-                (dy * 111000 * np.cos(np.radians(mean_lat)))**2
+                (dx * 111000) ** 2 + (dy * 111000 * np.cos(np.radians(mean_lat))) ** 2
             )
             arc_length = np.sum(segment_lengths)
 
@@ -3194,8 +3301,8 @@ class ReconstructionEngine:
             straight_dx = x[-1] - x[0]
             straight_dy = y[-1] - y[0]
             straight_dist = np.sqrt(
-                (straight_dx * 111000)**2 +
-                (straight_dy * 111000 * np.cos(np.radians(mean_lat)))**2
+                (straight_dx * 111000) ** 2
+                + (straight_dy * 111000 * np.cos(np.radians(mean_lat))) ** 2
             )
 
             if straight_dist > 0:
@@ -3205,12 +3312,13 @@ class ReconstructionEngine:
 
             # Clamp to reasonable values
             sinuosity = max(1.0, min(sinuosity, 10.0))
-            sinuosity_results.append({'reach_id': reach_id, 'sinuosity': sinuosity})
+            sinuosity_results.append({"reach_id": reach_id, "sinuosity": sinuosity})
 
         import pandas as pd
+
         result_df = pd.DataFrame(sinuosity_results)
 
-        return self._update_reach_attribute('sinuosity', result_df, dry_run)
+        return self._update_reach_attribute("sinuosity", result_df, dry_run)
 
     def _reconstruct_reach_coastal_flag(
         self,
@@ -3235,12 +3343,13 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Calculate fraction of nodes with lakeflag >= 3
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.reach_id,
                 CASE
@@ -3252,9 +3361,11 @@ class ReconstructionEngine:
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('coastal_flag', result_df, dry_run)
+        return self._update_reach_attribute("coastal_flag", result_df, dry_run)
 
     def _reconstruct_reach_low_slope_flag(
         self,
@@ -3275,12 +3386,13 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Threshold: 0.01 m/km (assuming slope stored in m/km)
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 reach_id,
                 CASE
@@ -3289,9 +3401,11 @@ class ReconstructionEngine:
                 END as low_slope_flag
             FROM reaches
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('low_slope_flag', result_df, dry_run)
+        return self._update_reach_attribute("low_slope_flag", result_df, dry_run)
 
     def _reconstruct_reach_swot_obs(
         self,
@@ -3305,25 +3419,30 @@ class ReconstructionEngine:
         Note: Full implementation requires external SWOT orbit data.
         This is a stub that returns 0 (unknown).
         """
-        logger.info("Reconstructing reach.swot_obs (stub - requires external SWOT data)")
+        logger.info(
+            "Reconstructing reach.swot_obs (stub - requires external SWOT data)"
+        )
 
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Stub: return current value or 0
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 reach_id,
                 COALESCE(swot_obs, 0) as swot_obs
             FROM reaches
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('swot_obs', result_df, dry_run)
+        return self._update_reach_attribute("swot_obs", result_df, dry_run)
 
     def _reconstruct_node_facc(
         self,
@@ -3344,18 +3463,21 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND n.node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT n.node_id, r.facc as facc
             FROM nodes n
             JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
             WHERE n.region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('facc', result_df, dry_run)
+        return self._update_node_attribute("facc", result_df, dry_run)
 
     def _reconstruct_node_wse(
         self,
@@ -3374,22 +3496,25 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Use existing wse if available, otherwise inherit from reach
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.node_id,
                 COALESCE(n.wse, r.wse) as wse
             FROM nodes n
             JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
             WHERE n.region = ?
-            {where_clause.replace('c.node_id', 'n.node_id')}
-        """, params).fetchdf()
+            {where_clause.replace("c.node_id", "n.node_id")}
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('wse', result_df, dry_run)
+        return self._update_node_attribute("wse", result_df, dry_run)
 
     def _reconstruct_node_dist_out(
         self,
@@ -3409,20 +3534,23 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND n.node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Simplified: inherit from reach
         # Full implementation would interpolate based on position
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT n.node_id, r.dist_out as dist_out
             FROM nodes n
             JOIN reaches r ON n.reach_id = r.reach_id AND n.region = r.region
             WHERE n.region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('dist_out', result_df, dry_run)
+        return self._update_node_attribute("dist_out", result_df, dry_run)
 
     # =========================================================================
     # ADDITIONAL NODE RECONSTRUCTORS (from centerline aggregation)
@@ -3444,21 +3572,24 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
         # Mode of lakeflag per node
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 c.node_id,
                 MODE(c.lakeflag) as lakeflag
             FROM centerlines c
             WHERE c.region = ? {where_clause}
             GROUP BY c.node_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('lakeflag', result_df, dry_run)
+        return self._update_node_attribute("lakeflag", result_df, dry_run)
 
     def _reconstruct_node_n_chan_max(
         self,
@@ -3508,20 +3639,23 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 c.node_id,
                 MEDIAN(c.width) as width
             FROM centerlines c
             WHERE c.region = ? AND c.width > 0 {where_clause}
             GROUP BY c.node_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('width', result_df, dry_run)
+        return self._update_node_attribute("width", result_df, dry_run)
 
     def _reconstruct_node_width_var(
         self,
@@ -3537,11 +3671,12 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 c.node_id,
                 VAR_SAMP(c.width) as width_var
@@ -3549,9 +3684,11 @@ class ReconstructionEngine:
             WHERE c.region = ? AND c.width > 0 {where_clause}
             GROUP BY c.node_id
             HAVING COUNT(*) > 1
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('width_var', result_df, dry_run)
+        return self._update_node_attribute("width_var", result_df, dry_run)
 
     def _reconstruct_node_wse_var(
         self,
@@ -3567,11 +3704,12 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND c.node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 c.node_id,
                 VAR_SAMP(c.wse) as wse_var
@@ -3579,9 +3717,11 @@ class ReconstructionEngine:
             WHERE c.region = ? AND c.wse IS NOT NULL {where_clause}
             GROUP BY c.node_id
             HAVING COUNT(*) > 1
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('wse_var', result_df, dry_run)
+        return self._update_node_attribute("wse_var", result_df, dry_run)
 
     # =========================================================================
     # ADDITIONAL REACH RECONSTRUCTORS
@@ -3645,11 +3785,12 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT
                 n.reach_id,
                 CASE
@@ -3659,9 +3800,11 @@ class ReconstructionEngine:
             FROM nodes n
             WHERE n.region = ? {where_clause}
             GROUP BY n.reach_id
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('obstr_type', result_df, dry_run)
+        return self._update_reach_attribute("obstr_type", result_df, dry_run)
 
     def _reconstruct_reach_path_order(
         self,
@@ -3680,13 +3823,14 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # path_order is based on dist_out - lower dist_out = lower path_order
         # Order reaches by dist_out within each path
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             WITH ranked AS (
                 SELECT
                     reach_id,
@@ -3701,9 +3845,11 @@ class ReconstructionEngine:
             )
             SELECT reach_id, path_order
             FROM ranked
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('path_order', result_df, dry_run)
+        return self._update_reach_attribute("path_order", result_df, dry_run)
 
     def _reconstruct_reach_path_segs(
         self,
@@ -3721,12 +3867,13 @@ class ReconstructionEngine:
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # Count reaches per path_freq
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             WITH path_counts AS (
                 SELECT
                     path_freq,
@@ -3741,9 +3888,11 @@ class ReconstructionEngine:
             FROM reaches r
             LEFT JOIN path_counts pc ON r.path_freq = pc.path_freq
             WHERE r.region = ? {where_clause}
-        """, [self._region] + params).fetchdf()
+        """,
+            [self._region] + params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('path_segs', result_df, dry_run)
+        return self._update_reach_attribute("path_segs", result_df, dry_run)
 
     def _reconstruct_reach_trib_flag(
         self,
@@ -3804,22 +3953,27 @@ class ReconstructionEngine:
         REQUIRES EXTERNAL DATA: GROD (Global River Obstruction Database)
         This is a stub - preserves existing values.
         """
-        logger.warning("node.grod_id requires external GROD data - preserving existing values")
+        logger.warning(
+            "node.grod_id requires external GROD data - preserving existing values"
+        )
 
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT node_id, COALESCE(grod_id, 0) as grod_id
             FROM nodes
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('grod_id', result_df, dry_run)
+        return self._update_node_attribute("grod_id", result_df, dry_run)
 
     def _reconstruct_node_hfalls_id(
         self,
@@ -3833,22 +3987,27 @@ class ReconstructionEngine:
         REQUIRES EXTERNAL DATA: HydroFALLS database
         This is a stub - preserves existing values.
         """
-        logger.warning("node.hfalls_id requires external HydroFALLS data - preserving existing values")
+        logger.warning(
+            "node.hfalls_id requires external HydroFALLS data - preserving existing values"
+        )
 
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT node_id, COALESCE(hfalls_id, 0) as hfalls_id
             FROM nodes
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('hfalls_id', result_df, dry_run)
+        return self._update_node_attribute("hfalls_id", result_df, dry_run)
 
     def _reconstruct_node_river_name(
         self,
@@ -3862,22 +4021,27 @@ class ReconstructionEngine:
         REQUIRES EXTERNAL DATA: River names shapefile
         This is a stub - preserves existing values.
         """
-        logger.warning("node.river_name requires external river names data - preserving existing values")
+        logger.warning(
+            "node.river_name requires external river names data - preserving existing values"
+        )
 
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT node_id, COALESCE(river_name, '') as river_name
             FROM nodes
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('river_name', result_df, dry_run)
+        return self._update_node_attribute("river_name", result_df, dry_run)
 
     def _reconstruct_reach_grod_id(
         self,
@@ -3891,22 +4055,27 @@ class ReconstructionEngine:
         REQUIRES EXTERNAL DATA: GROD (Global River Obstruction Database)
         This is a stub - preserves existing values.
         """
-        logger.warning("reach.grod_id requires external GROD data - preserving existing values")
+        logger.warning(
+            "reach.grod_id requires external GROD data - preserving existing values"
+        )
 
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, COALESCE(grod_id, 0) as grod_id
             FROM reaches
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('grod_id', result_df, dry_run)
+        return self._update_reach_attribute("grod_id", result_df, dry_run)
 
     def _reconstruct_reach_hfalls_id(
         self,
@@ -3920,22 +4089,27 @@ class ReconstructionEngine:
         REQUIRES EXTERNAL DATA: HydroFALLS database
         This is a stub - preserves existing values.
         """
-        logger.warning("reach.hfalls_id requires external HydroFALLS data - preserving existing values")
+        logger.warning(
+            "reach.hfalls_id requires external HydroFALLS data - preserving existing values"
+        )
 
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, COALESCE(hfalls_id, 0) as hfalls_id
             FROM reaches
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('hfalls_id', result_df, dry_run)
+        return self._update_reach_attribute("hfalls_id", result_df, dry_run)
 
     def _reconstruct_reach_river_name(
         self,
@@ -3949,22 +4123,27 @@ class ReconstructionEngine:
         REQUIRES EXTERNAL DATA: River names shapefile
         This is a stub - preserves existing values.
         """
-        logger.warning("reach.river_name requires external river names data - preserving existing values")
+        logger.warning(
+            "reach.river_name requires external river names data - preserving existing values"
+        )
 
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, COALESCE(river_name, '') as river_name
             FROM reaches
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('river_name', result_df, dry_run)
+        return self._update_reach_attribute("river_name", result_df, dry_run)
 
     def _reconstruct_reach_iceflag(
         self,
@@ -3978,23 +4157,28 @@ class ReconstructionEngine:
         REQUIRES EXTERNAL DATA: Ice flag CSV (366-day array per reach)
         This is a stub - preserves existing values.
         """
-        logger.warning("reach.iceflag requires external ice flag data - preserving existing values")
+        logger.warning(
+            "reach.iceflag requires external ice flag data - preserving existing values"
+        )
 
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
         # iceflag is a 366-element array - just preserve existing
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, iceflag
             FROM reaches
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('iceflag', result_df, dry_run)
+        return self._update_reach_attribute("iceflag", result_df, dry_run)
 
     # =========================================================================
     # NON-RECONSTRUCTABLE ATTRIBUTES (manual edits)
@@ -4014,22 +4198,27 @@ class ReconstructionEngine:
         This preserves existing values. Edit flags should only be set
         through manual edit operations.
         """
-        logger.warning("node.edit_flag tracks manual edits - cannot reconstruct, preserving values")
+        logger.warning(
+            "node.edit_flag tracks manual edits - cannot reconstruct, preserving values"
+        )
 
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT node_id, COALESCE(edit_flag, '') as edit_flag
             FROM nodes
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('edit_flag', result_df, dry_run)
+        return self._update_node_attribute("edit_flag", result_df, dry_run)
 
     def _reconstruct_node_manual_add(
         self,
@@ -4043,22 +4232,27 @@ class ReconstructionEngine:
         Indicates manually added nodes (width == 1 is a proxy).
         This preserves existing values.
         """
-        logger.warning("node.manual_add tracks manual additions - cannot reconstruct, preserving values")
+        logger.warning(
+            "node.manual_add tracks manual additions - cannot reconstruct, preserving values"
+        )
 
         where_clause = ""
         params = [self._region]
         if node_ids is not None:
-            placeholders = ', '.join(['?'] * len(node_ids))
+            placeholders = ", ".join(["?"] * len(node_ids))
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT node_id, COALESCE(manual_add, 0) as manual_add
             FROM nodes
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_node_attribute('manual_add', result_df, dry_run)
+        return self._update_node_attribute("manual_add", result_df, dry_run)
 
     def _reconstruct_reach_edit_flag(
         self,
@@ -4072,22 +4266,27 @@ class ReconstructionEngine:
         This preserves existing values. Edit flags should only be set
         through manual edit operations.
         """
-        logger.warning("reach.edit_flag tracks manual edits - cannot reconstruct, preserving values")
+        logger.warning(
+            "reach.edit_flag tracks manual edits - cannot reconstruct, preserving values"
+        )
 
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
-            placeholders = ', '.join(['?'] * len(reach_ids))
+            placeholders = ", ".join(["?"] * len(reach_ids))
             where_clause = f"AND reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        result_df = self._conn.execute(f"""
+        result_df = self._conn.execute(
+            f"""
             SELECT reach_id, COALESCE(edit_flag, '') as edit_flag
             FROM reaches
             WHERE region = ? {where_clause}
-        """, params).fetchdf()
+        """,
+            params,
+        ).fetchdf()
 
-        return self._update_reach_attribute('edit_flag', result_df, dry_run)
+        return self._update_reach_attribute("edit_flag", result_df, dry_run)
 
     # =========================================================================
     # CENTERLINE RECONSTRUCTORS (source data stubs)
@@ -4109,10 +4308,10 @@ class ReconstructionEngine:
         """
         logger.warning("centerline.x is source data from GRWL - cannot reconstruct")
         return {
-            'reconstructed': 0,
-            'entity_ids': [],
-            'attribute': 'centerline.x',
-            'note': 'Source data from GRWL - requires re-processing'
+            "reconstructed": 0,
+            "entity_ids": [],
+            "attribute": "centerline.x",
+            "note": "Source data from GRWL - requires re-processing",
         }
 
     def _reconstruct_centerline_y(
@@ -4129,10 +4328,10 @@ class ReconstructionEngine:
         """
         logger.warning("centerline.y is source data from GRWL - cannot reconstruct")
         return {
-            'reconstructed': 0,
-            'entity_ids': [],
-            'attribute': 'centerline.y',
-            'note': 'Source data from GRWL - requires re-processing'
+            "reconstructed": 0,
+            "entity_ids": [],
+            "attribute": "centerline.y",
+            "note": "Source data from GRWL - requires re-processing",
         }
 
     def _reconstruct_centerline_reach_id(
@@ -4149,10 +4348,10 @@ class ReconstructionEngine:
         """
         logger.warning("centerline.reach_id requires re-running reach definition")
         return {
-            'reconstructed': 0,
-            'entity_ids': [],
-            'attribute': 'centerline.reach_id',
-            'note': 'Requires re-running reach definition algorithm'
+            "reconstructed": 0,
+            "entity_ids": [],
+            "attribute": "centerline.reach_id",
+            "note": "Requires re-running reach definition algorithm",
         }
 
     def _reconstruct_centerline_node_id(
@@ -4169,8 +4368,8 @@ class ReconstructionEngine:
         """
         logger.warning("centerline.node_id requires re-running node definition")
         return {
-            'reconstructed': 0,
-            'entity_ids': [],
-            'attribute': 'centerline.node_id',
-            'note': 'Requires re-running node definition algorithm'
+            "reconstructed": 0,
+            "entity_ids": [],
+            "attribute": "centerline.node_id",
+            "note": "Requires re-running node definition algorithm",
         }

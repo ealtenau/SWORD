@@ -28,8 +28,11 @@ import logging
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Union, Optional, List, Dict, Any, Generator
+from typing import TYPE_CHECKING, Union, Optional, List, Dict, Any, Generator
 import numpy as np
+
+if TYPE_CHECKING:
+    from .reactive import SWORDReactive
 
 from .sword_db import SWORDDatabase
 from .views import CenterlinesView, NodesView, ReachesView
@@ -71,8 +74,8 @@ class SWORD:
         self,
         db_path: Union[str, Path],
         region: str,
-        version: str = 'v17b',
-        spatial: bool = True
+        version: str = "v17b",
+        spatial: bool = True,
     ):
         self.region = region.upper()
         self.version = version
@@ -88,38 +91,44 @@ class SWORD:
         """Load all data for the region from DuckDB."""
         # Load main DataFrames
         self._centerlines_df = self._db.query(
-            "SELECT * FROM centerlines WHERE region = ? ORDER BY cl_id",
-            [self.region]
+            "SELECT * FROM centerlines WHERE region = ? ORDER BY cl_id", [self.region]
         )
         self._nodes_df = self._db.query(
-            "SELECT * FROM nodes WHERE region = ? ORDER BY node_id",
-            [self.region]
+            "SELECT * FROM nodes WHERE region = ? ORDER BY node_id", [self.region]
         )
         self._reaches_df = self._db.query(
-            "SELECT * FROM reaches WHERE region = ? ORDER BY reach_id",
-            [self.region]
+            "SELECT * FROM reaches WHERE region = ? ORDER BY reach_id", [self.region]
         )
 
         # Reconstruct multi-dimensional arrays
         cl_reach_id, cl_node_id = self._reconstruct_centerline_neighbors()
-        rch_id_up = self._reconstruct_reach_topology('up')
-        rch_id_down = self._reconstruct_reach_topology('down')
+        rch_id_up = self._reconstruct_reach_topology("up")
+        rch_id_down = self._reconstruct_reach_topology("down")
         orbits = self._reconstruct_orbits()
         iceflag = self._reconstruct_iceflag()
 
         # Create view objects with db and region for write support
         # Also pass reactive reference if configured
         self._centerlines = CenterlinesView(
-            self._centerlines_df, cl_reach_id, cl_node_id,
-            db=self._db, region=self.region, reactive=self._reactive
+            self._centerlines_df,
+            cl_reach_id,
+            cl_node_id,
+            db=self._db,
+            region=self.region,
+            reactive=self._reactive,
         )
         self._nodes = NodesView(
-            self._nodes_df, db=self._db, region=self.region,
-            reactive=self._reactive
+            self._nodes_df, db=self._db, region=self.region, reactive=self._reactive
         )
         self._reaches = ReachesView(
-            self._reaches_df, rch_id_up, rch_id_down, orbits, iceflag,
-            db=self._db, region=self.region, reactive=self._reactive
+            self._reaches_df,
+            rch_id_up,
+            rch_id_down,
+            orbits,
+            iceflag,
+            db=self._db,
+            region=self.region,
+            reactive=self._reactive,
         )
 
     def _reconstruct_centerline_neighbors(self) -> tuple[np.ndarray, np.ndarray]:
@@ -136,29 +145,32 @@ class SWORD:
         node_id = np.zeros((4, n), dtype=np.int64)
 
         # Row 0: primary from main table
-        reach_id[0, :] = self._centerlines_df['reach_id'].values
-        node_id[0, :] = self._centerlines_df['node_id'].values
+        reach_id[0, :] = self._centerlines_df["reach_id"].values
+        node_id[0, :] = self._centerlines_df["node_id"].values
 
         # Rows 1-3: from centerline_neighbors table
-        neighbors_df = self._db.query("""
+        neighbors_df = self._db.query(
+            """
             SELECT cl_id, neighbor_rank, reach_id, node_id
             FROM centerline_neighbors
             WHERE region = ?
             ORDER BY cl_id, neighbor_rank
-        """, [self.region])
+        """,
+            [self.region],
+        )
 
         if len(neighbors_df) > 0:
             # Build lookup from cl_id to array index
-            cl_ids = self._centerlines_df['cl_id'].values
+            cl_ids = self._centerlines_df["cl_id"].values
             cl_idx = {cid: i for i, cid in enumerate(cl_ids)}
 
             for _, row in neighbors_df.iterrows():
-                idx = cl_idx.get(row['cl_id'])
+                idx = cl_idx.get(row["cl_id"])
                 if idx is not None:
-                    rank = row['neighbor_rank']
+                    rank = row["neighbor_rank"]
                     if 1 <= rank <= 3:
-                        reach_id[rank, idx] = row['reach_id'] if row['reach_id'] else 0
-                        node_id[rank, idx] = row['node_id'] if row['node_id'] else 0
+                        reach_id[rank, idx] = row["reach_id"] if row["reach_id"] else 0
+                        node_id[rank, idx] = row["node_id"] if row["node_id"] else 0
 
         return reach_id, node_id
 
@@ -180,22 +192,25 @@ class SWORD:
         arr = np.zeros((4, n), dtype=np.int64)
 
         # Build lookup from reach_id to array index
-        reach_ids = self._reaches_df['reach_id'].values
+        reach_ids = self._reaches_df["reach_id"].values
         reach_idx = {rid: i for i, rid in enumerate(reach_ids)}
 
         # Query topology
-        topo_df = self._db.query("""
+        topo_df = self._db.query(
+            """
             SELECT reach_id, neighbor_rank, neighbor_reach_id
             FROM reach_topology
             WHERE direction = ? AND region = ?
-        """, [direction, self.region])
+        """,
+            [direction, self.region],
+        )
 
         for _, row in topo_df.iterrows():
-            idx = reach_idx.get(row['reach_id'])
+            idx = reach_idx.get(row["reach_id"])
             if idx is not None:
-                rank = row['neighbor_rank']
+                rank = row["neighbor_rank"]
                 if 0 <= rank <= 3:
-                    arr[rank, idx] = row['neighbor_reach_id']
+                    arr[rank, idx] = row["neighbor_reach_id"]
 
         return arr
 
@@ -211,21 +226,24 @@ class SWORD:
         n = len(self._reaches_df)
         arr = np.zeros((75, n), dtype=np.int64)
 
-        reach_ids = self._reaches_df['reach_id'].values
+        reach_ids = self._reaches_df["reach_id"].values
         reach_idx = {rid: i for i, rid in enumerate(reach_ids)}
 
-        orbits_df = self._db.query("""
+        orbits_df = self._db.query(
+            """
             SELECT reach_id, orbit_rank, orbit_id
             FROM reach_swot_orbits
             WHERE region = ?
-        """, [self.region])
+        """,
+            [self.region],
+        )
 
         for _, row in orbits_df.iterrows():
-            idx = reach_idx.get(row['reach_id'])
+            idx = reach_idx.get(row["reach_id"])
             if idx is not None:
-                rank = row['orbit_rank']
+                rank = row["orbit_rank"]
                 if 0 <= rank < 75:
-                    arr[rank, idx] = row['orbit_id']
+                    arr[rank, idx] = row["orbit_id"]
 
         return arr
 
@@ -241,22 +259,25 @@ class SWORD:
         n = len(self._reaches_df)
         arr = np.zeros((366, n), dtype=np.int32)
 
-        reach_ids = self._reaches_df['reach_id'].values
+        reach_ids = self._reaches_df["reach_id"].values
         reach_idx = {rid: i for i, rid in enumerate(reach_ids)}
 
         # Ice flags may be large, query in batches if needed
-        ice_df = self._db.query("""
+        ice_df = self._db.query(
+            """
             SELECT reach_id, julian_day, iceflag
             FROM reach_ice_flags
             WHERE reach_id IN (SELECT reach_id FROM reaches WHERE region = ?)
-        """, [self.region])
+        """,
+            [self.region],
+        )
 
         for _, row in ice_df.iterrows():
-            idx = reach_idx.get(row['reach_id'])
+            idx = reach_idx.get(row["reach_id"])
             if idx is not None:
-                day = row['julian_day'] - 1  # Convert 1-366 to 0-365
+                day = row["julian_day"] - 1  # Convert 1-366 to 0-365
                 if 0 <= day < 366:
-                    arr[day, idx] = row['iceflag']
+                    arr[day, idx] = row["iceflag"]
 
         return arr
 
@@ -290,12 +311,14 @@ class SWORD:
         self._reaches._reactive = reactive
 
     @property
-    def reactive(self) -> Optional['SWORDReactive']:
+    def reactive(self) -> Optional["SWORDReactive"]:
         """Get the reactive system instance (if configured)."""
         return self._reactive
 
     @contextmanager
-    def batch_modify(self, auto_commit: bool = True) -> Generator[Optional['SWORDReactive'], None, None]:
+    def batch_modify(
+        self, auto_commit: bool = True
+    ) -> Generator[Optional["SWORDReactive"], None, None]:
         """
         Context manager for batch modifications with deferred recalculation.
 
@@ -383,22 +406,28 @@ class SWORD:
         paths = {}
 
         # Directory paths
-        paths['shp_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/shp/{region}/"
-        paths['gpkg_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/gpkg/"
-        paths['nc_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/netcdf/"
-        paths['geom_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/reach_geometry/"
-        paths['update_dir'] = f"{main_dir}/data/update_requests/{version}/{region}/"
-        paths['topo_dir'] = f"{main_dir}/data/outputs/Topology/{version}/{region}/"
-        paths['version_dir'] = f"{main_dir}/data/outputs/Version_Differences/{version}/"
-        paths['pts_gpkg_dir'] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/gpkg_30m/{region}/"
+        paths["shp_dir"] = (
+            f"{main_dir}/data/outputs/Reaches_Nodes/{version}/shp/{region}/"
+        )
+        paths["gpkg_dir"] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/gpkg/"
+        paths["nc_dir"] = f"{main_dir}/data/outputs/Reaches_Nodes/{version}/netcdf/"
+        paths["geom_dir"] = (
+            f"{main_dir}/data/outputs/Reaches_Nodes/{version}/reach_geometry/"
+        )
+        paths["update_dir"] = f"{main_dir}/data/update_requests/{version}/{region}/"
+        paths["topo_dir"] = f"{main_dir}/data/outputs/Topology/{version}/{region}/"
+        paths["version_dir"] = f"{main_dir}/data/outputs/Version_Differences/{version}/"
+        paths["pts_gpkg_dir"] = (
+            f"{main_dir}/data/outputs/Reaches_Nodes/{version}/gpkg_30m/{region}/"
+        )
 
         # Filenames
-        paths['nc_fn'] = f"{region.lower()}_sword_{version}.nc"
-        paths['gpkg_rch_fn'] = f"{region.lower()}_sword_reaches_{version}.gpkg"
-        paths['gpkg_node_fn'] = f"{region.lower()}_sword_nodes_{version}.gpkg"
-        paths['shp_rch_fn'] = f"{region.lower()}_sword_reaches_hbXX_{version}.shp"
-        paths['shp_node_fn'] = f"{region.lower()}_sword_nodes_hbXX_{version}.shp"
-        paths['geom_fn'] = f"{region.lower()}_sword_{version}_connectivity.nc"
+        paths["nc_fn"] = f"{region.lower()}_sword_{version}.nc"
+        paths["gpkg_rch_fn"] = f"{region.lower()}_sword_reaches_{version}.gpkg"
+        paths["gpkg_node_fn"] = f"{region.lower()}_sword_nodes_{version}.gpkg"
+        paths["shp_rch_fn"] = f"{region.lower()}_sword_reaches_hbXX_{version}.shp"
+        paths["shp_node_fn"] = f"{region.lower()}_sword_nodes_hbXX_{version}.shp"
+        paths["geom_fn"] = f"{region.lower()}_sword_{version}_connectivity.nc"
 
         return paths
 
@@ -410,16 +439,21 @@ class SWORD:
         The database file can be copied externally if needed.
         """
         current_datetime = datetime.now()
-        backup_note = f"Backup created at {current_datetime.strftime('%Y-%m-%d_%H-%M-%S')}"
+        backup_note = (
+            f"Backup created at {current_datetime.strftime('%Y-%m-%d_%H-%M-%S')}"
+        )
 
         # Create a checkpoint to ensure data is flushed
         self._db.execute("CHECKPOINT")
 
         # Record backup in versions table
-        self._db.execute("""
+        self._db.execute(
+            """
             INSERT OR REPLACE INTO sword_versions (version, notes)
             VALUES (?, ?)
-        """, [f'backup_{current_datetime.strftime("%Y%m%d_%H%M%S")}', backup_note])
+        """,
+            [f"backup_{current_datetime.strftime('%Y%m%d_%H%M%S')}", backup_note],
+        )
 
         logger.info(f"Checkpoint created: {backup_note}")
 
@@ -469,71 +503,99 @@ class SWORD:
 
             # IMPORTANT: Get centerline IDs BEFORE deleting centerlines
             # This is needed for cleaning up centerline_neighbors
-            cl_ids_result = conn.execute(f"""
+            cl_ids_result = conn.execute(
+                f"""
                 SELECT cl_id FROM centerlines
-                WHERE reach_id IN ({','.join('?' * len(rm_list))})
+                WHERE reach_id IN ({",".join("?" * len(rm_list))})
                 AND region = ?
-            """, rm_list + [self.region]).fetchall()
+            """,
+                rm_list + [self.region],
+            ).fetchall()
             cl_ids_to_delete = [row[0] for row in cl_ids_result]
 
             # Delete centerline_neighbors FIRST (before centerlines are deleted)
             if cl_ids_to_delete:
-                conn.execute(f"""
+                conn.execute(
+                    f"""
                     DELETE FROM centerline_neighbors
-                    WHERE cl_id IN ({','.join('?' * len(cl_ids_to_delete))})
+                    WHERE cl_id IN ({",".join("?" * len(cl_ids_to_delete))})
                     AND region = ?
-                """, cl_ids_to_delete + [self.region])
+                """,
+                    cl_ids_to_delete + [self.region],
+                )
 
             # Delete from centerlines
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 DELETE FROM centerlines
-                WHERE reach_id IN ({','.join('?' * len(rm_list))})
+                WHERE reach_id IN ({",".join("?" * len(rm_list))})
                 AND region = ?
-            """, rm_list + [self.region])
+            """,
+                rm_list + [self.region],
+            )
 
             # Delete from nodes
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 DELETE FROM nodes
-                WHERE reach_id IN ({','.join('?' * len(rm_list))})
+                WHERE reach_id IN ({",".join("?" * len(rm_list))})
                 AND region = ?
-            """, rm_list + [self.region])
+            """,
+                rm_list + [self.region],
+            )
 
             # Delete from reach_topology (both as source and neighbor)
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 DELETE FROM reach_topology
-                WHERE reach_id IN ({','.join('?' * len(rm_list))})
+                WHERE reach_id IN ({",".join("?" * len(rm_list))})
                 AND region = ?
-            """, rm_list + [self.region])
+            """,
+                rm_list + [self.region],
+            )
 
             # Update topology: remove deleted reaches from neighbor lists
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 DELETE FROM reach_topology
-                WHERE neighbor_reach_id IN ({','.join('?' * len(rm_list))})
+                WHERE neighbor_reach_id IN ({",".join("?" * len(rm_list))})
                 AND region = ?
-            """, rm_list + [self.region])
+            """,
+                rm_list + [self.region],
+            )
 
             # Delete from reach_swot_orbits
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 DELETE FROM reach_swot_orbits
-                WHERE reach_id IN ({','.join('?' * len(rm_list))})
+                WHERE reach_id IN ({",".join("?" * len(rm_list))})
                 AND region = ?
-            """, rm_list + [self.region])
+            """,
+                rm_list + [self.region],
+            )
 
             # Delete from reach_ice_flags
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 DELETE FROM reach_ice_flags
-                WHERE reach_id IN ({','.join('?' * len(rm_list))})
-            """, rm_list)
+                WHERE reach_id IN ({",".join("?" * len(rm_list))})
+            """,
+                rm_list,
+            )
 
             # Delete from reaches (main table)
-            conn.execute(f"""
+            conn.execute(
+                f"""
                 DELETE FROM reaches
-                WHERE reach_id IN ({','.join('?' * len(rm_list))})
+                WHERE reach_id IN ({",".join("?" * len(rm_list))})
                 AND region = ?
-            """, rm_list + [self.region])
+            """,
+                rm_list + [self.region],
+            )
 
             # Update n_rch_up and n_rch_down counts for affected reaches
-            conn.execute(f"""
+            conn.execute(
+                """
                 UPDATE reaches
                 SET n_rch_up = (
                     SELECT COUNT(*) FROM reach_topology t
@@ -542,9 +604,12 @@ class SWORD:
                     AND t.direction = 'up'
                 )
                 WHERE region = ?
-            """, [self.region])
+            """,
+                [self.region],
+            )
 
-            conn.execute(f"""
+            conn.execute(
+                """
                 UPDATE reaches
                 SET n_rch_down = (
                     SELECT COUNT(*) FROM reach_topology t
@@ -553,7 +618,9 @@ class SWORD:
                     AND t.direction = 'down'
                 )
                 WHERE region = ?
-            """, [self.region])
+            """,
+                [self.region],
+            )
 
             conn.execute("COMMIT")
 
@@ -596,20 +663,17 @@ class SWORD:
                 # Delete from normalized tables
                 conn.execute(
                     "DELETE FROM reach_topology WHERE reach_id = ? AND region = ?",
-                    [rid, self.region]
+                    [rid, self.region],
                 )
                 conn.execute(
                     "DELETE FROM reach_swot_orbits WHERE reach_id = ? AND region = ?",
-                    [rid, self.region]
+                    [rid, self.region],
                 )
-                conn.execute(
-                    "DELETE FROM reach_ice_flags WHERE reach_id = ?",
-                    [rid]
-                )
+                conn.execute("DELETE FROM reach_ice_flags WHERE reach_id = ?", [rid])
                 # Delete the reach
                 conn.execute(
                     "DELETE FROM reaches WHERE reach_id = ? AND region = ?",
-                    [rid, self.region]
+                    [rid, self.region],
                 )
 
             conn.execute("COMMIT")
@@ -648,7 +712,7 @@ class SWORD:
             for nid in node_ids:
                 conn.execute(
                     "DELETE FROM nodes WHERE node_id = ? AND region = ?",
-                    [int(nid), self.region]
+                    [int(nid), self.region],
                 )
 
             conn.execute("COMMIT")
@@ -694,7 +758,9 @@ class SWORD:
             if gc_was_enabled:
                 gc.enable()
 
-    def save_vectors(self, export: str = 'All', output_dir: Optional[str] = None) -> None:
+    def save_vectors(
+        self, export: str = "All", output_dir: Optional[str] = None
+    ) -> None:
         """
         Save SWORD data to vector formats (GeoPackage and/or Shapefile).
 
@@ -708,23 +774,23 @@ class SWORD:
             Output directory. If not provided, uses current directory.
         """
         try:
-            import geopandas as gpd
-            from shapely.geometry import Point, LineString
+            import geopandas as gpd  # noqa: F401
+            from shapely.geometry import Point, LineString  # noqa: F401
         except ImportError:
             raise ImportError("geopandas and shapely are required for save_vectors()")
 
         if output_dir is None:
-            output_dir = Path('.')
+            output_dir = Path(".")
         else:
             output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if export in ('All', 'reaches'):
-            logger.info('Creating reach geometries...')
+        if export in ("All", "reaches"):
+            logger.info("Creating reach geometries...")
             self._save_reach_vectors(output_dir)
 
-        if export in ('All', 'nodes'):
-            logger.info('Creating node geometries...')
+        if export in ("All", "nodes"):
+            logger.info("Creating node geometries...")
             self._save_node_vectors(output_dir)
 
     def _save_reach_vectors(self, output_dir: Path) -> None:
@@ -739,10 +805,9 @@ class SWORD:
             if len(cl_idx) > 1:
                 # Sort by cl_id
                 sorted_idx = cl_idx[np.argsort(self.centerlines.cl_id[cl_idx])]
-                coords = list(zip(
-                    self.centerlines.x[sorted_idx],
-                    self.centerlines.y[sorted_idx]
-                ))
+                coords = list(
+                    zip(self.centerlines.x[sorted_idx], self.centerlines.y[sorted_idx])
+                )
                 if len(coords) >= 2:
                     reach_geoms[rid] = LineString(coords)
                 else:
@@ -752,32 +817,32 @@ class SWORD:
 
         # Build GeoDataFrame
         data = {
-            'reach_id': self.reaches.id,
-            'x': self.reaches.x,
-            'y': self.reaches.y,
-            'reach_len': self.reaches.len,
-            'wse': self.reaches.wse,
-            'width': self.reaches.wth,
-            'slope': self.reaches.slope,
-            'n_nodes': self.reaches.n_nodes,
-            'facc': self.reaches.facc,
-            'dist_out': self.reaches.dist_out,
-            'river_name': self.reaches.river_name,
+            "reach_id": self.reaches.id,
+            "x": self.reaches.x,
+            "y": self.reaches.y,
+            "reach_len": self.reaches.len,
+            "wse": self.reaches.wse,
+            "width": self.reaches.wth,
+            "slope": self.reaches.slope,
+            "n_nodes": self.reaches.n_nodes,
+            "facc": self.reaches.facc,
+            "dist_out": self.reaches.dist_out,
+            "river_name": self.reaches.river_name,
         }
         gdf = gpd.GeoDataFrame(
             data,
             geometry=[reach_geoms.get(rid) for rid in self.reaches.id],
-            crs='EPSG:4326'
+            crs="EPSG:4326",
         )
         # Remove rows with null geometry
         gdf = gdf[gdf.geometry.notna()]
 
         # Save
-        gpkg_path = output_dir / f'sword_{self.region}_reaches.gpkg'
-        shp_path = output_dir / f'sword_{self.region}_reaches.shp'
-        gdf.to_file(gpkg_path, driver='GPKG')
-        gdf.to_file(shp_path, driver='ESRI Shapefile')
-        logger.info(f'Saved reaches to {gpkg_path} and {shp_path}')
+        gpkg_path = output_dir / f"sword_{self.region}_reaches.gpkg"
+        shp_path = output_dir / f"sword_{self.region}_reaches.shp"
+        gdf.to_file(gpkg_path, driver="GPKG")
+        gdf.to_file(shp_path, driver="ESRI Shapefile")
+        logger.info(f"Saved reaches to {gpkg_path} and {shp_path}")
 
     def _save_node_vectors(self, output_dir: Path) -> None:
         """Save node data to GeoPackage and Shapefile."""
@@ -786,26 +851,26 @@ class SWORD:
 
         # Build GeoDataFrame
         data = {
-            'node_id': self.nodes.id,
-            'x': self.nodes.x,
-            'y': self.nodes.y,
-            'reach_id': self.nodes.reach_id,
-            'node_len': self.nodes.len,
-            'wse': self.nodes.wse,
-            'width': self.nodes.wth,
-            'facc': self.nodes.facc,
-            'dist_out': self.nodes.dist_out,
-            'river_name': self.nodes.river_name,
+            "node_id": self.nodes.id,
+            "x": self.nodes.x,
+            "y": self.nodes.y,
+            "reach_id": self.nodes.reach_id,
+            "node_len": self.nodes.len,
+            "wse": self.nodes.wse,
+            "width": self.nodes.wth,
+            "facc": self.nodes.facc,
+            "dist_out": self.nodes.dist_out,
+            "river_name": self.nodes.river_name,
         }
         geometry = [Point(x, y) for x, y in zip(self.nodes.x, self.nodes.y)]
-        gdf = gpd.GeoDataFrame(data, geometry=geometry, crs='EPSG:4326')
+        gdf = gpd.GeoDataFrame(data, geometry=geometry, crs="EPSG:4326")
 
         # Save
-        gpkg_path = output_dir / f'sword_{self.region}_nodes.gpkg'
-        shp_path = output_dir / f'sword_{self.region}_nodes.shp'
-        gdf.to_file(gpkg_path, driver='GPKG')
-        gdf.to_file(shp_path, driver='ESRI Shapefile')
-        logger.info(f'Saved nodes to {gpkg_path} and {shp_path}')
+        gpkg_path = output_dir / f"sword_{self.region}_nodes.gpkg"
+        shp_path = output_dir / f"sword_{self.region}_nodes.shp"
+        gdf.to_file(gpkg_path, driver="GPKG")
+        gdf.to_file(shp_path, driver="ESRI Shapefile")
+        logger.info(f"Saved nodes to {gpkg_path} and {shp_path}")
 
     def save_nc(self, output_path: Optional[str] = None) -> None:
         """
@@ -819,81 +884,137 @@ class SWORD:
         try:
             import netCDF4 as nc
         except ImportError:
-            raise ImportError("netCDF4 is required for save_nc(). Install with: pip install netCDF4")
+            raise ImportError(
+                "netCDF4 is required for save_nc(). Install with: pip install netCDF4"
+            )
 
         if output_path is None:
             output_path = f"sword_{self.region}_{self.version}.nc"
 
         # Create NetCDF file
-        with nc.Dataset(output_path, 'w', format='NETCDF4') as ds:
+        with nc.Dataset(output_path, "w", format="NETCDF4") as ds:
             # Global attributes
             ds.title = f"SWORD {self.version} - {self.region}"
             ds.created = datetime.now().isoformat()
             ds.source = "Exported from DuckDB"
 
             # Centerlines group
-            cl_grp = ds.createGroup('centerlines')
+            cl_grp = ds.createGroup("centerlines")
             n_cl = len(self._centerlines)
-            cl_grp.createDimension('num_centerlines', n_cl)
-            cl_grp.createDimension('num_neighbors', 4)
+            cl_grp.createDimension("num_centerlines", n_cl)
+            cl_grp.createDimension("num_neighbors", 4)
 
-            cl_grp.createVariable('cl_id', 'i8', ('num_centerlines',))[:] = self._centerlines.cl_id
-            cl_grp.createVariable('x', 'f8', ('num_centerlines',))[:] = self._centerlines.x
-            cl_grp.createVariable('y', 'f8', ('num_centerlines',))[:] = self._centerlines.y
-            cl_grp.createVariable('reach_id', 'i8', ('num_neighbors', 'num_centerlines'))[:] = self._centerlines.reach_id
-            cl_grp.createVariable('node_id', 'i8', ('num_neighbors', 'num_centerlines'))[:] = self._centerlines.node_id
+            cl_grp.createVariable("cl_id", "i8", ("num_centerlines",))[:] = (
+                self._centerlines.cl_id
+            )
+            cl_grp.createVariable("x", "f8", ("num_centerlines",))[:] = (
+                self._centerlines.x
+            )
+            cl_grp.createVariable("y", "f8", ("num_centerlines",))[:] = (
+                self._centerlines.y
+            )
+            cl_grp.createVariable(
+                "reach_id", "i8", ("num_neighbors", "num_centerlines")
+            )[:] = self._centerlines.reach_id
+            cl_grp.createVariable(
+                "node_id", "i8", ("num_neighbors", "num_centerlines")
+            )[:] = self._centerlines.node_id
 
             # Nodes group
-            nd_grp = ds.createGroup('nodes')
+            nd_grp = ds.createGroup("nodes")
             n_nd = len(self._nodes)
-            nd_grp.createDimension('num_nodes', n_nd)
-            nd_grp.createDimension('num_cl_bounds', 2)
+            nd_grp.createDimension("num_nodes", n_nd)
+            nd_grp.createDimension("num_cl_bounds", 2)
 
-            nd_grp.createVariable('node_id', 'i8', ('num_nodes',))[:] = self._nodes.id
-            nd_grp.createVariable('x', 'f8', ('num_nodes',))[:] = self._nodes.x
-            nd_grp.createVariable('y', 'f8', ('num_nodes',))[:] = self._nodes.y
-            nd_grp.createVariable('reach_id', 'i8', ('num_nodes',))[:] = self._nodes.reach_id
-            nd_grp.createVariable('cl_id', 'i8', ('num_cl_bounds', 'num_nodes'))[:] = self._nodes.cl_id
-            nd_grp.createVariable('len', 'f8', ('num_nodes',))[:] = self._nodes.len
-            nd_grp.createVariable('wse', 'f8', ('num_nodes',))[:] = self._nodes.wse
-            nd_grp.createVariable('wse_var', 'f8', ('num_nodes',))[:] = self._nodes.wse_var
-            nd_grp.createVariable('wth', 'f8', ('num_nodes',))[:] = self._nodes.wth
-            nd_grp.createVariable('wth_var', 'f8', ('num_nodes',))[:] = self._nodes.wth_var
-            nd_grp.createVariable('max_wth', 'f8', ('num_nodes',))[:] = self._nodes.max_wth
-            nd_grp.createVariable('facc', 'f8', ('num_nodes',))[:] = self._nodes.facc
-            nd_grp.createVariable('dist_out', 'f8', ('num_nodes',))[:] = self._nodes.dist_out
-            nd_grp.createVariable('grod', 'i4', ('num_nodes',))[:] = self._nodes.grod
-            nd_grp.createVariable('lakeflag', 'i4', ('num_nodes',))[:] = self._nodes.lakeflag
-            nd_grp.createVariable('strm_order', 'i4', ('num_nodes',))[:] = self._nodes.strm_order
-            nd_grp.createVariable('end_rch', 'i4', ('num_nodes',))[:] = self._nodes.end_rch
+            nd_grp.createVariable("node_id", "i8", ("num_nodes",))[:] = self._nodes.id
+            nd_grp.createVariable("x", "f8", ("num_nodes",))[:] = self._nodes.x
+            nd_grp.createVariable("y", "f8", ("num_nodes",))[:] = self._nodes.y
+            nd_grp.createVariable("reach_id", "i8", ("num_nodes",))[:] = (
+                self._nodes.reach_id
+            )
+            nd_grp.createVariable("cl_id", "i8", ("num_cl_bounds", "num_nodes"))[:] = (
+                self._nodes.cl_id
+            )
+            nd_grp.createVariable("len", "f8", ("num_nodes",))[:] = self._nodes.len
+            nd_grp.createVariable("wse", "f8", ("num_nodes",))[:] = self._nodes.wse
+            nd_grp.createVariable("wse_var", "f8", ("num_nodes",))[:] = (
+                self._nodes.wse_var
+            )
+            nd_grp.createVariable("wth", "f8", ("num_nodes",))[:] = self._nodes.wth
+            nd_grp.createVariable("wth_var", "f8", ("num_nodes",))[:] = (
+                self._nodes.wth_var
+            )
+            nd_grp.createVariable("max_wth", "f8", ("num_nodes",))[:] = (
+                self._nodes.max_wth
+            )
+            nd_grp.createVariable("facc", "f8", ("num_nodes",))[:] = self._nodes.facc
+            nd_grp.createVariable("dist_out", "f8", ("num_nodes",))[:] = (
+                self._nodes.dist_out
+            )
+            nd_grp.createVariable("grod", "i4", ("num_nodes",))[:] = self._nodes.grod
+            nd_grp.createVariable("lakeflag", "i4", ("num_nodes",))[:] = (
+                self._nodes.lakeflag
+            )
+            nd_grp.createVariable("strm_order", "i4", ("num_nodes",))[:] = (
+                self._nodes.strm_order
+            )
+            nd_grp.createVariable("end_rch", "i4", ("num_nodes",))[:] = (
+                self._nodes.end_rch
+            )
 
             # Reaches group
-            rch_grp = ds.createGroup('reaches')
+            rch_grp = ds.createGroup("reaches")
             n_rch = len(self._reaches)
-            rch_grp.createDimension('num_reaches', n_rch)
-            rch_grp.createDimension('num_rch_neighbors', 4)
-            rch_grp.createDimension('num_cl_bounds', 2)
-            rch_grp.createDimension('num_orbits', 75)
-            rch_grp.createDimension('num_days', 366)
+            rch_grp.createDimension("num_reaches", n_rch)
+            rch_grp.createDimension("num_rch_neighbors", 4)
+            rch_grp.createDimension("num_cl_bounds", 2)
+            rch_grp.createDimension("num_orbits", 75)
+            rch_grp.createDimension("num_days", 366)
 
-            rch_grp.createVariable('reach_id', 'i8', ('num_reaches',))[:] = self._reaches.id
-            rch_grp.createVariable('x', 'f8', ('num_reaches',))[:] = self._reaches.x
-            rch_grp.createVariable('y', 'f8', ('num_reaches',))[:] = self._reaches.y
-            rch_grp.createVariable('cl_id', 'i8', ('num_cl_bounds', 'num_reaches'))[:] = self._reaches.cl_id
-            rch_grp.createVariable('len', 'f8', ('num_reaches',))[:] = self._reaches.len
-            rch_grp.createVariable('wse', 'f8', ('num_reaches',))[:] = self._reaches.wse
-            rch_grp.createVariable('wth', 'f8', ('num_reaches',))[:] = self._reaches.wth
-            rch_grp.createVariable('slope', 'f8', ('num_reaches',))[:] = self._reaches.slope
-            rch_grp.createVariable('facc', 'f8', ('num_reaches',))[:] = self._reaches.facc
-            rch_grp.createVariable('dist_out', 'f8', ('num_reaches',))[:] = self._reaches.dist_out
-            rch_grp.createVariable('n_rch_up', 'i4', ('num_reaches',))[:] = self._reaches.n_rch_up
-            rch_grp.createVariable('n_rch_down', 'i4', ('num_reaches',))[:] = self._reaches.n_rch_down
-            rch_grp.createVariable('rch_id_up', 'i8', ('num_rch_neighbors', 'num_reaches'))[:] = self._reaches.rch_id_up
-            rch_grp.createVariable('rch_id_down', 'i8', ('num_rch_neighbors', 'num_reaches'))[:] = self._reaches.rch_id_down
-            rch_grp.createVariable('orbits', 'i8', ('num_orbits', 'num_reaches'))[:] = self._reaches.orbits
-            rch_grp.createVariable('iceflag', 'i4', ('num_days', 'num_reaches'))[:] = self._reaches.iceflag
-            rch_grp.createVariable('strm_order', 'i4', ('num_reaches',))[:] = self._reaches.strm_order
-            rch_grp.createVariable('end_rch', 'i4', ('num_reaches',))[:] = self._reaches.end_rch
+            rch_grp.createVariable("reach_id", "i8", ("num_reaches",))[:] = (
+                self._reaches.id
+            )
+            rch_grp.createVariable("x", "f8", ("num_reaches",))[:] = self._reaches.x
+            rch_grp.createVariable("y", "f8", ("num_reaches",))[:] = self._reaches.y
+            rch_grp.createVariable("cl_id", "i8", ("num_cl_bounds", "num_reaches"))[
+                :
+            ] = self._reaches.cl_id
+            rch_grp.createVariable("len", "f8", ("num_reaches",))[:] = self._reaches.len
+            rch_grp.createVariable("wse", "f8", ("num_reaches",))[:] = self._reaches.wse
+            rch_grp.createVariable("wth", "f8", ("num_reaches",))[:] = self._reaches.wth
+            rch_grp.createVariable("slope", "f8", ("num_reaches",))[:] = (
+                self._reaches.slope
+            )
+            rch_grp.createVariable("facc", "f8", ("num_reaches",))[:] = (
+                self._reaches.facc
+            )
+            rch_grp.createVariable("dist_out", "f8", ("num_reaches",))[:] = (
+                self._reaches.dist_out
+            )
+            rch_grp.createVariable("n_rch_up", "i4", ("num_reaches",))[:] = (
+                self._reaches.n_rch_up
+            )
+            rch_grp.createVariable("n_rch_down", "i4", ("num_reaches",))[:] = (
+                self._reaches.n_rch_down
+            )
+            rch_grp.createVariable(
+                "rch_id_up", "i8", ("num_rch_neighbors", "num_reaches")
+            )[:] = self._reaches.rch_id_up
+            rch_grp.createVariable(
+                "rch_id_down", "i8", ("num_rch_neighbors", "num_reaches")
+            )[:] = self._reaches.rch_id_down
+            rch_grp.createVariable("orbits", "i8", ("num_orbits", "num_reaches"))[:] = (
+                self._reaches.orbits
+            )
+            rch_grp.createVariable("iceflag", "i4", ("num_days", "num_reaches"))[:] = (
+                self._reaches.iceflag
+            )
+            rch_grp.createVariable("strm_order", "i4", ("num_reaches",))[:] = (
+                self._reaches.strm_order
+            )
+            rch_grp.createVariable("end_rch", "i4", ("num_reaches",))[:] = (
+                self._reaches.end_rch
+            )
 
         logger.info(f"Exported to {output_path}")
 
@@ -924,7 +1045,7 @@ class SWORD:
             return False
 
         # Check continent code (must be 1-9)
-        if not rid_str[0].isdigit() or rid_str[0] == '0':
+        if not rid_str[0].isdigit() or rid_str[0] == "0":
             return False
 
         # Check basin code (5 digits, can include leading zeros)
@@ -937,7 +1058,7 @@ class SWORD:
 
         # Check type flag (1-6)
         type_flag = rid_str[-1]
-        if type_flag not in '123456':
+        if type_flag not in "123456":
             return False
 
         return True
@@ -970,7 +1091,7 @@ class SWORD:
             return False
 
         # Check continent code (must be 1-9)
-        if not nid_str[0].isdigit() or nid_str[0] == '0':
+        if not nid_str[0].isdigit() or nid_str[0] == "0":
             return False
 
         # Check basin code (5 digits)
@@ -987,17 +1108,13 @@ class SWORD:
 
         # Check type flag (1-6)
         type_flag = nid_str[-1]
-        if type_flag not in '123456':
+        if type_flag not in "123456":
             return False
 
         return True
 
     def append_data(
-        self,
-        subcls,
-        subnodes,
-        subreaches,
-        validate_ids: bool = True
+        self, subcls, subnodes, subreaches, validate_ids: bool = True
     ) -> None:
         """
         Append new centerlines, nodes, and reaches to the database.
@@ -1048,8 +1165,8 @@ class SWORD:
                     raise ValueError(
                         f"Invalid reach ID format. Expected CBBBBBRRRRT (11 digits). "
                         f"Invalid IDs: {invalid_reaches[:5]}..."
-                        if len(invalid_reaches) > 5 else
-                        f"Invalid reach ID format. Expected CBBBBBRRRRT (11 digits). "
+                        if len(invalid_reaches) > 5
+                        else f"Invalid reach ID format. Expected CBBBBBRRRRT (11 digits). "
                         f"Invalid IDs: {invalid_reaches}"
                     )
 
@@ -1063,20 +1180,22 @@ class SWORD:
                     raise ValueError(
                         f"Invalid node ID format. Expected CBBBBBRRRRNNNT (14 digits). "
                         f"Invalid IDs: {invalid_nodes[:5]}..."
-                        if len(invalid_nodes) > 5 else
-                        f"Invalid node ID format. Expected CBBBBBRRRRNNNT (14 digits). "
+                        if len(invalid_nodes) > 5
+                        else f"Invalid node ID format. Expected CBBBBBRRRRNNNT (14 digits). "
                         f"Invalid IDs: {invalid_nodes}"
                     )
 
             # Check for duplicate IDs with existing data
             if len(subreaches.id) > 0:
                 existing_reaches = set(self.reaches.id)
-                duplicates = [rid for rid in subreaches.id if int(rid) in existing_reaches]
+                duplicates = [
+                    rid for rid in subreaches.id if int(rid) in existing_reaches
+                ]
                 if duplicates:
                     raise ValueError(
                         f"Duplicate reach IDs found. These already exist: {duplicates[:5]}..."
-                        if len(duplicates) > 5 else
-                        f"Duplicate reach IDs found. These already exist: {duplicates}"
+                        if len(duplicates) > 5
+                        else f"Duplicate reach IDs found. These already exist: {duplicates}"
                     )
 
             if len(subnodes.id) > 0:
@@ -1085,8 +1204,8 @@ class SWORD:
                 if duplicates:
                     raise ValueError(
                         f"Duplicate node IDs found. These already exist: {duplicates[:5]}..."
-                        if len(duplicates) > 5 else
-                        f"Duplicate node IDs found. These already exist: {duplicates}"
+                        if len(duplicates) > 5
+                        else f"Duplicate node IDs found. These already exist: {duplicates}"
                     )
 
         conn = self._db.connect()
@@ -1114,8 +1233,10 @@ class SWORD:
             # Reload data to refresh views
             self._load_data()
 
-            logger.info(f"Appended {len(subcls.cl_id)} centerlines, "
-                        f"{len(subnodes.id)} nodes, {len(subreaches.id)} reaches")
+            logger.info(
+                f"Appended {len(subcls.cl_id)} centerlines, "
+                f"{len(subnodes.id)} nodes, {len(subreaches.id)} reaches"
+            )
 
         except Exception as e:
             conn.execute("ROLLBACK")
@@ -1127,7 +1248,7 @@ class SWORD:
 
     def _to_python(self, val) -> Any:
         """Convert numpy types to Python types for DuckDB."""
-        if hasattr(val, 'item'):
+        if hasattr(val, "item"):
             return val.item()
         return val
 
@@ -1136,62 +1257,83 @@ class SWORD:
         n = len(subcls.cl_id)
 
         # Handle both lon/lat and x/y attribute names
-        x_vals = getattr(subcls, 'x', None)
+        x_vals = getattr(subcls, "x", None)
         if x_vals is None:
-            x_vals = getattr(subcls, 'lon', None)
-        y_vals = getattr(subcls, 'y', None)
+            x_vals = getattr(subcls, "lon", None)
+        y_vals = getattr(subcls, "y", None)
         if y_vals is None:
-            y_vals = getattr(subcls, 'lat', None)
+            y_vals = getattr(subcls, "lat", None)
 
         # Build rows for insertion
         rows = []
         for i in range(n):
-            rows.append((
-                int(subcls.cl_id[i]),
-                self.region,
-                float(x_vals[i]),
-                float(y_vals[i]),
-                int(subcls.reach_id[0, i]),
-                int(subcls.node_id[0, i]),
-                self.version,
-            ))
+            rows.append(
+                (
+                    int(subcls.cl_id[i]),
+                    self.region,
+                    float(x_vals[i]),
+                    float(y_vals[i]),
+                    int(subcls.reach_id[0, i]),
+                    int(subcls.node_id[0, i]),
+                    self.version,
+                )
+            )
 
         # Insert main centerlines using executemany
-        conn.executemany("""
+        conn.executemany(
+            """
             INSERT INTO centerlines (cl_id, region, x, y, reach_id, node_id, version)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, rows)
+        """,
+            rows,
+        )
 
         # Insert neighbors (rows 1-3 of reach_id/node_id arrays)
         neighbor_rows = []
         for i in range(n):
             for rank in range(1, 4):
-                rid = int(subcls.reach_id[rank, i]) if subcls.reach_id.shape[0] > rank else 0
-                nid = int(subcls.node_id[rank, i]) if subcls.node_id.shape[0] > rank else 0
+                rid = (
+                    int(subcls.reach_id[rank, i])
+                    if subcls.reach_id.shape[0] > rank
+                    else 0
+                )
+                nid = (
+                    int(subcls.node_id[rank, i])
+                    if subcls.node_id.shape[0] > rank
+                    else 0
+                )
                 if rid != 0 or nid != 0:  # Only store non-zero neighbors
-                    neighbor_rows.append((
-                        int(subcls.cl_id[i]),
-                        self.region,
-                        rank,
-                        rid,
-                        nid,
-                    ))
+                    neighbor_rows.append(
+                        (
+                            int(subcls.cl_id[i]),
+                            self.region,
+                            rank,
+                            rid,
+                            nid,
+                        )
+                    )
 
         if neighbor_rows:
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO centerline_neighbors (cl_id, region, neighbor_rank, reach_id, node_id)
                 VALUES (?, ?, ?, ?, ?)
-            """, neighbor_rows)
+            """,
+                neighbor_rows,
+            )
 
         # Update geometry only for newly inserted rows (skip if spatial extension unavailable)
         try:
             cl_ids = [int(cid) for cid in subcls.cl_id]
-            placeholders = ', '.join(['?'] * len(cl_ids))
-            conn.execute(f"""
+            placeholders = ", ".join(["?"] * len(cl_ids))
+            conn.execute(
+                f"""
                 UPDATE centerlines
                 SET geom = ST_Point(x, y)
                 WHERE region = ? AND cl_id IN ({placeholders}) AND geom IS NULL
-            """, [self.region] + cl_ids)
+            """,
+                [self.region] + cl_ids,
+            )
         except Exception:
             pass  # Spatial extension may not be available
 
@@ -1219,76 +1361,113 @@ class SWORD:
             return [None] * n
 
         nodes_data = {
-            'node_id': subnodes.id,
-            'region': [self.region] * n,
-            'x': subnodes.x,
-            'y': subnodes.y,
-            'cl_id_min': cl_id_min,
-            'cl_id_max': cl_id_max,
-            'reach_id': subnodes.reach_id,
-            'node_length': get_attr(subnodes, 'len', 0),
-            'wse': get_attr(subnodes, 'wse', 0),
-            'wse_var': get_attr(subnodes, 'wse_var', 0),
-            'width': get_attr(subnodes, ['wth', 'width'], 0),
-            'width_var': get_attr(subnodes, ['wth_var', 'width_var'], 0),
-            'max_width': get_attr(subnodes, ['max_wth', 'max_width'], 0),
-            'facc': get_attr(subnodes, 'facc', 0),
-            'dist_out': get_attr(subnodes, 'dist_out', 0),
-            'lakeflag': get_attr(subnodes, 'lakeflag', 0),
-            'obstr_type': get_attr(subnodes, ['grod', 'obstr_type'], 0),
-            'grod_id': get_attr(subnodes, ['grod_fid', 'grod_id'], 0),
-            'hfalls_id': get_attr(subnodes, ['hfalls_fid', 'hfalls_id'], 0),
-            'n_chan_max': get_attr(subnodes, ['nchan_max', 'n_chan_max'], 0),
-            'n_chan_mod': get_attr(subnodes, ['nchan_mod', 'n_chan_mod'], 0),
-            'wth_coef': get_attr(subnodes, 'wth_coef', 0),
-            'ext_dist_coef': get_attr(subnodes, 'ext_dist_coef', 0),
-            'meander_length': get_attr(subnodes, ['meand_len', 'meander_length'], 0),
-            'sinuosity': get_attr(subnodes, 'sinuosity', 0),
-            'river_name': get_attr(subnodes, 'river_name', ''),
-            'manual_add': get_attr(subnodes, 'manual_add', 0),
-            'edit_flag': get_attr(subnodes, 'edit_flag', ''),
-            'trib_flag': get_attr(subnodes, 'trib_flag', 0),
-            'path_freq': get_attr(subnodes, 'path_freq', 0),
-            'path_order': get_attr(subnodes, 'path_order', 0),
-            'path_segs': get_attr(subnodes, 'path_segs', 0),
-            'stream_order': get_attr(subnodes, ['strm_order', 'stream_order'], 0),
-            'main_side': get_attr(subnodes, 'main_side', 0),
-            'end_reach': get_attr(subnodes, ['end_rch', 'end_reach'], 0),
-            'network': get_attr(subnodes, 'network', 0),
-            'add_flag': get_attr(subnodes, 'add_flag', 0),
-            'version': [self.version] * n,
+            "node_id": subnodes.id,
+            "region": [self.region] * n,
+            "x": subnodes.x,
+            "y": subnodes.y,
+            "cl_id_min": cl_id_min,
+            "cl_id_max": cl_id_max,
+            "reach_id": subnodes.reach_id,
+            "node_length": get_attr(subnodes, "len", 0),
+            "wse": get_attr(subnodes, "wse", 0),
+            "wse_var": get_attr(subnodes, "wse_var", 0),
+            "width": get_attr(subnodes, ["wth", "width"], 0),
+            "width_var": get_attr(subnodes, ["wth_var", "width_var"], 0),
+            "max_width": get_attr(subnodes, ["max_wth", "max_width"], 0),
+            "facc": get_attr(subnodes, "facc", 0),
+            "dist_out": get_attr(subnodes, "dist_out", 0),
+            "lakeflag": get_attr(subnodes, "lakeflag", 0),
+            "obstr_type": get_attr(subnodes, ["grod", "obstr_type"], 0),
+            "grod_id": get_attr(subnodes, ["grod_fid", "grod_id"], 0),
+            "hfalls_id": get_attr(subnodes, ["hfalls_fid", "hfalls_id"], 0),
+            "n_chan_max": get_attr(subnodes, ["nchan_max", "n_chan_max"], 0),
+            "n_chan_mod": get_attr(subnodes, ["nchan_mod", "n_chan_mod"], 0),
+            "wth_coef": get_attr(subnodes, "wth_coef", 0),
+            "ext_dist_coef": get_attr(subnodes, "ext_dist_coef", 0),
+            "meander_length": get_attr(subnodes, ["meand_len", "meander_length"], 0),
+            "sinuosity": get_attr(subnodes, "sinuosity", 0),
+            "river_name": get_attr(subnodes, "river_name", ""),
+            "manual_add": get_attr(subnodes, "manual_add", 0),
+            "edit_flag": get_attr(subnodes, "edit_flag", ""),
+            "trib_flag": get_attr(subnodes, "trib_flag", 0),
+            "path_freq": get_attr(subnodes, "path_freq", 0),
+            "path_order": get_attr(subnodes, "path_order", 0),
+            "path_segs": get_attr(subnodes, "path_segs", 0),
+            "stream_order": get_attr(subnodes, ["strm_order", "stream_order"], 0),
+            "main_side": get_attr(subnodes, "main_side", 0),
+            "end_reach": get_attr(subnodes, ["end_rch", "end_reach"], 0),
+            "network": get_attr(subnodes, "network", 0),
+            "add_flag": get_attr(subnodes, "add_flag", 0),
+            "version": [self.version] * n,
         }
 
         nodes_df = pd.DataFrame(nodes_data)
 
         # Reorder columns to match INSERT statement
         cols = [
-            'node_id', 'region', 'x', 'y', 'cl_id_min', 'cl_id_max', 'reach_id',
-            'node_length', 'wse', 'wse_var', 'width', 'width_var', 'max_width',
-            'facc', 'dist_out', 'lakeflag', 'obstr_type', 'grod_id', 'hfalls_id',
-            'n_chan_max', 'n_chan_mod', 'wth_coef', 'ext_dist_coef',
-            'meander_length', 'sinuosity', 'river_name', 'manual_add',
-            'edit_flag', 'trib_flag', 'path_freq', 'path_order', 'path_segs',
-            'stream_order', 'main_side', 'end_reach', 'network', 'add_flag', 'version'
+            "node_id",
+            "region",
+            "x",
+            "y",
+            "cl_id_min",
+            "cl_id_max",
+            "reach_id",
+            "node_length",
+            "wse",
+            "wse_var",
+            "width",
+            "width_var",
+            "max_width",
+            "facc",
+            "dist_out",
+            "lakeflag",
+            "obstr_type",
+            "grod_id",
+            "hfalls_id",
+            "n_chan_max",
+            "n_chan_mod",
+            "wth_coef",
+            "ext_dist_coef",
+            "meander_length",
+            "sinuosity",
+            "river_name",
+            "manual_add",
+            "edit_flag",
+            "trib_flag",
+            "path_freq",
+            "path_order",
+            "path_segs",
+            "stream_order",
+            "main_side",
+            "end_reach",
+            "network",
+            "add_flag",
+            "version",
         ]
         nodes_df = nodes_df[cols]
 
         # Insert nodes using executemany for reliability
-        placeholders = ', '.join(['?'] * len(cols))
-        conn.executemany(f"""
-            INSERT INTO nodes ({', '.join(cols)})
+        placeholders = ", ".join(["?"] * len(cols))
+        conn.executemany(
+            f"""
+            INSERT INTO nodes ({", ".join(cols)})
             VALUES ({placeholders})
-        """, nodes_df.values.tolist())
+        """,
+            nodes_df.values.tolist(),
+        )
 
         # Update geometry only for newly inserted rows (skip if spatial extension unavailable)
         try:
             node_ids = [int(nid) for nid in subnodes.id]
-            placeholders = ', '.join(['?'] * len(node_ids))
-            conn.execute(f"""
+            placeholders = ", ".join(["?"] * len(node_ids))
+            conn.execute(
+                f"""
                 UPDATE nodes
                 SET geom = ST_Point(x, y)
                 WHERE region = ? AND node_id IN ({placeholders}) AND geom IS NULL
-            """, [self.region] + node_ids)
+            """,
+                [self.region] + node_ids,
+            )
         except Exception:
             pass  # Spatial extension may not be available
 
@@ -1299,8 +1478,12 @@ class SWORD:
         n = len(subreaches.id)
 
         # Build cl_id bounds from [2,N] array
-        cl_id_min = subreaches.cl_id[0, :] if subreaches.cl_id.ndim == 2 else subreaches.cl_id
-        cl_id_max = subreaches.cl_id[1, :] if subreaches.cl_id.ndim == 2 else subreaches.cl_id
+        cl_id_min = (
+            subreaches.cl_id[0, :] if subreaches.cl_id.ndim == 2 else subreaches.cl_id
+        )
+        cl_id_max = (
+            subreaches.cl_id[1, :] if subreaches.cl_id.ndim == 2 else subreaches.cl_id
+        )
 
         # Helper to safely get attribute with fallback
         def get_attr(obj, names, default=None):
@@ -1315,82 +1498,120 @@ class SWORD:
             return [None] * n
 
         reaches_data = {
-            'reach_id': subreaches.id,
-            'region': [self.region] * n,
-            'x': subreaches.x,
-            'y': subreaches.y,
-            'x_min': get_attr(subreaches, 'x_min', 0),
-            'x_max': get_attr(subreaches, 'x_max', 0),
-            'y_min': get_attr(subreaches, 'y_min', 0),
-            'y_max': get_attr(subreaches, 'y_max', 0),
-            'cl_id_min': cl_id_min,
-            'cl_id_max': cl_id_max,
-            'reach_length': get_attr(subreaches, 'len', 0),
-            'n_nodes': get_attr(subreaches, ['rch_n_nodes', 'n_nodes'], 0),
-            'wse': get_attr(subreaches, 'wse', 0),
-            'wse_var': get_attr(subreaches, 'wse_var', 0),
-            'width': get_attr(subreaches, ['wth', 'width'], 0),
-            'width_var': get_attr(subreaches, ['wth_var', 'width_var'], 0),
-            'slope': get_attr(subreaches, 'slope', 0),
-            'max_width': get_attr(subreaches, ['max_wth', 'max_width'], 0),
-            'facc': get_attr(subreaches, 'facc', 0),
-            'dist_out': get_attr(subreaches, 'dist_out', 0),
-            'lakeflag': get_attr(subreaches, 'lakeflag', 0),
-            'obstr_type': get_attr(subreaches, ['grod', 'obstr_type'], 0),
-            'grod_id': get_attr(subreaches, ['grod_fid', 'grod_id'], 0),
-            'hfalls_id': get_attr(subreaches, ['hfalls_fid', 'hfalls_id'], 0),
-            'n_chan_max': get_attr(subreaches, ['nchan_max', 'n_chan_max'], 0),
-            'n_chan_mod': get_attr(subreaches, ['nchan_mod', 'n_chan_mod'], 0),
-            'n_rch_up': get_attr(subreaches, 'n_rch_up', 0),
-            'n_rch_down': get_attr(subreaches, 'n_rch_down', 0),
-            'swot_obs': get_attr(subreaches, ['max_obs', 'swot_obs'], 0),
-            'iceflag': get_attr(subreaches, 'iceflag_scalar', 0),  # Scalar version
-            'low_slope_flag': get_attr(subreaches, ['low_slope', 'low_slope_flag'], 0),
-            'river_name': get_attr(subreaches, 'river_name', ''),
-            'edit_flag': get_attr(subreaches, 'edit_flag', ''),
-            'trib_flag': get_attr(subreaches, 'trib_flag', 0),
-            'path_freq': get_attr(subreaches, 'path_freq', 0),
-            'path_order': get_attr(subreaches, 'path_order', 0),
-            'path_segs': get_attr(subreaches, 'path_segs', 0),
-            'stream_order': get_attr(subreaches, ['strm_order', 'stream_order'], 0),
-            'main_side': get_attr(subreaches, 'main_side', 0),
-            'end_reach': get_attr(subreaches, ['end_rch', 'end_reach'], 0),
-            'network': get_attr(subreaches, 'network', 0),
-            'add_flag': get_attr(subreaches, 'add_flag', 0),
-            'version': [self.version] * n,
+            "reach_id": subreaches.id,
+            "region": [self.region] * n,
+            "x": subreaches.x,
+            "y": subreaches.y,
+            "x_min": get_attr(subreaches, "x_min", 0),
+            "x_max": get_attr(subreaches, "x_max", 0),
+            "y_min": get_attr(subreaches, "y_min", 0),
+            "y_max": get_attr(subreaches, "y_max", 0),
+            "cl_id_min": cl_id_min,
+            "cl_id_max": cl_id_max,
+            "reach_length": get_attr(subreaches, "len", 0),
+            "n_nodes": get_attr(subreaches, ["rch_n_nodes", "n_nodes"], 0),
+            "wse": get_attr(subreaches, "wse", 0),
+            "wse_var": get_attr(subreaches, "wse_var", 0),
+            "width": get_attr(subreaches, ["wth", "width"], 0),
+            "width_var": get_attr(subreaches, ["wth_var", "width_var"], 0),
+            "slope": get_attr(subreaches, "slope", 0),
+            "max_width": get_attr(subreaches, ["max_wth", "max_width"], 0),
+            "facc": get_attr(subreaches, "facc", 0),
+            "dist_out": get_attr(subreaches, "dist_out", 0),
+            "lakeflag": get_attr(subreaches, "lakeflag", 0),
+            "obstr_type": get_attr(subreaches, ["grod", "obstr_type"], 0),
+            "grod_id": get_attr(subreaches, ["grod_fid", "grod_id"], 0),
+            "hfalls_id": get_attr(subreaches, ["hfalls_fid", "hfalls_id"], 0),
+            "n_chan_max": get_attr(subreaches, ["nchan_max", "n_chan_max"], 0),
+            "n_chan_mod": get_attr(subreaches, ["nchan_mod", "n_chan_mod"], 0),
+            "n_rch_up": get_attr(subreaches, "n_rch_up", 0),
+            "n_rch_down": get_attr(subreaches, "n_rch_down", 0),
+            "swot_obs": get_attr(subreaches, ["max_obs", "swot_obs"], 0),
+            "iceflag": get_attr(subreaches, "iceflag_scalar", 0),  # Scalar version
+            "low_slope_flag": get_attr(subreaches, ["low_slope", "low_slope_flag"], 0),
+            "river_name": get_attr(subreaches, "river_name", ""),
+            "edit_flag": get_attr(subreaches, "edit_flag", ""),
+            "trib_flag": get_attr(subreaches, "trib_flag", 0),
+            "path_freq": get_attr(subreaches, "path_freq", 0),
+            "path_order": get_attr(subreaches, "path_order", 0),
+            "path_segs": get_attr(subreaches, "path_segs", 0),
+            "stream_order": get_attr(subreaches, ["strm_order", "stream_order"], 0),
+            "main_side": get_attr(subreaches, "main_side", 0),
+            "end_reach": get_attr(subreaches, ["end_rch", "end_reach"], 0),
+            "network": get_attr(subreaches, "network", 0),
+            "add_flag": get_attr(subreaches, "add_flag", 0),
+            "version": [self.version] * n,
         }
 
         reaches_df = pd.DataFrame(reaches_data)
 
         # Reorder columns to match INSERT statement
         cols = [
-            'reach_id', 'region', 'x', 'y', 'x_min', 'x_max', 'y_min', 'y_max',
-            'cl_id_min', 'cl_id_max', 'reach_length', 'n_nodes',
-            'wse', 'wse_var', 'width', 'width_var', 'slope', 'max_width',
-            'facc', 'dist_out', 'lakeflag', 'obstr_type', 'grod_id', 'hfalls_id',
-            'n_chan_max', 'n_chan_mod', 'n_rch_up', 'n_rch_down',
-            'swot_obs', 'iceflag', 'low_slope_flag', 'river_name',
-            'edit_flag', 'trib_flag', 'path_freq', 'path_order', 'path_segs',
-            'stream_order', 'main_side', 'end_reach', 'network', 'add_flag', 'version'
+            "reach_id",
+            "region",
+            "x",
+            "y",
+            "x_min",
+            "x_max",
+            "y_min",
+            "y_max",
+            "cl_id_min",
+            "cl_id_max",
+            "reach_length",
+            "n_nodes",
+            "wse",
+            "wse_var",
+            "width",
+            "width_var",
+            "slope",
+            "max_width",
+            "facc",
+            "dist_out",
+            "lakeflag",
+            "obstr_type",
+            "grod_id",
+            "hfalls_id",
+            "n_chan_max",
+            "n_chan_mod",
+            "n_rch_up",
+            "n_rch_down",
+            "swot_obs",
+            "iceflag",
+            "low_slope_flag",
+            "river_name",
+            "edit_flag",
+            "trib_flag",
+            "path_freq",
+            "path_order",
+            "path_segs",
+            "stream_order",
+            "main_side",
+            "end_reach",
+            "network",
+            "add_flag",
+            "version",
         ]
         reaches_df = reaches_df[cols]
 
         # Insert main reaches using executemany for reliability
-        placeholders = ', '.join(['?'] * len(cols))
-        conn.executemany(f"""
-            INSERT INTO reaches ({', '.join(cols)})
+        placeholders = ", ".join(["?"] * len(cols))
+        conn.executemany(
+            f"""
+            INSERT INTO reaches ({", ".join(cols)})
             VALUES ({placeholders})
-        """, reaches_df.values.tolist())
+        """,
+            reaches_df.values.tolist(),
+        )
 
         # Insert reach topology (rch_id_up and rch_id_down [4,N] arrays)
         self._insert_reach_topology(conn, subreaches)
 
         # Insert SWOT orbits if present
-        if hasattr(subreaches, 'orbits') and subreaches.orbits is not None:
+        if hasattr(subreaches, "orbits") and subreaches.orbits is not None:
             self._insert_reach_orbits(conn, subreaches)
 
         # Insert ice flags if present (daily [366,N] array)
-        if hasattr(subreaches, 'iceflag') and subreaches.iceflag is not None:
+        if hasattr(subreaches, "iceflag") and subreaches.iceflag is not None:
             if subreaches.iceflag.ndim == 2:
                 self._insert_reach_ice_flags(conn, subreaches)
 
@@ -1402,43 +1623,56 @@ class SWORD:
         topology_data = []
 
         # Process upstream neighbors
-        if hasattr(subreaches, 'rch_id_up') and subreaches.rch_id_up is not None:
+        if hasattr(subreaches, "rch_id_up") and subreaches.rch_id_up is not None:
             for i in range(n):
                 for rank in range(4):
                     if rank < subreaches.rch_id_up.shape[0]:
                         neighbor_id = subreaches.rch_id_up[rank, i]
                         if neighbor_id != 0:
-                            topology_data.append({
-                                'reach_id': subreaches.id[i],
-                                'region': self.region,
-                                'direction': 'up',
-                                'neighbor_rank': rank,
-                                'neighbor_reach_id': neighbor_id,
-                            })
+                            topology_data.append(
+                                {
+                                    "reach_id": subreaches.id[i],
+                                    "region": self.region,
+                                    "direction": "up",
+                                    "neighbor_rank": rank,
+                                    "neighbor_reach_id": neighbor_id,
+                                }
+                            )
 
         # Process downstream neighbors
-        if hasattr(subreaches, 'rch_id_down') and subreaches.rch_id_down is not None:
+        if hasattr(subreaches, "rch_id_down") and subreaches.rch_id_down is not None:
             for i in range(n):
                 for rank in range(4):
                     if rank < subreaches.rch_id_down.shape[0]:
                         neighbor_id = subreaches.rch_id_down[rank, i]
                         if neighbor_id != 0:
-                            topology_data.append({
-                                'reach_id': subreaches.id[i],
-                                'region': self.region,
-                                'direction': 'down',
-                                'neighbor_rank': rank,
-                                'neighbor_reach_id': neighbor_id,
-                            })
+                            topology_data.append(
+                                {
+                                    "reach_id": subreaches.id[i],
+                                    "region": self.region,
+                                    "direction": "down",
+                                    "neighbor_rank": rank,
+                                    "neighbor_reach_id": neighbor_id,
+                                }
+                            )
 
         if topology_data:
             topo_df = pd.DataFrame(topology_data)
-            cols = ['reach_id', 'region', 'direction', 'neighbor_rank', 'neighbor_reach_id']
+            cols = [
+                "reach_id",
+                "region",
+                "direction",
+                "neighbor_rank",
+                "neighbor_reach_id",
+            ]
             topo_df = topo_df[cols]
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                 VALUES (?, ?, ?, ?, ?)
-            """, topo_df.values.tolist())
+            """,
+                topo_df.values.tolist(),
+            )
 
     def _insert_reach_orbits(self, conn, subreaches) -> None:
         """Insert SWOT orbit data."""
@@ -1451,21 +1685,26 @@ class SWORD:
             for rank in range(min(75, subreaches.orbits.shape[0])):
                 orbit_id = subreaches.orbits[rank, i]
                 if orbit_id != 0:
-                    orbits_data.append({
-                        'reach_id': subreaches.id[i],
-                        'region': self.region,
-                        'orbit_rank': rank,
-                        'orbit_id': orbit_id,
-                    })
+                    orbits_data.append(
+                        {
+                            "reach_id": subreaches.id[i],
+                            "region": self.region,
+                            "orbit_rank": rank,
+                            "orbit_id": orbit_id,
+                        }
+                    )
 
         if orbits_data:
             orbits_df = pd.DataFrame(orbits_data)
-            cols = ['reach_id', 'region', 'orbit_rank', 'orbit_id']
+            cols = ["reach_id", "region", "orbit_rank", "orbit_id"]
             orbits_df = orbits_df[cols]
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO reach_swot_orbits (reach_id, region, orbit_rank, orbit_id)
                 VALUES (?, ?, ?, ?)
-            """, orbits_df.values.tolist())
+            """,
+                orbits_df.values.tolist(),
+            )
 
     def _insert_reach_ice_flags(self, conn, subreaches) -> None:
         """Insert daily ice flag data."""
@@ -1478,20 +1717,25 @@ class SWORD:
             for day in range(min(366, subreaches.iceflag.shape[0])):
                 flag = subreaches.iceflag[day, i]
                 if flag != 0:  # Only store non-zero flags
-                    ice_data.append({
-                        'reach_id': subreaches.id[i],
-                        'julian_day': day + 1,  # Convert 0-365 to 1-366
-                        'iceflag': flag,
-                    })
+                    ice_data.append(
+                        {
+                            "reach_id": subreaches.id[i],
+                            "julian_day": day + 1,  # Convert 0-365 to 1-366
+                            "iceflag": flag,
+                        }
+                    )
 
         if ice_data:
             ice_df = pd.DataFrame(ice_data)
-            cols = ['reach_id', 'julian_day', 'iceflag']
+            cols = ["reach_id", "julian_day", "iceflag"]
             ice_df = ice_df[cols]
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO reach_ice_flags (reach_id, julian_day, iceflag)
                 VALUES (?, ?, ?)
-            """, ice_df.values.tolist())
+            """,
+                ice_df.values.tolist(),
+            )
 
     def break_reaches(self, reach_id, break_cl_id, verbose=False) -> None:
         """
@@ -1532,7 +1776,9 @@ class SWORD:
 
         # Extract level6 basin info and node numbers from centerline node IDs
         cl_level6 = np.array([str(ind)[0:6] for ind in self.centerlines.node_id[0, :]])
-        cl_node_num_int = np.array([int(str(ind)[10:13]) for ind in self.centerlines.node_id[0, :]])
+        cl_node_num_int = np.array(
+            [int(str(ind)[10:13]) for ind in self.centerlines.node_id[0, :]]
+        )
         cl_rch_type = np.array([str(ind)[-1] for ind in self.centerlines.node_id[0, :]])
 
         # Format input
@@ -1550,21 +1796,27 @@ class SWORD:
             unq_rchs = np.unique(reach)
             for r in range(len(unq_rchs)):
                 if verbose:
-                    logger.debug(f"Processing reach {r}: {unq_rchs[r]} ({r}/{len(unq_rchs)-1})")
+                    logger.debug(
+                        f"Processing reach {r}: {unq_rchs[r]} ({r}/{len(unq_rchs) - 1})"
+                    )
 
                 # Find centerline points for this reach and sort by cl_id
                 cl_r = np.where(self.centerlines.reach_id[0, :] == unq_rchs[r])[0]
                 order_ids = np.argsort(self.centerlines.cl_id[cl_r])
-                old_dist = self.reaches.dist_out[np.where(self.reaches.id == unq_rchs[r])[0]]
+                old_dist = self.reaches.dist_out[
+                    np.where(self.reaches.id == unq_rchs[r])[0]
+                ]
                 old_len = self.reaches.len[np.where(self.reaches.id == unq_rchs[r])[0]]
                 base_val = old_dist - old_len
 
                 # Find break points
                 breaks = break_id[np.where(reach == unq_rchs[r])[0]]
-                break_pts = np.array([
-                    np.where(self.centerlines.cl_id[cl_r[order_ids]] == b)[0][0]
-                    for b in breaks
-                ])
+                break_pts = np.array(
+                    [
+                        np.where(self.centerlines.cl_id[cl_r[order_ids]] == b)[0][0]
+                        for b in breaks
+                    ]
+                )
 
                 # Build boundary array with start, break points, and end
                 bounds = np.append(0, break_pts)
@@ -1576,9 +1828,11 @@ class SWORD:
                 new_divs = np.zeros(len(cl_r))
                 count = 1
                 for b in range(len(bounds) - 1):
-                    update_nds = cl_r[order_ids[bounds[b]:bounds[b + 1]]]
+                    update_nds = cl_r[order_ids[bounds[b] : bounds[b + 1]]]
                     nds = np.unique(self.centerlines.node_id[0, update_nds])
-                    fill = np.where(np.in1d(self.centerlines.node_id[0, cl_r[order_ids]], nds))[0]
+                    fill = np.where(
+                        np.in1d(self.centerlines.node_id[0, cl_r[order_ids]], nds)
+                    )[0]
                     if np.max(new_divs[fill]) == 0:
                         new_divs[fill] = count
                         count += 1
@@ -1598,17 +1852,23 @@ class SWORD:
                         update_ids = cl_r[order_ids[np.where(new_divs == unq_divs[d])]]
                         new_cl_rch_id = self.centerlines.reach_id[0, update_ids]
                         new_cl_node_ids = self.centerlines.node_id[0, update_ids]
-                        new_rch_id = np.unique(self.centerlines.reach_id[0, update_ids])[0]
+                        new_rch_id = np.unique(
+                            self.centerlines.reach_id[0, update_ids]
+                        )[0]
                     else:
                         # Create new reach ID
                         update_ids = cl_r[order_ids[np.where(new_divs == unq_divs[d])]]
                         old_nodes = np.unique(self.centerlines.node_id[0, update_ids])
                         old_rch = np.unique(self.centerlines.reach_id[0, update_ids])[0]
-                        l6_basin = np.where(cl_level6 == np.unique(cl_level6[update_ids]))[0]
-                        cl_rch_num_int = np.array([
-                            int(str(ind)[6:10])
-                            for ind in self.centerlines.node_id[0, l6_basin]
-                        ])
+                        l6_basin = np.where(
+                            cl_level6 == np.unique(cl_level6[update_ids])
+                        )[0]
+                        cl_rch_num_int = np.array(
+                            [
+                                int(str(ind)[6:10])
+                                for ind in self.centerlines.node_id[0, l6_basin]
+                            ]
+                        )
                         new_rch_num = np.max(cl_rch_num_int) + 1
 
                         # Format new reach ID with proper zero-padding
@@ -1620,9 +1880,15 @@ class SWORD:
 
                         # Create new node IDs
                         new_cl_node_ids = np.zeros(len(update_ids), dtype=np.int64)
-                        new_cl_node_nums = cl_node_num_int[update_ids] - np.min(cl_node_num_int[update_ids]) + 1
+                        new_cl_node_nums = (
+                            cl_node_num_int[update_ids]
+                            - np.min(cl_node_num_int[update_ids])
+                            + 1
+                        )
                         for n in range(len(new_cl_node_nums)):
-                            new_cl_node_ids[n] = int(f"{str(new_rch_id)[:-1]}{new_cl_node_nums[n]:03d}{str(new_rch_id)[-1]}")
+                            new_cl_node_ids[n] = int(
+                                f"{str(new_rch_id)[:-1]}{new_cl_node_nums[n]:03d}{str(new_rch_id)[-1]}"
+                            )
 
                     # Calculate new geometry for this division
                     x_coords = self.centerlines.x[update_ids]
@@ -1650,17 +1916,27 @@ class SWORD:
                         pts = np.where(new_cl_node_ids == unq_nodes[n2])[0]
                         new_node_x[n2] = np.median(self.centerlines.x[update_ids[pts]])
                         new_node_y[n2] = np.median(self.centerlines.y[update_ids[pts]])
-                        new_node_len[n2] = max(np.cumsum(diff[pts])) if len(pts) > 1 else 30
+                        new_node_len[n2] = (
+                            max(np.cumsum(diff[pts])) if len(pts) > 1 else 30
+                        )
                         new_node_id[n2] = unq_nodes[n2]
-                        new_node_cl_ids[0, n2] = np.min(self.centerlines.cl_id[update_ids[pts]])
-                        new_node_cl_ids[1, n2] = np.max(self.centerlines.cl_id[update_ids[pts]])
+                        new_node_cl_ids[0, n2] = np.min(
+                            self.centerlines.cl_id[update_ids[pts]]
+                        )
+                        new_node_cl_ids[1, n2] = np.max(
+                            self.centerlines.cl_id[update_ids[pts]]
+                        )
 
                     # Determine edit flag
-                    rch_idx = np.where(self.reaches.id == (new_rch_id if d == 0 else old_rch))[0]
-                    current_edit = self.reaches.edit_flag[rch_idx][0] if len(rch_idx) > 0 else ''
-                    if current_edit == 'NaN' or current_edit == '':
-                        edit_val = '6'
-                    elif '6' not in current_edit.split(','):
+                    rch_idx = np.where(
+                        self.reaches.id == (new_rch_id if d == 0 else old_rch)
+                    )[0]
+                    current_edit = (
+                        self.reaches.edit_flag[rch_idx][0] if len(rch_idx) > 0 else ""
+                    )
+                    if current_edit == "NaN" or current_edit == "":
+                        edit_val = "6"
+                    elif "6" not in current_edit.split(","):
                         edit_val = f"{current_edit},6"
                     else:
                         edit_val = current_edit
@@ -1668,20 +1944,46 @@ class SWORD:
                     if new_rch_id in self.reaches.id:
                         # Update existing reach in database
                         self._update_existing_reach_break(
-                            conn, new_rch_id, new_node_id, new_node_len,
-                            new_node_cl_ids, new_node_x, new_node_y,
-                            update_ids, new_rch_x, new_rch_y,
-                            new_rch_x_min, new_rch_x_max, new_rch_y_min, new_rch_y_max,
-                            new_rch_len, edit_val
+                            conn,
+                            new_rch_id,
+                            new_node_id,
+                            new_node_len,
+                            new_node_cl_ids,
+                            new_node_x,
+                            new_node_y,
+                            update_ids,
+                            new_rch_x,
+                            new_rch_y,
+                            new_rch_x_min,
+                            new_rch_x_max,
+                            new_rch_y_min,
+                            new_rch_y_max,
+                            new_rch_len,
+                            edit_val,
                         )
                     else:
                         # Insert new reach
                         self._insert_new_reach_break(
-                            conn, new_rch_id, old_rch, new_cl_rch_id, new_cl_node_ids,
-                            update_ids, old_nodes, new_node_id, new_node_len,
-                            new_node_cl_ids, new_node_x, new_node_y,
-                            new_rch_x, new_rch_y, new_rch_x_min, new_rch_x_max,
-                            new_rch_y_min, new_rch_y_max, new_rch_len, edit_val
+                            conn,
+                            new_rch_id,
+                            old_rch,
+                            new_cl_rch_id,
+                            new_cl_node_ids,
+                            update_ids,
+                            old_nodes,
+                            new_node_id,
+                            new_node_len,
+                            new_node_cl_ids,
+                            new_node_x,
+                            new_node_y,
+                            new_rch_x,
+                            new_rch_y,
+                            new_rch_x_min,
+                            new_rch_x_max,
+                            new_rch_y_min,
+                            new_rch_y_max,
+                            new_rch_len,
+                            edit_val,
                         )
 
                 # Update topology for all new reaches
@@ -1695,7 +1997,9 @@ class SWORD:
             self._load_data()
 
             if verbose:
-                logger.info(f"Break reaches complete. Processed {len(unq_rchs)} reaches.")
+                logger.info(
+                    f"Break reaches complete. Processed {len(unq_rchs)} reaches."
+                )
 
         except Exception as e:
             raise RuntimeError(f"Failed to break reaches: {e}") from e
@@ -1704,15 +2008,29 @@ class SWORD:
                 gc.enable()
 
     def _update_existing_reach_break(
-        self, conn, reach_id, node_ids, node_lens,
-        node_cl_ids, node_x, node_y, cl_update_ids,
-        rch_x, rch_y, rch_x_min, rch_x_max, rch_y_min, rch_y_max,
-        rch_len, edit_val
+        self,
+        conn,
+        reach_id,
+        node_ids,
+        node_lens,
+        node_cl_ids,
+        node_x,
+        node_y,
+        cl_update_ids,
+        rch_x,
+        rch_y,
+        rch_x_min,
+        rch_x_max,
+        rch_y_min,
+        rch_y_max,
+        rch_len,
+        edit_val,
     ) -> None:
         """Update an existing reach after break operation."""
         # Update nodes
         for i, nid in enumerate(node_ids):
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE nodes SET
                     node_length = ?,
                     cl_id_min = ?,
@@ -1721,19 +2039,22 @@ class SWORD:
                     y = ?,
                     edit_flag = ?
                 WHERE node_id = ? AND region = ?
-            """, [
-                float(node_lens[i]),
-                int(node_cl_ids[0, i]),
-                int(node_cl_ids[1, i]),
-                float(node_x[i]),
-                float(node_y[i]),
-                edit_val,
-                int(nid),
-                self.region
-            ])
+            """,
+                [
+                    float(node_lens[i]),
+                    int(node_cl_ids[0, i]),
+                    int(node_cl_ids[1, i]),
+                    float(node_x[i]),
+                    float(node_y[i]),
+                    edit_val,
+                    int(nid),
+                    self.region,
+                ],
+            )
 
         # Update reach
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE reaches SET
                 cl_id_min = ?,
                 cl_id_max = ?,
@@ -1747,49 +2068,73 @@ class SWORD:
                 n_nodes = ?,
                 edit_flag = ?
             WHERE reach_id = ? AND region = ?
-        """, [
-            int(np.min(self.centerlines.cl_id[cl_update_ids])),
-            int(np.max(self.centerlines.cl_id[cl_update_ids])),
-            float(rch_x),
-            float(rch_y),
-            float(rch_x_min),
-            float(rch_x_max),
-            float(rch_y_min),
-            float(rch_y_max),
-            float(rch_len),
-            len(node_ids),
-            edit_val,
-            int(reach_id),
-            self.region
-        ])
+        """,
+            [
+                int(np.min(self.centerlines.cl_id[cl_update_ids])),
+                int(np.max(self.centerlines.cl_id[cl_update_ids])),
+                float(rch_x),
+                float(rch_y),
+                float(rch_x_min),
+                float(rch_x_max),
+                float(rch_y_min),
+                float(rch_y_max),
+                float(rch_len),
+                len(node_ids),
+                edit_val,
+                int(reach_id),
+                self.region,
+            ],
+        )
 
     def _insert_new_reach_break(
-        self, conn, new_rch_id, old_rch, new_cl_rch_id, new_cl_node_ids,
-        update_ids, old_nodes, new_node_id, new_node_len,
-        new_node_cl_ids, new_node_x, new_node_y,
-        rch_x, rch_y, rch_x_min, rch_x_max, rch_y_min, rch_y_max,
-        rch_len, edit_val
+        self,
+        conn,
+        new_rch_id,
+        old_rch,
+        new_cl_rch_id,
+        new_cl_node_ids,
+        update_ids,
+        old_nodes,
+        new_node_id,
+        new_node_len,
+        new_node_cl_ids,
+        new_node_x,
+        new_node_y,
+        rch_x,
+        rch_y,
+        rch_x_min,
+        rch_x_max,
+        rch_y_min,
+        rch_y_max,
+        rch_len,
+        edit_val,
     ) -> None:
         """Insert a new reach created from break operation."""
         # Update centerlines with new reach/node IDs
         for i, cl_idx in enumerate(update_ids):
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE centerlines SET
                     reach_id = ?,
                     node_id = ?
                 WHERE cl_id = ? AND region = ?
-            """, [
-                int(new_cl_rch_id[i]) if hasattr(new_cl_rch_id, '__len__') else int(new_cl_rch_id),
-                int(new_cl_node_ids[i]),
-                int(self.centerlines.cl_id[cl_idx]),
-                self.region
-            ])
+            """,
+                [
+                    int(new_cl_rch_id[i])
+                    if hasattr(new_cl_rch_id, "__len__")
+                    else int(new_cl_rch_id),
+                    int(new_cl_node_ids[i]),
+                    int(self.centerlines.cl_id[cl_idx]),
+                    self.region,
+                ],
+            )
 
         # Update nodes with new IDs and attributes
         old_ind = np.where(np.in1d(self.nodes.id, old_nodes))[0]
         for i, old_idx in enumerate(old_ind):
             if i < len(new_node_id):
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE nodes SET
                         node_id = ?,
                         node_length = ?,
@@ -1800,18 +2145,20 @@ class SWORD:
                         reach_id = ?,
                         edit_flag = ?
                     WHERE node_id = ? AND region = ?
-                """, [
-                    int(new_node_id[i]),
-                    float(new_node_len[i]),
-                    int(new_node_cl_ids[0, i]),
-                    int(new_node_cl_ids[1, i]),
-                    float(new_node_x[i]),
-                    float(new_node_y[i]),
-                    int(new_rch_id),
-                    edit_val,
-                    int(self.nodes.id[old_idx]),
-                    self.region
-                ])
+                """,
+                    [
+                        int(new_node_id[i]),
+                        float(new_node_len[i]),
+                        int(new_node_cl_ids[0, i]),
+                        int(new_node_cl_ids[1, i]),
+                        float(new_node_x[i]),
+                        float(new_node_y[i]),
+                        int(new_rch_id),
+                        edit_val,
+                        int(self.nodes.id[old_idx]),
+                        self.region,
+                    ],
+                )
 
         # Get attributes from old reach to copy to new reach
         old_rch_idx = np.where(self.reaches.id == old_rch)[0]
@@ -1821,7 +2168,8 @@ class SWORD:
         old_rch_idx = old_rch_idx[0]
 
         # Insert new reach with copied attributes
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO reaches (
                 reach_id, region, x, y, x_min, x_max, y_min, y_max,
                 cl_id_min, cl_id_max, reach_length, n_nodes, wse, wse_var,
@@ -1831,48 +2179,56 @@ class SWORD:
                 trib_flag, path_freq, path_order, path_segs, stream_order,
                 main_side, end_reach, network, add_flag, version
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            int(new_rch_id),
-            self.region,
-            float(rch_x),
-            float(rch_y),
-            float(rch_x_min),
-            float(rch_x_max),
-            float(rch_y_min),
-            float(rch_y_max),
-            int(np.min(self.centerlines.cl_id[update_ids])),
-            int(np.max(self.centerlines.cl_id[update_ids])),
-            float(rch_len),
-            len(new_node_id),
-            float(self.reaches.wse[old_rch_idx]),
-            float(self.reaches.wse_var[old_rch_idx]),
-            float(self.reaches.wth[old_rch_idx]),
-            float(self.reaches.wth_var[old_rch_idx]),
-            float(self.reaches.slope[old_rch_idx]),
-            float(self.reaches.max_wth[old_rch_idx]),
-            float(self.reaches.facc[old_rch_idx]),
-            float(self.reaches.dist_out[old_rch_idx]),
-            int(self.reaches.lakeflag[old_rch_idx]),
-            int(self.reaches.grod[old_rch_idx]),
-            int(self.reaches.grod_fid[old_rch_idx]),
-            int(self.reaches.hfalls_fid[old_rch_idx]),
-            int(self.reaches.nchan_max[old_rch_idx]),
-            int(self.reaches.nchan_mod[old_rch_idx]),
-            int(self.reaches.max_obs[old_rch_idx]),
-            int(self.reaches.low_slope[old_rch_idx]),
-            str(self.reaches.river_name[old_rch_idx]),
-            edit_val,
-            int(self.reaches.trib_flag[old_rch_idx]),
-            int(self.reaches.path_freq[old_rch_idx]),
-            int(self.reaches.path_order[old_rch_idx]),
-            int(self.reaches.path_segs[old_rch_idx]),
-            int(self.reaches.strm_order[old_rch_idx]),
-            int(self.reaches.main_side[old_rch_idx]),
-            int(self.reaches.end_rch[old_rch_idx]),
-            int(self.reaches.network[old_rch_idx]),
-            int(self.reaches.add_flag[old_rch_idx]) if hasattr(self.reaches, 'add_flag') and not (self.reaches.add_flag[old_rch_idx] is None or str(self.reaches.add_flag[old_rch_idx]) == '<NA>') else 0,
-            self.version
-        ])
+        """,
+            [
+                int(new_rch_id),
+                self.region,
+                float(rch_x),
+                float(rch_y),
+                float(rch_x_min),
+                float(rch_x_max),
+                float(rch_y_min),
+                float(rch_y_max),
+                int(np.min(self.centerlines.cl_id[update_ids])),
+                int(np.max(self.centerlines.cl_id[update_ids])),
+                float(rch_len),
+                len(new_node_id),
+                float(self.reaches.wse[old_rch_idx]),
+                float(self.reaches.wse_var[old_rch_idx]),
+                float(self.reaches.wth[old_rch_idx]),
+                float(self.reaches.wth_var[old_rch_idx]),
+                float(self.reaches.slope[old_rch_idx]),
+                float(self.reaches.max_wth[old_rch_idx]),
+                float(self.reaches.facc[old_rch_idx]),
+                float(self.reaches.dist_out[old_rch_idx]),
+                int(self.reaches.lakeflag[old_rch_idx]),
+                int(self.reaches.grod[old_rch_idx]),
+                int(self.reaches.grod_fid[old_rch_idx]),
+                int(self.reaches.hfalls_fid[old_rch_idx]),
+                int(self.reaches.nchan_max[old_rch_idx]),
+                int(self.reaches.nchan_mod[old_rch_idx]),
+                int(self.reaches.max_obs[old_rch_idx]),
+                int(self.reaches.low_slope[old_rch_idx]),
+                str(self.reaches.river_name[old_rch_idx]),
+                edit_val,
+                int(self.reaches.trib_flag[old_rch_idx]),
+                int(self.reaches.path_freq[old_rch_idx]),
+                int(self.reaches.path_order[old_rch_idx]),
+                int(self.reaches.path_segs[old_rch_idx]),
+                int(self.reaches.strm_order[old_rch_idx]),
+                int(self.reaches.main_side[old_rch_idx]),
+                int(self.reaches.end_rch[old_rch_idx]),
+                int(self.reaches.network[old_rch_idx]),
+                int(self.reaches.add_flag[old_rch_idx])
+                if hasattr(self.reaches, "add_flag")
+                and not (
+                    self.reaches.add_flag[old_rch_idx] is None
+                    or str(self.reaches.add_flag[old_rch_idx]) == "<NA>"
+                )
+                else 0,
+                self.version,
+            ],
+        )
 
         # Copy topology from old reach
         self._copy_reach_topology(conn, old_rch, new_rch_id)
@@ -1886,60 +2242,88 @@ class SWORD:
     def _copy_reach_topology(self, conn, old_rch_id, new_rch_id) -> None:
         """Copy topology entries from old reach to new reach."""
         # Get existing topology
-        result = conn.execute("""
+        result = conn.execute(
+            """
             SELECT direction, neighbor_rank, neighbor_reach_id
             FROM reach_topology
             WHERE reach_id = ? AND region = ?
-        """, [int(old_rch_id), self.region]).fetchall()
+        """,
+            [int(old_rch_id), self.region],
+        ).fetchall()
 
         for row in result:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                 VALUES (?, ?, ?, ?, ?)
-            """, [int(new_rch_id), self.region, row[0], row[1], row[2]])
+            """,
+                [int(new_rch_id), self.region, row[0], row[1], row[2]],
+            )
 
     def _copy_reach_orbits(self, conn, old_rch_id, new_rch_id) -> None:
         """Copy orbit entries from old reach to new reach."""
-        result = conn.execute("""
+        result = conn.execute(
+            """
             SELECT orbit_rank, orbit_id
             FROM reach_swot_orbits
             WHERE reach_id = ? AND region = ?
-        """, [int(old_rch_id), self.region]).fetchall()
+        """,
+            [int(old_rch_id), self.region],
+        ).fetchall()
 
         for row in result:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO reach_swot_orbits (reach_id, region, orbit_rank, orbit_id)
                 VALUES (?, ?, ?, ?)
-            """, [int(new_rch_id), self.region, row[0], row[1]])
+            """,
+                [int(new_rch_id), self.region, row[0], row[1]],
+            )
 
     def _copy_reach_ice_flags(self, conn, old_rch_id, new_rch_id) -> None:
         """Copy ice flag entries from old reach to new reach."""
-        result = conn.execute("""
+        result = conn.execute(
+            """
             SELECT julian_day, iceflag
             FROM reach_ice_flags
             WHERE reach_id = ?
-        """, [int(old_rch_id)]).fetchall()
+        """,
+            [int(old_rch_id)],
+        ).fetchall()
 
         for row in result:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO reach_ice_flags (reach_id, julian_day, iceflag)
                 VALUES (?, ?, ?)
-            """, [int(new_rch_id), row[0], row[1]])
+            """,
+                [int(new_rch_id), row[0], row[1]],
+            )
 
     def _update_break_topology(self, conn, cl_r, order_ids, original_rch) -> None:
         """Update topology after breaking reaches."""
         nrchs = np.unique(self.centerlines.reach_id[0, cl_r[order_ids]])
         max_id = [
-            max(self.centerlines.cl_id[cl_r[order_ids[
-                np.where(self.centerlines.reach_id[0, cl_r[order_ids]] == n)[0]
-            ]]])
+            max(
+                self.centerlines.cl_id[
+                    cl_r[
+                        order_ids[
+                            np.where(
+                                self.centerlines.reach_id[0, cl_r[order_ids]] == n
+                            )[0]
+                        ]
+                    ]
+                ]
+            )
             for n in nrchs
         ]
         id_sort = np.argsort(max_id)
         nrchs = nrchs[id_sort]
 
         for idx in range(len(nrchs)):
-            pts = np.where(self.centerlines.reach_id[0, cl_r[order_ids]] == nrchs[idx])[0]
+            pts = np.where(self.centerlines.reach_id[0, cl_r[order_ids]] == nrchs[idx])[
+                0
+            ]
             binary = np.copy(self.centerlines.reach_id[1:, cl_r[order_ids[pts]]])
             binary[np.where(binary > 0)] = 1
             binary_sum = np.sum(binary, axis=0)
@@ -1947,20 +2331,26 @@ class SWORD:
 
             if len(existing_nghs) > 0:
                 mn = np.where(
-                    self.centerlines.cl_id[cl_r[order_ids[pts]]] ==
-                    min(self.centerlines.cl_id[cl_r[order_ids[pts]]])
+                    self.centerlines.cl_id[cl_r[order_ids[pts]]]
+                    == min(self.centerlines.cl_id[cl_r[order_ids[pts]]])
                 )[0]
                 mx = np.where(
-                    self.centerlines.cl_id[cl_r[order_ids[pts]]] ==
-                    max(self.centerlines.cl_id[cl_r[order_ids[pts]]])
+                    self.centerlines.cl_id[cl_r[order_ids[pts]]]
+                    == max(self.centerlines.cl_id[cl_r[order_ids[pts]]])
                 )[0]
 
-                current_rch_id = int(self.centerlines.reach_id[0, cl_r[order_ids[pts[0]]]])
+                current_rch_id = int(
+                    self.centerlines.reach_id[0, cl_r[order_ids[pts[0]]]]
+                )
 
                 if mn[0] in existing_nghs and mx[0] not in existing_nghs:
                     # Update upstream neighbor relationship
                     if pts[mx[0]] + 1 < len(order_ids):
-                        neighbor_rch_id = int(self.centerlines.reach_id[0, cl_r[order_ids[pts[mx[0]] + 1]]])
+                        neighbor_rch_id = int(
+                            self.centerlines.reach_id[
+                                0, cl_r[order_ids[pts[mx[0]] + 1]]
+                            ]
+                        )
 
                         # Update centerline neighbors
                         self._update_centerline_neighbor(
@@ -1969,59 +2359,77 @@ class SWORD:
 
                         # Update reach topology
                         self._update_reach_topology_entry(
-                            conn, current_rch_id, 'up', neighbor_rch_id
+                            conn, current_rch_id, "up", neighbor_rch_id
                         )
 
                         if idx > 0:
                             self._update_reach_topology_entry(
-                                conn, neighbor_rch_id, 'down', current_rch_id
+                                conn, neighbor_rch_id, "down", current_rch_id
                             )
 
                 elif mx[0] in existing_nghs and mn[0] not in existing_nghs:
                     # Update downstream neighbor relationship
                     if pts[mn[0]] > 0:
-                        neighbor_rch_id = int(self.centerlines.reach_id[0, cl_r[order_ids[pts[mn[0]] - 1]]])
+                        neighbor_rch_id = int(
+                            self.centerlines.reach_id[
+                                0, cl_r[order_ids[pts[mn[0]] - 1]]
+                            ]
+                        )
 
                         self._update_centerline_neighbor(
                             conn, cl_r[order_ids[pts[mn[0]]]], neighbor_rch_id
                         )
 
                         self._update_reach_topology_entry(
-                            conn, current_rch_id, 'down', neighbor_rch_id
+                            conn, current_rch_id, "down", neighbor_rch_id
                         )
 
                         if idx > 0:
                             self._update_reach_topology_entry(
-                                conn, neighbor_rch_id, 'up', current_rch_id
+                                conn, neighbor_rch_id, "up", current_rch_id
                             )
 
     def _update_centerline_neighbor(self, conn, cl_idx, neighbor_rch_id) -> None:
         """Update centerline neighbor reach ID."""
         cl_id = int(self.centerlines.cl_id[cl_idx])
         # Clear existing neighbors and set new one
-        conn.execute("""
+        conn.execute(
+            """
             DELETE FROM centerline_neighbors
             WHERE cl_id = ? AND region = ?
-        """, [cl_id, self.region])
+        """,
+            [cl_id, self.region],
+        )
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO centerline_neighbors (cl_id, region, neighbor_rank, reach_id, node_id)
             VALUES (?, ?, 1, ?, 0)
-        """, [cl_id, self.region, neighbor_rch_id])
+        """,
+            [cl_id, self.region, neighbor_rch_id],
+        )
 
-    def _update_reach_topology_entry(self, conn, reach_id, direction, neighbor_id) -> None:
+    def _update_reach_topology_entry(
+        self, conn, reach_id, direction, neighbor_id
+    ) -> None:
         """Update or insert a reach topology entry."""
         # Clear existing entries for this direction
-        conn.execute("""
+        conn.execute(
+            """
             DELETE FROM reach_topology
             WHERE reach_id = ? AND region = ? AND direction = ?
-        """, [reach_id, self.region, direction])
+        """,
+            [reach_id, self.region, direction],
+        )
 
         # Insert new entry
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
             VALUES (?, ?, ?, 0, ?)
-        """, [reach_id, self.region, direction, neighbor_id])
+        """,
+            [reach_id, self.region, direction, neighbor_id],
+        )
 
     def _update_dist_out(self, conn, nrchs, cl_r, order_ids, base_val) -> None:
         """Update distance from outlet for broken reaches."""
@@ -2033,14 +2441,17 @@ class SWORD:
                 rch_lens.append(self.reaches.len[idx[0]])
             else:
                 # Calculate from centerlines
-                cl_pts = np.where(self.centerlines.reach_id[0, cl_r[order_ids]] == rch)[0]
+                cl_pts = np.where(self.centerlines.reach_id[0, cl_r[order_ids]] == rch)[
+                    0
+                ]
                 if len(cl_pts) > 0:
                     from geopy import distance
+
                     x = self.centerlines.x[cl_r[order_ids[cl_pts]]]
                     y = self.centerlines.y[cl_r[order_ids[cl_pts]]]
                     dists = []
                     for i in range(len(x) - 1):
-                        d = distance.geodesic((y[i], x[i]), (y[i+1], x[i+1])).m
+                        d = distance.geodesic((y[i], x[i]), (y[i + 1], x[i + 1])).m
                         dists.append(d)
                     rch_lens.append(sum(dists))
                 else:
@@ -2049,16 +2460,16 @@ class SWORD:
         rch_cs = np.cumsum(rch_lens) + base_val
 
         for i, rch in enumerate(nrchs):
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE reaches SET dist_out = ?
                 WHERE reach_id = ? AND region = ?
-            """, [float(rch_cs[i]), int(rch), self.region])
+            """,
+                [float(rch_cs[i]), int(rch), self.region],
+            )
 
     def merge_reaches(
-        self,
-        source_reach_id: int,
-        target_reach_id: int,
-        verbose: bool = False
+        self, source_reach_id: int, target_reach_id: int, verbose: bool = False
     ) -> Dict[str, Any]:
         """
         Merge a source reach into a target reach.
@@ -2145,12 +2556,12 @@ class SWORD:
             source_cl_idx = np.where(
                 self.centerlines.reach_id[0, :] == source_reach_id
             )[0]
-            source_node_idx = np.where(
-                self.nodes.reach_id == source_reach_id
-            )[0]
+            source_node_idx = np.where(self.nodes.reach_id == source_reach_id)[0]
 
             if verbose:
-                logger.debug(f"Moving {len(source_cl_idx)} centerlines, {len(source_node_idx)} nodes")
+                logger.debug(
+                    f"Moving {len(source_cl_idx)} centerlines, {len(source_node_idx)} nodes"
+                )
 
             # Determine merge direction (upstream or downstream)
             merge_direction = self._get_merge_direction(
@@ -2163,14 +2574,12 @@ class SWORD:
             )
 
             # Update nodes: reassign to target reach with new node IDs
-            merged_node_count = self._reassign_nodes_for_merge(
+            self._reassign_nodes_for_merge(
                 conn, source_reach_id, target_reach_id, merge_direction
             )
 
             # Recalculate target reach attributes
-            self._recalculate_merged_reach_attributes(
-                conn, target_reach_id, stat_mode
-            )
+            self._recalculate_merged_reach_attributes(conn, target_reach_id, stat_mode)
 
             # Update topology: target inherits source's neighbors
             self._update_topology_for_merge(
@@ -2186,15 +2595,17 @@ class SWORD:
             self._load_data()
 
             if verbose:
-                logger.info(f"Merge complete. Target reach {target_reach_id} now has "
-                            f"{self.reaches.rch_n_nodes[np.where(self.reaches.id == target_reach_id)[0][0]]} nodes")
+                logger.info(
+                    f"Merge complete. Target reach {target_reach_id} now has "
+                    f"{self.reaches.rch_n_nodes[np.where(self.reaches.id == target_reach_id)[0][0]]} nodes"
+                )
 
             return {
-                'source_reach': source_reach_id,
-                'target_reach': target_reach_id,
-                'merged_nodes': len(source_node_idx),
-                'merged_centerlines': len(source_cl_idx),
-                'success': True,
+                "source_reach": source_reach_id,
+                "target_reach": target_reach_id,
+                "merged_nodes": len(source_node_idx),
+                "merged_centerlines": len(source_cl_idx),
+                "success": True,
             }
 
         except Exception as e:
@@ -2209,19 +2620,25 @@ class SWORD:
         conn = self._db.connect()
 
         # Check if reach_id_2 is upstream or downstream of reach_id_1
-        result = conn.execute("""
+        result = conn.execute(
+            """
             SELECT COUNT(*) FROM reach_topology
             WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ?
-        """, [int(reach_id_1), int(reach_id_2), self.region]).fetchone()
+        """,
+            [int(reach_id_1), int(reach_id_2), self.region],
+        ).fetchone()
 
         if result[0] > 0:
             return True
 
         # Check the reverse
-        result = conn.execute("""
+        result = conn.execute(
+            """
             SELECT COUNT(*) FROM reach_topology
             WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ?
-        """, [int(reach_id_2), int(reach_id_1), self.region]).fetchone()
+        """,
+            [int(reach_id_2), int(reach_id_1), self.region],
+        ).fetchone()
 
         return result[0] > 0
 
@@ -2235,45 +2652,46 @@ class SWORD:
         conn = self._db.connect()
 
         # Check if target is downstream of source
-        result = conn.execute("""
+        result = conn.execute(
+            """
             SELECT COUNT(*) FROM reach_topology
             WHERE reach_id = ? AND neighbor_reach_id = ?
             AND direction = 'down' AND region = ?
-        """, [int(source_reach_id), int(target_reach_id), self.region]).fetchone()
+        """,
+            [int(source_reach_id), int(target_reach_id), self.region],
+        ).fetchone()
 
         if result[0] > 0:
-            return 'downstream'  # source flows into target
+            return "downstream"  # source flows into target
 
-        return 'upstream'  # target flows into source
+        return "upstream"  # target flows into source
 
     def _reassign_centerlines_for_merge(
-        self,
-        conn,
-        source_reach_id: int,
-        target_reach_id: int,
-        merge_direction: str
+        self, conn, source_reach_id: int, target_reach_id: int, merge_direction: str
     ) -> None:
         """Reassign centerlines from source reach to target reach."""
         # Update reach_id for all centerlines of source reach
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE centerlines
             SET reach_id = ?
             WHERE reach_id = ? AND region = ?
-        """, [int(target_reach_id), int(source_reach_id), self.region])
+        """,
+            [int(target_reach_id), int(source_reach_id), self.region],
+        )
 
         # Update centerline_neighbors: replace source reach references with target
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE centerline_neighbors
             SET reach_id = ?
             WHERE reach_id = ? AND region = ?
-        """, [int(target_reach_id), int(source_reach_id), self.region])
+        """,
+            [int(target_reach_id), int(source_reach_id), self.region],
+        )
 
     def _reassign_nodes_for_merge(
-        self,
-        conn,
-        source_reach_id: int,
-        target_reach_id: int,
-        merge_direction: str
+        self, conn, source_reach_id: int, target_reach_id: int, merge_direction: str
     ) -> int:
         """
         Reassign nodes from source reach to target reach.
@@ -2289,9 +2707,9 @@ class SWORD:
         # Get target reach's existing max node number
         target_node_idx = np.where(self.nodes.reach_id == target_reach_id)[0]
         if len(target_node_idx) > 0:
-            target_node_nums = np.array([
-                int(str(nid)[10:13]) for nid in self.nodes.id[target_node_idx]
-            ])
+            target_node_nums = np.array(
+                [int(str(nid)[10:13]) for nid in self.nodes.id[target_node_idx]]
+            )
             max_node_num = np.max(target_node_nums)
         else:
             max_node_num = 0
@@ -2303,7 +2721,7 @@ class SWORD:
         for i, src_idx in enumerate(source_node_idx):
             old_node_id = int(self.nodes.id[src_idx])
 
-            if merge_direction == 'downstream':
+            if merge_direction == "downstream":
                 # Source is upstream, so its nodes get higher numbers (added at end)
                 new_node_num = max_node_num + i + 1
             else:
@@ -2312,10 +2730,13 @@ class SWORD:
                 new_node_num = max_node_num + i + 1
 
             # Format new node ID: reach_id[:-1] + node_num (3 digits) + type
-            new_node_id = int(f"{str(target_reach_id)[:-1]}{new_node_num:03d}{reach_type}")
+            new_node_id = int(
+                f"{str(target_reach_id)[:-1]}{new_node_num:03d}{reach_type}"
+            )
 
             # Update node record
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE nodes
                 SET node_id = ?, reach_id = ?, edit_flag = CASE
                     WHEN edit_flag IS NULL OR edit_flag = 'NaN' OR edit_flag = '' THEN '6'
@@ -2323,22 +2744,24 @@ class SWORD:
                     ELSE edit_flag
                 END
                 WHERE node_id = ? AND region = ?
-            """, [new_node_id, int(target_reach_id), old_node_id, self.region])
+            """,
+                [new_node_id, int(target_reach_id), old_node_id, self.region],
+            )
 
             # Update centerlines that reference this node
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE centerlines
                 SET node_id = ?
                 WHERE node_id = ? AND region = ?
-            """, [new_node_id, old_node_id, self.region])
+            """,
+                [new_node_id, old_node_id, self.region],
+            )
 
         return len(source_node_idx)
 
     def _recalculate_merged_reach_attributes(
-        self,
-        conn,
-        target_reach_id: int,
-        stat_mode
+        self, conn, target_reach_id: int, stat_mode
     ) -> None:
         """
         Recalculate reach attributes after merge using aggregation methods.
@@ -2355,9 +2778,7 @@ class SWORD:
         - n_nodes: count of nodes
         """
         # Get updated centerlines for target reach
-        target_cl_idx = np.where(
-            self.centerlines.reach_id[0, :] == target_reach_id
-        )[0]
+        target_cl_idx = np.where(self.centerlines.reach_id[0, :] == target_reach_id)[0]
 
         # Recalculate geometry from centerlines
         if len(target_cl_idx) > 0:
@@ -2375,14 +2796,17 @@ class SWORD:
             new_cl_id_max = int(np.max(cl_ids))
 
         # Get node-level data from database (after reassignment)
-        node_data = conn.execute("""
+        node_data = conn.execute(
+            """
             SELECT node_id, wse, wse_var, width, width_var, n_chan_max, n_chan_mod,
                    obstr_type, grod_id, hfalls_id, lakeflag, max_width, node_length,
                    dist_out
             FROM nodes
             WHERE reach_id = ? AND region = ?
             ORDER BY node_id
-        """, [int(target_reach_id), self.region]).fetchall()
+        """,
+            [int(target_reach_id), self.region],
+        ).fetchall()
 
         if len(node_data) == 0:
             return
@@ -2431,14 +2855,13 @@ class SWORD:
         # Slope calculation: linear regression of wse vs dist_out/1000
         if len(node_data) >= 2:
             order_ids = np.argsort(node_ids)
-            slope_pts = np.vstack([
-                dist_out_vals[order_ids] / 1000,
-                np.ones(len(order_ids))
-            ]).T
+            slope_pts = np.vstack(
+                [dist_out_vals[order_ids] / 1000, np.ones(len(order_ids))]
+            ).T
             try:
-                slope, _ = np.linalg.lstsq(
-                    slope_pts, wse_vals[order_ids], rcond=None
-                )[0]
+                slope, _ = np.linalg.lstsq(slope_pts, wse_vals[order_ids], rcond=None)[
+                    0
+                ]
                 new_slope = abs(float(slope))
             except Exception:
                 new_slope = 0.0
@@ -2446,7 +2869,8 @@ class SWORD:
             new_slope = 0.0
 
         # Update reach record
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE reaches SET
                 x = ?, y = ?, x_min = ?, x_max = ?, y_min = ?, y_max = ?,
                 cl_id_min = ?, cl_id_max = ?,
@@ -2462,24 +2886,38 @@ class SWORD:
                     ELSE edit_flag
                 END
             WHERE reach_id = ? AND region = ?
-        """, [
-            new_x, new_y, new_x_min, new_x_max, new_y_min, new_y_max,
-            new_cl_id_min, new_cl_id_max,
-            new_wse, new_wse_var, new_wth, new_wth_var,
-            new_slope, new_max_wth, new_dist_out,
-            new_nchan_max, new_nchan_mod,
-            new_grod, new_grod_fid, new_hfalls_fid,
-            new_lakeflag,
-            new_reach_length, new_n_nodes,
-            int(target_reach_id), self.region
-        ])
+        """,
+            [
+                new_x,
+                new_y,
+                new_x_min,
+                new_x_max,
+                new_y_min,
+                new_y_max,
+                new_cl_id_min,
+                new_cl_id_max,
+                new_wse,
+                new_wse_var,
+                new_wth,
+                new_wth_var,
+                new_slope,
+                new_max_wth,
+                new_dist_out,
+                new_nchan_max,
+                new_nchan_mod,
+                new_grod,
+                new_grod_fid,
+                new_hfalls_fid,
+                new_lakeflag,
+                new_reach_length,
+                new_n_nodes,
+                int(target_reach_id),
+                self.region,
+            ],
+        )
 
     def _update_topology_for_merge(
-        self,
-        conn,
-        source_reach_id: int,
-        target_reach_id: int,
-        merge_direction: str
+        self, conn, source_reach_id: int, target_reach_id: int, merge_direction: str
     ) -> None:
         """
         Update topology after merge.
@@ -2488,11 +2926,14 @@ class SWORD:
         Neighbors that pointed to source now point to target.
         """
         # Get source's neighbors
-        source_neighbors = conn.execute("""
+        source_neighbors = conn.execute(
+            """
             SELECT direction, neighbor_rank, neighbor_reach_id
             FROM reach_topology
             WHERE reach_id = ? AND region = ?
-        """, [int(source_reach_id), self.region]).fetchall()
+        """,
+            [int(source_reach_id), self.region],
+        ).fetchall()
 
         for direction, rank, neighbor_id in source_neighbors:
             # Skip the target reach (they were connected to each other)
@@ -2500,86 +2941,126 @@ class SWORD:
                 continue
 
             # Check if this neighbor relationship already exists for target
-            existing = conn.execute("""
+            existing = conn.execute(
+                """
                 SELECT COUNT(*) FROM reach_topology
                 WHERE reach_id = ? AND neighbor_reach_id = ?
                 AND direction = ? AND region = ?
-            """, [int(target_reach_id), int(neighbor_id), direction, self.region]).fetchone()
+            """,
+                [int(target_reach_id), int(neighbor_id), direction, self.region],
+            ).fetchone()
 
             if existing[0] == 0:
                 # Get next available rank for this direction
-                max_rank = conn.execute("""
+                max_rank = conn.execute(
+                    """
                     SELECT COALESCE(MAX(neighbor_rank), -1) FROM reach_topology
                     WHERE reach_id = ? AND direction = ? AND region = ?
-                """, [int(target_reach_id), direction, self.region]).fetchone()[0]
+                """,
+                    [int(target_reach_id), direction, self.region],
+                ).fetchone()[0]
                 new_rank = max_rank + 1
 
                 # Add this neighbor to target with new rank
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO reach_topology
                     (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                     VALUES (?, ?, ?, ?, ?)
-                """, [int(target_reach_id), self.region, direction, new_rank, int(neighbor_id)])
+                """,
+                    [
+                        int(target_reach_id),
+                        self.region,
+                        direction,
+                        new_rank,
+                        int(neighbor_id),
+                    ],
+                )
 
             # Update the neighbor to point to target instead of source
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE reach_topology
                 SET neighbor_reach_id = ?
                 WHERE neighbor_reach_id = ? AND region = ?
-            """, [int(target_reach_id), int(source_reach_id), self.region])
+            """,
+                [int(target_reach_id), int(source_reach_id), self.region],
+            )
 
         # Remove source's entry pointing to target (and vice versa) from topology
-        conn.execute("""
+        conn.execute(
+            """
             DELETE FROM reach_topology
             WHERE reach_id = ? AND neighbor_reach_id = ? AND region = ?
-        """, [int(target_reach_id), int(source_reach_id), self.region])
+        """,
+            [int(target_reach_id), int(source_reach_id), self.region],
+        )
 
         # Update n_rch_up and n_rch_down for target
-        up_count = conn.execute("""
+        up_count = conn.execute(
+            """
             SELECT COUNT(*) FROM reach_topology
             WHERE reach_id = ? AND direction = 'up' AND region = ?
-        """, [int(target_reach_id), self.region]).fetchone()[0]
+        """,
+            [int(target_reach_id), self.region],
+        ).fetchone()[0]
 
-        down_count = conn.execute("""
+        down_count = conn.execute(
+            """
             SELECT COUNT(*) FROM reach_topology
             WHERE reach_id = ? AND direction = 'down' AND region = ?
-        """, [int(target_reach_id), self.region]).fetchone()[0]
+        """,
+            [int(target_reach_id), self.region],
+        ).fetchone()[0]
 
-        conn.execute("""
+        conn.execute(
+            """
             UPDATE reaches SET n_rch_up = ?, n_rch_down = ?
             WHERE reach_id = ? AND region = ?
-        """, [up_count, down_count, int(target_reach_id), self.region])
+        """,
+            [up_count, down_count, int(target_reach_id), self.region],
+        )
 
     def _delete_merged_source_reach(self, conn, source_reach_id: int) -> None:
         """Delete the source reach after merge (without cascade since data was moved)."""
         # Delete topology entries for source
-        conn.execute("""
+        conn.execute(
+            """
             DELETE FROM reach_topology
             WHERE reach_id = ? AND region = ?
-        """, [int(source_reach_id), self.region])
+        """,
+            [int(source_reach_id), self.region],
+        )
 
         # Delete orbit data
-        conn.execute("""
+        conn.execute(
+            """
             DELETE FROM reach_swot_orbits
             WHERE reach_id = ? AND region = ?
-        """, [int(source_reach_id), self.region])
+        """,
+            [int(source_reach_id), self.region],
+        )
 
         # Delete ice flag data
-        conn.execute("""
+        conn.execute(
+            """
             DELETE FROM reach_ice_flags
             WHERE reach_id = ?
-        """, [int(source_reach_id)])
+        """,
+            [int(source_reach_id)],
+        )
 
         # Delete the reach record
-        conn.execute("""
+        conn.execute(
+            """
             DELETE FROM reaches
             WHERE reach_id = ? AND region = ?
-        """, [int(source_reach_id), self.region])
+        """,
+            [int(source_reach_id), self.region],
+        )
 
     def check_topo_consistency(
-        self,
-        verbose: int = 1,
-        return_details: bool = False
+        self, verbose: int = 1, return_details: bool = False
     ) -> dict:
         """
         Check the topological consistency of SWORD data.
@@ -2626,14 +3107,14 @@ class SWORD:
         ...     print(f"Found issues in {len(results['reaches_with_issues'])} reaches")
         """
         error_counts = {
-            'type_0_missing_fields': 0,
-            'type_1_count_mismatch': 0,
-            'type_2_unrequited_neighbor': 0,
-            'type_5_self_reference': 0,
+            "type_0_missing_fields": 0,
+            "type_1_count_mismatch": 0,
+            "type_2_unrequited_neighbor": 0,
+            "type_5_self_reference": 0,
         }
         warning_counts = {
-            'type_3_ghost_both_neighbors': 0,
-            'type_4_no_upstream': 0,
+            "type_3_ghost_both_neighbors": 0,
+            "type_4_no_upstream": 0,
         }
         reaches_with_issues = set()
         details = []
@@ -2657,22 +3138,22 @@ class SWORD:
             actual_down = np.count_nonzero(rch_id_down)
 
             if actual_up != n_rch_up:
-                error_counts['type_1_count_mismatch'] += 1
+                error_counts["type_1_count_mismatch"] += 1
                 reaches_with_issues.add(reach_id)
                 msg = f"Type 1: Reach {rid_str} claims {n_rch_up} upstream, but has {actual_up}"
                 if verbose >= 1:
                     logger.warning(msg)
                 if return_details:
-                    details.append({'type': 1, 'reach_id': reach_id, 'message': msg})
+                    details.append({"type": 1, "reach_id": reach_id, "message": msg})
 
             if actual_down != n_rch_down:
-                error_counts['type_1_count_mismatch'] += 1
+                error_counts["type_1_count_mismatch"] += 1
                 reaches_with_issues.add(reach_id)
                 msg = f"Type 1: Reach {rid_str} claims {n_rch_down} downstream, but has {actual_down}"
                 if verbose >= 1:
                     logger.warning(msg)
                 if return_details:
-                    details.append({'type': 1, 'reach_id': reach_id, 'message': msg})
+                    details.append({"type": 1, "reach_id": reach_id, "message": msg})
 
             # Check 2: Unrequited neighbors - downstream
             for neighbor_id in rch_id_down:
@@ -2680,25 +3161,29 @@ class SWORD:
                     continue
                 neighbor_idx = reach_idx.get(neighbor_id)
                 if neighbor_idx is None:
-                    error_counts['type_2_unrequited_neighbor'] += 1
+                    error_counts["type_2_unrequited_neighbor"] += 1
                     reaches_with_issues.add(reach_id)
                     msg = f"Type 2: Reach {rid_str} references non-existent downstream {neighbor_id}"
                     if verbose >= 1:
                         logger.warning(msg)
                     if return_details:
-                        details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+                        details.append(
+                            {"type": 2, "reach_id": reach_id, "message": msg}
+                        )
                 else:
                     # Check if neighbor has us as upstream
                     neighbor_up = self.reaches.rch_id_up[:, neighbor_idx]
                     if reach_id not in neighbor_up:
-                        error_counts['type_2_unrequited_neighbor'] += 1
+                        error_counts["type_2_unrequited_neighbor"] += 1
                         reaches_with_issues.add(reach_id)
                         reaches_with_issues.add(neighbor_id)
                         msg = f"Type 2: {rid_str} -> {neighbor_id} (down) is unrequited"
                         if verbose >= 1:
                             logger.warning(msg)
                         if return_details:
-                            details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+                            details.append(
+                                {"type": 2, "reach_id": reach_id, "message": msg}
+                            )
 
             # Check 2: Unrequited neighbors - upstream
             for neighbor_id in rch_id_up:
@@ -2706,98 +3191,113 @@ class SWORD:
                     continue
                 neighbor_idx = reach_idx.get(neighbor_id)
                 if neighbor_idx is None:
-                    error_counts['type_2_unrequited_neighbor'] += 1
+                    error_counts["type_2_unrequited_neighbor"] += 1
                     reaches_with_issues.add(reach_id)
                     msg = f"Type 2: Reach {rid_str} references non-existent upstream {neighbor_id}"
                     if verbose >= 1:
                         logger.warning(msg)
                     if return_details:
-                        details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+                        details.append(
+                            {"type": 2, "reach_id": reach_id, "message": msg}
+                        )
                 else:
                     # Check if neighbor has us as downstream
                     neighbor_down = self.reaches.rch_id_down[:, neighbor_idx]
                     if reach_id not in neighbor_down:
-                        error_counts['type_2_unrequited_neighbor'] += 1
+                        error_counts["type_2_unrequited_neighbor"] += 1
                         reaches_with_issues.add(reach_id)
                         reaches_with_issues.add(neighbor_id)
                         msg = f"Type 2: {rid_str} -> {neighbor_id} (up) is unrequited"
                         if verbose >= 1:
                             logger.warning(msg)
                         if return_details:
-                            details.append({'type': 2, 'reach_id': reach_id, 'message': msg})
+                            details.append(
+                                {"type": 2, "reach_id": reach_id, "message": msg}
+                            )
 
             # Check 3: Ghost reach with both upstream and downstream (warning)
-            if reach_type == '6' and n_rch_up > 0 and n_rch_down > 0:
-                warning_counts['type_3_ghost_both_neighbors'] += 1
+            if reach_type == "6" and n_rch_up > 0 and n_rch_down > 0:
+                warning_counts["type_3_ghost_both_neighbors"] += 1
                 if verbose >= 2:
-                    logger.warning(f"Type 3 Warning: Ghost reach {rid_str} has both up and downstream")
+                    logger.warning(
+                        f"Type 3 Warning: Ghost reach {rid_str} has both up and downstream"
+                    )
                 if return_details:
-                    details.append({
-                        'type': 3,
-                        'reach_id': reach_id,
-                        'message': f"Ghost reach {rid_str} has both neighbors",
-                        'is_warning': True
-                    })
+                    details.append(
+                        {
+                            "type": 3,
+                            "reach_id": reach_id,
+                            "message": f"Ghost reach {rid_str} has both neighbors",
+                            "is_warning": True,
+                        }
+                    )
 
             # Check 4: Non-ghost with no upstream (warning)
-            if n_rch_up == 0 and reach_type != '6':
-                warning_counts['type_4_no_upstream'] += 1
+            if n_rch_up == 0 and reach_type != "6":
+                warning_counts["type_4_no_upstream"] += 1
                 if verbose >= 2:
-                    logger.warning(f"Type 4 Warning: Non-ghost reach {rid_str} has no upstream")
+                    logger.warning(
+                        f"Type 4 Warning: Non-ghost reach {rid_str} has no upstream"
+                    )
                 if return_details:
-                    details.append({
-                        'type': 4,
-                        'reach_id': reach_id,
-                        'message': f"Non-ghost reach {rid_str} has no upstream",
-                        'is_warning': True
-                    })
+                    details.append(
+                        {
+                            "type": 4,
+                            "reach_id": reach_id,
+                            "message": f"Non-ghost reach {rid_str} has no upstream",
+                            "is_warning": True,
+                        }
+                    )
 
             # Check 5: Self-reference
             if reach_id in rch_id_up or reach_id in rch_id_down:
-                error_counts['type_5_self_reference'] += 1
+                error_counts["type_5_self_reference"] += 1
                 reaches_with_issues.add(reach_id)
                 msg = f"Type 5: Reach {rid_str} references itself as neighbor"
                 if verbose >= 1:
                     logger.warning(msg)
                 if return_details:
-                    details.append({'type': 5, 'reach_id': reach_id, 'message': msg})
+                    details.append({"type": 5, "reach_id": reach_id, "message": msg})
 
         # Calculate totals
         total_errors = sum(error_counts.values())
         total_warnings = sum(warning_counts.values())
 
         results = {
-            'passed': total_errors == 0,
-            'total_reaches': len(reach_ids),
-            'total_errors': total_errors,
-            'total_warnings': total_warnings,
-            'error_counts': error_counts,
-            'warning_counts': warning_counts,
-            'reaches_with_issues': list(reaches_with_issues),
+            "passed": total_errors == 0,
+            "total_reaches": len(reach_ids),
+            "total_errors": total_errors,
+            "total_warnings": total_warnings,
+            "error_counts": error_counts,
+            "warning_counts": warning_counts,
+            "reaches_with_issues": list(reaches_with_issues),
         }
 
         if return_details:
-            results['details'] = details
+            results["details"] = details
 
         if verbose >= 1:
-            logger.info(f"Topology Check Summary:")
+            logger.info("Topology Check Summary:")
             logger.info(f"  Reaches checked: {len(reach_ids)}")
             logger.info(f"  Total errors: {total_errors}")
             logger.info(f"  Total warnings: {total_warnings}")
-            if error_counts['type_1_count_mismatch']:
-                logger.info(f"    Type 1 (count mismatch): {error_counts['type_1_count_mismatch']}")
-            if error_counts['type_2_unrequited_neighbor']:
-                logger.info(f"    Type 2 (unrequited): {error_counts['type_2_unrequited_neighbor']}")
-            if error_counts['type_5_self_reference']:
-                logger.info(f"    Type 5 (self-ref): {error_counts['type_5_self_reference']}")
+            if error_counts["type_1_count_mismatch"]:
+                logger.info(
+                    f"    Type 1 (count mismatch): {error_counts['type_1_count_mismatch']}"
+                )
+            if error_counts["type_2_unrequited_neighbor"]:
+                logger.info(
+                    f"    Type 2 (unrequited): {error_counts['type_2_unrequited_neighbor']}"
+                )
+            if error_counts["type_5_self_reference"]:
+                logger.info(
+                    f"    Type 5 (self-ref): {error_counts['type_5_self_reference']}"
+                )
 
         return results
 
     def check_node_lengths(
-        self,
-        verbose: int = 1,
-        long_threshold: float = 1000.0,
-        warn_zero: bool = True
+        self, verbose: int = 1, long_threshold: float = 1000.0, warn_zero: bool = True
     ) -> dict:
         """
         Check for abnormal node lengths.
@@ -2837,7 +3337,9 @@ class SWORD:
                 long_nodes.append(node_id)
                 affected_reaches.add(reach_id)
                 if verbose >= 1:
-                    logger.warning(f"Long node: {node_id} in reach {reach_id} ({node_len:.1f}m)")
+                    logger.warning(
+                        f"Long node: {node_id} in reach {reach_id} ({node_len:.1f}m)"
+                    )
 
             if warn_zero and node_len == 0:
                 zero_nodes.append(node_id)
@@ -2846,15 +3348,15 @@ class SWORD:
                     logger.warning(f"Zero length node: {node_id} in reach {reach_id}")
 
         results = {
-            'passed': len(long_nodes) == 0 and (not warn_zero or len(zero_nodes) == 0),
-            'total_nodes': len(self.nodes.id),
-            'long_nodes': long_nodes,
-            'zero_length_nodes': zero_nodes,
-            'affected_reaches': list(affected_reaches),
+            "passed": len(long_nodes) == 0 and (not warn_zero or len(zero_nodes) == 0),
+            "total_nodes": len(self.nodes.id),
+            "long_nodes": long_nodes,
+            "zero_length_nodes": zero_nodes,
+            "affected_reaches": list(affected_reaches),
         }
 
         if verbose >= 1:
-            logger.info(f"Node Length Check Summary:")
+            logger.info("Node Length Check Summary:")
             logger.info(f"  Nodes checked: {len(self.nodes.id)}")
             logger.info(f"  Long nodes (>{long_threshold}m): {len(long_nodes)}")
             logger.info(f"  Zero length nodes: {len(zero_nodes)}")
@@ -2862,9 +3364,7 @@ class SWORD:
         return results
 
     def calculate_dist_out_from_topology(
-        self,
-        update_nodes: bool = True,
-        verbose: bool = True
+        self, update_nodes: bool = True, verbose: bool = True
     ) -> Dict[str, Any]:
         """
         Calculate distance from outlet (dist_out) using topology BFS traversal.
@@ -2912,7 +3412,7 @@ class SWORD:
         from itertools import chain
 
         if verbose:
-            logger.info('Calculating dist_out from Topology')
+            logger.info("Calculating dist_out from Topology")
 
         # Initialize arrays following legacy code exactly
         dist_out = np.repeat(-9999.0, len(self.reaches.id))
@@ -2926,12 +3426,12 @@ class SWORD:
             if verbose:
                 logger.warning("No outlet reaches found (n_rch_down == 0)")
             return {
-                'success': False,
-                'reaches_updated': 0,
-                'nodes_updated': 0,
-                'outlets_found': 0,
-                'loops': 0,
-                'unfilled_reaches': list(self.reaches.id),
+                "success": False,
+                "reaches_updated": 0,
+                "nodes_updated": 0,
+                "outlets_found": 0,
+                "loops": 0,
+                "unfilled_reaches": list(self.reaches.id),
             }
 
         # Start with first outlet
@@ -2959,12 +3459,15 @@ class SWORD:
                     up_nghs = up_nghs[up_nghs > 0]
 
                     # Filter out already-flagged neighbors
-                    up_flag = np.array([
-                        np.max(flag[np.where(self.reaches.id == n)[0]])
-                        for n in up_nghs if len(np.where(self.reaches.id == n)[0]) > 0
-                    ])
+                    up_flag = np.array(
+                        [
+                            np.max(flag[np.where(self.reaches.id == n)[0]])
+                            for n in up_nghs
+                            if len(np.where(self.reaches.id == n)[0]) > 0
+                        ]
+                    )
                     if len(up_flag) > 0:
-                        up_nghs = up_nghs[:len(up_flag)][up_flag == 0]
+                        up_nghs = up_nghs[: len(up_flag)][up_flag == 0]
 
                     up_ngh_list.append(up_nghs)
                 else:
@@ -2973,10 +3476,13 @@ class SWORD:
                     dn_nghs = dn_nghs[dn_nghs > 0]
 
                     # Get downstream distances
-                    dn_dist = np.array([
-                        dist_out[np.where(self.reaches.id == n)[0][0]]
-                        for n in dn_nghs if len(np.where(self.reaches.id == n)[0]) > 0
-                    ])
+                    dn_dist = np.array(
+                        [
+                            dist_out[np.where(self.reaches.id == n)[0][0]]
+                            for n in dn_nghs
+                            if len(np.where(self.reaches.id == n)[0]) > 0
+                        ]
+                    )
 
                     if len(dn_dist) == 0:
                         continue
@@ -2992,12 +3498,15 @@ class SWORD:
                             up_nghs = self.reaches.rch_id_up[:, rch]
                             up_nghs = up_nghs[up_nghs > 0]
 
-                            up_flag = np.array([
-                                np.max(flag[np.where(self.reaches.id == n)[0]])
-                                for n in up_nghs if len(np.where(self.reaches.id == n)[0]) > 0
-                            ])
+                            up_flag = np.array(
+                                [
+                                    np.max(flag[np.where(self.reaches.id == n)[0]])
+                                    for n in up_nghs
+                                    if len(np.where(self.reaches.id == n)[0]) > 0
+                                ]
+                            )
                             if len(up_flag) > 0:
-                                up_nghs = up_nghs[:len(up_flag)][up_flag == 0]
+                                up_nghs = up_nghs[: len(up_flag)][up_flag == 0]
                                 # Flag these upstream for next iteration
                                 flag[np.where(np.isin(self.reaches.id, up_nghs))[0]] = 1
                         else:
@@ -3012,12 +3521,15 @@ class SWORD:
                         up_nghs = self.reaches.rch_id_up[:, rch]
                         up_nghs = up_nghs[up_nghs > 0]
 
-                        up_flag = np.array([
-                            np.max(flag[np.where(self.reaches.id == n)[0]])
-                            for n in up_nghs if len(np.where(self.reaches.id == n)[0]) > 0
-                        ])
+                        up_flag = np.array(
+                            [
+                                np.max(flag[np.where(self.reaches.id == n)[0]])
+                                for n in up_nghs
+                                if len(np.where(self.reaches.id == n)[0]) > 0
+                            ]
+                        )
                         if len(up_flag) > 0:
-                            up_nghs = up_nghs[:len(up_flag)][up_flag == 0]
+                            up_nghs = up_nghs[: len(up_flag)][up_flag == 0]
 
                         up_ngh_list.append(up_nghs)
 
@@ -3042,7 +3554,7 @@ class SWORD:
                         start_rchs = np.array([self.reaches.id[check_flag[0]]])
                     else:
                         if verbose:
-                            logger.warning('No more outlets but still -9999 values')
+                            logger.warning("No more outlets but still -9999 values")
                         break
                 else:
                     start_rchs = np.array([unfilled_outlets[0]])
@@ -3050,7 +3562,7 @@ class SWORD:
             loop += 1
             if loop > max_loops:
                 if verbose:
-                    logger.warning('Loop limit reached')
+                    logger.warning("Loop limit reached")
                 break
 
         # Count unfilled reaches
@@ -3058,10 +3570,12 @@ class SWORD:
         unfilled_reaches = list(self.reaches.id[unfilled_idx])
 
         if verbose:
-            logger.info(f'Processed {loop} iterations')
-            logger.info(f'{len(self.reaches.id) - len(unfilled_reaches)}/{len(self.reaches.id)} reaches computed')
+            logger.info(f"Processed {loop} iterations")
+            logger.info(
+                f"{len(self.reaches.id) - len(unfilled_reaches)}/{len(self.reaches.id)} reaches computed"
+            )
             if len(unfilled_reaches) > 0:
-                logger.warning(f'{len(unfilled_reaches)} reaches unfilled')
+                logger.warning(f"{len(unfilled_reaches)} reaches unfilled")
 
         # Update reach dist_out in database
         conn = self._db.connect()
@@ -3070,10 +3584,13 @@ class SWORD:
         try:
             for idx, rch_id in enumerate(self.reaches.id):
                 if dist_out[idx] != -9999:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE reaches SET dist_out = ?
                         WHERE reach_id = ? AND region = ?
-                    """, [float(dist_out[idx]), int(rch_id), self.region])
+                    """,
+                        [float(dist_out[idx]), int(rch_id), self.region],
+                    )
 
             conn.execute("COMMIT")
         except Exception as e:
@@ -3084,25 +3601,23 @@ class SWORD:
         nodes_updated = 0
         if update_nodes:
             if verbose:
-                logger.info('Updating node dist_out values')
+                logger.info("Updating node dist_out values")
             nodes_updated = self._calculate_node_dist_out(dist_out, verbose)
 
         # Reload data
         self._load_data()
 
         return {
-            'success': len(unfilled_reaches) == 0,
-            'reaches_updated': len(self.reaches.id) - len(unfilled_reaches),
-            'nodes_updated': nodes_updated,
-            'outlets_found': outlets_found,
-            'loops': loop,
-            'unfilled_reaches': unfilled_reaches,
+            "success": len(unfilled_reaches) == 0,
+            "reaches_updated": len(self.reaches.id) - len(unfilled_reaches),
+            "nodes_updated": nodes_updated,
+            "outlets_found": outlets_found,
+            "loops": loop,
+            "unfilled_reaches": unfilled_reaches,
         }
 
     def _calculate_node_dist_out(
-        self,
-        reach_dist_out: np.ndarray,
-        verbose: bool = False
+        self, reach_dist_out: np.ndarray, verbose: bool = False
     ) -> int:
         """
         Calculate node-level dist_out from reach-level values.
@@ -3162,10 +3677,13 @@ class SWORD:
         try:
             for idx, node_id in enumerate(self.nodes.id):
                 if nodes_out[idx] != self.nodes.dist_out[idx]:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE nodes SET dist_out = ?
                         WHERE node_id = ? AND region = ?
-                    """, [float(nodes_out[idx]), int(node_id), self.region])
+                    """,
+                        [float(nodes_out[idx]), int(node_id), self.region],
+                    )
 
             conn.execute("COMMIT")
         except Exception as e:
@@ -3173,15 +3691,12 @@ class SWORD:
             raise RuntimeError(f"Failed to update node dist_out: {e}") from e
 
         if verbose:
-            logger.info(f'Updated {updated_count} nodes')
+            logger.info(f"Updated {updated_count} nodes")
 
         return updated_count
 
     def create_ghost_reach(
-        self,
-        reach_id: int,
-        position: str = 'auto',
-        verbose: bool = False
+        self, reach_id: int, position: str = "auto", verbose: bool = False
     ) -> dict:
         """
         Create a ghost reach at the headwater or outlet of an existing reach.
@@ -3256,22 +3771,24 @@ class SWORD:
         n_up = self.reaches.n_rch_up[rch_idx]
         n_down = self.reaches.n_rch_down[rch_idx]
 
-        if position == 'auto':
+        if position == "auto":
             if n_up == 0 and n_down == 0:
                 # Isolated reach - default to headwater
-                position = 'headwater'
+                position = "headwater"
             elif n_up == 0:
-                position = 'headwater'
+                position = "headwater"
             elif n_down == 0:
-                position = 'outlet'
+                position = "outlet"
             else:
                 raise ValueError(
                     f"Reach {reach_id} has both upstream ({n_up}) and "
                     f"downstream ({n_down}) neighbors. Specify position explicitly."
                 )
 
-        if position not in ('headwater', 'outlet'):
-            raise ValueError(f"Invalid position: {position}. Use 'headwater', 'outlet', or 'auto'")
+        if position not in ("headwater", "outlet"):
+            raise ValueError(
+                f"Invalid position: {position}. Use 'headwater', 'outlet', or 'auto'"
+            )
 
         # Get nodes for this reach, sorted by ID
         node_indices = np.where(self.nodes.reach_id == reach_id)[0]
@@ -3288,25 +3805,21 @@ class SWORD:
             )
 
         # Select node to extract
-        if position == 'headwater':
+        if position == "headwater":
             ghost_node_old_id = node_ids_sorted[-1]  # Upstream = highest node ID
         else:
-            ghost_node_old_id = node_ids_sorted[0]   # Downstream = lowest node ID
-
-        ghost_node_idx = np.where(self.nodes.id == ghost_node_old_id)[0][0]
+            ghost_node_old_id = node_ids_sorted[0]  # Downstream = lowest node ID
 
         # Get basin info from reach ID
         reach_str = str(reach_id)
         level6_basin = reach_str[0:6]  # CBBBBB
-        reach_type = reach_str[-1]
 
         # Find max reach number in this basin
         cl_level6 = np.array([str(nid)[0:6] for nid in self.centerlines.node_id[0, :]])
         basin_mask = cl_level6 == level6_basin
-        cl_rch_nums = np.array([
-            int(str(nid)[6:10])
-            for nid in self.centerlines.node_id[0, basin_mask]
-        ])
+        cl_rch_nums = np.array(
+            [int(str(nid)[6:10]) for nid in self.centerlines.node_id[0, basin_mask]]
+        )
         new_rch_num = np.max(cl_rch_nums) + 1 if len(cl_rch_nums) > 0 else 1
 
         # Generate new ghost reach ID (type 6)
@@ -3316,7 +3829,9 @@ class SWORD:
         new_ghost_node_id = int(f"{level6_basin}{new_rch_num:04d}0016")
 
         if verbose:
-            logger.info(f"Creating ghost reach {new_ghost_rch_id} at {position} of {reach_id}")
+            logger.info(
+                f"Creating ghost reach {new_ghost_rch_id} at {position} of {reach_id}"
+            )
             logger.debug(f"Extracting node {ghost_node_old_id} -> {new_ghost_node_id}")
 
         # Get centerlines for the node being extracted
@@ -3335,26 +3850,36 @@ class SWORD:
             # 1. Update centerlines to reference new reach/node
             for cl_idx in cl_indices:
                 cl_id = int(self.centerlines.cl_id[cl_idx])
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE centerlines SET
                         reach_id = ?,
                         node_id = ?
                     WHERE cl_id = ? AND region = ?
-                """, [new_ghost_rch_id, new_ghost_node_id, cl_id, self.region])
+                """,
+                    [new_ghost_rch_id, new_ghost_node_id, cl_id, self.region],
+                )
 
             # Also update neighbor references in centerline_neighbors
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE centerline_neighbors SET reach_id = ?
                 WHERE reach_id = ? AND region = ?
-            """, [new_ghost_rch_id, reach_id, self.region])
+            """,
+                [new_ghost_rch_id, reach_id, self.region],
+            )
 
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE centerline_neighbors SET node_id = ?
                 WHERE node_id = ? AND region = ?
-            """, [new_ghost_node_id, ghost_node_old_id, self.region])
+            """,
+                [new_ghost_node_id, ghost_node_old_id, self.region],
+            )
 
             # 2. Update node record with new IDs
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE nodes SET
                     node_id = ?,
                     reach_id = ?,
@@ -3366,37 +3891,48 @@ class SWORD:
                         ELSE edit_flag
                     END
                 WHERE node_id = ? AND region = ?
-            """, [new_ghost_node_id, new_ghost_rch_id, ghost_node_old_id, self.region])
+            """,
+                [new_ghost_node_id, new_ghost_rch_id, ghost_node_old_id, self.region],
+            )
 
             # 3. Create new ghost reach record by copying from original
             # Get attributes from original reach
-            reach_data = conn.execute("""
+            reach_data = conn.execute(
+                """
                 SELECT * FROM reaches WHERE reach_id = ? AND region = ?
-            """, [reach_id, self.region]).fetchone()
+            """,
+                [reach_id, self.region],
+            ).fetchone()
 
             if reach_data is None:
                 raise ValueError(f"Could not find reach {reach_id} in database")
 
             # Get node data for geometry
-            node_data = conn.execute("""
+            node_data = conn.execute(
+                """
                 SELECT x, y, node_length, wse, wse_var, width, width_var,
                        max_width, facc, dist_out, lakeflag, obstr_type,
                        grod_id, hfalls_id, n_chan_max, n_chan_mod,
                        river_name, trib_flag, stream_order, network
                 FROM nodes WHERE node_id = ? AND region = ?
-            """, [new_ghost_node_id, self.region]).fetchone()
+            """,
+                [new_ghost_node_id, self.region],
+            ).fetchone()
 
             if node_data is None:
                 raise ValueError(f"Could not find updated node {new_ghost_node_id}")
 
             # Get cl_id bounds for ghost reach
-            cl_bounds = conn.execute("""
+            cl_bounds = conn.execute(
+                """
                 SELECT MIN(cl_id), MAX(cl_id) FROM centerlines
                 WHERE reach_id = ? AND region = ?
-            """, [new_ghost_rch_id, self.region]).fetchone()
+            """,
+                [new_ghost_rch_id, self.region],
+            ).fetchone()
 
             # Determine end_reach value and topology
-            if position == 'headwater':
+            if position == "headwater":
                 end_reach = 1
                 n_rch_up_ghost = 0
                 n_rch_down_ghost = 1
@@ -3406,10 +3942,11 @@ class SWORD:
                 n_rch_down_ghost = 0
 
             # Calculate edit flag
-            edit_flag = '6'
+            edit_flag = "6"
 
             # Insert new ghost reach
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT INTO reaches (
                     reach_id, region, x, y, x_min, x_max, y_min, y_max,
                     cl_id_min, cl_id_max, reach_length, n_nodes, wse, wse_var,
@@ -3419,137 +3956,179 @@ class SWORD:
                     edit_flag, trib_flag, path_freq, path_order, path_segs,
                     stream_order, main_side, end_reach, network, add_flag, version
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                new_ghost_rch_id,
-                self.region,
-                float(node_data[0]),  # x
-                float(node_data[1]),  # y
-                float(node_data[0]),  # x_min
-                float(node_data[0]),  # x_max
-                float(node_data[1]),  # y_min
-                float(node_data[1]),  # y_max
-                int(cl_bounds[0]) if cl_bounds[0] else 0,  # cl_id_min
-                int(cl_bounds[1]) if cl_bounds[1] else 0,  # cl_id_max
-                float(node_data[2]),  # reach_length = node_length
-                1,  # n_nodes
-                float(node_data[3]),  # wse
-                float(node_data[4]),  # wse_var
-                float(node_data[5]),  # width
-                float(node_data[6]),  # width_var
-                0.0,  # slope - ghost reaches typically have no slope
-                float(node_data[7]),  # max_width
-                float(node_data[8]),  # facc
-                float(node_data[9]),  # dist_out
-                int(node_data[10]),  # lakeflag
-                int(node_data[11]),  # obstr_type
-                int(node_data[12]),  # grod_id
-                int(node_data[13]),  # hfalls_id
-                int(node_data[14]),  # n_chan_max
-                int(node_data[15]),  # n_chan_mod
-                n_rch_up_ghost,
-                n_rch_down_ghost,
-                0,  # swot_obs
-                0,  # low_slope_flag
-                str(node_data[16]) if node_data[16] else '',  # river_name
-                edit_flag,
-                int(node_data[17]) if node_data[17] else 0,  # trib_flag
-                0,  # path_freq
-                0,  # path_order
-                0,  # path_segs
-                int(node_data[18]) if node_data[18] else 0,  # stream_order
-                0,  # main_side
-                end_reach,
-                int(node_data[19]) if node_data[19] else 0,  # network
-                0,  # add_flag
-                self.version
-            ])
+            """,
+                [
+                    new_ghost_rch_id,
+                    self.region,
+                    float(node_data[0]),  # x
+                    float(node_data[1]),  # y
+                    float(node_data[0]),  # x_min
+                    float(node_data[0]),  # x_max
+                    float(node_data[1]),  # y_min
+                    float(node_data[1]),  # y_max
+                    int(cl_bounds[0]) if cl_bounds[0] else 0,  # cl_id_min
+                    int(cl_bounds[1]) if cl_bounds[1] else 0,  # cl_id_max
+                    float(node_data[2]),  # reach_length = node_length
+                    1,  # n_nodes
+                    float(node_data[3]),  # wse
+                    float(node_data[4]),  # wse_var
+                    float(node_data[5]),  # width
+                    float(node_data[6]),  # width_var
+                    0.0,  # slope - ghost reaches typically have no slope
+                    float(node_data[7]),  # max_width
+                    float(node_data[8]),  # facc
+                    float(node_data[9]),  # dist_out
+                    int(node_data[10]),  # lakeflag
+                    int(node_data[11]),  # obstr_type
+                    int(node_data[12]),  # grod_id
+                    int(node_data[13]),  # hfalls_id
+                    int(node_data[14]),  # n_chan_max
+                    int(node_data[15]),  # n_chan_mod
+                    n_rch_up_ghost,
+                    n_rch_down_ghost,
+                    0,  # swot_obs
+                    0,  # low_slope_flag
+                    str(node_data[16]) if node_data[16] else "",  # river_name
+                    edit_flag,
+                    int(node_data[17]) if node_data[17] else 0,  # trib_flag
+                    0,  # path_freq
+                    0,  # path_order
+                    0,  # path_segs
+                    int(node_data[18]) if node_data[18] else 0,  # stream_order
+                    0,  # main_side
+                    end_reach,
+                    int(node_data[19]) if node_data[19] else 0,  # network
+                    0,  # add_flag
+                    self.version,
+                ],
+            )
 
             # 4. Update topology for ghost reach
-            if position == 'headwater':
+            if position == "headwater":
                 # Ghost is upstream of original reach
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                     VALUES (?, ?, 'down', 0, ?)
-                """, [new_ghost_rch_id, self.region, reach_id])
+                """,
+                    [new_ghost_rch_id, self.region, reach_id],
+                )
             else:
                 # Ghost is downstream of original reach
-                conn.execute("""
+                conn.execute(
+                    """
                     INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                     VALUES (?, ?, 'up', 0, ?)
-                """, [new_ghost_rch_id, self.region, reach_id])
+                """,
+                    [new_ghost_rch_id, self.region, reach_id],
+                )
 
             # 5. Update original reach's topology to reference ghost
-            if position == 'headwater':
+            if position == "headwater":
                 # Original reach now has ghost as upstream neighbor
                 # First check if there's an existing 'up' entry
-                existing = conn.execute("""
+                existing = conn.execute(
+                    """
                     SELECT COUNT(*) FROM reach_topology
                     WHERE reach_id = ? AND region = ? AND direction = 'up'
-                """, [reach_id, self.region]).fetchone()[0]
+                """,
+                    [reach_id, self.region],
+                ).fetchone()[0]
 
                 if existing == 0:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                         VALUES (?, ?, 'up', 0, ?)
-                    """, [reach_id, self.region, new_ghost_rch_id])
+                    """,
+                        [reach_id, self.region, new_ghost_rch_id],
+                    )
                 else:
                     # Find next available rank
-                    max_rank = conn.execute("""
+                    max_rank = conn.execute(
+                        """
                         SELECT MAX(neighbor_rank) FROM reach_topology
                         WHERE reach_id = ? AND region = ? AND direction = 'up'
-                    """, [reach_id, self.region]).fetchone()[0]
-                    conn.execute("""
+                    """,
+                        [reach_id, self.region],
+                    ).fetchone()[0]
+                    conn.execute(
+                        """
                         INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                         VALUES (?, ?, 'up', ?, ?)
-                    """, [reach_id, self.region, max_rank + 1, new_ghost_rch_id])
+                    """,
+                        [reach_id, self.region, max_rank + 1, new_ghost_rch_id],
+                    )
 
                 # Update n_rch_up for original reach
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE reaches SET n_rch_up = n_rch_up + 1, end_reach = 0
                     WHERE reach_id = ? AND region = ?
-                """, [reach_id, self.region])
+                """,
+                    [reach_id, self.region],
+                )
             else:
                 # Original reach now has ghost as downstream neighbor
-                existing = conn.execute("""
+                existing = conn.execute(
+                    """
                     SELECT COUNT(*) FROM reach_topology
                     WHERE reach_id = ? AND region = ? AND direction = 'down'
-                """, [reach_id, self.region]).fetchone()[0]
+                """,
+                    [reach_id, self.region],
+                ).fetchone()[0]
 
                 if existing == 0:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                         VALUES (?, ?, 'down', 0, ?)
-                    """, [reach_id, self.region, new_ghost_rch_id])
+                    """,
+                        [reach_id, self.region, new_ghost_rch_id],
+                    )
                 else:
-                    max_rank = conn.execute("""
+                    max_rank = conn.execute(
+                        """
                         SELECT MAX(neighbor_rank) FROM reach_topology
                         WHERE reach_id = ? AND region = ? AND direction = 'down'
-                    """, [reach_id, self.region]).fetchone()[0]
-                    conn.execute("""
+                    """,
+                        [reach_id, self.region],
+                    ).fetchone()[0]
+                    conn.execute(
+                        """
                         INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
                         VALUES (?, ?, 'down', ?, ?)
-                    """, [reach_id, self.region, max_rank + 1, new_ghost_rch_id])
+                    """,
+                        [reach_id, self.region, max_rank + 1, new_ghost_rch_id],
+                    )
 
                 # Update n_rch_down for original reach
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE reaches SET n_rch_down = n_rch_down + 1, end_reach = 0
                     WHERE reach_id = ? AND region = ?
-                """, [reach_id, self.region])
+                """,
+                    [reach_id, self.region],
+                )
 
             # 6. Update original reach attributes
             # Recalculate geometry excluding the extracted node
-            remaining_cl = conn.execute("""
+            remaining_cl = conn.execute(
+                """
                 SELECT cl_id, x, y FROM centerlines
                 WHERE reach_id = ? AND region = ?
                 ORDER BY cl_id
-            """, [reach_id, self.region]).fetchall()
+            """,
+                [reach_id, self.region],
+            ).fetchall()
 
             if len(remaining_cl) > 0:
                 x_coords = [r[1] for r in remaining_cl]
                 y_coords = [r[2] for r in remaining_cl]
                 cl_ids = [r[0] for r in remaining_cl]
 
-                conn.execute("""
+                conn.execute(
+                    """
                     UPDATE reaches SET
                         x = ?,
                         y = ?,
@@ -3568,18 +4147,20 @@ class SWORD:
                             ELSE edit_flag
                         END
                     WHERE reach_id = ? AND region = ?
-                """, [
-                    float(np.median(x_coords)),
-                    float(np.median(y_coords)),
-                    float(np.min(x_coords)),
-                    float(np.max(x_coords)),
-                    float(np.min(y_coords)),
-                    float(np.max(y_coords)),
-                    int(np.min(cl_ids)),
-                    int(np.max(cl_ids)),
-                    reach_id,
-                    self.region
-                ])
+                """,
+                    [
+                        float(np.median(x_coords)),
+                        float(np.median(y_coords)),
+                        float(np.min(x_coords)),
+                        float(np.max(x_coords)),
+                        float(np.min(y_coords)),
+                        float(np.max(y_coords)),
+                        int(np.min(cl_ids)),
+                        int(np.max(cl_ids)),
+                        reach_id,
+                        self.region,
+                    ],
+                )
 
             # Copy orbits and ice flags from original reach
             self._copy_reach_orbits(conn, reach_id, new_ghost_rch_id)
@@ -3594,11 +4175,11 @@ class SWORD:
                 logger.info(f"Successfully created ghost reach {new_ghost_rch_id}")
 
             return {
-                'success': True,
-                'original_reach': reach_id,
-                'ghost_reach_id': new_ghost_rch_id,
-                'ghost_node_id': new_ghost_node_id,
-                'position': position,
+                "success": True,
+                "original_reach": reach_id,
+                "ghost_reach_id": new_ghost_rch_id,
+                "ghost_node_id": new_ghost_node_id,
+                "position": position,
             }
 
         except Exception as e:
@@ -3638,7 +4219,7 @@ class SWORD:
             reach_type = str(reach_id)[-1]
 
             # Skip existing ghost reaches
-            if reach_type == '6':
+            if reach_type == "6":
                 continue
 
             n_up = self.reaches.n_rch_up[idx]
@@ -3650,9 +4231,9 @@ class SWORD:
                 missing_outlets.append(reach_id)
 
         return {
-            'missing_headwaters': missing_headwaters,
-            'missing_outlets': missing_outlets,
-            'total_missing': len(missing_headwaters) + len(missing_outlets),
+            "missing_headwaters": missing_headwaters,
+            "missing_outlets": missing_outlets,
+            "total_missing": len(missing_headwaters) + len(missing_outlets),
         }
 
     def find_incorrect_ghost_reaches(self) -> dict:
@@ -3682,7 +4263,7 @@ class SWORD:
             reach_type = str(reach_id)[-1]
 
             # Only check ghost reaches
-            if reach_type != '6':
+            if reach_type != "6":
                 continue
 
             n_up = self.reaches.n_rch_up[idx]
@@ -3698,7 +4279,7 @@ class SWORD:
                 for nid in np.concatenate([rch_id_up, rch_id_down]):
                     if nid > 0:
                         ntype = str(nid)[-1]
-                        if ntype != '6':  # Don't use other ghost types
+                        if ntype != "6":  # Don't use other ghost types
                             neighbor_types.append(int(ntype))
 
                 # Suggest the most common neighbor type
@@ -3707,16 +4288,18 @@ class SWORD:
                 else:
                     suggested = 1  # Default to river type
 
-                incorrect.append({
-                    'reach_id': reach_id,
-                    'suggested_type': suggested,
-                    'n_rch_up': n_up,
-                    'n_rch_down': n_down,
-                })
+                incorrect.append(
+                    {
+                        "reach_id": reach_id,
+                        "suggested_type": suggested,
+                        "n_rch_up": n_up,
+                        "n_rch_down": n_down,
+                    }
+                )
 
         return {
-            'incorrect_ghost_reaches': incorrect,
-            'total_incorrect': len(incorrect),
+            "incorrect_ghost_reaches": incorrect,
+            "total_incorrect": len(incorrect),
         }
 
     # =========================================================================
@@ -3727,7 +4310,7 @@ class SWORD:
         self,
         update_nodes: bool = True,
         update_reaches: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> Dict[str, Any]:
         """
         Recalculate stream_order from path_freq using the legacy formula.
@@ -3764,7 +4347,6 @@ class SWORD:
         >>> print(f"Updated {result['nodes_updated']} nodes")
         """
         import math
-        from scipy import stats
 
         if verbose:
             logger.info("Recalculating stream_order from path_freq...")
@@ -3773,16 +4355,20 @@ class SWORD:
 
         # Disable GC to avoid DuckDB segfaults
         import gc
+
         gc.disable()
 
         try:
             # Get all nodes with their path_freq
-            nodes_data = conn.execute("""
+            nodes_data = conn.execute(
+                """
                 SELECT node_id, path_freq, stream_order
                 FROM nodes
                 WHERE region = ?
                 ORDER BY node_id
-            """, [self.region]).fetchall()
+            """,
+                [self.region],
+            ).fetchall()
 
             if verbose:
                 logger.debug(f"Processing {len(nodes_data)} nodes...")
@@ -3809,15 +4395,20 @@ class SWORD:
             # Batch update nodes
             if update_nodes and node_updates:
                 if verbose:
-                    logger.debug(f"Updating {len(node_updates)} nodes with new stream_order...")
+                    logger.debug(
+                        f"Updating {len(node_updates)} nodes with new stream_order..."
+                    )
 
                 conn.execute("BEGIN TRANSACTION")
                 for new_val, node_id in node_updates:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE nodes
                         SET stream_order = ?
                         WHERE node_id = ? AND region = ?
-                    """, [new_val, int(node_id), self.region])
+                    """,
+                        [new_val, int(node_id), self.region],
+                    )
                 conn.execute("COMMIT")
                 nodes_updated = len(node_updates)
 
@@ -3828,7 +4419,8 @@ class SWORD:
                     logger.debug("Aggregating stream_order to reaches (mode)...")
 
                 # Get reach stream_order as mode of node values
-                reach_data = conn.execute("""
+                reach_data = conn.execute(
+                    """
                     SELECT
                         r.reach_id,
                         r.stream_order as old_stream_order,
@@ -3844,7 +4436,9 @@ class SWORD:
                         ) as new_stream_order
                     FROM reaches r
                     WHERE r.region = ?
-                """, [self.region]).fetchall()
+                """,
+                    [self.region],
+                ).fetchall()
 
                 reach_updates = []
                 for reach_id, old_val, new_val in reach_data:
@@ -3859,22 +4453,27 @@ class SWORD:
 
                     conn.execute("BEGIN TRANSACTION")
                     for new_val, reach_id in reach_updates:
-                        conn.execute("""
+                        conn.execute(
+                            """
                             UPDATE reaches
                             SET stream_order = ?
                             WHERE reach_id = ? AND region = ?
-                        """, [new_val, int(reach_id), self.region])
+                        """,
+                            [new_val, int(reach_id), self.region],
+                        )
                     conn.execute("COMMIT")
                     reaches_updated = len(reach_updates)
 
             if verbose:
-                logger.info(f"Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
+                logger.info(
+                    f"Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated"
+                )
 
             return {
-                'nodes_updated': nodes_updated,
-                'reaches_updated': reaches_updated,
-                'nodes_with_valid_path_freq': nodes_valid,
-                'nodes_missing_path_freq': nodes_missing,
+                "nodes_updated": nodes_updated,
+                "reaches_updated": reaches_updated,
+                "nodes_with_valid_path_freq": nodes_valid,
+                "nodes_missing_path_freq": nodes_missing,
             }
 
         finally:
@@ -3885,7 +4484,7 @@ class SWORD:
         self,
         update_nodes: bool = True,
         update_reaches: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> Dict[str, Any]:
         """
         Recalculate path_segs (path segments) from path_order and path_freq.
@@ -3929,16 +4528,20 @@ class SWORD:
 
         # Disable GC to avoid DuckDB segfaults
         import gc
+
         gc.disable()
 
         try:
             # Get all nodes with their path variables
-            nodes_data = conn.execute("""
+            nodes_data = conn.execute(
+                """
                 SELECT node_id, path_order, path_freq, path_segs
                 FROM nodes
                 WHERE region = ?
                 ORDER BY node_id
-            """, [self.region]).fetchall()
+            """,
+                [self.region],
+            ).fetchall()
 
             if verbose:
                 logger.debug(f"Processing {len(nodes_data)} nodes...")
@@ -3956,6 +4559,7 @@ class SWORD:
                 old_path_segs.append(old_seg if old_seg is not None else 0)
 
             import numpy as np
+
             node_ids = np.array(node_ids)
             path_orders = np.array(path_orders)
             path_freqs = np.array(path_freqs)
@@ -3992,21 +4596,28 @@ class SWORD:
 
             # Find nodes that need updating
             changed_mask = new_path_segs != old_path_segs
-            node_updates = list(zip(new_path_segs[changed_mask], node_ids[changed_mask]))
+            node_updates = list(
+                zip(new_path_segs[changed_mask], node_ids[changed_mask])
+            )
 
             # Batch update nodes
             nodes_updated = 0
             if update_nodes and node_updates:
                 if verbose:
-                    logger.debug(f"Updating {len(node_updates)} nodes with new path_segs...")
+                    logger.debug(
+                        f"Updating {len(node_updates)} nodes with new path_segs..."
+                    )
 
                 conn.execute("BEGIN TRANSACTION")
                 for new_val, node_id in node_updates:
-                    conn.execute("""
+                    conn.execute(
+                        """
                         UPDATE nodes
                         SET path_segs = ?
                         WHERE node_id = ? AND region = ?
-                    """, [int(new_val), int(node_id), self.region])
+                    """,
+                        [int(new_val), int(node_id), self.region],
+                    )
                 conn.execute("COMMIT")
                 nodes_updated = len(node_updates)
 
@@ -4017,7 +4628,8 @@ class SWORD:
                     logger.debug("Aggregating path_segs to reaches (mode)...")
 
                 # Get reach path_segs as mode of node values
-                reach_data = conn.execute("""
+                reach_data = conn.execute(
+                    """
                     SELECT
                         r.reach_id,
                         r.path_segs as old_path_segs,
@@ -4033,7 +4645,9 @@ class SWORD:
                         ) as new_path_segs
                     FROM reaches r
                     WHERE r.region = ?
-                """, [self.region]).fetchall()
+                """,
+                    [self.region],
+                ).fetchall()
 
                 reach_updates = []
                 for reach_id, old_val, new_val in reach_data:
@@ -4048,22 +4662,27 @@ class SWORD:
 
                     conn.execute("BEGIN TRANSACTION")
                     for new_val, reach_id in reach_updates:
-                        conn.execute("""
+                        conn.execute(
+                            """
                             UPDATE reaches
                             SET path_segs = ?
                             WHERE reach_id = ? AND region = ?
-                        """, [int(new_val), int(reach_id), self.region])
+                        """,
+                            [int(new_val), int(reach_id), self.region],
+                        )
                     conn.execute("COMMIT")
                     reaches_updated = len(reach_updates)
 
             if verbose:
-                logger.info(f"Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated")
+                logger.info(
+                    f"Done. Nodes: {nodes_updated} updated, Reaches: {reaches_updated} updated"
+                )
 
             return {
-                'nodes_updated': nodes_updated,
-                'reaches_updated': reaches_updated,
-                'total_segments': total_segments,
-                'nodes_assigned': nodes_assigned,
+                "nodes_updated": nodes_updated,
+                "reaches_updated": reaches_updated,
+                "total_segments": total_segments,
+                "nodes_assigned": nodes_assigned,
             }
 
         finally:
@@ -4080,7 +4699,7 @@ class SWORD:
         update_database: bool = True,
         min_reach_len_factor: float = 1.0,
         smoothing_span: int = 5,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> Dict[str, Any]:
         """
         Recalculate sinuosity from centerline geometry using the legacy MATLAB algorithm.
@@ -4135,10 +4754,13 @@ class SWORD:
         >>> result = sword.recalculate_sinuosity(reach_ids=[123, 456])
         """
         import numpy as np
+
         try:
-            from pyproj import CRS, Transformer
+            from pyproj import CRS, Transformer  # noqa: F401
         except ImportError:
-            raise ImportError("pyproj is required for sinuosity calculation. Install with: pip install pyproj")
+            raise ImportError(
+                "pyproj is required for sinuosity calculation. Install with: pip install pyproj"
+            )
 
         if verbose:
             logger.info("Recalculating sinuosity from centerline geometry...")
@@ -4150,34 +4772,39 @@ class SWORD:
 
         try:
             # Check if sinuosity column exists, create if not
-            columns = [col[0] for col in conn.execute(
-                "SELECT * FROM reaches LIMIT 1"
-            ).description]
+            columns = [
+                col[0]
+                for col in conn.execute("SELECT * FROM reaches LIMIT 1").description
+            ]
 
-            if 'sinuosity' not in columns:
+            if "sinuosity" not in columns:
                 if verbose:
                     logger.debug("Adding sinuosity column to reaches table...")
                 conn.execute("ALTER TABLE reaches ADD COLUMN sinuosity DOUBLE")
 
             # Get reach IDs to process
             if reach_ids is None:
-                reach_data = conn.execute("""
+                reach_data = conn.execute(
+                    """
                     SELECT reach_id, sinuosity
                     FROM reaches
                     WHERE region = ?
                     ORDER BY reach_id
-                """, [self.region]).fetchall()
+                """,
+                    [self.region],
+                ).fetchall()
                 reach_ids_to_process = [r[0] for r in reach_data]
                 old_sinuosities = {r[0]: r[1] for r in reach_data}
             else:
                 reach_ids_to_process = list(reach_ids)
-                reach_data = conn.execute("""
+                reach_data = conn.execute(
+                    """
                     SELECT reach_id, sinuosity
                     FROM reaches
                     WHERE region = ? AND reach_id IN ({})
                     ORDER BY reach_id
-                """.format(','.join('?' * len(reach_ids))),
-                    [self.region] + reach_ids_to_process
+                """.format(",".join("?" * len(reach_ids))),
+                    [self.region] + reach_ids_to_process,
                 ).fetchall()
                 old_sinuosities = {r[0]: r[1] for r in reach_data}
 
@@ -4191,12 +4818,15 @@ class SWORD:
 
             for reach_id in reach_ids_to_process:
                 # Get centerlines for this reach (x, y only - width from reaches)
-                centerlines = conn.execute("""
+                centerlines = conn.execute(
+                    """
                     SELECT x, y
                     FROM centerlines
                     WHERE reach_id = ? AND region = ?
                     ORDER BY cl_id
-                """, [reach_id, self.region]).fetchall()
+                """,
+                    [reach_id, self.region],
+                ).fetchall()
 
                 if len(centerlines) < 3:
                     # Too few points - set sinuosity to 1.0 (straight)
@@ -4205,31 +4835,44 @@ class SWORD:
                     continue
 
                 # Get reach width (use same width for all centerlines in reach)
-                reach_width = conn.execute("""
+                reach_width = conn.execute(
+                    """
                     SELECT width FROM reaches WHERE reach_id = ? AND region = ?
-                """, [reach_id, self.region]).fetchone()
-                reach_width = reach_width[0] if reach_width and reach_width[0] else 100.0
+                """,
+                    [reach_id, self.region],
+                ).fetchone()
+                reach_width = (
+                    reach_width[0] if reach_width and reach_width[0] else 100.0
+                )
 
                 lons = np.array([c[0] for c in centerlines])
                 lats = np.array([c[1] for c in centerlines])
                 # Use constant width for all points in reach
-                widths = np.full(len(centerlines), reach_width if reach_width > 0 else 100.0)
+                widths = np.full(
+                    len(centerlines), reach_width if reach_width > 0 else 100.0
+                )
 
                 # Calculate sinuosity using the algorithm
                 sinuosity = self._calculate_reach_sinuosity(
-                    lats, lons, widths,
+                    lats,
+                    lons,
+                    widths,
                     smoothing_span=smoothing_span,
-                    min_reach_len_factor=min_reach_len_factor
+                    min_reach_len_factor=min_reach_len_factor,
                 )
 
                 reach_sinuosities[reach_id] = sinuosity
                 processed += 1
 
                 if verbose and processed % 1000 == 0:
-                    logger.debug(f"Processed {processed}/{len(reach_ids_to_process)} reaches...")
+                    logger.debug(
+                        f"Processed {processed}/{len(reach_ids_to_process)} reaches..."
+                    )
 
             if verbose:
-                logger.debug(f"Processed {processed} reaches, skipped {skipped} (too few points)")
+                logger.debug(
+                    f"Processed {processed} reaches, skipped {skipped} (too few points)"
+                )
 
             # Update database
             reaches_updated = 0
@@ -4243,15 +4886,20 @@ class SWORD:
 
                 if reach_updates:
                     if verbose:
-                        logger.debug(f"Updating {len(reach_updates)} reaches in database...")
+                        logger.debug(
+                            f"Updating {len(reach_updates)} reaches in database..."
+                        )
 
                     conn.execute("BEGIN TRANSACTION")
                     for new_val, reach_id in reach_updates:
-                        conn.execute("""
+                        conn.execute(
+                            """
                             UPDATE reaches
                             SET sinuosity = ?
                             WHERE reach_id = ? AND region = ?
-                        """, [float(new_val), int(reach_id), self.region])
+                        """,
+                            [float(new_val), int(reach_id), self.region],
+                        )
                     conn.execute("COMMIT")
                     reaches_updated = len(reach_updates)
 
@@ -4264,11 +4912,11 @@ class SWORD:
                 logger.info(f"Mean sinuosity: {mean_sinuosity:.3f}")
 
             return {
-                'reaches_processed': processed,
-                'reaches_skipped': skipped,
-                'reaches_updated': reaches_updated,
-                'mean_sinuosity': float(mean_sinuosity),
-                'reach_sinuosities': reach_sinuosities,
+                "reaches_processed": processed,
+                "reaches_skipped": skipped,
+                "reaches_updated": reaches_updated,
+                "mean_sinuosity": float(mean_sinuosity),
+                "reach_sinuosities": reach_sinuosities,
             }
 
         finally:
@@ -4281,7 +4929,7 @@ class SWORD:
         lons: np.ndarray,
         widths: np.ndarray,
         smoothing_span: int = 5,
-        min_reach_len_factor: float = 1.0
+        min_reach_len_factor: float = 1.0,
     ) -> float:
         """
         Calculate sinuosity for a single reach from its centerline coordinates.
@@ -4338,7 +4986,7 @@ class SWORD:
         # Calculate cumulative distance along centerline
         D = np.zeros(n)
         for i in range(1, n):
-            D[i] = D[i-1] + np.sqrt((X[i] - X[i-1])**2 + (Y[i] - Y[i-1])**2)
+            D[i] = D[i - 1] + np.sqrt((X[i] - X[i - 1]) ** 2 + (Y[i] - Y[i - 1]) ** 2)
 
         total_length = D[-1] - D[0]
         if total_length < 1.0:  # Less than 1 meter
@@ -4347,7 +4995,7 @@ class SWORD:
         # For short reaches, use simple sinuosity
         if n <= 20:
             # Simple sinuosity: total arc length / straight line distance
-            straight_dist = np.sqrt((X[-1] - X[0])**2 + (Y[-1] - Y[0])**2)
+            straight_dist = np.sqrt((X[-1] - X[0]) ** 2 + (Y[-1] - Y[0]) ** 2)
             if straight_dist < 1.0:
                 return 1.0
             return total_length / straight_dist
@@ -4359,17 +5007,19 @@ class SWORD:
 
         # Cross product: Dx[i-1]*Dy[i] - Dx[i]*Dy[i-1]
         Product = np.zeros(n)
-        for i in range(1, n-1):
-            Product[i] = Dx[i-1] * Dy[i] - Dx[i] * Dy[i-1]
+        for i in range(1, n - 1):
+            Product[i] = Dx[i - 1] * Dy[i] - Dx[i] * Dy[i - 1]
 
         # Extend to endpoints
         Product[0] = Product[1] if n > 1 else 0
         Product[-1] = Product[-2] if n > 1 else 0
 
         # Expand to look at larger-scale curvature (like MATLAB code)
-        for count in range(1, n-1):
-            Base = np.sqrt((X[min(count+1, n-1)] - X[max(count-1, 0)])**2 +
-                          (Y[min(count+1, n-1)] - Y[max(count-1, 0)])**2)
+        for count in range(1, n - 1):
+            Base = np.sqrt(
+                (X[min(count + 1, n - 1)] - X[max(count - 1, 0)]) ** 2
+                + (Y[min(count + 1, n - 1)] - Y[max(count - 1, 0)]) ** 2
+            )
             if Base > 0:
                 height = abs(Product[count] / (2 * Base))
             else:
@@ -4378,7 +5028,7 @@ class SWORD:
             width = 4
             while height < 30 and width < 30:
                 i1 = max(0, count - width // 2)
-                i2 = min(n-1, count + width // 2)
+                i2 = min(n - 1, count + width // 2)
 
                 x1, y1 = X[i1], Y[i1]
                 x2, y2 = X[i2], Y[i2]
@@ -4389,7 +5039,7 @@ class SWORD:
                 Dydo = y2 - Y[count]
 
                 prod = Dxup * Dydo - Dxdo * Dyup
-                Base = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                Base = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
                 if Base > 0:
                     height = abs(prod / (2 * Base))
                 else:
@@ -4400,8 +5050,8 @@ class SWORD:
 
         # Find inflection points (sign changes in Product)
         bounds = [0]
-        for i in range(1, n-1):
-            if Product[i] * Product[i+1] < 0:
+        for i in range(1, n - 1):
+            if Product[i] * Product[i + 1] < 0:
                 bounds.append(i + 1)
         bounds.append(n - 1)
 
@@ -4416,7 +5066,7 @@ class SWORD:
 
         # Calculate sinuosity for each bend and average
         if len(bounds) < 2:
-            straight_dist = np.sqrt((X[-1] - X[0])**2 + (Y[-1] - Y[0])**2)
+            straight_dist = np.sqrt((X[-1] - X[0]) ** 2 + (Y[-1] - Y[0]) ** 2)
             if straight_dist < 1.0:
                 return 1.0
             return total_length / straight_dist
@@ -4426,9 +5076,9 @@ class SWORD:
         total_straight = 0.0
 
         for i in range(len(bounds) - 1):
-            i1, i2 = bounds[i], bounds[i+1]
+            i1, i2 = bounds[i], bounds[i + 1]
             arc_length = D[i2] - D[i1]
-            straight_dist = np.sqrt((X[i1] - X[i2])**2 + (Y[i1] - Y[i2])**2)
+            straight_dist = np.sqrt((X[i1] - X[i2]) ** 2 + (Y[i1] - Y[i2]) ** 2)
 
             if straight_dist > 0:
                 total_arc += arc_length
@@ -4465,15 +5115,15 @@ class SWORD:
 
         # Use cumsum for efficient moving average
         pad = span // 2
-        x_padded = np.pad(x, (pad, pad), mode='edge')
+        x_padded = np.pad(x, (pad, pad), mode="edge")
         cumsum = np.cumsum(x_padded)
         result = (cumsum[span:] - cumsum[:-span]) / span
 
         # Ensure same length
         if len(result) > len(x):
-            result = result[:len(x)]
+            result = result[: len(x)]
         elif len(result) < len(x):
-            result = np.pad(result, (0, len(x) - len(result)), mode='edge')
+            result = np.pad(result, (0, len(x) - len(result)), mode="edge")
 
         return result
 
@@ -4483,7 +5133,7 @@ class SWORD:
         D: np.ndarray,
         Product: np.ndarray,
         widths: np.ndarray,
-        min_factor: float = 1.0
+        min_factor: float = 1.0,
     ) -> List[int]:
         """
         Merge short reaches by identifying which neighbor is more similar.
@@ -4526,12 +5176,12 @@ class SWORD:
             # Calculate reach lengths
             reach_lengths = []
             for i in range(len(bounds) - 1):
-                reach_lengths.append(D[bounds[i+1]] - D[bounds[i]])
+                reach_lengths.append(D[bounds[i + 1]] - D[bounds[i]])
 
             # Calculate minimum lengths based on width
             min_lengths = []
             for i in range(len(bounds) - 1):
-                avg_width = np.mean(widths[bounds[i]:bounds[i+1]+1])
+                avg_width = np.mean(widths[bounds[i] : bounds[i + 1] + 1])
                 total_len = D[-1] - D[0]
                 min_len = min(avg_width * min_factor, total_len / 2)
                 min_len = max(min_len, 100)  # Minimum 100m
@@ -4554,9 +5204,11 @@ class SWORD:
                 bounds.pop(-2)
             else:
                 # Middle reach - merge with more similar neighbor
-                curr_concav = np.mean(Product[bounds[min_idx]:bounds[min_idx+1]])
-                up_concav = np.mean(Product[bounds[min_idx-1]:bounds[min_idx]])
-                down_concav = np.mean(Product[bounds[min_idx+1]:bounds[min_idx+2]])
+                curr_concav = np.mean(Product[bounds[min_idx] : bounds[min_idx + 1]])
+                up_concav = np.mean(Product[bounds[min_idx - 1] : bounds[min_idx]])
+                down_concav = np.mean(
+                    Product[bounds[min_idx + 1] : bounds[min_idx + 2]]
+                )
 
                 if abs(down_concav - curr_concav) < abs(up_concav - curr_concav):
                     # More similar to downstream - remove boundary between current and downstream
@@ -4568,9 +5220,7 @@ class SWORD:
         return bounds
 
     def _remove_invalid_boundaries(
-        self,
-        bounds: List[int],
-        Product: np.ndarray
+        self, bounds: List[int], Product: np.ndarray
     ) -> List[int]:
         """
         Remove boundaries where curvature no longer changes sign after merging.
@@ -4597,12 +5247,12 @@ class SWORD:
         # Recalculate average curvature for each reach
         avg_products = []
         for i in range(len(bounds) - 1):
-            avg_products.append(np.mean(Product[bounds[i]:bounds[i+1]]))
+            avg_products.append(np.mean(Product[bounds[i] : bounds[i + 1]]))
 
         # Find boundaries to remove (where adjacent reaches have same-sign curvature)
         to_remove = []
         for i in range(len(avg_products) - 1):
-            if avg_products[i] * avg_products[i+1] > 0:
+            if avg_products[i] * avg_products[i + 1] > 0:
                 to_remove.append(i + 1)  # Index in bounds to remove
 
         # Remove from end to preserve indices
@@ -4616,7 +5266,7 @@ class SWORD:
         """Close the database connection."""
         self._db.close()
 
-    def __enter__(self) -> 'SWORD':
+    def __enter__(self) -> "SWORD":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:

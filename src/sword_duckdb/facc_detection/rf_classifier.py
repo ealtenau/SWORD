@@ -34,27 +34,34 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFECV
-from sklearn.model_selection import (
-    train_test_split,
-    StratifiedKFold,
-    cross_val_score
-)
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.metrics import (
-    precision_score, recall_score, f1_score,
-    confusion_matrix, classification_report,
-    roc_auc_score, precision_recall_curve, auc
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+    classification_report,
+    roc_auc_score,
+    precision_recall_curve,
+    auc,
 )
-from sklearn.preprocessing import LabelEncoder
 import joblib
 
 
 # Known false positives from detect.py - exclude from training
 KNOWN_FALSE_POSITIVES = [
-    31239000161, 31239000251, 31231000181,  # Ob River multi-channel
-    28160700191, 45585500221, 28106300011, 28105000371,  # Narrow width
-    45630500041, 44570000065,  # Complex tidal/delta
+    31239000161,
+    31239000251,
+    31231000181,  # Ob River multi-channel
+    28160700191,
+    45585500221,
+    28106300011,
+    28105000371,  # Narrow width
+    45630500041,
+    44570000065,  # Complex tidal/delta
     17211100904,  # Nile delta
-    17291500221, 17291500351,  # AF moderate FWR
+    17291500221,
+    17291500351,  # AF moderate FWR
 ]
 
 
@@ -85,7 +92,7 @@ class RFClassifier:
         max_depth: Optional[int] = None,
         random_state: int = 42,
         use_rfe: bool = True,
-        cv_folds: int = 5
+        cv_folds: int = 5,
     ):
         self.n_estimators = n_estimators
         self.min_samples_leaf = min_samples_leaf
@@ -99,9 +106,9 @@ class RFClassifier:
             n_estimators=n_estimators,
             min_samples_leaf=min_samples_leaf,
             max_depth=max_depth,
-            class_weight='balanced',
+            class_weight="balanced",
             random_state=random_state,
-            n_jobs=-1
+            n_jobs=-1,
         )
 
         self.rfe = None
@@ -110,11 +117,8 @@ class RFClassifier:
         self.feature_ranking: Dict[str, int] = {}
 
     def fit(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-        feature_names: Optional[List[str]] = None
-    ) -> 'RFClassifier':
+        self, X: pd.DataFrame, y: pd.Series, feature_names: Optional[List[str]] = None
+    ) -> "RFClassifier":
         """
         Fit the classifier.
 
@@ -137,7 +141,7 @@ class RFClassifier:
         elif isinstance(X, pd.DataFrame):
             self.feature_names = X.columns.tolist()
         else:
-            self.feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            self.feature_names = [f"feature_{i}" for i in range(X.shape[1])]
 
         X_arr = X.values if isinstance(X, pd.DataFrame) else X
         y_arr = y.values if isinstance(y, pd.Series) else y
@@ -148,10 +152,12 @@ class RFClassifier:
             self.rfe = RFECV(
                 estimator=self.clf,
                 step=1,
-                cv=StratifiedKFold(self.cv_folds, shuffle=True, random_state=self.random_state),
-                scoring='f1',
+                cv=StratifiedKFold(
+                    self.cv_folds, shuffle=True, random_state=self.random_state
+                ),
+                scoring="f1",
                 min_features_to_select=10,
-                n_jobs=-1
+                n_jobs=-1,
             )
             self.rfe.fit(X_arr, y_arr)
 
@@ -165,7 +171,9 @@ class RFClassifier:
             ]
 
             print(f"RFECV selected {len(self.selected_features)} features")
-            print(f"Optimal CV F1 score: {self.rfe.cv_results_['mean_test_score'].max():.4f}")
+            print(
+                f"Optimal CV F1 score: {self.rfe.cv_results_['mean_test_score'].max():.4f}"
+            )
         else:
             # Train without RFE
             self.clf.fit(X_arr, y_arr)
@@ -220,24 +228,28 @@ class RFClassifier:
                 else:
                     importance_dict[name] = 0.0
         else:
-            importance_dict = dict(zip(self.feature_names, self.clf.feature_importances_))
+            importance_dict = dict(
+                zip(self.feature_names, self.clf.feature_importances_)
+            )
 
-        df = pd.DataFrame([
-            {
-                'feature': name,
-                'importance': importance_dict.get(name, 0.0),
-                'rfe_rank': self.feature_ranking.get(name, 999),
-                'selected': name in self.selected_features
-            }
-            for name in self.feature_names
-        ])
+        df = pd.DataFrame(
+            [
+                {
+                    "feature": name,
+                    "importance": importance_dict.get(name, 0.0),
+                    "rfe_rank": self.feature_ranking.get(name, 999),
+                    "selected": name in self.selected_features,
+                }
+                for name in self.feature_names
+            ]
+        )
 
-        return df.sort_values('rfe_rank')
+        return df.sort_values("rfe_rank")
 
     def evaluate(
         self,
         X_test: Union[pd.DataFrame, np.ndarray],
-        y_test: Union[pd.Series, np.ndarray]
+        y_test: Union[pd.Series, np.ndarray],
     ) -> Dict[str, Any]:
         """
         Evaluate classifier on test set.
@@ -261,20 +273,24 @@ class RFClassifier:
 
         # Compute metrics
         metrics = {
-            'precision': precision_score(y_true, y_pred),
-            'recall': recall_score(y_true, y_pred),
-            'f1': f1_score(y_true, y_pred),
-            'roc_auc': roc_auc_score(y_true, y_proba),
-            'confusion_matrix': confusion_matrix(y_true, y_pred).tolist(),
-            'classification_report': classification_report(y_true, y_pred, output_dict=True),
-            'n_test': len(y_true),
-            'n_positives': int(y_true.sum()),
-            'n_predicted_positives': int(y_pred.sum()),
+            "precision": precision_score(y_true, y_pred),
+            "recall": recall_score(y_true, y_pred),
+            "f1": f1_score(y_true, y_pred),
+            "roc_auc": roc_auc_score(y_true, y_proba),
+            "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
+            "classification_report": classification_report(
+                y_true, y_pred, output_dict=True
+            ),
+            "n_test": len(y_true),
+            "n_positives": int(y_true.sum()),
+            "n_predicted_positives": int(y_pred.sum()),
         }
 
         # Precision-recall curve
-        precision_curve, recall_curve, thresholds = precision_recall_curve(y_true, y_proba)
-        metrics['pr_auc'] = auc(recall_curve, precision_curve)
+        precision_curve, recall_curve, thresholds = precision_recall_curve(
+            y_true, y_proba
+        )
+        metrics["pr_auc"] = auc(recall_curve, precision_curve)
 
         return metrics
 
@@ -284,34 +300,34 @@ class RFClassifier:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         save_dict = {
-            'clf': self.clf,
-            'rfe': self.rfe,
-            'feature_names': self.feature_names,
-            'selected_features': self.selected_features,
-            'feature_ranking': self.feature_ranking,
-            'params': {
-                'n_estimators': self.n_estimators,
-                'min_samples_leaf': self.min_samples_leaf,
-                'max_depth': self.max_depth,
-                'random_state': self.random_state,
-                'use_rfe': self.use_rfe,
-                'cv_folds': self.cv_folds,
-            }
+            "clf": self.clf,
+            "rfe": self.rfe,
+            "feature_names": self.feature_names,
+            "selected_features": self.selected_features,
+            "feature_ranking": self.feature_ranking,
+            "params": {
+                "n_estimators": self.n_estimators,
+                "min_samples_leaf": self.min_samples_leaf,
+                "max_depth": self.max_depth,
+                "random_state": self.random_state,
+                "use_rfe": self.use_rfe,
+                "cv_folds": self.cv_folds,
+            },
         }
         joblib.dump(save_dict, path)
         print(f"Saved model to {path}")
 
     @classmethod
-    def load(cls, path: str) -> 'RFClassifier':
+    def load(cls, path: str) -> "RFClassifier":
         """Load classifier from file."""
         save_dict = joblib.load(path)
 
-        instance = cls(**save_dict['params'])
-        instance.clf = save_dict['clf']
-        instance.rfe = save_dict['rfe']
-        instance.feature_names = save_dict['feature_names']
-        instance.selected_features = save_dict['selected_features']
-        instance.feature_ranking = save_dict['feature_ranking']
+        instance = cls(**save_dict["params"])
+        instance.clf = save_dict["clf"]
+        instance.rfe = save_dict["rfe"]
+        instance.feature_names = save_dict["feature_names"]
+        instance.selected_features = save_dict["selected_features"]
+        instance.feature_ranking = save_dict["feature_ranking"]
 
         return instance
 
@@ -322,7 +338,7 @@ def prepare_training_data(
     exclude_cols: Optional[List[str]] = None,
     test_size: float = 0.2,
     random_state: int = 42,
-    stratify_by_region: bool = True
+    stratify_by_region: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, List[str]]:
     """
     Prepare training and test data from features DataFrame.
@@ -348,21 +364,23 @@ def prepare_training_data(
     """
     # Default exclude columns
     if exclude_cols is None:
-        exclude_cols = ['reach_id', 'region', 'geometry', 'is_anomaly', 'geom']
+        exclude_cols = ["reach_id", "region", "geometry", "is_anomaly", "geom"]
 
     # Create labels
     df = features_df.copy()
-    df['is_anomaly'] = df['reach_id'].isin(anomaly_reach_ids).astype(int)
+    df["is_anomaly"] = df["reach_id"].isin(anomaly_reach_ids).astype(int)
 
     # Remove false positives from positive class
-    fp_mask = df['reach_id'].isin(KNOWN_FALSE_POSITIVES)
-    df.loc[fp_mask, 'is_anomaly'] = 0
+    fp_mask = df["reach_id"].isin(KNOWN_FALSE_POSITIVES)
+    df.loc[fp_mask, "is_anomaly"] = 0
 
     print(f"Positives (after FP removal): {df['is_anomaly'].sum()}")
     print(f"Negatives: {(~df['is_anomaly'].astype(bool)).sum()}")
 
     # Select feature columns
-    feature_cols = [c for c in df.columns if c not in exclude_cols and c not in ['is_anomaly']]
+    feature_cols = [
+        c for c in df.columns if c not in exclude_cols and c not in ["is_anomaly"]
+    ]
 
     # Handle missing values
     X = df[feature_cols].copy()
@@ -373,22 +391,19 @@ def prepare_training_data(
     # Replace infinities with large finite values
     X = X.replace([np.inf, -np.inf], 0)
 
-    y = df['is_anomaly']
+    y = df["is_anomaly"]
 
     # Stratify by region if requested
-    if stratify_by_region and 'region' in df.columns:
+    if stratify_by_region and "region" in df.columns:
         # Create combined stratification key
-        df['strat_key'] = df['region'].astype(str) + '_' + df['is_anomaly'].astype(str)
-        stratify = df['strat_key']
+        df["strat_key"] = df["region"].astype(str) + "_" + df["is_anomaly"].astype(str)
+        stratify = df["strat_key"]
     else:
         stratify = y
 
     # Split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=stratify
+        X, y, test_size=test_size, random_state=random_state, stratify=stratify
     )
 
     return X_train, X_test, y_train, y_test, feature_cols
@@ -401,7 +416,7 @@ def train_rf_classifier(
     test_size: float = 0.2,
     use_rfe: bool = True,
     n_estimators: int = 100,
-    random_state: int = 42
+    random_state: int = 42,
 ) -> Dict[str, Any]:
     """
     Train RF classifier end-to-end.
@@ -440,15 +455,13 @@ def train_rf_classifier(
 
     print("Loading labels...")
     labels_df = load_anomaly_labels(labels_path, false_positives=KNOWN_FALSE_POSITIVES)
-    anomaly_ids = labels_df['reach_id'].tolist()
+    anomaly_ids = labels_df["reach_id"].tolist()
     print(f"Loaded {len(anomaly_ids)} anomaly labels (after FP removal)")
 
     # Prepare data
     print("Preparing training data...")
     X_train, X_test, y_train, y_test, feature_names = prepare_training_data(
-        features_df, anomaly_ids,
-        test_size=test_size,
-        random_state=random_state
+        features_df, anomaly_ids, test_size=test_size, random_state=random_state
     )
 
     print(f"Training set: {len(X_train)} samples ({y_train.sum()} positives)")
@@ -457,9 +470,7 @@ def train_rf_classifier(
     # Train classifier
     print("\nTraining Random Forest classifier...")
     clf = RFClassifier(
-        n_estimators=n_estimators,
-        use_rfe=use_rfe,
-        random_state=random_state
+        n_estimators=n_estimators, use_rfe=use_rfe, random_state=random_state
     )
     clf.fit(X_train, y_train, feature_names=feature_names)
 
@@ -467,30 +478,30 @@ def train_rf_classifier(
     print("\nEvaluating on test set...")
     metrics = clf.evaluate(X_test, y_test)
 
-    print(f"\nTest Set Results:")
+    print("\nTest Set Results:")
     print(f"  Precision: {metrics['precision']:.4f}")
     print(f"  Recall: {metrics['recall']:.4f}")
     print(f"  F1 Score: {metrics['f1']:.4f}")
     print(f"  ROC AUC: {metrics['roc_auc']:.4f}")
     print(f"  PR AUC: {metrics['pr_auc']:.4f}")
-    print(f"\nConfusion Matrix:")
-    cm = np.array(metrics['confusion_matrix'])
-    print(f"  TN={cm[0,0]}, FP={cm[0,1]}")
-    print(f"  FN={cm[1,0]}, TP={cm[1,1]}")
+    print("\nConfusion Matrix:")
+    cm = np.array(metrics["confusion_matrix"])
+    print(f"  TN={cm[0, 0]}, FP={cm[0, 1]}")
+    print(f"  FN={cm[1, 0]}, TP={cm[1, 1]}")
 
     # Get feature importance
     importance_df = clf.get_feature_importance()
 
     # Save outputs
-    model_path = output_dir / 'rf_model.joblib'
+    model_path = output_dir / "rf_model.joblib"
     clf.save(model_path)
 
-    importance_path = output_dir / 'rf_feature_importance.csv'
+    importance_path = output_dir / "rf_feature_importance.csv"
     importance_df.to_csv(importance_path, index=False)
     print(f"\nSaved feature importance to {importance_path}")
 
-    metrics_path = output_dir / 'rf_metrics.json'
-    with open(metrics_path, 'w') as f:
+    metrics_path = output_dir / "rf_metrics.json"
+    with open(metrics_path, "w") as f:
         # Convert numpy types for JSON serialization
         json_metrics = {
             k: (v.tolist() if isinstance(v, np.ndarray) else v)
@@ -501,54 +512,68 @@ def train_rf_classifier(
 
     # Generate predictions on full dataset
     print("\nGenerating predictions on full dataset...")
-    X_full = features_df[[c for c in feature_names if c in features_df.columns]].fillna(0)
+    X_full = features_df[[c for c in feature_names if c in features_df.columns]].fillna(
+        0
+    )
     X_full = X_full.replace([np.inf, -np.inf], 0)
 
     predictions = clf.predict(X_full)
     probabilities = clf.predict_proba(X_full)[:, 1]
 
-    predictions_df = features_df[['reach_id', 'region']].copy()
-    predictions_df['rf_prediction'] = predictions
-    predictions_df['rf_probability'] = probabilities
-    predictions_df['is_rule_anomaly'] = predictions_df['reach_id'].isin(anomaly_ids).astype(int)
+    predictions_df = features_df[["reach_id", "region"]].copy()
+    predictions_df["rf_prediction"] = predictions
+    predictions_df["rf_probability"] = probabilities
+    predictions_df["is_rule_anomaly"] = (
+        predictions_df["reach_id"].isin(anomaly_ids).astype(int)
+    )
 
-    predictions_path = output_dir / 'rf_predictions.parquet'
+    predictions_path = output_dir / "rf_predictions.parquet"
     predictions_df.to_parquet(predictions_path, index=False)
     print(f"Saved predictions to {predictions_path}")
 
     # Summary
     results = {
-        'model_path': str(model_path),
-        'importance_path': str(importance_path),
-        'metrics_path': str(metrics_path),
-        'predictions_path': str(predictions_path),
-        'metrics': metrics,
-        'n_features': len(feature_names),
-        'n_selected_features': len(clf.selected_features),
-        'selected_features': clf.selected_features,
-        'top_10_features': importance_df.head(10)['feature'].tolist(),
-        'training_summary': {
-            'n_train': len(X_train),
-            'n_test': len(X_test),
-            'n_positives_train': int(y_train.sum()),
-            'n_positives_test': int(y_test.sum()),
-        }
+        "model_path": str(model_path),
+        "importance_path": str(importance_path),
+        "metrics_path": str(metrics_path),
+        "predictions_path": str(predictions_path),
+        "metrics": metrics,
+        "n_features": len(feature_names),
+        "n_selected_features": len(clf.selected_features),
+        "selected_features": clf.selected_features,
+        "top_10_features": importance_df.head(10)["feature"].tolist(),
+        "training_summary": {
+            "n_train": len(X_train),
+            "n_test": len(X_test),
+            "n_positives_train": int(y_train.sum()),
+            "n_positives_test": int(y_test.sum()),
+        },
     }
 
     return results
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Train RF classifier for facc anomaly detection')
-    parser.add_argument('--features', required=True, help='Path to rf_features.parquet')
-    parser.add_argument('--labels', required=True, help='Path to all_anomalies.geojson')
-    parser.add_argument('--output', default='output/facc_detection/', help='Output directory')
-    parser.add_argument('--test-size', type=float, default=0.2, help='Test set fraction')
-    parser.add_argument('--no-rfe', action='store_true', help='Disable RFE feature selection')
-    parser.add_argument('--n-estimators', type=int, default=100, help='Number of RF trees')
-    parser.add_argument('--seed', type=int, default=42, help='Random seed')
+    parser = argparse.ArgumentParser(
+        description="Train RF classifier for facc anomaly detection"
+    )
+    parser.add_argument("--features", required=True, help="Path to rf_features.parquet")
+    parser.add_argument("--labels", required=True, help="Path to all_anomalies.geojson")
+    parser.add_argument(
+        "--output", default="output/facc_detection/", help="Output directory"
+    )
+    parser.add_argument(
+        "--test-size", type=float, default=0.2, help="Test set fraction"
+    )
+    parser.add_argument(
+        "--no-rfe", action="store_true", help="Disable RFE feature selection"
+    )
+    parser.add_argument(
+        "--n-estimators", type=int, default=100, help="Number of RF trees"
+    )
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     args = parser.parse_args()
 
@@ -559,15 +584,17 @@ if __name__ == '__main__':
         test_size=args.test_size,
         use_rfe=not args.no_rfe,
         n_estimators=args.n_estimators,
-        random_state=args.seed
+        random_state=args.seed,
     )
 
     print("\n" + "=" * 60)
     print("Training Complete!")
     print("=" * 60)
     print(f"Model saved to: {results['model_path']}")
-    print(f"Features selected: {results['n_selected_features']}/{results['n_features']}")
+    print(
+        f"Features selected: {results['n_selected_features']}/{results['n_features']}"
+    )
     print(f"Test F1 Score: {results['metrics']['f1']:.4f}")
-    print(f"\nTop 10 Features:")
-    for i, feat in enumerate(results['top_10_features'], 1):
+    print("\nTop 10 Features:")
+    for i, feat in enumerate(results["top_10_features"], 1):
         print(f"  {i}. {feat}")

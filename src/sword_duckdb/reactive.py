@@ -32,7 +32,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,9 @@ def _get_geodesic_distances(lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
         Distances in meters, with leading 0 for first point
     """
     if geodesic_distance is None:
-        raise ImportError("geopy is required for distance calculations. Install with: pip install geopy")
+        raise ImportError(
+            "geopy is required for distance calculations. Install with: pip install geopy"
+        )
 
     n_points = len(lon)
     if n_points < 2:
@@ -80,15 +82,17 @@ def _get_geodesic_distances(lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
 
 class ChangeType(Enum):
     """Types of changes that can trigger recalculations."""
-    GEOMETRY = auto()      # Centerline x,y coordinates changed
-    TOPOLOGY = auto()      # Reach connectivity (up/down) changed
-    ATTRIBUTE = auto()     # Non-geometric attribute changed
-    STRUCTURE = auto()     # Reaches/nodes added, deleted, or split
+
+    GEOMETRY = auto()  # Centerline x,y coordinates changed
+    TOPOLOGY = auto()  # Reach connectivity (up/down) changed
+    ATTRIBUTE = auto()  # Non-geometric attribute changed
+    STRUCTURE = auto()  # Reaches/nodes added, deleted, or split
 
 
 @dataclass
 class DirtySet:
     """Tracks which entities need recalculation."""
+
     reach_ids: Set[int] = field(default_factory=set)
     node_ids: Set[int] = field(default_factory=set)
     cl_ids: Set[int] = field(default_factory=set)
@@ -100,6 +104,7 @@ class DirtySet:
 @dataclass
 class DependencyNode:
     """A node in the dependency graph."""
+
     name: str
     table: str  # reaches, nodes, centerlines
     depends_on: List[str] = field(default_factory=list)
@@ -124,118 +129,146 @@ class DependencyGraph:
         """Build the dependency graph based on SWORD attribute relationships."""
 
         # === CENTERLINE ATTRIBUTES ===
-        self.add_node(DependencyNode(
-            name='centerline.geometry',
-            table='centerlines',
-            depends_on=[],  # Root - manual input
-            change_types=[ChangeType.GEOMETRY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="centerline.geometry",
+                table="centerlines",
+                depends_on=[],  # Root - manual input
+                change_types=[ChangeType.GEOMETRY],
+            )
+        )
 
         # === REACH ATTRIBUTES ===
-        self.add_node(DependencyNode(
-            name='reach.len',
-            table='reaches',
-            depends_on=['centerline.geometry'],
-            recalc_func='_recalc_reach_lengths',
-            change_types=[ChangeType.GEOMETRY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="reach.len",
+                table="reaches",
+                depends_on=["centerline.geometry"],
+                recalc_func="_recalc_reach_lengths",
+                change_types=[ChangeType.GEOMETRY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='reach.bounds',  # x, y, x_min, x_max, y_min, y_max
-            table='reaches',
-            depends_on=['centerline.geometry'],
-            recalc_func='_recalc_reach_bounds',
-            change_types=[ChangeType.GEOMETRY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="reach.bounds",  # x, y, x_min, x_max, y_min, y_max
+                table="reaches",
+                depends_on=["centerline.geometry"],
+                recalc_func="_recalc_reach_bounds",
+                change_types=[ChangeType.GEOMETRY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='reach.topology',  # rch_id_up, rch_id_down, n_rch_up, n_rch_down
-            table='reaches',
-            depends_on=[],  # Root - manual input
-            change_types=[ChangeType.TOPOLOGY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="reach.topology",  # rch_id_up, rch_id_down, n_rch_up, n_rch_down
+                table="reaches",
+                depends_on=[],  # Root - manual input
+                change_types=[ChangeType.TOPOLOGY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='reach.dist_out',
-            table='reaches',
-            depends_on=['reach.len', 'reach.topology'],
-            recalc_func='_recalc_reach_dist_out',
-            change_types=[ChangeType.GEOMETRY, ChangeType.TOPOLOGY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="reach.dist_out",
+                table="reaches",
+                depends_on=["reach.len", "reach.topology"],
+                recalc_func="_recalc_reach_dist_out",
+                change_types=[ChangeType.GEOMETRY, ChangeType.TOPOLOGY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='reach.end_rch',
-            table='reaches',
-            depends_on=['reach.topology'],
-            recalc_func='_recalc_reach_end_rch',
-            change_types=[ChangeType.TOPOLOGY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="reach.end_rch",
+                table="reaches",
+                depends_on=["reach.topology"],
+                recalc_func="_recalc_reach_end_rch",
+                change_types=[ChangeType.TOPOLOGY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='reach.main_side',
-            table='reaches',
-            depends_on=['reach.topology', 'reach.dist_out'],
-            recalc_func='_recalc_reach_main_side',
-            change_types=[ChangeType.TOPOLOGY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="reach.main_side",
+                table="reaches",
+                depends_on=["reach.topology", "reach.dist_out"],
+                recalc_func="_recalc_reach_main_side",
+                change_types=[ChangeType.TOPOLOGY],
+            )
+        )
 
         # === NODE ATTRIBUTES ===
-        self.add_node(DependencyNode(
-            name='node.len',
-            table='nodes',
-            depends_on=['centerline.geometry'],
-            recalc_func='_recalc_node_lengths',
-            change_types=[ChangeType.GEOMETRY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="node.len",
+                table="nodes",
+                depends_on=["centerline.geometry"],
+                recalc_func="_recalc_node_lengths",
+                change_types=[ChangeType.GEOMETRY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='node.xy',  # x, y coordinates
-            table='nodes',
-            depends_on=['centerline.geometry'],
-            recalc_func='_recalc_node_xy',
-            change_types=[ChangeType.GEOMETRY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="node.xy",  # x, y coordinates
+                table="nodes",
+                depends_on=["centerline.geometry"],
+                recalc_func="_recalc_node_xy",
+                change_types=[ChangeType.GEOMETRY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='node.dist_out',
-            table='nodes',
-            depends_on=['reach.dist_out', 'node.len'],
-            recalc_func='_recalc_node_dist_out',
-            change_types=[ChangeType.GEOMETRY, ChangeType.TOPOLOGY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="node.dist_out",
+                table="nodes",
+                depends_on=["reach.dist_out", "node.len"],
+                recalc_func="_recalc_node_dist_out",
+                change_types=[ChangeType.GEOMETRY, ChangeType.TOPOLOGY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='node.end_rch',
-            table='nodes',
-            depends_on=['reach.end_rch'],
-            recalc_func='_recalc_node_end_rch',
-            change_types=[ChangeType.TOPOLOGY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="node.end_rch",
+                table="nodes",
+                depends_on=["reach.end_rch"],
+                recalc_func="_recalc_node_end_rch",
+                change_types=[ChangeType.TOPOLOGY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='node.main_side',
-            table='nodes',
-            depends_on=['reach.main_side'],
-            recalc_func='_recalc_node_main_side',
-            change_types=[ChangeType.TOPOLOGY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="node.main_side",
+                table="nodes",
+                depends_on=["reach.main_side"],
+                recalc_func="_recalc_node_main_side",
+                change_types=[ChangeType.TOPOLOGY],
+            )
+        )
 
-        self.add_node(DependencyNode(
-            name='node.cl_id_bounds',  # cl_id[0] (min), cl_id[1] (max)
-            table='nodes',
-            depends_on=['centerline.geometry'],
-            recalc_func='_recalc_node_cl_id_bounds',
-            change_types=[ChangeType.GEOMETRY, ChangeType.STRUCTURE]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="node.cl_id_bounds",  # cl_id[0] (min), cl_id[1] (max)
+                table="nodes",
+                depends_on=["centerline.geometry"],
+                recalc_func="_recalc_node_cl_id_bounds",
+                change_types=[ChangeType.GEOMETRY, ChangeType.STRUCTURE],
+            )
+        )
 
         # === CENTERLINE NEIGHBOR ATTRIBUTES ===
-        self.add_node(DependencyNode(
-            name='centerline.node_id_neighbors',  # node_id[1:4] via KDTree
-            table='centerlines',
-            depends_on=['centerline.geometry', 'node.xy'],
-            recalc_func='_recalc_centerline_neighbors',
-            change_types=[ChangeType.GEOMETRY]
-        ))
+        self.add_node(
+            DependencyNode(
+                name="centerline.node_id_neighbors",  # node_id[1:4] via KDTree
+                table="centerlines",
+                depends_on=["centerline.geometry", "node.xy"],
+                recalc_func="_recalc_centerline_neighbors",
+                change_types=[ChangeType.GEOMETRY],
+            )
+        )
 
     def add_node(self, node: DependencyNode) -> None:
         """Add a node to the dependency graph."""
@@ -303,7 +336,7 @@ class SWORDReactive:
     Tracks changes and automatically recalculates dependent attributes.
     """
 
-    def __init__(self, sword: 'SWORD') -> None:
+    def __init__(self, sword: "SWORD") -> None:
         self.sword = sword
         self.graph = DependencyGraph()
         self.dirty = DirtySet()
@@ -317,7 +350,7 @@ class SWORDReactive:
         reach_ids: Optional[List[int]] = None,
         node_ids: Optional[List[int]] = None,
         cl_ids: Optional[List[int]] = None,
-        all_entities: bool = False
+        all_entities: bool = False,
     ) -> None:
         """
         Mark an attribute as dirty (needing recalculation of dependents).
@@ -360,7 +393,9 @@ class SWORDReactive:
         self.dirty.cl_ids.update(dirty_set.cl_ids)
         self.dirty.all_reaches = self.dirty.all_reaches or dirty_set.all_reaches
         self.dirty.all_nodes = self.dirty.all_nodes or dirty_set.all_nodes
-        self.dirty.all_centerlines = self.dirty.all_centerlines or dirty_set.all_centerlines
+        self.dirty.all_centerlines = (
+            self.dirty.all_centerlines or dirty_set.all_centerlines
+        )
 
     def get_recalc_plan(self) -> List[Tuple[str, str]]:
         """
@@ -527,7 +562,7 @@ class SWORDReactive:
 
         while queue:
             idx = queue.pop(0)
-            reach_id = reaches.id[idx]
+            reach_id = reaches.id[idx]  # noqa: F841 — kept for debugging/logging
 
             if idx in processed:
                 continue
@@ -691,7 +726,9 @@ class SWORDReactive:
         for i in range(n_reaches):
             reaches.main_side[i] = main_side[i]
 
-        logger.info(f"Recalculated main_side: {np.sum(main_side == 1)} main, {np.sum(main_side == 2)} side")
+        logger.info(
+            f"Recalculated main_side: {np.sum(main_side == 1)} main, {np.sum(main_side == 2)} side"
+        )
 
     def _recalc_node_lengths(self) -> None:
         """
@@ -782,7 +819,9 @@ class SWORDReactive:
         node.dist_out = reach_base_dist + cumulative_node_length
         where reach_base_dist = reach.dist_out - reach.len
         """
-        logger.debug("Recalculating node.dist_out from reach base + cumulative node.len")
+        logger.debug(
+            "Recalculating node.dist_out from reach base + cumulative node.len"
+        )
 
         sword = self.sword
         nodes = sword.nodes
@@ -876,7 +915,6 @@ class SWORDReactive:
             if len(cl_indices) == 0:
                 continue
 
-            cl_ids = centerlines.cl_id[cl_indices]
             # Note: cl_id is a 2D array [2, N] where [0] is min and [1] is max
             # This requires special handling since cl_id may not be writable
             # For now, we skip this as it requires 2D WritableArray support
@@ -894,7 +932,9 @@ class SWORDReactive:
         try:
             from scipy.spatial import KDTree
         except ImportError:
-            logger.warning("scipy not available - skipping centerline neighbor recalculation")
+            logger.warning(
+                "scipy not available - skipping centerline neighbor recalculation"
+            )
             return
 
         logger.info("Recalculating centerline.node_id[1:4] via KDTree spatial query")
@@ -957,27 +997,29 @@ class SWORDReactive:
             # Skip the first (primary node), take next 3 as neighbors
             for rank in range(1, min(4, len(indices[i]))):
                 neighbor_node_id = valid_node_ids[indices[i][rank]]
-                neighbor_updates.append((int(cl_id), region, rank, int(neighbor_node_id)))
+                neighbor_updates.append(
+                    (int(cl_id), region, rank, int(neighbor_node_id))
+                )
 
         if not neighbor_updates:
             return
 
         # Delete existing neighbors for these centerlines
         cl_ids_to_update = [int(cl_ids[i]) for i in cl_indices]
-        placeholders = ', '.join(['?'] * len(cl_ids_to_update))
+        placeholders = ", ".join(["?"] * len(cl_ids_to_update))
 
         db.execute(
             f"DELETE FROM centerline_neighbors WHERE cl_id IN ({placeholders}) AND region = ?",
-            cl_ids_to_update + [region]
+            cl_ids_to_update + [region],
         )
 
         # Insert new neighbors in batches
         batch_size = 10000
         for batch_start in range(0, len(neighbor_updates), batch_size):
-            batch = neighbor_updates[batch_start:batch_start + batch_size]
+            batch = neighbor_updates[batch_start : batch_start + batch_size]
             db.execute(
                 "INSERT INTO centerline_neighbors (cl_id, region, neighbor_rank, node_id) VALUES (?, ?, ?, ?)",
-                batch
+                batch,
             )
 
         logger.info(f"Updated {len(neighbor_updates)} centerline neighbor records")
@@ -985,36 +1027,37 @@ class SWORDReactive:
 
 # === CONVENIENCE FUNCTIONS ===
 
+
 def mark_geometry_changed(
     reactive: SWORDReactive,
     reach_ids: Optional[List[int]] = None,
-    all_reaches: bool = False
+    all_reaches: bool = False,
 ) -> None:
     """Mark geometry as changed, triggering full recalculation cascade."""
     reactive.mark_dirty(
-        'centerline.geometry',
+        "centerline.geometry",
         ChangeType.GEOMETRY,
         reach_ids=reach_ids,
-        all_entities=all_reaches
+        all_entities=all_reaches,
     )
 
 
 def mark_topology_changed(
     reactive: SWORDReactive,
     reach_ids: Optional[List[int]] = None,
-    all_reaches: bool = False
+    all_reaches: bool = False,
 ) -> None:
     """Mark topology as changed, triggering topology recalculation cascade."""
     reactive.mark_dirty(
-        'reach.topology',
+        "reach.topology",
         ChangeType.TOPOLOGY,
         reach_ids=reach_ids,
-        all_entities=all_reaches
+        all_entities=all_reaches,
     )
 
 
 def full_recalculate(reactive: SWORDReactive) -> None:
     """Trigger full recalculation of all derived attributes."""
-    reactive.mark_dirty('centerline.geometry', ChangeType.GEOMETRY, all_entities=True)
-    reactive.mark_dirty('reach.topology', ChangeType.TOPOLOGY, all_entities=True)
+    reactive.mark_dirty("centerline.geometry", ChangeType.GEOMETRY, all_entities=True)
+    reactive.mark_dirty("reach.topology", ChangeType.TOPOLOGY, all_entities=True)
     reactive.recalculate()

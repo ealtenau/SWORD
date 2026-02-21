@@ -22,44 +22,47 @@ The detector returns reaches with anomaly scores that can be used to:
 - Update facc_quality column
 """
 
-from typing import Optional, List, Dict, Any, Union, Tuple
-from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any, Union
+from dataclasses import dataclass
 from pathlib import Path
 import json
 import duckdb
 import pandas as pd
 import numpy as np
 
-from .features import FaccFeatureExtractor, get_seed_reach_features
+from .features import FaccFeatureExtractor
 
 # Known false positives - reaches that look anomalous but are legitimate
 # These are used to filter detection results and track FP patterns
 KNOWN_FALSE_POSITIVES = {
     # Ob River multi-channel (legitimate high facc, consistent FWR through network)
-    31239000161: {'region': 'AS', 'reason': 'Ob River multi-channel'},
-    31239000251: {'region': 'AS', 'reason': 'Ob River multi-channel'},
-    31231000181: {'region': 'AS', 'reason': 'Ob River junction, consistent FWR'},
+    31239000161: {"region": "AS", "reason": "Ob River multi-channel"},
+    31239000251: {"region": "AS", "reason": "Ob River multi-channel"},
+    31231000181: {"region": "AS", "reason": "Ob River junction, consistent FWR"},
     # Narrow width inflating FWR (width < 15m)
-    28160700191: {'region': 'EU', 'reason': 'width=11m, consistent FWR up/down'},
-    45585500221: {'region': 'AS', 'reason': 'width=2m, upstream/downstream FWR=N/A'},
-    28106300011: {'region': 'EU', 'reason': 'width=2m, narrow channel'},
-    28105000371: {'region': 'EU', 'reason': 'width=8m, narrow channel'},
+    28160700191: {"region": "EU", "reason": "width=11m, consistent FWR up/down"},
+    45585500221: {"region": "AS", "reason": "width=2m, upstream/downstream FWR=N/A"},
+    28106300011: {"region": "EU", "reason": "width=2m, narrow channel"},
+    28105000371: {"region": "EU", "reason": "width=8m, narrow channel"},
     # Complex tidal/delta areas
-    45630500041: {'region': 'AS', 'reason': 'Indus junction, strange geometry'},
-    44570000065: {'region': 'AS', 'reason': 'Irrawaddy tidal, main_side=2'},
+    45630500041: {"region": "AS", "reason": "Indus junction, strange geometry"},
+    44570000065: {"region": "AS", "reason": "Irrawaddy tidal, main_side=2"},
     # Nile delta distributaries (legitimate high facc, consistent FWR, main_side=2)
-    17211100904: {'region': 'AF', 'reason': 'Nile Rosetta branch, delta distributary, consistent FWR'},
+    17211100904: {
+        "region": "AF",
+        "reason": "Nile Rosetta branch, delta distributary, consistent FWR",
+    },
     # AF region - moderate FWR, consistent through network
-    17291500221: {'region': 'AF', 'reason': 'path_freq=1 but moderate FWR, consistent'},
-    17291500351: {'region': 'AF', 'reason': 'main_side=1 but moderate FWR, consistent'},
+    17291500221: {"region": "AF", "reason": "path_freq=1 but moderate FWR, consistent"},
+    17291500351: {"region": "AF", "reason": "main_side=1 but moderate FWR, consistent"},
     # RF regressor false positives (2026-02-05) - wrongly corrected
-    77250000153: {'region': 'OC', 'reason': 'mainstem reach, should not be corrected'},
-    74300400575: {'region': 'SA', 'reason': 'incorrectly flipped by RF regressor'},
-    74300400565: {'region': 'SA', 'reason': 'incorrectly flipped by RF regressor'},
+    77250000153: {"region": "OC", "reason": "mainstem reach, should not be corrected"},
+    74300400575: {"region": "SA", "reason": "incorrectly flipped by RF regressor"},
+    74300400565: {"region": "SA", "reason": "incorrectly flipped by RF regressor"},
     # Pipeline v17c FPs (2026-02-06) - rolled back to v17b
-    62295700041: {'region': 'SA', 'reason': 'large river, original facc correct'},
-    62295700121: {'region': 'SA', 'reason': 'large river, original facc correct'},
-    74249300081: {'region': 'NA', 'reason': 'wrongly corrected by pipeline'},
+    62295700041: {"region": "SA", "reason": "large river, original facc correct"},
+    62295700121: {"region": "SA", "reason": "large river, original facc correct"},
+    74249300081: {"region": "NA", "reason": "wrongly corrected by pipeline"},
 }
 
 
@@ -130,7 +133,7 @@ class FaccDetector:
     def __init__(
         self,
         db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
-        config: Optional[DetectionConfig] = None
+        config: Optional[DetectionConfig] = None,
     ):
         if isinstance(db_path_or_conn, str):
             self.conn = duckdb.connect(db_path_or_conn, read_only=True)
@@ -159,7 +162,7 @@ class FaccDetector:
         self,
         region: Optional[str] = None,
         anomaly_threshold: Optional[float] = None,
-        return_features: bool = False
+        return_features: bool = False,
     ) -> DetectionResult:
         """
         Detect facc anomalies.
@@ -197,23 +200,33 @@ class FaccDetector:
 
         # Apply threshold
         threshold = anomaly_threshold or 0.5
-        anomalies = features[features['anomaly_score'] >= threshold].copy()
+        anomalies = features[features["anomaly_score"] >= threshold].copy()
 
         # Count by method
-        by_facc_width = len(features[features['flag_facc_width']])
-        by_facc_reach_acc = len(features[features['flag_facc_reach_acc']])
-        by_facc_jump = len(features[features['flag_facc_jump']])
-        by_bifurcation = len(features[features.get('downstream_of_suspicious_bifurc', False)])
+        by_facc_width = len(features[features["flag_facc_width"]])
+        by_facc_reach_acc = len(features[features["flag_facc_reach_acc"]])
+        by_facc_jump = len(features[features["flag_facc_jump"]])
+        by_bifurcation = len(
+            features[features.get("downstream_of_suspicious_bifurc", False)]
+        )
 
         # Sort by anomaly score
-        anomalies = anomalies.sort_values('anomaly_score', ascending=False)
+        anomalies = anomalies.sort_values("anomaly_score", ascending=False)
 
         # Determine output columns
         if not return_features and not self.config.include_features:
             output_cols = [
-                'reach_id', 'region', 'facc', 'width', 'facc_width_ratio',
-                'reach_acc', 'facc_reach_acc_ratio', 'facc_jump_ratio',
-                'stream_order', 'anomaly_score', 'anomaly_reason'
+                "reach_id",
+                "region",
+                "facc",
+                "width",
+                "facc_width_ratio",
+                "reach_acc",
+                "facc_reach_acc_ratio",
+                "facc_jump_ratio",
+                "stream_order",
+                "anomaly_score",
+                "anomaly_reason",
             ]
             output_cols = [c for c in output_cols if c in anomalies.columns]
             anomalies = anomalies[output_cols]
@@ -240,53 +253,56 @@ class FaccDetector:
         df = features.copy()
 
         # Flag each anomaly type
-        df['flag_facc_width'] = (
-            df['facc_width_ratio'] > self.config.facc_width_ratio_threshold
+        df["flag_facc_width"] = (
+            df["facc_width_ratio"] > self.config.facc_width_ratio_threshold
         ).fillna(False)
 
-        df['flag_facc_reach_acc'] = (
-            df['facc_reach_acc_ratio'] > self.config.facc_reach_acc_ratio_threshold
+        df["flag_facc_reach_acc"] = (
+            df["facc_reach_acc_ratio"] > self.config.facc_reach_acc_ratio_threshold
         ).fillna(False)
 
-        df['flag_facc_jump'] = (
-            df['facc_jump_ratio'] > self.config.facc_jump_ratio_threshold
+        df["flag_facc_jump"] = (
+            df["facc_jump_ratio"] > self.config.facc_jump_ratio_threshold
         ).fillna(False)
 
         # Compute normalized scores for each metric
         # Score = 0 if below threshold, scales up to 1 as ratio increases
 
         # facc_width score
-        df['score_facc_width'] = np.clip(
-            (df['facc_width_ratio'] / self.config.facc_width_ratio_threshold) - 1,
-            0, 1
+        df["score_facc_width"] = np.clip(
+            (df["facc_width_ratio"] / self.config.facc_width_ratio_threshold) - 1, 0, 1
         ).fillna(0)
 
         # facc_reach_acc score
-        df['score_facc_reach_acc'] = np.clip(
-            (df['facc_reach_acc_ratio'] / self.config.facc_reach_acc_ratio_threshold) - 1,
-            0, 1
+        df["score_facc_reach_acc"] = np.clip(
+            (df["facc_reach_acc_ratio"] / self.config.facc_reach_acc_ratio_threshold)
+            - 1,
+            0,
+            1,
         ).fillna(0)
 
         # facc_jump score
-        df['score_facc_jump'] = np.clip(
-            (df['facc_jump_ratio'].fillna(0) / self.config.facc_jump_ratio_threshold) - 1,
-            0, 1
+        df["score_facc_jump"] = np.clip(
+            (df["facc_jump_ratio"].fillna(0) / self.config.facc_jump_ratio_threshold)
+            - 1,
+            0,
+            1,
         ).fillna(0)
 
         # Composite score (weighted average)
-        df['anomaly_score'] = (
-            self.config.weight_facc_width * df['score_facc_width'] +
-            self.config.weight_facc_reach_acc * df['score_facc_reach_acc'] +
-            self.config.weight_facc_jump * df['score_facc_jump']
+        df["anomaly_score"] = (
+            self.config.weight_facc_width * df["score_facc_width"]
+            + self.config.weight_facc_reach_acc * df["score_facc_reach_acc"]
+            + self.config.weight_facc_jump * df["score_facc_jump"]
         )
 
         # Normalize to 0-1
-        max_score = df['anomaly_score'].max()
+        max_score = df["anomaly_score"].max()
         if max_score > 0:
-            df['anomaly_score'] = df['anomaly_score'] / max_score
+            df["anomaly_score"] = df["anomaly_score"] / max_score
 
         # Add anomaly reason
-        df['anomaly_reason'] = df.apply(self._get_anomaly_reason, axis=1)
+        df["anomaly_reason"] = df.apply(self._get_anomaly_reason, axis=1)
 
         return df
 
@@ -294,24 +310,22 @@ class FaccDetector:
         """Get human-readable reason for anomaly."""
         reasons = []
 
-        if row.get('flag_facc_width', False):
+        if row.get("flag_facc_width", False):
             reasons.append(f"facc/width={row['facc_width_ratio']:.0f}")
 
-        if row.get('flag_facc_reach_acc', False):
+        if row.get("flag_facc_reach_acc", False):
             reasons.append(f"facc/reach_acc={row.get('facc_reach_acc_ratio', 0):.1f}x")
 
-        if row.get('flag_facc_jump', False):
+        if row.get("flag_facc_jump", False):
             reasons.append(f"facc_jump={row.get('facc_jump_ratio', 0):.1f}x")
 
-        if row.get('downstream_of_suspicious_bifurc', False):
+        if row.get("downstream_of_suspicious_bifurc", False):
             reasons.append("bifurcation_divergence")
 
-        return '; '.join(reasons) if reasons else 'composite_score'
+        return "; ".join(reasons) if reasons else "composite_score"
 
     def detect_entry_points(
-        self,
-        region: Optional[str] = None,
-        min_jump_ratio: float = 100.0
+        self, region: Optional[str] = None, min_jump_ratio: float = 100.0
     ) -> pd.DataFrame:
         """
         Detect "entry point" errors where bad facc enters the network.
@@ -335,21 +349,27 @@ class FaccDetector:
         features = self.extractor.extract_all_features(region=region)
 
         entry_points = features[
-            (features['facc_jump_ratio'] > min_jump_ratio) &
-            (features['n_upstream'] > 0)  # Has upstream neighbors
+            (features["facc_jump_ratio"] > min_jump_ratio)
+            & (features["n_upstream"] > 0)  # Has upstream neighbors
         ].copy()
 
-        entry_points = entry_points.sort_values('facc_jump_ratio', ascending=False)
+        entry_points = entry_points.sort_values("facc_jump_ratio", ascending=False)
 
-        return entry_points[[
-            'reach_id', 'region', 'facc', 'upstream_facc_sum',
-            'facc_jump_ratio', 'n_upstream', 'width', 'stream_order'
-        ]]
+        return entry_points[
+            [
+                "reach_id",
+                "region",
+                "facc",
+                "upstream_facc_sum",
+                "facc_jump_ratio",
+                "n_upstream",
+                "width",
+                "stream_order",
+            ]
+        ]
 
     def detect_propagation(
-        self,
-        region: Optional[str] = None,
-        seed_reach_ids: Optional[List[int]] = None
+        self, region: Optional[str] = None, seed_reach_ids: Optional[List[int]] = None
     ) -> pd.DataFrame:
         """
         Detect "propagation" errors where bad facc is inherited downstream.
@@ -374,13 +394,13 @@ class FaccDetector:
         if seed_reach_ids is None:
             # Use detected entry points as seeds
             entry_points = self.detect_entry_points(region=region, min_jump_ratio=100.0)
-            seed_reach_ids = entry_points['reach_id'].tolist()
+            seed_reach_ids = entry_points["reach_id"].tolist()
 
         if not seed_reach_ids:
             return pd.DataFrame()
 
         # Find all downstream reaches from seeds
-        seeds_str = ', '.join(str(r) for r in seed_reach_ids)
+        seeds_str = ", ".join(str(r) for r in seed_reach_ids)
         where_clause = f"AND region = '{region}'" if region else ""
 
         # Recursive CTE to find downstream reaches
@@ -412,10 +432,7 @@ class FaccDetector:
 
         return self.conn.execute(query).fetchdf()
 
-    def validate_against_t003(
-        self,
-        region: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def validate_against_t003(self, region: Optional[str] = None) -> Dict[str, Any]:
         """
         Compare detected anomalies against T003 lint check violations.
 
@@ -456,12 +473,12 @@ class FaccDetector:
         """
 
         t003_violations = set(
-            self.conn.execute(t003_query).fetchdf()['reach_id'].tolist()
+            self.conn.execute(t003_query).fetchdf()["reach_id"].tolist()
         )
 
         # Get our detections
         result = self.detect(region=region, anomaly_threshold=0.3)
-        our_detections = set(result.anomalies['reach_id'].tolist())
+        our_detections = set(result.anomalies["reach_id"].tolist())
 
         # Compare
         overlap = t003_violations & our_detections
@@ -469,14 +486,16 @@ class FaccDetector:
         ml_only = our_detections - t003_violations
 
         return {
-            't003_violations': len(t003_violations),
-            'our_detections': len(our_detections),
-            'overlap': len(overlap),
-            'overlap_pct': 100 * len(overlap) / len(t003_violations) if t003_violations else 0,
-            't003_only': len(t003_only),
-            'ml_only': len(ml_only),
-            't003_only_ids': list(t003_only)[:10],  # Sample
-            'ml_only_ids': list(ml_only)[:10],  # Sample
+            "t003_violations": len(t003_violations),
+            "our_detections": len(our_detections),
+            "overlap": len(overlap),
+            "overlap_pct": 100 * len(overlap) / len(t003_violations)
+            if t003_violations
+            else 0,
+            "t003_only": len(t003_only),
+            "ml_only": len(ml_only),
+            "t003_only_ids": list(t003_only)[:10],  # Sample
+            "ml_only_ids": list(ml_only)[:10],  # Sample
         }
 
 
@@ -539,7 +558,7 @@ def detect_hybrid(
 
         # Build known FP exclusion list
         known_fp_ids = list(KNOWN_FALSE_POSITIVES.keys())
-        known_fp_str = ', '.join(str(r) for r in known_fp_ids) if known_fp_ids else '0'
+        known_fp_str = ", ".join(str(r) for r in known_fp_ids) if known_fp_ids else "0"
 
         # Build FP filter clause
         # FPs have: facc_jump <= 2 AND (width_ratio_to_dn > 0.5 OR long+wide)
@@ -729,19 +748,26 @@ def detect_hybrid(
 
         # Add anomaly_score (normalized ratio_to_median)
         if len(anomalies) > 0:
-            max_ratio = anomalies['ratio_to_median'].max()
-            anomalies['anomaly_score'] = np.clip(anomalies['ratio_to_median'] / max_ratio, 0, 1)
-            anomalies['anomaly_reason'] = anomalies['detection_rule']
+            max_ratio = anomalies["ratio_to_median"].max()
+            anomalies["anomaly_score"] = np.clip(
+                anomalies["ratio_to_median"] / max_ratio, 0, 1
+            )
+            anomalies["anomaly_reason"] = anomalies["detection_rule"]
 
         # Pass 2: Topology-aware propagation detection
         if include_propagation and len(anomalies) > 0:
-            entry_rules = ['entry_point', 'extreme_fwr', 'headwater_extreme', 'jump_entry',
-                          'facc_sum_inflation']
-            entry_df = anomalies[anomalies['detection_rule'].isin(entry_rules)]
+            entry_rules = [
+                "entry_point",
+                "extreme_fwr",
+                "headwater_extreme",
+                "jump_entry",
+                "facc_sum_inflation",
+            ]
+            entry_df = anomalies[anomalies["detection_rule"].isin(entry_rules)]
 
             if len(entry_df) > 0:
-                entry_ids = entry_df['reach_id'].tolist()
-                entry_facc = dict(zip(entry_df['reach_id'], entry_df['facc']))
+                entry_ids = entry_df["reach_id"].tolist()
+                entry_facc = dict(zip(entry_df["reach_id"], entry_df["facc"]))
 
                 propagation = detect_propagation_topology_aware(
                     conn=conn,
@@ -752,25 +778,35 @@ def detect_hybrid(
                 )
 
                 if len(propagation) > 0:
-                    already_detected = set(anomalies['reach_id'].tolist())
-                    propagation = propagation[~propagation['reach_id'].isin(already_detected)]
+                    already_detected = set(anomalies["reach_id"].tolist())
+                    propagation = propagation[
+                        ~propagation["reach_id"].isin(already_detected)
+                    ]
 
                     if len(propagation) > 0:
-                        propagation_aligned = propagation.reindex(columns=anomalies.columns)
-                        anomalies = pd.concat([anomalies, propagation_aligned], ignore_index=True)
+                        propagation_aligned = propagation.reindex(
+                            columns=anomalies.columns
+                        )
+                        anomalies = pd.concat(
+                            [anomalies, propagation_aligned], ignore_index=True
+                        )
 
         # Count by rule
         if len(anomalies) > 0:
-            rule_counts = anomalies['detection_rule'].value_counts()
-            by_entry = rule_counts.get('entry_point', 0)
-            by_extreme_fwr = rule_counts.get('extreme_fwr', 0)
-            by_headwater = rule_counts.get('headwater_extreme', 0)
-            by_jump_entry = rule_counts.get('jump_entry', 0)
-            by_high_ratio = rule_counts.get('high_ratio', 0)
-            by_fwr_drop = rule_counts.get('fwr_drop', 0)
-            by_side_channel = rule_counts.get('side_channel_misroute', 0) + rule_counts.get('invalid_side_channel', 0)
+            rule_counts = anomalies["detection_rule"].value_counts()
+            by_entry = rule_counts.get("entry_point", 0)
+            by_extreme_fwr = rule_counts.get("extreme_fwr", 0)
+            by_headwater = rule_counts.get("headwater_extreme", 0)
+            by_jump_entry = rule_counts.get("jump_entry", 0)
+            by_high_ratio = rule_counts.get("high_ratio", 0)
+            by_fwr_drop = rule_counts.get("fwr_drop", 0)
+            by_side_channel = rule_counts.get(
+                "side_channel_misroute", 0
+            ) + rule_counts.get("invalid_side_channel", 0)
         else:
-            by_entry = by_extreme_fwr = by_headwater = by_jump_entry = by_high_ratio = by_fwr_drop = by_side_channel = 0
+            by_entry = by_extreme_fwr = by_headwater = by_jump_entry = by_high_ratio = (
+                by_fwr_drop
+            ) = by_side_channel = 0
 
         # Get total reaches for percentage
         where_region_simple = f"AND region = '{region}'" if region else ""
@@ -781,7 +817,9 @@ def detect_hybrid(
             anomalies=anomalies,
             total_checked=total_checked,
             anomalies_found=len(anomalies),
-            anomaly_pct=100 * len(anomalies) / total_checked if total_checked > 0 else 0,
+            anomaly_pct=100 * len(anomalies) / total_checked
+            if total_checked > 0
+            else 0,
             config=DetectionConfig(),
             region=region,
             by_facc_width=by_extreme_fwr + by_headwater,
@@ -799,7 +837,7 @@ def detect_facc_anomalies(
     db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
     region: Optional[str] = None,
     anomaly_threshold: float = 0.5,
-    **config_kwargs
+    **config_kwargs,
 ) -> DetectionResult:
     """
     Convenience function to detect facc anomalies.
@@ -877,24 +915,24 @@ def export_categorized_geojsons(
         # Load spatial extension for ST_AsGeoJSON
         conn.execute("INSTALL spatial; LOAD spatial;")
         summary = {
-            'total_anomalies': len(anomalies),
-            'by_rule': {},
-            'files': {},
-            'seeds_detected': [],
-            'seeds_missed': [],
+            "total_anomalies": len(anomalies),
+            "by_rule": {},
+            "files": {},
+            "seeds_detected": [],
+            "seeds_missed": [],
         }
 
         if len(anomalies) == 0:
             # Write empty summary
-            summary_path = output_dir / 'detection_summary.json'
-            with open(summary_path, 'w') as f:
+            summary_path = output_dir / "detection_summary.json"
+            with open(summary_path, "w") as f:
                 json.dump(summary, f, indent=2)
-            summary['files']['summary'] = str(summary_path)
+            summary["files"]["summary"] = str(summary_path)
             return summary
 
         # Get geometries for all anomalies
-        reach_ids = anomalies['reach_id'].tolist()
-        reach_ids_str = ', '.join(str(r) for r in reach_ids)
+        reach_ids = anomalies["reach_id"].tolist()
+        reach_ids_str = ", ".join(str(r) for r in reach_ids)
 
         geom_query = f"""
         SELECT
@@ -908,15 +946,13 @@ def export_categorized_geojsons(
 
         # Merge geometry with anomalies
         anomalies_with_geom = anomalies.merge(
-            geom_df[['reach_id', 'geom_json']],
-            on='reach_id',
-            how='left'
+            geom_df[["reach_id", "geom_json"]], on="reach_id", how="left"
         )
 
         # Export by detection rule
-        rules = anomalies['detection_rule'].dropna().unique()
+        rules = anomalies["detection_rule"].dropna().unique()
         for rule in rules:
-            rule_df = anomalies_with_geom[anomalies_with_geom['detection_rule'] == rule]
+            rule_df = anomalies_with_geom[anomalies_with_geom["detection_rule"] == rule]
             if len(rule_df) == 0:
                 continue
 
@@ -924,28 +960,30 @@ def export_categorized_geojsons(
             filepath = output_dir / filename
             _write_geojson(rule_df, filepath)
 
-            summary['by_rule'][rule] = len(rule_df)
-            summary['files'][rule] = str(filepath)
+            summary["by_rule"][rule] = len(rule_df)
+            summary["files"][rule] = str(filepath)
 
         # Export combined all_anomalies.geojson
-        all_filepath = output_dir / 'all_anomalies.geojson'
+        all_filepath = output_dir / "all_anomalies.geojson"
         _write_geojson(anomalies_with_geom, all_filepath)
-        summary['files']['all_anomalies'] = str(all_filepath)
+        summary["files"]["all_anomalies"] = str(all_filepath)
 
         # Verify seeds
         if seed_reach_ids:
-            detected_ids = set(anomalies['reach_id'].tolist())
+            detected_ids = set(anomalies["reach_id"].tolist())
             seeds_detected = [s for s in seed_reach_ids if s in detected_ids]
             seeds_missed = [s for s in seed_reach_ids if s not in detected_ids]
-            summary['seeds_detected'] = seeds_detected
-            summary['seeds_missed'] = seeds_missed
-            summary['seed_recall'] = len(seeds_detected) / len(seed_reach_ids) if seed_reach_ids else 0
+            summary["seeds_detected"] = seeds_detected
+            summary["seeds_missed"] = seeds_missed
+            summary["seed_recall"] = (
+                len(seeds_detected) / len(seed_reach_ids) if seed_reach_ids else 0
+            )
 
         # Write summary JSON
-        summary_path = output_dir / 'detection_summary.json'
-        with open(summary_path, 'w') as f:
+        summary_path = output_dir / "detection_summary.json"
+        with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2, default=str)
-        summary['files']['summary'] = str(summary_path)
+        summary["files"]["summary"] = str(summary_path)
 
         return summary
 
@@ -959,13 +997,13 @@ def _write_geojson(df: pd.DataFrame, filepath: Path) -> None:
     features = []
 
     for _, row in df.iterrows():
-        if pd.isna(row.get('geom_json')):
+        if pd.isna(row.get("geom_json")):
             continue
 
         # Build properties from all non-geometry columns
         properties = {}
         for col in df.columns:
-            if col == 'geom_json':
+            if col == "geom_json":
                 continue
             val = row[col]
             # Convert numpy types to Python types for JSON serialization
@@ -979,22 +1017,24 @@ def _write_geojson(df: pd.DataFrame, filepath: Path) -> None:
                 properties[col] = val
 
         try:
-            geometry = json.loads(row['geom_json'])
+            geometry = json.loads(row["geom_json"])
         except (json.JSONDecodeError, TypeError):
             continue
 
-        features.append({
-            'type': 'Feature',
-            'properties': properties,
-            'geometry': geometry,
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "properties": properties,
+                "geometry": geometry,
+            }
+        )
 
     geojson = {
-        'type': 'FeatureCollection',
-        'features': features,
+        "type": "FeatureCollection",
+        "features": features,
     }
 
-    with open(filepath, 'w') as f:
+    with open(filepath, "w") as f:
         json.dump(geojson, f)
 
 
@@ -1011,7 +1051,7 @@ def _trace_downstream(
     if not entry_reach_ids:
         return pd.DataFrame()
 
-    seeds_str = ', '.join(str(r) for r in entry_reach_ids)
+    seeds_str = ", ".join(str(r) for r in entry_reach_ids)
 
     query = f"""
     WITH RECURSIVE downstream_reaches AS (
@@ -1074,7 +1114,7 @@ def detect_propagation_topology_aware(
     if not entry_point_ids:
         return pd.DataFrame()
 
-    seeds_str = ', '.join(str(r) for r in entry_point_ids)
+    seeds_str = ", ".join(str(r) for r in entry_point_ids)
 
     query = f"""
     WITH RECURSIVE downstream_trace AS (
@@ -1139,36 +1179,54 @@ def detect_propagation_topology_aware(
     if len(traced) == 0:
         return pd.DataFrame()
 
-    traced['entry_facc'] = traced['entry_reach_id'].map(entry_point_facc)
-    traced['facc_similarity'] = traced['facc'] / traced['entry_facc']
-    traced['facc_drop_ratio'] = traced['downstream_facc'] / traced['facc']
+    traced["entry_facc"] = traced["entry_reach_id"].map(entry_point_facc)
+    traced["facc_similarity"] = traced["facc"] / traced["entry_facc"]
+    traced["facc_drop_ratio"] = traced["downstream_facc"] / traced["facc"]
 
     propagation = traced[
-        (traced['facc_similarity'] >= facc_similarity_threshold)
+        (traced["facc_similarity"] >= facc_similarity_threshold)
         & (
-            (traced['facc_drop_ratio'] < facc_drop_threshold)
-            | (traced['downstream_facc'].isna())
+            (traced["facc_drop_ratio"] < facc_drop_threshold)
+            | (traced["downstream_facc"].isna())
         )
     ].copy()
 
     if len(propagation) == 0:
         return pd.DataFrame()
 
-    propagation['detection_rule'] = 'propagation_from_entry'
+    propagation["detection_rule"] = "propagation_from_entry"
 
     def _make_reason(r):
-        dn_facc = f"{r['downstream_facc']:.0f}" if pd.notna(r['downstream_facc']) else 'outlet'
-        return (f"propagation: {r['hops_from_entry']} hops from {r['entry_reach_id']}, "
-                f"facc={r['facc']:.0f} (~{r['facc_similarity']*100:.0f}% of entry), "
-                f"drops to {dn_facc}")
+        dn_facc = (
+            f"{r['downstream_facc']:.0f}"
+            if pd.notna(r["downstream_facc"])
+            else "outlet"
+        )
+        return (
+            f"propagation: {r['hops_from_entry']} hops from {r['entry_reach_id']}, "
+            f"facc={r['facc']:.0f} (~{r['facc_similarity'] * 100:.0f}% of entry), "
+            f"drops to {dn_facc}"
+        )
 
-    propagation['anomaly_reason'] = propagation.apply(_make_reason, axis=1)
-    propagation['ratio_to_median'] = None
-    propagation['anomaly_score'] = 0.8
+    propagation["anomaly_reason"] = propagation.apply(_make_reason, axis=1)
+    propagation["ratio_to_median"] = None
+    propagation["anomaly_score"] = 0.8
 
-    return propagation[[
-        'reach_id', 'region', 'facc', 'width', 'facc_width_ratio',
-        'entry_reach_id', 'entry_facc', 'hops_from_entry',
-        'downstream_facc', 'facc_drop_ratio', 'facc_similarity',
-        'detection_rule', 'anomaly_reason', 'anomaly_score'
-    ]]
+    return propagation[
+        [
+            "reach_id",
+            "region",
+            "facc",
+            "width",
+            "facc_width_ratio",
+            "entry_reach_id",
+            "entry_facc",
+            "hops_from_entry",
+            "downstream_facc",
+            "facc_drop_ratio",
+            "facc_similarity",
+            "detection_rule",
+            "anomaly_reason",
+            "anomaly_score",
+        ]
+    ]

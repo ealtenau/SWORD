@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 import time
 from contextlib import contextmanager
-from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    import psycopg2
 
 from .base import (
     BackendType,
@@ -40,11 +42,13 @@ logger = logging.getLogger(__name__)
 
 class PostgresConnectionError(Exception):
     """Failed to connect to PostgreSQL."""
+
     pass
 
 
 class PostgresAuthenticationError(Exception):
     """Authentication failed."""
+
     pass
 
 
@@ -99,7 +103,7 @@ class PostgresBackend(BaseBackend):
     @property
     def placeholder(self) -> str:
         """Return the SQL placeholder ('%s' for PostgreSQL)."""
-        return '%s'
+        return "%s"
 
     @property
     def is_connected(self) -> bool:
@@ -111,6 +115,7 @@ class PostgresBackend(BaseBackend):
         try:
             import psycopg2
             from psycopg2 import pool
+
             return psycopg2, pool
         except ImportError:
             raise ImportError(
@@ -118,7 +123,7 @@ class PostgresBackend(BaseBackend):
                 "Install with: pip install psycopg2-binary"
             )
 
-    def connect(self) -> 'psycopg2.extensions.connection':
+    def connect(self) -> "psycopg2.extensions.connection":
         """
         Get a connection from the pool.
 
@@ -165,21 +170,20 @@ class PostgresBackend(BaseBackend):
                 error_msg = str(e).lower()
 
                 # Check for non-retryable errors
-                if 'authentication failed' in error_msg or 'password' in error_msg:
+                if "authentication failed" in error_msg or "password" in error_msg:
                     raise PostgresAuthenticationError(
                         f"PostgreSQL authentication failed. Check credentials. "
                         f"Original error: {e}"
                     ) from e
 
-                if 'does not exist' in error_msg:
+                if "does not exist" in error_msg:
                     raise PostgresConnectionError(
-                        f"Database does not exist. Create it first. "
-                        f"Original error: {e}"
+                        f"Database does not exist. Create it first. Original error: {e}"
                     ) from e
 
                 # Retryable error - wait and retry
                 if attempt < max_retries - 1:
-                    delay = 2 ** attempt
+                    delay = 2**attempt
                     logger.warning(
                         f"Connection attempt {attempt + 1} failed: {e}. "
                         f"Retrying in {delay}s..."
@@ -187,8 +191,7 @@ class PostgresBackend(BaseBackend):
                     time.sleep(delay)
 
         raise PostgresConnectionError(
-            f"Failed to connect after {max_retries} attempts. "
-            f"Last error: {last_error}"
+            f"Failed to connect after {max_retries} attempts. Last error: {last_error}"
         ) from last_error
 
     def _enable_postgis(self, conn) -> None:
@@ -443,7 +446,7 @@ class PostgresBackend(BaseBackend):
         """
         # Simple replacement - be careful with ? in string literals
         # This handles the common case; complex cases may need more logic
-        return sql.replace('?', '%s')
+        return sql.replace("?", "%s")
 
     def format_upsert(
         self,
@@ -468,13 +471,13 @@ class PostgresBackend(BaseBackend):
         str
             UPSERT SQL template with '%s' placeholders.
         """
-        placeholders = ', '.join(['%s'] * len(columns))
-        col_list = ', '.join(columns)
-        key_list = ', '.join(key_columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        col_list = ", ".join(columns)
+        key_list = ", ".join(key_columns)
 
         # Columns to update (exclude key columns)
         update_cols = [c for c in columns if c not in key_columns]
-        update_set = ', '.join(f'{c} = EXCLUDED.{c}' for c in update_cols)
+        update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
 
         return f"""
             INSERT INTO {table} ({col_list})
@@ -498,9 +501,8 @@ class PostgresBackend(BaseBackend):
         str
             PostgreSQL array literal.
         """
-        formatted = ', '.join(
-            f"'{v}'" if isinstance(v, str) else str(v)
-            for v in values
+        formatted = ", ".join(
+            f"'{v}'" if isinstance(v, str) else str(v) for v in values
         )
         return f"ARRAY[{formatted}]"
 
@@ -517,7 +519,7 @@ class PostgresBackend(BaseBackend):
         # Use hashtext equivalent - hash the region name
         hash_bytes = hashlib.md5(region.encode()).digest()
         # Take first 4 bytes as signed int32
-        lock_id = int.from_bytes(hash_bytes[:4], byteorder='big', signed=True)
+        lock_id = int.from_bytes(hash_bytes[:4], byteorder="big", signed=True)
         return lock_id
 
     @contextmanager
@@ -564,10 +566,7 @@ class PostgresBackend(BaseBackend):
         try:
             # Try to acquire advisory lock with timeout
             cursor = conn.cursor()
-            cursor.execute(
-                "SET lock_timeout = %s",
-                [f'{timeout_ms}ms']
-            )
+            cursor.execute("SET lock_timeout = %s", [f"{timeout_ms}ms"])
 
             # pg_advisory_lock blocks until lock is acquired
             cursor.execute("SELECT pg_advisory_lock(%s)", [lock_id])
@@ -579,7 +578,7 @@ class PostgresBackend(BaseBackend):
             yield conn
 
         except Exception as e:
-            if 'lock timeout' in str(e).lower():
+            if "lock timeout" in str(e).lower():
                 raise TimeoutError(
                     f"Could not acquire lock for region {region} within "
                     f"{timeout_ms}ms. Another user may be editing this region."

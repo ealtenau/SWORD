@@ -23,7 +23,7 @@ from typing import Optional, List, Tuple, Dict, Any, Union
 from pathlib import Path
 import numpy as np
 from osgeo import gdal
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, Polygon
 import logging
 
 logger = logging.getLogger(__name__)
@@ -52,12 +52,12 @@ class MeritGuidedSearch:
 
     # Region mapping for MERIT directory structure
     REGION_MAP = {
-        'NA': 'NA',
-        'SA': 'SA',
-        'EU': 'EU',
-        'AF': 'AF',
-        'AS': 'AS',
-        'OC': 'OC',
+        "NA": "NA",
+        "SA": "SA",
+        "EU": "EU",
+        "AF": "AF",
+        "AS": "AS",
+        "OC": "OC",
     }
 
     def __init__(self, merit_base_path: str):
@@ -72,8 +72,7 @@ class MeritGuidedSearch:
 
         # Check for at least one region
         regions_found = [
-            r for r in self.REGION_MAP.values()
-            if (self.base_path / r / 'upa').exists()
+            r for r in self.REGION_MAP.values() if (self.base_path / r / "upa").exists()
         ]
         if not regions_found:
             raise ValueError(f"No upa directories found under {self.base_path}")
@@ -95,8 +94,8 @@ class MeritGuidedSearch:
         lat_tile = int(np.floor(lat / self.TILE_SIZE) * self.TILE_SIZE)
         lon_tile = int(np.floor(lon / self.TILE_SIZE) * self.TILE_SIZE)
 
-        lat_prefix = 'n' if lat_tile >= 0 else 's'
-        lon_prefix = 'e' if lon_tile >= 0 else 'w'
+        lat_prefix = "n" if lat_tile >= 0 else "s"
+        lon_prefix = "e" if lon_tile >= 0 else "w"
 
         tile_name = f"{lat_prefix}{abs(lat_tile):02d}{lon_prefix}{abs(lon_tile):03d}"
         return tile_name
@@ -111,13 +110,14 @@ class MeritGuidedSearch:
         lat_group = int(np.floor(lat / 30) * 30)
         lon_group = int(np.floor(lon / 30) * 30)
 
-        lat_prefix = 'n' if lat_group >= 0 else 's'
-        lon_prefix = 'e' if lon_group >= 0 else 'w'
+        lat_prefix = "n" if lat_group >= 0 else "s"
+        lon_prefix = "e" if lon_group >= 0 else "w"
 
         return f"upa_{lat_prefix}{abs(lat_group):02d}{lon_prefix}{abs(lon_group):03d}"
 
-    def _get_tile_path(self, region: str, lon: float, lat: float,
-                       layer: str = 'upa') -> Optional[Path]:
+    def _get_tile_path(
+        self, region: str, lon: float, lat: float, layer: str = "upa"
+    ) -> Optional[Path]:
         """Get path to MERIT tile for a coordinate.
 
         Parameters
@@ -130,9 +130,15 @@ class MeritGuidedSearch:
             logger.warning(f"Unknown region: {region}")
             return None
 
-        tile_group = self._get_tile_group(lon, lat).replace('upa_', f'{layer}_')
+        tile_group = self._get_tile_group(lon, lat).replace("upa_", f"{layer}_")
         tile_name = self._get_tile_name(lon, lat)
-        tile_path = self.base_path / merit_region / layer / tile_group / f"{tile_name}_{layer}.tif"
+        tile_path = (
+            self.base_path
+            / merit_region
+            / layer
+            / tile_group
+            / f"{tile_name}_{layer}.tif"
+        )
 
         if tile_path.exists():
             return tile_path
@@ -158,13 +164,13 @@ class MeritGuidedSearch:
             data = ds.GetRasterBand(1).ReadAsArray()
 
             tile_info = {
-                'data': data,
-                'xmin': transform[0],
-                'xres': transform[1],
-                'ymax': transform[3],
-                'yres': transform[5],  # negative
-                'width': ds.RasterXSize,
-                'height': ds.RasterYSize,
+                "data": data,
+                "xmin": transform[0],
+                "xres": transform[1],
+                "ymax": transform[3],
+                "yres": transform[5],  # negative
+                "width": ds.RasterXSize,
+                "height": ds.RasterYSize,
             }
 
             ds = None  # Close dataset
@@ -177,11 +183,11 @@ class MeritGuidedSearch:
 
     def _sample_point(self, tile_info: Dict, lon: float, lat: float) -> Optional[float]:
         """Sample a single point from loaded tile data."""
-        col = int((lon - tile_info['xmin']) / tile_info['xres'])
-        row = int((lat - tile_info['ymax']) / tile_info['yres'])
+        col = int((lon - tile_info["xmin"]) / tile_info["xres"])
+        row = int((lat - tile_info["ymax"]) / tile_info["yres"])
 
-        if 0 <= col < tile_info['width'] and 0 <= row < tile_info['height']:
-            value = tile_info['data'][row, col]
+        if 0 <= col < tile_info["width"] and 0 <= row < tile_info["height"]:
+            value = tile_info["data"][row, col]
             # MERIT uses -9999 or similar for nodata
             if value > 0:
                 return float(value)
@@ -191,7 +197,7 @@ class MeritGuidedSearch:
         self,
         polygon: Polygon,
         region: str,
-        sample_resolution: float = 0.001  # ~100m in degrees
+        sample_resolution: float = 0.001,  # ~100m in degrees
     ) -> List[float]:
         """
         Sample all MERIT upa values within a polygon.
@@ -234,10 +240,10 @@ class MeritGuidedSearch:
                 continue
 
             # Compute tile bounds
-            tile_minx = tile_info['xmin']
-            tile_maxx = tile_minx + tile_info['width'] * tile_info['xres']
-            tile_maxy = tile_info['ymax']
-            tile_miny = tile_maxy + tile_info['height'] * tile_info['yres']
+            tile_minx = tile_info["xmin"]
+            tile_maxx = tile_minx + tile_info["width"] * tile_info["xres"]
+            tile_maxy = tile_info["ymax"]
+            tile_miny = tile_maxy + tile_info["height"] * tile_info["yres"]
 
             # Clip sampling bounds to tile and polygon
             sample_minx = max(minx, tile_minx)
@@ -250,6 +256,7 @@ class MeritGuidedSearch:
                 for lat in np.arange(sample_miny, sample_maxy, sample_resolution):
                     # Check if point is in polygon (for non-rectangular buffers)
                     from shapely.geometry import Point
+
                     if polygon.contains(Point(lon, lat)):
                         val = self._sample_point(tile_info, lon, lat)
                         if val is not None:
@@ -290,17 +297,17 @@ class MeritGuidedSearch:
                 Search statistics including searched, matched counts.
         """
         metadata = {
-            'searched': 0,
-            'matched': 0,
-            'candidates': [],
-            'buffer_m': None,
-            'facc_expected': facc_expected,
+            "searched": 0,
+            "matched": 0,
+            "candidates": [],
+            "buffer_m": None,
+            "facc_expected": facc_expected,
         }
 
         # Compute buffer
         if buffer_m is None:
             buffer_m = min(2 * (width or 100), 2000)
-        metadata['buffer_m'] = buffer_m
+        metadata["buffer_m"] = buffer_m
 
         # Convert meters to approximate degrees
         # At equator, 1 degree ≈ 111km. Use centroid latitude for better estimate.
@@ -322,7 +329,7 @@ class MeritGuidedSearch:
 
         # Sample all MERIT values in buffer
         merit_values = self._sample_in_polygon(buffered, region)
-        metadata['searched'] = len(merit_values)
+        metadata["searched"] = len(merit_values)
 
         if not merit_values:
             return None, metadata
@@ -335,8 +342,8 @@ class MeritGuidedSearch:
         else:
             candidates = merit_values
 
-        metadata['matched'] = len(candidates)
-        metadata['candidates'] = candidates[:100]  # Limit stored candidates
+        metadata["matched"] = len(candidates)
+        metadata["candidates"] = candidates[:100]  # Limit stored candidates
 
         if not candidates:
             return None, metadata
@@ -385,17 +392,17 @@ class MeritGuidedSearch:
                 Search statistics.
         """
         metadata = {
-            'searched': 0,
-            'matched': 0,
-            'candidates': [],
-            'buffer_m': None,
-            'topo_expected': topo_expected,
-            'selection': 'topo_consistent',
+            "searched": 0,
+            "matched": 0,
+            "candidates": [],
+            "buffer_m": None,
+            "topo_expected": topo_expected,
+            "selection": "topo_consistent",
         }
 
         if buffer_m is None:
             buffer_m = min(3 * (width or 100), 3000)
-        metadata['buffer_m'] = buffer_m
+        metadata["buffer_m"] = buffer_m
 
         try:
             centroid = geom.centroid
@@ -415,7 +422,7 @@ class MeritGuidedSearch:
             return None, metadata
 
         merit_values = self._sample_in_polygon(buffered, region)
-        metadata['searched'] = len(merit_values)
+        metadata["searched"] = len(merit_values)
 
         if not merit_values:
             return None, metadata
@@ -428,8 +435,8 @@ class MeritGuidedSearch:
         else:
             candidates = merit_values
 
-        metadata['matched'] = len(candidates)
-        metadata['candidates'] = candidates[:100]
+        metadata["matched"] = len(candidates)
+        metadata["candidates"] = candidates[:100]
 
         if not candidates:
             return None, metadata
@@ -441,14 +448,14 @@ class MeritGuidedSearch:
     # D8 direction encoding: value -> (row_offset, col_offset)
     # 1=E, 2=SE, 4=S, 8=SW, 16=W, 32=NW, 64=N, 128=NE
     D8_OFFSETS = {
-        1: (0, 1),      # East
-        2: (1, 1),      # SE
-        4: (1, 0),      # South
-        8: (1, -1),     # SW
-        16: (0, -1),    # West
-        32: (-1, -1),   # NW
-        64: (-1, 0),    # North
-        128: (-1, 1),   # NE
+        1: (0, 1),  # East
+        2: (1, 1),  # SE
+        4: (1, 0),  # South
+        8: (1, -1),  # SW
+        16: (0, -1),  # West
+        32: (-1, -1),  # NW
+        64: (-1, 0),  # North
+        128: (-1, 1),  # NE
     }
 
     def walk_d8_downstream(
@@ -485,17 +492,17 @@ class MeritGuidedSearch:
         (best_value, metadata)
         """
         metadata = {
-            'start_lon': lon,
-            'start_lat': lat,
-            'steps_walked': 0,
-            'values_seen': [],
-            'found_above_target': False,
-            'target_min': target_min,
+            "start_lon": lon,
+            "start_lat": lat,
+            "steps_walked": 0,
+            "values_seen": [],
+            "found_above_target": False,
+            "target_min": target_min,
         }
 
         # Load UPA and DIR tiles at starting point
-        upa_path = self._get_tile_path(region, lon, lat, layer='upa')
-        dir_path = self._get_tile_path(region, lon, lat, layer='dir')
+        upa_path = self._get_tile_path(region, lon, lat, layer="upa")
+        dir_path = self._get_tile_path(region, lon, lat, layer="dir")
         if upa_path is None or dir_path is None:
             return None, metadata
 
@@ -505,41 +512,41 @@ class MeritGuidedSearch:
             return None, metadata
 
         # Starting pixel
-        col = int((lon - upa_info['xmin']) / upa_info['xres'])
-        row = int((lat - upa_info['ymax']) / upa_info['yres'])
+        col = int((lon - upa_info["xmin"]) / upa_info["xres"])
+        row = int((lat - upa_info["ymax"]) / upa_info["yres"])
 
         best_above = None
         best_below = None
         visited = set()
 
         for step in range(max_steps):
-            if not (0 <= col < upa_info['width'] and 0 <= row < upa_info['height']):
+            if not (0 <= col < upa_info["width"] and 0 <= row < upa_info["height"]):
                 break
             if (row, col) in visited:
                 break  # Cycle or flat
             visited.add((row, col))
 
-            upa_val = float(upa_info['data'][row, col])
+            upa_val = float(upa_info["data"][row, col])
             if upa_val > 0:
-                metadata['values_seen'].append(round(upa_val, 2))
+                metadata["values_seen"].append(round(upa_val, 2))
 
                 if upa_val >= target_min:
                     if best_above is None or upa_val < best_above:
                         best_above = upa_val  # Min value above target
-                    metadata['found_above_target'] = True
+                    metadata["found_above_target"] = True
                 else:
                     if best_below is None or upa_val > best_below:
                         best_below = upa_val  # Max value below target
 
             # Follow D8 direction
-            d8_val = int(dir_info['data'][row, col])
+            d8_val = int(dir_info["data"][row, col])
             if d8_val not in self.D8_OFFSETS:
                 break  # Nodata, ocean, or flat
             dr, dc = self.D8_OFFSETS[d8_val]
             row += dr
             col += dc
 
-        metadata['steps_walked'] = len(visited)
+        metadata["steps_walked"] = len(visited)
 
         if best_above is not None:
             return best_above, metadata
@@ -550,10 +557,10 @@ class MeritGuidedSearch:
     def search_batch(
         self,
         reaches_df,
-        region_col: str = 'region',
-        geom_col: str = 'geometry',
-        facc_expected_col: str = 'facc_expected',
-        width_col: str = 'width',
+        region_col: str = "region",
+        geom_col: str = "geometry",
+        facc_expected_col: str = "facc_expected",
+        width_col: str = "width",
     ) -> List[Tuple[Optional[float], Dict[str, Any]]]:
         """
         Search MERIT for multiple reaches.
@@ -585,7 +592,7 @@ class MeritGuidedSearch:
             width = row.get(width_col, 100)
 
             if geom is None or region is None:
-                results.append((None, {'error': 'missing geometry or region'}))
+                results.append((None, {"error": "missing geometry or region"}))
                 continue
 
             result = self.search_near_reach(
@@ -603,7 +610,9 @@ class MeritGuidedSearch:
         self.tile_cache.clear()
 
 
-def create_merit_search(merit_path: Optional[str] = None) -> Optional[MeritGuidedSearch]:
+def create_merit_search(
+    merit_path: Optional[str] = None,
+) -> Optional[MeritGuidedSearch]:
     """
     Factory function to create MeritGuidedSearch if path is valid.
 

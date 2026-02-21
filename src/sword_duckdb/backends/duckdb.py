@@ -26,7 +26,6 @@ import pandas as pd
 from .base import (
     BackendType,
     BaseBackend,
-    ConnectionType,
     IsolationLevel,
     TransactionContext,
 )
@@ -65,7 +64,7 @@ class DuckDBBackend(BaseBackend):
         spatial: bool = True,
     ):
         super().__init__()
-        self.db_path = Path(db_path) if db_path != ':memory:' else db_path
+        self.db_path = Path(db_path) if db_path != ":memory:" else db_path
         self.read_only = read_only
         self.spatial = spatial
         self._spatial_loaded = False
@@ -78,7 +77,7 @@ class DuckDBBackend(BaseBackend):
     @property
     def placeholder(self) -> str:
         """Return the SQL placeholder ('?' for DuckDB)."""
-        return '?'
+        return "?"
 
     def connect(self) -> duckdb.DuckDBPyConnection:
         """
@@ -91,12 +90,11 @@ class DuckDBBackend(BaseBackend):
         """
         if self._connection is None:
             # Ensure parent directory exists for file-based databases
-            if self.db_path != ':memory:':
+            if self.db_path != ":memory:":
                 self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
             self._connection = duckdb.connect(
-                str(self.db_path),
-                read_only=self.read_only
+                str(self.db_path), read_only=self.read_only
             )
 
             # Load spatial extension if requested
@@ -292,8 +290,8 @@ class DuckDBBackend(BaseBackend):
         str
             UPSERT SQL template with '?' placeholders.
         """
-        placeholders = ', '.join(['?'] * len(columns))
-        col_list = ', '.join(columns)
+        placeholders = ", ".join(["?"] * len(columns))
+        col_list = ", ".join(columns)
 
         # DuckDB uses INSERT OR REPLACE (requires primary key constraint)
         return f"INSERT OR REPLACE INTO {table} ({col_list}) VALUES ({placeholders})"
@@ -314,10 +312,7 @@ class DuckDBBackend(BaseBackend):
         str
             DuckDB array literal.
         """
-        formatted = ', '.join(
-            repr(v) if isinstance(v, str) else str(v)
-            for v in values
-        )
+        formatted = ", ".join(repr(v) if isinstance(v, str) else str(v) for v in values)
         return f"[{formatted}]"
 
     @property
@@ -328,7 +323,7 @@ class DuckDBBackend(BaseBackend):
     def get_regions(self) -> List[str]:
         """Get list of regions present in the database."""
         result = self.query("SELECT DISTINCT region FROM reaches ORDER BY region")
-        return result['region'].tolist()
+        return result["region"].tolist()
 
     def count_records(self, region: Optional[str] = None) -> dict:
         """
@@ -355,20 +350,23 @@ class DuckDBBackend(BaseBackend):
         counts = {}
 
         # Tables with region column
-        for table in ['centerlines', 'nodes', 'reaches']:
+        for table in ["centerlines", "nodes", "reaches"]:
             sql = f"SELECT COUNT(*) as cnt FROM {table} {where_clause}"
             result = conn.execute(sql, params).fetchone()
             counts[table] = result[0]
 
         # Derived tables
         if region:
-            counts['reach_topology'] = conn.execute("""
+            counts["reach_topology"] = conn.execute(
+                """
                 SELECT COUNT(*) FROM reach_topology t
                 JOIN reaches r ON t.reach_id = r.reach_id
                 WHERE r.region = ?
-            """, [region]).fetchone()[0]
+            """,
+                [region],
+            ).fetchone()[0]
         else:
-            counts['reach_topology'] = conn.execute(
+            counts["reach_topology"] = conn.execute(
                 "SELECT COUNT(*) FROM reach_topology"
             ).fetchone()[0]
 

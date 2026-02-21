@@ -42,30 +42,56 @@ class RFFeatureExtractor:
 
     # Feature column names by category
     CORE_HYDROLOGY = [
-        'facc', 'width', 'slope', 'reach_length',
-        'wse', 'wse_var', 'max_width', 'width_var'
+        "facc",
+        "width",
+        "slope",
+        "reach_length",
+        "wse",
+        "wse_var",
+        "max_width",
+        "width_var",
     ]
 
     TOPOLOGY = [
-        'n_rch_up', 'n_rch_down', 'stream_order', 'path_freq',
-        'path_order', 'path_segs', 'end_reach', 'main_side',
-        'network', 'trib_flag'
+        "n_rch_up",
+        "n_rch_down",
+        "stream_order",
+        "path_freq",
+        "path_order",
+        "path_segs",
+        "end_reach",
+        "main_side",
+        "network",
+        "trib_flag",
     ]
 
-    CLASSIFICATION = [
-        'lakeflag', 'type', 'n_chan_max', 'n_chan_mod', 'iceflag'
-    ]
+    CLASSIFICATION = ["lakeflag", "type", "n_chan_max", "n_chan_mod", "iceflag"]
 
     SWOT_OBS = [
-        'n_obs', 'swot_obs',
-        'wse_obs_mean', 'wse_obs_median', 'wse_obs_std', 'wse_obs_range',
-        'width_obs_mean', 'width_obs_median', 'width_obs_std', 'width_obs_range',
-        'slope_obs_mean', 'slope_obs_median', 'slope_obs_std'
+        "n_obs",
+        "swot_obs",
+        "wse_obs_mean",
+        "wse_obs_median",
+        "wse_obs_std",
+        "wse_obs_range",
+        "width_obs_mean",
+        "width_obs_median",
+        "width_obs_std",
+        "width_obs_range",
+        "slope_obs_mean",
+        "slope_obs_median",
+        "slope_obs_std",
     ]
 
     V17C_TOPOLOGY = [
-        'hydro_dist_out', 'hydro_dist_hw', 'dist_out', 'dist_out_short',
-        'pathlen_hw', 'pathlen_out', 'is_mainstem_edge', 'main_path_id'
+        "hydro_dist_out",
+        "hydro_dist_hw",
+        "dist_out",
+        "dist_out_short",
+        "pathlen_hw",
+        "pathlen_out",
+        "is_mainstem_edge",
+        "main_path_id",
     ]
 
     def __init__(self, db_path_or_conn: Union[str, duckdb.DuckDBPyConnection]):
@@ -95,7 +121,7 @@ class RFFeatureExtractor:
             FROM information_schema.columns
             WHERE table_name = 'reaches'
         """).fetchdf()
-        return result['column_name'].tolist()
+        return result["column_name"].tolist()
 
     def extract_base_features(self, region: Optional[str] = None) -> pd.DataFrame:
         """
@@ -114,7 +140,7 @@ class RFFeatureExtractor:
         available = set(self._get_available_columns())
 
         # Build SELECT clause with available columns
-        select_cols = ['reach_id', 'region']
+        select_cols = ["reach_id", "region"]
 
         # Core hydrology
         for col in self.CORE_HYDROLOGY:
@@ -141,7 +167,7 @@ class RFFeatureExtractor:
             if col in available:
                 select_cols.append(col)
 
-        select_clause = ', '.join(select_cols)
+        select_clause = ", ".join(select_cols)
         where_clause = f"AND region = '{region}'" if region else ""
 
         query = f"""
@@ -401,7 +427,9 @@ class RFFeatureExtractor:
 
         return self.conn.execute(query).fetchdf()
 
-    def compute_derived_features(self, df: pd.DataFrame, include_region_encoding: bool = True) -> pd.DataFrame:
+    def compute_derived_features(
+        self, df: pd.DataFrame, include_region_encoding: bool = True
+    ) -> pd.DataFrame:
         """
         Compute derived features from base features.
 
@@ -420,102 +448,102 @@ class RFFeatureExtractor:
         df = df.copy()
 
         # Regional one-hot encoding
-        if include_region_encoding and 'region' in df.columns:
-            region_dummies = pd.get_dummies(df['region'], prefix='region')
+        if include_region_encoding and "region" in df.columns:
+            region_dummies = pd.get_dummies(df["region"], prefix="region")
             # Ensure all regions are present even if not in data
-            for r in ['NA', 'SA', 'EU', 'AF', 'AS', 'OC']:
-                col = f'region_{r}'
+            for r in ["NA", "SA", "EU", "AF", "AS", "OC"]:
+                col = f"region_{r}"
                 if col not in region_dummies.columns:
                     region_dummies[col] = 0
             df = pd.concat([df, region_dummies], axis=1)
 
         # Facc-width ratio (FWR)
-        df['facc_width_ratio'] = df['facc'] / df['width'].replace(0, np.nan)
+        df["facc_width_ratio"] = df["facc"] / df["width"].replace(0, np.nan)
 
         # Facc per reach (using path_freq as proxy for reach count)
-        df['facc_per_reach'] = np.where(
-            df['path_freq'] > 0,
-            df['facc'] / df['path_freq'],
-            np.nan
+        df["facc_per_reach"] = np.where(
+            df["path_freq"] > 0, df["facc"] / df["path_freq"], np.nan
         )
 
         # Log transforms
-        df['log_facc'] = np.log1p(df['facc'].fillna(0))
-        df['log_width'] = np.log1p(df['width'].fillna(0))
-        df['log_path_freq'] = np.log1p(df['path_freq'].fillna(0).clip(lower=0))
+        df["log_facc"] = np.log1p(df["facc"].fillna(0))
+        df["log_width"] = np.log1p(df["width"].fillna(0))
+        df["log_path_freq"] = np.log1p(df["path_freq"].fillna(0).clip(lower=0))
 
         # Binary indicators
-        df['is_headwater'] = (df['end_reach'] == 1).astype(int)
-        df['is_outlet'] = (df['end_reach'] == 2).astype(int)
-        df['is_junction'] = (df['end_reach'] == 3).astype(int)
-        df['is_side_channel'] = (df['main_side'] == 1).astype(int)
-        df['is_lake'] = (df['lakeflag'] == 1).astype(int)
+        df["is_headwater"] = (df["end_reach"] == 1).astype(int)
+        df["is_outlet"] = (df["end_reach"] == 2).astype(int)
+        df["is_junction"] = (df["end_reach"] == 3).astype(int)
+        df["is_side_channel"] = (df["main_side"] == 1).astype(int)
+        df["is_lake"] = (df["lakeflag"] == 1).astype(int)
 
         # SWOT observation indicator
-        if 'n_obs' in df.columns:
-            df['has_swot_obs'] = (df['n_obs'].fillna(0) > 0).astype(int)
+        if "n_obs" in df.columns:
+            df["has_swot_obs"] = (df["n_obs"].fillna(0) > 0).astype(int)
         else:
-            df['has_swot_obs'] = 0
+            df["has_swot_obs"] = 0
 
         # Mainstem indicator
-        if 'is_mainstem_edge' in df.columns:
-            df['is_mainstem'] = df['is_mainstem_edge'].fillna(0).astype(int)
+        if "is_mainstem_edge" in df.columns:
+            df["is_mainstem"] = df["is_mainstem_edge"].fillna(0).astype(int)
         else:
-            df['is_mainstem'] = 0
+            df["is_mainstem"] = 0
 
         # Path_freq validity indicator (some have -9999)
-        if 'path_freq' in df.columns:
-            df['valid_path_freq'] = (
-                (df['path_freq'].fillna(0) > 0) &
-                (df['path_freq'].fillna(0) != -9999)
+        if "path_freq" in df.columns:
+            df["valid_path_freq"] = (
+                (df["path_freq"].fillna(0) > 0) & (df["path_freq"].fillna(0) != -9999)
             ).astype(int)
         else:
-            df['valid_path_freq'] = 1
+            df["valid_path_freq"] = 1
 
         # NEW PROPAGATION DETECTION FEATURES
 
         # Side channel with high FWR (common propagation pattern)
-        if 'main_side' in df.columns and 'facc_width_ratio' in df.columns:
-            df['side_channel_high_fwr'] = (
-                (df['main_side'] == 1) &
-                (df['facc_width_ratio'] > 500)
+        if "main_side" in df.columns and "facc_width_ratio" in df.columns:
+            df["side_channel_high_fwr"] = (
+                (df["main_side"] == 1) & (df["facc_width_ratio"] > 500)
             ).astype(int)
 
         # Invalid path_freq with high FWR (disconnected but high facc)
-        if 'path_freq' in df.columns and 'facc_width_ratio' in df.columns:
-            df['invalid_pf_high_fwr'] = (
-                ((df['path_freq'].fillna(0) <= 0) | (df['path_freq'].fillna(0) == -9999)) &
-                (df['facc_width_ratio'] > 500)
+        if "path_freq" in df.columns and "facc_width_ratio" in df.columns:
+            df["invalid_pf_high_fwr"] = (
+                (
+                    (df["path_freq"].fillna(0) <= 0)
+                    | (df["path_freq"].fillna(0) == -9999)
+                )
+                & (df["facc_width_ratio"] > 500)
             ).astype(int)
 
         # Low path_freq with high facc (propagation near headwater)
-        if 'path_freq' in df.columns and 'facc' in df.columns:
-            df['low_pf_high_facc'] = (
-                (df['path_freq'].fillna(0) > 0) &
-                (df['path_freq'].fillna(0) <= 5) &
-                (df['facc'] > 100000)
+        if "path_freq" in df.columns and "facc" in df.columns:
+            df["low_pf_high_facc"] = (
+                (df["path_freq"].fillna(0) > 0)
+                & (df["path_freq"].fillna(0) <= 5)
+                & (df["facc"] > 100000)
             ).astype(int)
 
         # FWR propagation indicator: high FWR + consistent with upstream
-        if 'facc_width_ratio' in df.columns and 'fwr_upstream_consistency' in df.columns:
-            df['fwr_propagation'] = (
-                (df['facc_width_ratio'] > 1000) &
-                (df['fwr_upstream_consistency'].fillna(0) > 0.5) &
-                (df['fwr_upstream_consistency'].fillna(0) < 2.0)
+        if (
+            "facc_width_ratio" in df.columns
+            and "fwr_upstream_consistency" in df.columns
+        ):
+            df["fwr_propagation"] = (
+                (df["facc_width_ratio"] > 1000)
+                & (df["fwr_upstream_consistency"].fillna(0) > 0.5)
+                & (df["fwr_upstream_consistency"].fillna(0) < 2.0)
             ).astype(int)
 
         # High absolute FWR (catches cases where relative metrics fail)
-        if 'facc_width_ratio' in df.columns:
-            df['extreme_fwr_1000'] = (df['facc_width_ratio'] > 1000).astype(int)
-            df['extreme_fwr_2000'] = (df['facc_width_ratio'] > 2000).astype(int)
-            df['extreme_fwr_5000'] = (df['facc_width_ratio'] > 5000).astype(int)
+        if "facc_width_ratio" in df.columns:
+            df["extreme_fwr_1000"] = (df["facc_width_ratio"] > 1000).astype(int)
+            df["extreme_fwr_2000"] = (df["facc_width_ratio"] > 2000).astype(int)
+            df["extreme_fwr_5000"] = (df["facc_width_ratio"] > 5000).astype(int)
 
         return df
 
     def extract_all(
-        self,
-        region: Optional[str] = None,
-        include_geometry: bool = False
+        self, region: Optional[str] = None, include_geometry: bool = False
     ) -> pd.DataFrame:
         """
         Extract all features for RF training.
@@ -546,15 +574,15 @@ class RFFeatureExtractor:
 
         # Merge all features
         features = base_df.merge(
-            neighbor_df.drop(columns=['region'], errors='ignore'),
-            on='reach_id',
-            how='left'
+            neighbor_df.drop(columns=["region"], errors="ignore"),
+            on="reach_id",
+            how="left",
         )
 
         features = features.merge(
-            regional_df.drop(columns=['region'], errors='ignore'),
-            on='reach_id',
-            how='left'
+            regional_df.drop(columns=["region"], errors="ignore"),
+            on="reach_id",
+            how="left",
         )
 
         # Compute derived features
@@ -562,26 +590,26 @@ class RFFeatureExtractor:
         print(f"After derived features: {len(features.columns)} columns")
 
         # Handle missing SWOT values (impute with 0, indicator already added)
-        swot_cols = [c for c in features.columns if 'obs' in c.lower() and c != 'has_swot_obs']
+        swot_cols = [
+            c for c in features.columns if "obs" in c.lower() and c != "has_swot_obs"
+        ]
         for col in swot_cols:
             features[col] = features[col].fillna(0)
 
         # Get geometry if requested
         if include_geometry:
-            geom_df = self._get_geometry(features['reach_id'].tolist(), region)
-            features = features.merge(geom_df, on='reach_id', how='left')
+            geom_df = self._get_geometry(features["reach_id"].tolist(), region)
+            features = features.merge(geom_df, on="reach_id", how="left")
 
         return features
 
     def _get_geometry(
-        self,
-        reach_ids: List[int],
-        region: Optional[str] = None
+        self, reach_ids: List[int], region: Optional[str] = None
     ) -> pd.DataFrame:
         """Get geometry for reaches (for GeoJSON export)."""
         self.conn.execute("INSTALL spatial; LOAD spatial;")
 
-        reach_ids_str = ', '.join(str(r) for r in reach_ids)
+        reach_ids_str = ", ".join(str(r) for r in reach_ids)
         where_region = f"AND region = '{region}'" if region else ""
 
         query = f"""
@@ -605,46 +633,71 @@ class RFFeatureExtractor:
         available = set(self._get_available_columns())
 
         info = {
-            'categories': {
-                'core_hydrology': [c for c in self.CORE_HYDROLOGY if c in available],
-                'topology': [c for c in self.TOPOLOGY if c in available],
-                'classification': [c for c in self.CLASSIFICATION if c in available],
-                'swot_obs': [c for c in self.SWOT_OBS if c in available],
-                'v17c_topology': [c for c in self.V17C_TOPOLOGY if c in available],
+            "categories": {
+                "core_hydrology": [c for c in self.CORE_HYDROLOGY if c in available],
+                "topology": [c for c in self.TOPOLOGY if c in available],
+                "classification": [c for c in self.CLASSIFICATION if c in available],
+                "swot_obs": [c for c in self.SWOT_OBS if c in available],
+                "v17c_topology": [c for c in self.V17C_TOPOLOGY if c in available],
             },
-            'neighbor_computed': [
-                'max_upstream_facc', 'upstream_facc_sum', 'n_upstream_actual',
-                'max_upstream_fwr', 'avg_upstream_width',
-                'max_downstream_facc', 'max_downstream_width', 'max_downstream_fwr',
-                'facc_jump_ratio', 'fwr_drop_ratio', 'upstream_fwr_ratio', 'width_ratio_to_dn',
+            "neighbor_computed": [
+                "max_upstream_facc",
+                "upstream_facc_sum",
+                "n_upstream_actual",
+                "max_upstream_fwr",
+                "avg_upstream_width",
+                "max_downstream_facc",
+                "max_downstream_width",
+                "max_downstream_fwr",
+                "facc_jump_ratio",
+                "fwr_drop_ratio",
+                "upstream_fwr_ratio",
+                "width_ratio_to_dn",
                 # 2-hop features
-                'max_2hop_upstream_facc', 'avg_2hop_upstream_fwr', 'n_upstream_2hop',
-                'facc_2hop_ratio', 'max_2hop_downstream_facc', 'avg_2hop_downstream_fwr',
-                'facc_chain_direction'
+                "max_2hop_upstream_facc",
+                "avg_2hop_upstream_fwr",
+                "n_upstream_2hop",
+                "facc_2hop_ratio",
+                "max_2hop_downstream_facc",
+                "avg_2hop_downstream_fwr",
+                "facc_chain_direction",
             ],
-            'derived': [
-                'facc_width_ratio', 'facc_per_reach',
-                'log_facc', 'log_width', 'log_path_freq',
-                'is_headwater', 'is_outlet', 'is_junction', 'is_side_channel', 'is_lake',
-                'has_swot_obs', 'is_mainstem', 'valid_path_freq',
-                'ratio_to_median', 'fwr_ratio_to_median',
+            "derived": [
+                "facc_width_ratio",
+                "facc_per_reach",
+                "log_facc",
+                "log_width",
+                "log_path_freq",
+                "is_headwater",
+                "is_outlet",
+                "is_junction",
+                "is_side_channel",
+                "is_lake",
+                "has_swot_obs",
+                "is_mainstem",
+                "valid_path_freq",
+                "ratio_to_median",
+                "fwr_ratio_to_median",
                 # Regional encoding
-                'region_NA', 'region_SA', 'region_EU', 'region_AF', 'region_AS', 'region_OC'
-            ]
+                "region_NA",
+                "region_SA",
+                "region_EU",
+                "region_AF",
+                "region_AS",
+                "region_OC",
+            ],
         }
 
-        total = sum(len(v) for v in info['categories'].values())
-        total += len(info['neighbor_computed'])
-        total += len(info['derived'])
-        info['total_features'] = total
+        total = sum(len(v) for v in info["categories"].values())
+        total += len(info["neighbor_computed"])
+        total += len(info["derived"])
+        info["total_features"] = total
 
         return info
 
 
 def extract_rf_features(
-    db_path: str,
-    region: Optional[str] = None,
-    output_path: Optional[str] = None
+    db_path: str, region: Optional[str] = None, output_path: Optional[str] = None
 ) -> pd.DataFrame:
     """
     Convenience function to extract RF features.
@@ -683,8 +736,7 @@ def extract_rf_features(
 
 
 def load_anomaly_labels(
-    anomaly_geojson: str,
-    false_positives: Optional[List[int]] = None
+    anomaly_geojson: str, false_positives: Optional[List[int]] = None
 ) -> pd.DataFrame:
     """
     Load anomaly labels from GeoJSON file.
@@ -708,24 +760,20 @@ def load_anomaly_labels(
 
     # Extract reach IDs from GeoJSON
     reach_ids = []
-    for feature in data.get('features', []):
-        props = feature.get('properties', {})
-        if 'reach_id' in props:
-            reach_ids.append(int(props['reach_id']))
+    for feature in data.get("features", []):
+        props = feature.get("properties", {})
+        if "reach_id" in props:
+            reach_ids.append(int(props["reach_id"]))
 
     # Remove false positives
     if false_positives:
         reach_ids = [r for r in reach_ids if r not in false_positives]
 
-    return pd.DataFrame({
-        'reach_id': reach_ids,
-        'is_anomaly': 1
-    })
+    return pd.DataFrame({"reach_id": reach_ids, "is_anomaly": 1})
 
 
 def create_labeled_dataset(
-    features: pd.DataFrame,
-    anomaly_labels: pd.DataFrame
+    features: pd.DataFrame, anomaly_labels: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Create labeled dataset for RF training.
@@ -744,26 +792,31 @@ def create_labeled_dataset(
     """
     # Merge labels
     labeled = features.merge(
-        anomaly_labels[['reach_id', 'is_anomaly']],
-        on='reach_id',
-        how='left'
+        anomaly_labels[["reach_id", "is_anomaly"]], on="reach_id", how="left"
     )
 
     # Non-anomalies get label 0
-    labeled['is_anomaly'] = labeled['is_anomaly'].fillna(0).astype(int)
+    labeled["is_anomaly"] = labeled["is_anomaly"].fillna(0).astype(int)
 
     return labeled
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Extract RF features for facc anomaly detection')
-    parser.add_argument('--db', required=True, help='Path to DuckDB database')
-    parser.add_argument('--region', help='Region to extract (e.g., NA)')
-    parser.add_argument('--output', default='output/facc_detection/rf_features.parquet',
-                        help='Output parquet path')
-    parser.add_argument('--info', action='store_true', help='Print feature info and exit')
+    parser = argparse.ArgumentParser(
+        description="Extract RF features for facc anomaly detection"
+    )
+    parser.add_argument("--db", required=True, help="Path to DuckDB database")
+    parser.add_argument("--region", help="Region to extract (e.g., NA)")
+    parser.add_argument(
+        "--output",
+        default="output/facc_detection/rf_features.parquet",
+        help="Output parquet path",
+    )
+    parser.add_argument(
+        "--info", action="store_true", help="Print feature info and exit"
+    )
 
     args = parser.parse_args()
 
@@ -771,7 +824,7 @@ if __name__ == '__main__':
         if args.info:
             info = extractor.get_feature_info()
             print("\nFeature Categories:")
-            for cat, cols in info['categories'].items():
+            for cat, cols in info["categories"].items():
                 print(f"  {cat}: {len(cols)} features")
                 for col in cols:
                     print(f"    - {col}")
@@ -780,4 +833,6 @@ if __name__ == '__main__':
             print(f"\nTotal: ~{info['total_features']} features")
         else:
             features = extract_rf_features(args.db, args.region, args.output)
-            print(f"\nExtracted {len(features)} reaches with {len(features.columns)} features")
+            print(
+                f"\nExtracted {len(features)} reaches with {len(features.columns)} features"
+            )

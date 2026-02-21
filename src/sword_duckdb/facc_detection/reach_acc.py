@@ -18,7 +18,7 @@ This module provides both SQL-based (pure DuckDB) and matrix-based (scipy)
 approaches for flexibility.
 """
 
-from typing import Optional, Dict, Union
+from typing import Optional, Union
 import duckdb
 import numpy as np
 import pandas as pd
@@ -42,7 +42,9 @@ class ReachAccumulator:
     def __init__(self, conn: duckdb.DuckDBPyConnection):
         self.conn = conn
 
-    def compute_sql(self, region: Optional[str] = None, max_iterations: int = 100) -> pd.DataFrame:
+    def compute_sql(
+        self, region: Optional[str] = None, max_iterations: int = 100
+    ) -> pd.DataFrame:
         """
         Compute reach accumulation using iterative SQL (simpler, slower).
 
@@ -133,11 +135,11 @@ class ReachAccumulator:
         """).fetchdf()
 
         if len(reaches_df) == 0:
-            return pd.DataFrame(columns=['reach_id', 'region', 'reach_acc'])
+            return pd.DataFrame(columns=["reach_id", "region", "reach_acc"])
 
         n_reaches = len(reaches_df)
-        reach_ids = reaches_df['reach_id'].values
-        regions = reaches_df['region'].values
+        reach_ids = reaches_df["reach_id"].values
+        regions = reaches_df["region"].values
 
         # Create reach_id -> index mapping
         id_to_idx = {rid: idx for idx, rid in enumerate(reach_ids)}
@@ -150,7 +152,7 @@ class ReachAccumulator:
                     region,
                     COUNT(*) as n_down
                 FROM reach_topology
-                WHERE direction = 'down' {topo_where.replace('WHERE', 'AND') if topo_where else ''}
+                WHERE direction = 'down' {topo_where.replace("WHERE", "AND") if topo_where else ""}
                 GROUP BY reach_id, region
             )
             SELECT
@@ -161,7 +163,7 @@ class ReachAccumulator:
             FROM reach_topology rt
             LEFT JOIN downstream_counts dc
                 ON rt.reach_id = dc.reach_id AND rt.region = dc.region
-            WHERE rt.direction = 'down' {topo_where.replace('WHERE', 'AND') if topo_where else ''}
+            WHERE rt.direction = 'down' {topo_where.replace("WHERE", "AND") if topo_where else ""}
         """
 
         topo_df = self.conn.execute(topo_query).fetchdf()
@@ -172,9 +174,9 @@ class ReachAccumulator:
         vals = []
 
         for _, row in topo_df.iterrows():
-            from_reach = row['from_reach']
-            to_reach = row['to_reach']
-            weight = row['weight']
+            from_reach = row["from_reach"]
+            to_reach = row["to_reach"]
+            weight = row["weight"]
 
             if from_reach in id_to_idx and to_reach in id_to_idx:
                 from_idx = id_to_idx[from_reach]
@@ -186,12 +188,12 @@ class ReachAccumulator:
 
         # Create sparse matrices
         N = csc_matrix((vals, (rows, cols)), shape=(n_reaches, n_reaches))
-        I = csc_matrix(np.eye(n_reaches))
+        eye = csc_matrix(np.eye(n_reaches))
 
         # Compute (I - N)^-1 * ones
         ones = np.ones(n_reaches)
         try:
-            reach_acc = spsolve(I - N, ones)
+            reach_acc = spsolve(eye - N, ones)
         except Exception as e:
             # Fallback: if matrix is singular, use iterative approach
             print(f"Matrix solve failed: {e}, using iterative approach")
@@ -204,18 +206,18 @@ class ReachAccumulator:
                 reach_acc = new_acc
 
         # Create result DataFrame
-        result = pd.DataFrame({
-            'reach_id': reach_ids,
-            'region': regions,
-            'reach_acc': reach_acc,
-        })
+        result = pd.DataFrame(
+            {
+                "reach_id": reach_ids,
+                "region": regions,
+                "reach_acc": reach_acc,
+            }
+        )
 
-        return result.sort_values('reach_acc', ascending=False)
+        return result.sort_values("reach_acc", ascending=False)
 
     def compute(
-        self,
-        region: Optional[str] = None,
-        method: str = 'matrix'
+        self, region: Optional[str] = None, method: str = "matrix"
     ) -> pd.DataFrame:
         """
         Compute reach accumulation using specified method.
@@ -232,7 +234,7 @@ class ReachAccumulator:
         pd.DataFrame
             DataFrame with columns: reach_id, region, reach_acc
         """
-        if method == 'matrix':
+        if method == "matrix":
             return self.compute_matrix(region)
         else:
             return self.compute_sql(region)
@@ -241,7 +243,7 @@ class ReachAccumulator:
 def compute_reach_accumulation(
     db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
     region: Optional[str] = None,
-    method: str = 'matrix'
+    method: str = "matrix",
 ) -> pd.DataFrame:
     """
     Convenience function to compute reach accumulation.
@@ -282,8 +284,7 @@ def compute_reach_accumulation(
 
 
 def compute_upstream_facc_sum(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None
+    conn: duckdb.DuckDBPyConnection, region: Optional[str] = None
 ) -> pd.DataFrame:
     """
     Compute sum of immediate upstream facc values for each reach.
@@ -341,8 +342,7 @@ def compute_upstream_facc_sum(
 
 
 def compute_bifurcation_facc_divergence(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None
+    conn: duckdb.DuckDBPyConnection, region: Optional[str] = None
 ) -> pd.DataFrame:
     """
     Compute facc divergence at bifurcations.
@@ -370,7 +370,7 @@ def compute_bifurcation_facc_divergence(
         -- Find reaches with 2+ downstream neighbors
         SELECT reach_id, region
         FROM reaches
-        WHERE n_rch_down >= 2 {where_clause.replace('up.', '')}
+        WHERE n_rch_down >= 2 {where_clause.replace("up.", "")}
     ),
     downstream_facc AS (
         -- Get facc of all downstream neighbors

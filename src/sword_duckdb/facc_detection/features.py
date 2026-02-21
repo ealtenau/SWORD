@@ -18,7 +18,7 @@ The key insight is that facc should scale with reach_acc:
 If actual_facc >> expected_facc, the reach likely has corrupted facc.
 """
 
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Union
 import duckdb
 import pandas as pd
 import numpy as np
@@ -46,7 +46,7 @@ class FaccFeatureExtractor:
 
     def get_reach_accumulation(self, region: Optional[str] = None) -> pd.DataFrame:
         """Get cached reach accumulation or compute it."""
-        cache_key = region or 'all'
+        cache_key = region or "all"
         if cache_key not in self._reach_acc_cache:
             self._reach_acc_cache[cache_key] = compute_reach_accumulation(
                 self.conn, region=region
@@ -96,7 +96,7 @@ class FaccFeatureExtractor:
         FROM reaches r
         WHERE r.facc > 0 AND r.facc != -9999
             AND r.width > 0
-        {where_clause.replace('WHERE', 'AND') if where_clause else ''}
+        {where_clause.replace("WHERE", "AND") if where_clause else ""}
         """
 
         return self.conn.execute(query).fetchdf()
@@ -119,7 +119,9 @@ class FaccFeatureExtractor:
         """
         return compute_upstream_facc_sum(self.conn, region=region)
 
-    def extract_bifurcation_features(self, region: Optional[str] = None) -> pd.DataFrame:
+    def extract_bifurcation_features(
+        self, region: Optional[str] = None
+    ) -> pd.DataFrame:
         """
         Extract bifurcation-specific features.
 
@@ -137,10 +139,7 @@ class FaccFeatureExtractor:
         """
         return compute_bifurcation_facc_divergence(self.conn, region=region)
 
-    def compute_reach_acc_ratio(
-        self,
-        region: Optional[str] = None
-    ) -> pd.DataFrame:
+    def compute_reach_acc_ratio(self, region: Optional[str] = None) -> pd.DataFrame:
         """
         Compute facc vs reach_acc ratio.
 
@@ -164,33 +163,33 @@ class FaccFeatureExtractor:
 
         # Merge
         merged = base_df.merge(
-            reach_acc_df[['reach_id', 'region', 'reach_acc']],
-            on=['reach_id', 'region'],
-            how='left'
+            reach_acc_df[["reach_id", "region", "reach_acc"]],
+            on=["reach_id", "region"],
+            how="left",
         )
 
         # Compute regional baseline: median facc per reach_acc unit
         if len(merged) > 0:
             # Exclude extreme values for baseline calculation
             valid = merged[
-                (merged['reach_acc'] > 0) &
-                (merged['facc'] > 0) &
-                (merged['facc_width_ratio'] < 5000)  # Exclude known corrupted
+                (merged["reach_acc"] > 0)
+                & (merged["facc"] > 0)
+                & (merged["facc_width_ratio"] < 5000)  # Exclude known corrupted
             ]
             if len(valid) > 0:
                 # Compute baseline facc per reach_acc
-                baseline = valid['facc'].median() / valid['reach_acc'].median()
+                baseline = valid["facc"].median() / valid["reach_acc"].median()
             else:
                 baseline = 1000  # Default fallback
         else:
             baseline = 1000
 
         # Compute ratio: how many times expected facc
-        merged['expected_facc'] = merged['reach_acc'] * baseline
-        merged['facc_reach_acc_ratio'] = np.where(
-            merged['expected_facc'] > 0,
-            merged['facc'] / merged['expected_facc'],
-            np.nan
+        merged["expected_facc"] = merged["reach_acc"] * baseline
+        merged["facc_reach_acc_ratio"] = np.where(
+            merged["expected_facc"] > 0,
+            merged["facc"] / merged["expected_facc"],
+            np.nan,
         )
 
         return merged
@@ -217,21 +216,29 @@ class FaccFeatureExtractor:
         # Add topology features (upstream facc sum)
         topo_features = self.extract_topology_features(region)
         features = features.merge(
-            topo_features[['reach_id', 'region', 'upstream_facc_sum', 'n_upstream', 'facc_jump_ratio']],
-            on=['reach_id', 'region'],
-            how='left'
+            topo_features[
+                [
+                    "reach_id",
+                    "region",
+                    "upstream_facc_sum",
+                    "n_upstream",
+                    "facc_jump_ratio",
+                ]
+            ],
+            on=["reach_id", "region"],
+            how="left",
         )
 
         # Add bifurcation indicators
         bifurc_features = self.extract_bifurcation_features(region)
         if len(bifurc_features) > 0:
             # Mark reaches that are downstream of suspicious bifurcations
-            suspicious_bifurc = bifurc_features[bifurc_features['likely_facc_error']]
-            features['downstream_of_suspicious_bifurc'] = features['reach_id'].isin(
-                suspicious_bifurc['reach_id']
+            suspicious_bifurc = bifurc_features[bifurc_features["likely_facc_error"]]
+            features["downstream_of_suspicious_bifurc"] = features["reach_id"].isin(
+                suspicious_bifurc["reach_id"]
             )
         else:
-            features['downstream_of_suspicious_bifurc'] = False
+            features["downstream_of_suspicious_bifurc"] = False
 
         # Compute composite anomaly features
         features = self._compute_composite_features(features)
@@ -255,26 +262,24 @@ class FaccFeatureExtractor:
         df = df.copy()
 
         # Log-scale features for better ML performance
-        df['log_facc'] = np.log1p(df['facc'])
-        df['log_width'] = np.log1p(df['width'])
-        df['log_reach_acc'] = np.log1p(df['reach_acc'].fillna(1))
+        df["log_facc"] = np.log1p(df["facc"])
+        df["log_width"] = np.log1p(df["width"])
+        df["log_reach_acc"] = np.log1p(df["reach_acc"].fillna(1))
 
         # Normalized ratios
-        df['facc_width_ratio_log'] = np.log1p(df['facc_width_ratio'].fillna(0))
+        df["facc_width_ratio_log"] = np.log1p(df["facc_width_ratio"].fillna(0))
 
         # Stream order interaction
-        df['facc_per_stream_order'] = np.where(
-            df['stream_order'] > 0,
-            df['facc'] / df['stream_order'],
-            df['facc']
+        df["facc_per_stream_order"] = np.where(
+            df["stream_order"] > 0, df["facc"] / df["stream_order"], df["facc"]
         )
 
         # Headwater/outlet flags
-        df['is_headwater'] = (df['end_reach'] == 1).astype(int)
-        df['is_outlet'] = (df['end_reach'] == 2).astype(int)
+        df["is_headwater"] = (df["end_reach"] == 1).astype(int)
+        df["is_outlet"] = (df["end_reach"] == 2).astype(int)
 
         # Fill NaN for ML features
-        for col in ['facc_jump_ratio', 'upstream_facc_sum', 'n_upstream', 'reach_acc']:
+        for col in ["facc_jump_ratio", "upstream_facc_sum", "n_upstream", "reach_acc"]:
             if col in df.columns:
                 df[col] = df[col].fillna(0)
 
@@ -282,8 +287,7 @@ class FaccFeatureExtractor:
 
 
 def extract_facc_features(
-    db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
-    region: Optional[str] = None
+    db_path_or_conn: Union[str, duckdb.DuckDBPyConnection], region: Optional[str] = None
 ) -> pd.DataFrame:
     """
     Convenience function to extract facc features.
@@ -322,8 +326,7 @@ def extract_facc_features(
 
 
 def get_seed_reach_features(
-    conn: duckdb.DuckDBPyConnection,
-    seed_reach_ids: List[int]
+    conn: duckdb.DuckDBPyConnection, seed_reach_ids: List[int]
 ) -> pd.DataFrame:
     """
     Extract features for known corrupted seed reaches.
@@ -344,11 +347,11 @@ def get_seed_reach_features(
     """
     # Known seed reaches from v17c_status.md with their modes
     SEED_MODES = {
-        64231000301: 'entry',      # facc/width = 35,239
-        62236100011: 'entry',      # facc/width = 22,811
-        62238000021: 'entry',      # facc/width = 1,559
-        64231000291: 'propagation',  # facc/width = 982
-        62255000451: 'propagation',  # facc/width = 528
+        64231000301: "entry",  # facc/width = 35,239
+        62236100011: "entry",  # facc/width = 22,811
+        62238000021: "entry",  # facc/width = 1,559
+        64231000291: "propagation",  # facc/width = 982
+        62255000451: "propagation",  # facc/width = 528
     }
 
     if not seed_reach_ids:
@@ -358,16 +361,16 @@ def get_seed_reach_features(
     extractor = FaccFeatureExtractor(conn)
 
     # We need to find the region for each seed
-    reach_ids_str = ', '.join(str(r) for r in seed_reach_ids)
+    reach_ids_str = ", ".join(str(r) for r in seed_reach_ids)
     regions_df = conn.execute(f"""
         SELECT DISTINCT region FROM reaches WHERE reach_id IN ({reach_ids_str})
     """).fetchdf()
 
     all_features = []
     for _, row in regions_df.iterrows():
-        region = row['region']
+        region = row["region"]
         features = extractor.extract_all_features(region=region)
-        seed_features = features[features['reach_id'].isin(seed_reach_ids)]
+        seed_features = features[features["reach_id"].isin(seed_reach_ids)]
         all_features.append(seed_features)
 
     if not all_features:
@@ -376,8 +379,8 @@ def get_seed_reach_features(
     result = pd.concat(all_features, ignore_index=True)
 
     # Add corruption mode
-    result['corruption_mode'] = result['reach_id'].map(
-        lambda x: SEED_MODES.get(x, 'unknown')
+    result["corruption_mode"] = result["reach_id"].map(
+        lambda x: SEED_MODES.get(x, "unknown")
     )
 
     return result

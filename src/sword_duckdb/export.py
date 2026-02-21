@@ -34,10 +34,9 @@ from __future__ import annotations
 
 import gc
 import logging
-import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Callable, Dict, List, TypeVar, Union
 
 import numpy as np
 import pandas as pd
@@ -49,26 +48,30 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Type var for retry decorator
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class PostgresExportError(Exception):
     """Base exception for PostgreSQL export errors."""
+
     pass
 
 
 class PgConnectionError(PostgresExportError):
     """Failed to connect to PostgreSQL."""
+
     pass
 
 
 class AuthenticationError(PostgresExportError):
     """Authentication failed."""
+
     pass
 
 
 class NetworkError(PostgresExportError):
     """Network-related error during export."""
+
     pass
 
 
@@ -77,7 +80,7 @@ def _retry_with_backoff(
     max_retries: int = 3,
     base_delay: float = 1.0,
     max_delay: float = 30.0,
-    retryable_exceptions: tuple = None
+    retryable_exceptions: tuple = None,
 ) -> T:
     """
     Execute a function with exponential backoff retry.
@@ -109,6 +112,7 @@ def _retry_with_backoff(
         # Default retryable exceptions for psycopg2
         try:
             import psycopg2
+
             retryable_exceptions = (
                 psycopg2.OperationalError,
                 psycopg2.InterfaceError,
@@ -126,7 +130,7 @@ def _retry_with_backoff(
             last_exception = e
             if attempt == max_retries:
                 break
-            delay = min(base_delay * (2 ** attempt), max_delay)
+            delay = min(base_delay * (2**attempt), max_delay)
             logger.warning(
                 f"Attempt {attempt + 1}/{max_retries + 1} failed: {e}. "
                 f"Retrying in {delay:.1f}s..."
@@ -265,9 +269,8 @@ CREATE TABLE IF NOT EXISTS {table_name} (
 
 
 def _get_pg_connection(
-    connection_string: str,
-    max_retries: int = 3
-) -> 'psycopg2.extensions.connection':
+    connection_string: str, max_retries: int = 3
+) -> "psycopg2.extensions.connection":
     """
     Get a PostgreSQL connection using psycopg2 with retry logic.
 
@@ -309,22 +312,22 @@ def _get_pg_connection(
         except PgOperationalError as e:
             error_msg = str(e).lower()
             # Provide helpful error messages for common failures
-            if 'authentication failed' in error_msg or 'password' in error_msg:
+            if "authentication failed" in error_msg or "password" in error_msg:
                 raise AuthenticationError(
                     f"PostgreSQL authentication failed. Check username/password. "
                     f"Original error: {e}"
                 ) from e
-            elif 'could not connect' in error_msg or 'connection refused' in error_msg:
+            elif "could not connect" in error_msg or "connection refused" in error_msg:
                 raise PgConnectionError(
                     f"Cannot connect to PostgreSQL server. Verify host/port and that "
                     f"the server is running. Original error: {e}"
                 ) from e
-            elif 'does not exist' in error_msg:
+            elif "does not exist" in error_msg:
                 raise PgConnectionError(
                     f"Database does not exist. Create it first with: "
                     f"createdb <dbname>. Original error: {e}"
                 ) from e
-            elif 'timeout' in error_msg or 'timed out' in error_msg:
+            elif "timeout" in error_msg or "timed out" in error_msg:
                 # This is retryable
                 raise
             else:
@@ -333,7 +336,7 @@ def _get_pg_connection(
     return _retry_with_backoff(connect, max_retries=max_retries)
 
 
-def _ensure_postgis(conn: 'psycopg2.extensions.connection') -> bool:
+def _ensure_postgis(conn: "psycopg2.extensions.connection") -> bool:
     """
     Ensure PostGIS extension is enabled.
 
@@ -353,7 +356,7 @@ def _ensure_postgis(conn: 'psycopg2.extensions.connection') -> bool:
 
 
 def export_to_postgres(
-    sword: 'SWORD',
+    sword: "SWORD",
     connection_string: str,
     tables: List[str] = None,
     schema: str = "public",
@@ -361,7 +364,7 @@ def export_to_postgres(
     drop_existing: bool = False,
     batch_size: int = 10000,
     include_topology: bool = True,
-    verbose: bool = True
+    verbose: bool = True,
 ) -> Dict[str, int]:
     """
     Export SWORD data to PostgreSQL/PostGIS for QGIS editing.
@@ -419,14 +422,12 @@ def export_to_postgres(
     {'na_reaches': 38696, 'na_nodes': 1705705}
     """
     if tables is None:
-        tables = ['reaches', 'nodes']
+        tables = ["reaches", "nodes"]
 
     conn = _get_pg_connection(connection_string)
     has_postgis = _ensure_postgis(conn)
 
     results = {}
-    region = sword.region
-    version = sword.version
 
     cursor = conn.cursor()
 
@@ -443,20 +444,38 @@ def export_to_postgres(
             if verbose:
                 logger.info(f"Exporting {table} to {table_name}...")
 
-            if table == 'reaches':
+            if table == "reaches":
                 count = _export_reaches_to_pg(
-                    sword, cursor, conn, table_name,
-                    drop_existing, batch_size, has_postgis, verbose
+                    sword,
+                    cursor,
+                    conn,
+                    table_name,
+                    drop_existing,
+                    batch_size,
+                    has_postgis,
+                    verbose,
                 )
-            elif table == 'nodes':
+            elif table == "nodes":
                 count = _export_nodes_to_pg(
-                    sword, cursor, conn, table_name,
-                    drop_existing, batch_size, has_postgis, verbose
+                    sword,
+                    cursor,
+                    conn,
+                    table_name,
+                    drop_existing,
+                    batch_size,
+                    has_postgis,
+                    verbose,
                 )
-            elif table == 'centerlines':
+            elif table == "centerlines":
                 count = _export_centerlines_to_pg(
-                    sword, cursor, conn, table_name,
-                    drop_existing, batch_size, has_postgis, verbose
+                    sword,
+                    cursor,
+                    conn,
+                    table_name,
+                    drop_existing,
+                    batch_size,
+                    has_postgis,
+                    verbose,
                 )
             else:
                 logger.warning(f"Unknown table: {table}")
@@ -465,13 +484,12 @@ def export_to_postgres(
             results[table_name] = count
 
         # Export topology if requested
-        if include_topology and 'reaches' in tables:
+        if include_topology and "reaches" in tables:
             topo_name = f"{prefix}reach_topology" if prefix else "reach_topology"
             if verbose:
                 logger.info(f"Exporting topology to {topo_name}...")
             count = _export_topology_to_pg(
-                sword, cursor, conn, topo_name,
-                drop_existing, batch_size, verbose
+                sword, cursor, conn, topo_name, drop_existing, batch_size, verbose
             )
             results[topo_name] = count
 
@@ -503,14 +521,14 @@ def export_to_postgres(
 
 
 def _export_reaches_to_pg(
-    sword: 'SWORD',
-    cursor: 'psycopg2.extensions.cursor',
-    conn: 'psycopg2.extensions.connection',
+    sword: "SWORD",
+    cursor: "psycopg2.extensions.cursor",
+    conn: "psycopg2.extensions.connection",
     table_name: str,
     drop_existing: bool,
     batch_size: int,
     has_postgis: bool,
-    verbose: bool
+    verbose: bool,
 ) -> int:
     """Export reaches table to PostgreSQL."""
 
@@ -527,54 +545,58 @@ def _export_reaches_to_pg(
     n_reaches = len(reaches)
 
     # Build DataFrame for export
-    df = pd.DataFrame({
-        'reach_id': reaches.id,
-        'region': sword.region,
-        'x': reaches.x,
-        'y': reaches.y,
-        'x_min': reaches.x_min,
-        'x_max': reaches.x_max,
-        'y_min': reaches.y_min,
-        'y_max': reaches.y_max,
-        'cl_id_min': reaches.cl_id[0],
-        'cl_id_max': reaches.cl_id[1],
-        'reach_length': reaches.len,
-        'n_nodes': reaches.rch_n_nodes,
-        'wse': reaches.wse,
-        'wse_var': reaches.wse_var,
-        'width': reaches.wth,
-        'width_var': reaches.wth_var,
-        'slope': reaches.slope,
-        'max_width': reaches.max_wth,
-        'facc': reaches.facc,
-        'dist_out': reaches.dist_out,
-        'lakeflag': reaches.lakeflag,
-        'obstr_type': reaches.grod,
-        'grod_id': reaches.grod_fid,
-        'hfalls_id': reaches.hfalls_fid,
-        'n_chan_max': reaches._df['n_chan_max'].values,
-        'n_chan_mod': reaches._df['n_chan_mod'].values,
-        'n_rch_up': reaches._df['n_rch_up'].values,
-        'n_rch_down': reaches._df['n_rch_down'].values,
-        'swot_obs': reaches._df['swot_obs'].values,
-        'iceflag': reaches._df['iceflag'].values,
-        'low_slope_flag': reaches._df['low_slope_flag'].values,
-        'river_name': reaches.river_name,
-        'edit_flag': reaches.edit_flag,
-        'trib_flag': reaches.trib_flag,
-        'path_freq': reaches.path_freq,
-        'path_order': reaches.path_order,
-        'path_segs': reaches.path_segs,
-        'stream_order': reaches.strm_order,
-        'main_side': reaches.main_side,
-        'end_reach': reaches.end_rch,
-        'network': reaches.network,
-        'add_flag': reaches._df['add_flag'].values if 'add_flag' in reaches._df.columns else np.zeros(n_reaches, dtype=np.int32),
-        'version': sword.version,
-    })
+    df = pd.DataFrame(
+        {
+            "reach_id": reaches.id,
+            "region": sword.region,
+            "x": reaches.x,
+            "y": reaches.y,
+            "x_min": reaches.x_min,
+            "x_max": reaches.x_max,
+            "y_min": reaches.y_min,
+            "y_max": reaches.y_max,
+            "cl_id_min": reaches.cl_id[0],
+            "cl_id_max": reaches.cl_id[1],
+            "reach_length": reaches.len,
+            "n_nodes": reaches.rch_n_nodes,
+            "wse": reaches.wse,
+            "wse_var": reaches.wse_var,
+            "width": reaches.wth,
+            "width_var": reaches.wth_var,
+            "slope": reaches.slope,
+            "max_width": reaches.max_wth,
+            "facc": reaches.facc,
+            "dist_out": reaches.dist_out,
+            "lakeflag": reaches.lakeflag,
+            "obstr_type": reaches.grod,
+            "grod_id": reaches.grod_fid,
+            "hfalls_id": reaches.hfalls_fid,
+            "n_chan_max": reaches._df["n_chan_max"].values,
+            "n_chan_mod": reaches._df["n_chan_mod"].values,
+            "n_rch_up": reaches._df["n_rch_up"].values,
+            "n_rch_down": reaches._df["n_rch_down"].values,
+            "swot_obs": reaches._df["swot_obs"].values,
+            "iceflag": reaches._df["iceflag"].values,
+            "low_slope_flag": reaches._df["low_slope_flag"].values,
+            "river_name": reaches.river_name,
+            "edit_flag": reaches.edit_flag,
+            "trib_flag": reaches.trib_flag,
+            "path_freq": reaches.path_freq,
+            "path_order": reaches.path_order,
+            "path_segs": reaches.path_segs,
+            "stream_order": reaches.strm_order,
+            "main_side": reaches.main_side,
+            "end_reach": reaches.end_rch,
+            "network": reaches.network,
+            "add_flag": reaches._df["add_flag"].values
+            if "add_flag" in reaches._df.columns
+            else np.zeros(n_reaches, dtype=np.int32),
+            "version": sword.version,
+        }
+    )
 
     # Get geometry as WKT from database (DuckDB WKB isn't compatible with PostGIS)
-    if has_postgis and 'geom' in reaches._df.columns:
+    if has_postgis and "geom" in reaches._df.columns:
         geom_wkt = sword.db.query(f"""
             SELECT reach_id, ST_AsText(geom) as wkt
             FROM reaches
@@ -582,10 +604,10 @@ def _export_reaches_to_pg(
             ORDER BY reach_id
         """)
         # Create a mapping from reach_id to WKT
-        wkt_map = dict(zip(geom_wkt['reach_id'], geom_wkt['wkt']))
-        df['geom'] = df['reach_id'].map(wkt_map)
+        wkt_map = dict(zip(geom_wkt["reach_id"], geom_wkt["wkt"]))
+        df["geom"] = df["reach_id"].map(wkt_map)
     else:
-        df['geom'] = None
+        df["geom"] = None
 
     # Replace NaN and pandas NA with None for PostgreSQL
     df = df.replace({np.nan: None})
@@ -597,21 +619,21 @@ def _export_reaches_to_pg(
     # Build placeholders - special handling for geom column (WKT -> PostGIS)
     placeholders = []
     for col in columns:
-        if col == 'geom' and has_postgis:
-            placeholders.append('ST_GeomFromText(%s, 4326)')
+        if col == "geom" and has_postgis:
+            placeholders.append("ST_GeomFromText(%s, 4326)")
         else:
-            placeholders.append('%s')
+            placeholders.append("%s")
 
     insert_sql = f"""
-        INSERT INTO {table_name} ({', '.join(columns)})
-        VALUES ({', '.join(placeholders)})
+        INSERT INTO {table_name} ({", ".join(columns)})
+        VALUES ({", ".join(placeholders)})
         ON CONFLICT (reach_id, region) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in columns if c not in ['reach_id', 'region'])}
+            {", ".join(f"{c} = EXCLUDED.{c}" for c in columns if c not in ["reach_id", "region"])}
     """
 
     count = 0
     for i in range(0, len(df), batch_size):
-        batch = df.iloc[i:i+batch_size]
+        batch = df.iloc[i : i + batch_size]
         values = [tuple(row) for row in batch.values]
         cursor.executemany(insert_sql, values)
         count += len(batch)
@@ -624,14 +646,14 @@ def _export_reaches_to_pg(
 
 
 def _export_nodes_to_pg(
-    sword: 'SWORD',
-    cursor: 'psycopg2.extensions.cursor',
-    conn: 'psycopg2.extensions.connection',
+    sword: "SWORD",
+    cursor: "psycopg2.extensions.cursor",
+    conn: "psycopg2.extensions.connection",
     table_name: str,
     drop_existing: bool,
     batch_size: int,
     has_postgis: bool,
-    verbose: bool
+    verbose: bool,
 ) -> int:
     """Export nodes table to PostgreSQL."""
 
@@ -648,46 +670,50 @@ def _export_nodes_to_pg(
     n_nodes = len(nodes)
 
     # Build DataFrame for export
-    df = pd.DataFrame({
-        'node_id': nodes.id,
-        'region': sword.region,
-        'x': nodes.x,
-        'y': nodes.y,
-        'cl_id_min': nodes.cl_id[0],
-        'cl_id_max': nodes.cl_id[1],
-        'reach_id': nodes.reach_id,
-        'node_length': nodes.len,
-        'wse': nodes.wse,
-        'wse_var': nodes.wse_var,
-        'width': nodes.wth,
-        'width_var': nodes.wth_var,
-        'max_width': nodes.max_wth,
-        'facc': nodes.facc,
-        'dist_out': nodes.dist_out,
-        'lakeflag': nodes.lakeflag,
-        'obstr_type': nodes.grod,
-        'grod_id': nodes.grod_fid,
-        'hfalls_id': nodes.hfalls_fid,
-        'n_chan_max': nodes.nchan_max,
-        'n_chan_mod': nodes.nchan_mod,
-        'wth_coef': nodes.wth_coef,
-        'ext_dist_coef': nodes.ext_dist_coef,
-        'meander_length': nodes.meand_len,
-        'sinuosity': nodes.sinuosity,
-        'river_name': nodes.river_name,
-        'manual_add': nodes.manual_add,
-        'edit_flag': nodes.edit_flag,
-        'trib_flag': nodes.trib_flag,
-        'path_freq': nodes.path_freq,
-        'path_order': nodes.path_order,
-        'path_segs': nodes.path_segs,
-        'stream_order': nodes.strm_order,
-        'main_side': nodes.main_side,
-        'end_reach': nodes.end_rch,
-        'network': nodes.network,
-        'add_flag': nodes._df['add_flag'].values if 'add_flag' in nodes._df.columns else np.zeros(n_nodes, dtype=np.int32),
-        'version': sword.version
-    })
+    df = pd.DataFrame(
+        {
+            "node_id": nodes.id,
+            "region": sword.region,
+            "x": nodes.x,
+            "y": nodes.y,
+            "cl_id_min": nodes.cl_id[0],
+            "cl_id_max": nodes.cl_id[1],
+            "reach_id": nodes.reach_id,
+            "node_length": nodes.len,
+            "wse": nodes.wse,
+            "wse_var": nodes.wse_var,
+            "width": nodes.wth,
+            "width_var": nodes.wth_var,
+            "max_width": nodes.max_wth,
+            "facc": nodes.facc,
+            "dist_out": nodes.dist_out,
+            "lakeflag": nodes.lakeflag,
+            "obstr_type": nodes.grod,
+            "grod_id": nodes.grod_fid,
+            "hfalls_id": nodes.hfalls_fid,
+            "n_chan_max": nodes.nchan_max,
+            "n_chan_mod": nodes.nchan_mod,
+            "wth_coef": nodes.wth_coef,
+            "ext_dist_coef": nodes.ext_dist_coef,
+            "meander_length": nodes.meand_len,
+            "sinuosity": nodes.sinuosity,
+            "river_name": nodes.river_name,
+            "manual_add": nodes.manual_add,
+            "edit_flag": nodes.edit_flag,
+            "trib_flag": nodes.trib_flag,
+            "path_freq": nodes.path_freq,
+            "path_order": nodes.path_order,
+            "path_segs": nodes.path_segs,
+            "stream_order": nodes.strm_order,
+            "main_side": nodes.main_side,
+            "end_reach": nodes.end_rch,
+            "network": nodes.network,
+            "add_flag": nodes._df["add_flag"].values
+            if "add_flag" in nodes._df.columns
+            else np.zeros(n_nodes, dtype=np.int32),
+            "version": sword.version,
+        }
+    )
 
     # Replace NaN with None for PostgreSQL
     df = df.replace({np.nan: None})
@@ -697,12 +723,12 @@ def _export_nodes_to_pg(
 
     # Insert in batches
     columns = df.columns.tolist()
-    placeholders = ', '.join(['%s'] * len(columns))
+    placeholders = ", ".join(["%s"] * len(columns))
     insert_sql = f"""
-        INSERT INTO {table_name} ({', '.join(columns)})
+        INSERT INTO {table_name} ({", ".join(columns)})
         VALUES ({placeholders})
         ON CONFLICT (node_id, region) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in columns if c not in ['node_id', 'region'])}
+            {", ".join(f"{c} = EXCLUDED.{c}" for c in columns if c not in ["node_id", "region"])}
     """
 
     # Disable GC during batch inserts (same pattern as SWORD class)
@@ -712,7 +738,7 @@ def _export_nodes_to_pg(
     try:
         count = 0
         for i in range(0, len(df), batch_size):
-            batch = df.iloc[i:i+batch_size]
+            batch = df.iloc[i : i + batch_size]
             values = [tuple(row) for row in batch.values]
             cursor.executemany(insert_sql, values)
             count += len(batch)
@@ -737,14 +763,14 @@ def _export_nodes_to_pg(
 
 
 def _export_centerlines_to_pg(
-    sword: 'SWORD',
-    cursor: 'psycopg2.extensions.cursor',
-    conn: 'psycopg2.extensions.connection',
+    sword: "SWORD",
+    cursor: "psycopg2.extensions.cursor",
+    conn: "psycopg2.extensions.connection",
     table_name: str,
     drop_existing: bool,
     batch_size: int,
     has_postgis: bool,
-    verbose: bool
+    verbose: bool,
 ) -> int:
     """Export centerlines table to PostgreSQL."""
 
@@ -761,24 +787,26 @@ def _export_centerlines_to_pg(
     n_cls = len(centerlines)
 
     # Build DataFrame for export
-    df = pd.DataFrame({
-        'cl_id': centerlines.cl_id,
-        'region': sword.region,
-        'x': centerlines.x,
-        'y': centerlines.y,
-        'reach_id': centerlines.reach_id[0],
-        'node_id': centerlines.node_id[0],
-        'version': sword.version
-    })
+    df = pd.DataFrame(
+        {
+            "cl_id": centerlines.cl_id,
+            "region": sword.region,
+            "x": centerlines.x,
+            "y": centerlines.y,
+            "reach_id": centerlines.reach_id[0],
+            "node_id": centerlines.node_id[0],
+            "version": sword.version,
+        }
+    )
 
     # Insert in batches
     columns = df.columns.tolist()
-    placeholders = ', '.join(['%s'] * len(columns))
+    placeholders = ", ".join(["%s"] * len(columns))
     insert_sql = f"""
-        INSERT INTO {table_name} ({', '.join(columns)})
+        INSERT INTO {table_name} ({", ".join(columns)})
         VALUES ({placeholders})
         ON CONFLICT (cl_id, region) DO UPDATE SET
-            {', '.join(f'{c} = EXCLUDED.{c}' for c in columns if c not in ['cl_id', 'region'])}
+            {", ".join(f"{c} = EXCLUDED.{c}" for c in columns if c not in ["cl_id", "region"])}
     """
 
     # Disable GC during batch inserts
@@ -788,7 +816,7 @@ def _export_centerlines_to_pg(
     try:
         count = 0
         for i in range(0, len(df), batch_size):
-            batch = df.iloc[i:i+batch_size]
+            batch = df.iloc[i : i + batch_size]
             values = [tuple(row) for row in batch.values]
             cursor.executemany(insert_sql, values)
             count += len(batch)
@@ -813,13 +841,13 @@ def _export_centerlines_to_pg(
 
 
 def _export_topology_to_pg(
-    sword: 'SWORD',
-    cursor: 'psycopg2.extensions.cursor',
-    conn: 'psycopg2.extensions.connection',
+    sword: "SWORD",
+    cursor: "psycopg2.extensions.cursor",
+    conn: "psycopg2.extensions.connection",
     table_name: str,
     drop_existing: bool,
     batch_size: int,
-    verbose: bool
+    verbose: bool,
 ) -> int:
     """Export reach topology table to PostgreSQL."""
 
@@ -844,13 +872,13 @@ def _export_topology_to_pg(
         for rank in range(4):
             neighbor_id = int(reaches.rch_id_up[rank, i])
             if neighbor_id != 0:  # 0 means no neighbor
-                records.append((reach_id, sword.region, 'up', rank, neighbor_id))
+                records.append((reach_id, sword.region, "up", rank, neighbor_id))
 
         # Downstream neighbors (from rch_id_down[4,N])
         for rank in range(4):
             neighbor_id = int(reaches.rch_id_down[rank, i])
             if neighbor_id != 0:
-                records.append((reach_id, sword.region, 'down', rank, neighbor_id))
+                records.append((reach_id, sword.region, "down", rank, neighbor_id))
 
     # Insert in batches
     insert_sql = f"""
@@ -862,7 +890,7 @@ def _export_topology_to_pg(
 
     count = 0
     for i in range(0, len(records), batch_size):
-        batch = records[i:i+batch_size]
+        batch = records[i : i + batch_size]
         cursor.executemany(insert_sql, batch)
         count += len(batch)
         if verbose and count % 100000 == 0:
@@ -873,10 +901,10 @@ def _export_topology_to_pg(
 
 
 def _create_pg_spatial_index(
-    cursor: 'psycopg2.extensions.cursor',
-    conn: 'psycopg2.extensions.connection',
+    cursor: "psycopg2.extensions.cursor",
+    conn: "psycopg2.extensions.connection",
     table_name: str,
-    verbose: bool
+    verbose: bool,
 ) -> None:
     """Create spatial index on PostGIS geometry column."""
     try:
@@ -893,10 +921,10 @@ def _create_pg_spatial_index(
 
 
 def export_to_geoparquet(
-    sword: 'SWORD',
+    sword: "SWORD",
     output_path: Union[str, Path],
-    table: str = 'reaches',
-    compression: str = 'snappy'
+    table: str = "reaches",
+    compression: str = "snappy",
 ) -> int:
     """
     Export SWORD table to GeoParquet format.
@@ -924,7 +952,7 @@ def export_to_geoparquet(
     """
     try:
         import geopandas as gpd
-        from shapely.geometry import Point, LineString
+        from shapely.geometry import Point  # noqa: F401
     except ImportError:
         raise ImportError(
             "geopandas is required for GeoParquet export. "
@@ -934,40 +962,52 @@ def export_to_geoparquet(
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if table == 'reaches':
+    if table == "reaches":
         data = sword.reaches
-        gdf = gpd.GeoDataFrame({
-            'reach_id': data.id,
-            'region': sword.region,
-            'dist_out': data.dist_out,
-            'facc': data.facc,
-            'wse': data.wse,
-            'width': data.wth,
-            'slope': data.slope,
-            'river_name': data.river_name,
-            'stream_order': data.strm_order,
-        }, geometry=[Point(x, y) for x, y in zip(data.x, data.y)], crs="EPSG:4326")
+        gdf = gpd.GeoDataFrame(
+            {
+                "reach_id": data.id,
+                "region": sword.region,
+                "dist_out": data.dist_out,
+                "facc": data.facc,
+                "wse": data.wse,
+                "width": data.wth,
+                "slope": data.slope,
+                "river_name": data.river_name,
+                "stream_order": data.strm_order,
+            },
+            geometry=[Point(x, y) for x, y in zip(data.x, data.y)],
+            crs="EPSG:4326",
+        )
 
-    elif table == 'nodes':
+    elif table == "nodes":
         data = sword.nodes
-        gdf = gpd.GeoDataFrame({
-            'node_id': data.id,
-            'reach_id': data.reach_id,
-            'region': sword.region,
-            'dist_out': data.dist_out,
-            'facc': data.facc,
-            'wse': data.wse,
-            'width': data.wth,
-        }, geometry=[Point(x, y) for x, y in zip(data.x, data.y)], crs="EPSG:4326")
+        gdf = gpd.GeoDataFrame(
+            {
+                "node_id": data.id,
+                "reach_id": data.reach_id,
+                "region": sword.region,
+                "dist_out": data.dist_out,
+                "facc": data.facc,
+                "wse": data.wse,
+                "width": data.wth,
+            },
+            geometry=[Point(x, y) for x, y in zip(data.x, data.y)],
+            crs="EPSG:4326",
+        )
 
-    elif table == 'centerlines':
+    elif table == "centerlines":
         data = sword.centerlines
-        gdf = gpd.GeoDataFrame({
-            'cl_id': data.cl_id,
-            'reach_id': data.reach_id[0],
-            'node_id': data.node_id[0],
-            'region': sword.region,
-        }, geometry=[Point(x, y) for x, y in zip(data.x, data.y)], crs="EPSG:4326")
+        gdf = gpd.GeoDataFrame(
+            {
+                "cl_id": data.cl_id,
+                "reach_id": data.reach_id[0],
+                "node_id": data.node_id[0],
+                "region": sword.region,
+            },
+            geometry=[Point(x, y) for x, y in zip(data.x, data.y)],
+            crs="EPSG:4326",
+        )
     else:
         raise ValueError(f"Unknown table: {table}")
 
@@ -976,10 +1016,10 @@ def export_to_geoparquet(
 
 
 def export_to_geopackage(
-    sword: 'SWORD',
+    sword: "SWORD",
     output_path: Union[str, Path],
     tables: List[str] = None,
-    layer_prefix: str = ""
+    layer_prefix: str = "",
 ) -> Dict[str, int]:
     """
     Export SWORD tables to GeoPackage format.
@@ -1010,7 +1050,7 @@ def export_to_geopackage(
         )
 
     if tables is None:
-        tables = ['reaches', 'nodes']
+        tables = ["reaches", "nodes"]
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1020,52 +1060,60 @@ def export_to_geopackage(
     for table in tables:
         layer_name = f"{layer_prefix}{table}" if layer_prefix else table
 
-        if table == 'reaches':
+        if table == "reaches":
             data = sword.reaches
-            gdf = gpd.GeoDataFrame({
-                'reach_id': data.id,
-                'region': sword.region,
-                'dist_out': data.dist_out,
-                'facc': data.facc,
-                'wse': data.wse,
-                'width': data.wth,
-                'slope': data.slope,
-                'river_name': data.river_name,
-                'stream_order': data.strm_order,
-                'main_side': data.main_side,
-                'end_rch': data.end_rch,
-            }, geometry=[Point(x, y) for x, y in zip(data.x, data.y)], crs="EPSG:4326")
+            gdf = gpd.GeoDataFrame(
+                {
+                    "reach_id": data.id,
+                    "region": sword.region,
+                    "dist_out": data.dist_out,
+                    "facc": data.facc,
+                    "wse": data.wse,
+                    "width": data.wth,
+                    "slope": data.slope,
+                    "river_name": data.river_name,
+                    "stream_order": data.strm_order,
+                    "main_side": data.main_side,
+                    "end_rch": data.end_rch,
+                },
+                geometry=[Point(x, y) for x, y in zip(data.x, data.y)],
+                crs="EPSG:4326",
+            )
 
-        elif table == 'nodes':
+        elif table == "nodes":
             data = sword.nodes
-            gdf = gpd.GeoDataFrame({
-                'node_id': data.id,
-                'reach_id': data.reach_id,
-                'region': sword.region,
-                'dist_out': data.dist_out,
-                'facc': data.facc,
-                'wse': data.wse,
-                'width': data.wth,
-                'stream_order': data.strm_order,
-            }, geometry=[Point(x, y) for x, y in zip(data.x, data.y)], crs="EPSG:4326")
+            gdf = gpd.GeoDataFrame(
+                {
+                    "node_id": data.id,
+                    "reach_id": data.reach_id,
+                    "region": sword.region,
+                    "dist_out": data.dist_out,
+                    "facc": data.facc,
+                    "wse": data.wse,
+                    "width": data.wth,
+                    "stream_order": data.strm_order,
+                },
+                geometry=[Point(x, y) for x, y in zip(data.x, data.y)],
+                crs="EPSG:4326",
+            )
         else:
             continue
 
         # Always write fresh layers (mode='a' can cause fiona issues)
         # GeoPackage supports multiple layers natively
-        gdf.to_file(str(output_path), layer=layer_name, driver='GPKG')
+        gdf.to_file(str(output_path), layer=layer_name, driver="GPKG")
         results[layer_name] = len(gdf)
 
     return results
 
 
 def sync_from_postgres(
-    sword: 'SWORD',
+    sword: "SWORD",
     connection_string: str,
     table: str,
     prefix: str = "",
     changed_only: bool = True,
-    verbose: bool = True
+    verbose: bool = True,
 ) -> Dict[str, int]:
     """
     Sync changes from PostgreSQL back to DuckDB.
@@ -1100,9 +1148,11 @@ def sync_from_postgres(
     table_name = f"{prefix}{table}" if prefix else table
 
     try:
-        if table == 'reaches':
-            return _sync_reaches_from_pg(sword, cursor, table_name, changed_only, verbose)
-        elif table == 'nodes':
+        if table == "reaches":
+            return _sync_reaches_from_pg(
+                sword, cursor, table_name, changed_only, verbose
+            )
+        elif table == "nodes":
             return _sync_nodes_from_pg(sword, cursor, table_name, changed_only, verbose)
         else:
             raise ValueError(f"Cannot sync table: {table}")
@@ -1112,19 +1162,30 @@ def sync_from_postgres(
 
 
 def _sync_reaches_from_pg(
-    sword: 'SWORD',
-    cursor: 'psycopg2.extensions.cursor',
+    sword: "SWORD",
+    cursor: "psycopg2.extensions.cursor",
     table_name: str,
     changed_only: bool,
-    verbose: bool
+    verbose: bool,
 ) -> Dict[str, int]:
     """Sync reach changes from PostgreSQL to DuckDB."""
 
     # Get columns that can be synced (editable attributes)
     editable_cols = [
-        'dist_out', 'facc', 'wse', 'wse_var', 'width', 'width_var', 'slope',
-        'lakeflag', 'river_name', 'edit_flag', 'trib_flag',
-        'main_side', 'end_reach', 'stream_order'
+        "dist_out",
+        "facc",
+        "wse",
+        "wse_var",
+        "width",
+        "width_var",
+        "slope",
+        "lakeflag",
+        "river_name",
+        "edit_flag",
+        "trib_flag",
+        "main_side",
+        "end_reach",
+        "stream_order",
     ]
 
     # Get all rows from PostgreSQL (or only changed ones)
@@ -1138,7 +1199,7 @@ def _sync_reaches_from_pg(
         if cursor.fetchone():
             where_clause = "WHERE updated_at > CURRENT_TIMESTAMP - INTERVAL '1 day'"
 
-    col_list = ', '.join(['reach_id'] + editable_cols)
+    col_list = ", ".join(["reach_id"] + editable_cols)
     cursor.execute(f"SELECT {col_list} FROM {table_name} {where_clause}")
 
     rows = cursor.fetchall()
@@ -1165,22 +1226,32 @@ def _sync_reaches_from_pg(
 
         updated += 1
 
-    return {'updated': updated, 'total': len(rows)}
+    return {"updated": updated, "total": len(rows)}
 
 
 def _sync_nodes_from_pg(
-    sword: 'SWORD',
-    cursor: 'psycopg2.extensions.cursor',
+    sword: "SWORD",
+    cursor: "psycopg2.extensions.cursor",
     table_name: str,
     changed_only: bool,
-    verbose: bool
+    verbose: bool,
 ) -> Dict[str, int]:
     """Sync node changes from PostgreSQL to DuckDB."""
 
     editable_cols = [
-        'dist_out', 'facc', 'wse', 'wse_var', 'width', 'width_var',
-        'lakeflag', 'river_name', 'edit_flag', 'trib_flag',
-        'main_side', 'end_reach', 'stream_order'
+        "dist_out",
+        "facc",
+        "wse",
+        "wse_var",
+        "width",
+        "width_var",
+        "lakeflag",
+        "river_name",
+        "edit_flag",
+        "trib_flag",
+        "main_side",
+        "end_reach",
+        "stream_order",
     ]
 
     where_clause = ""
@@ -1192,7 +1263,7 @@ def _sync_nodes_from_pg(
         if cursor.fetchone():
             where_clause = "WHERE updated_at > CURRENT_TIMESTAMP - INTERVAL '1 day'"
 
-    col_list = ', '.join(['node_id'] + editable_cols)
+    col_list = ", ".join(["node_id"] + editable_cols)
     cursor.execute(f"SELECT {col_list} FROM {table_name} {where_clause}")
 
     rows = cursor.fetchall()
@@ -1225,4 +1296,4 @@ def _sync_nodes_from_pg(
         if gc_was_enabled:
             gc.enable()
 
-    return {'updated': updated, 'total': len(rows)}
+    return {"updated": updated, "total": len(rows)}

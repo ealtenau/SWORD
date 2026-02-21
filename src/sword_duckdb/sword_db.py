@@ -42,10 +42,9 @@ from .backends import (
     DuckDBBackend,
     PostgresBackend,
     detect_backend_type,
-    get_backend,
 )
 from .backends.base import IsolationLevel, TransactionContext
-from .schema import create_schema, SCHEMA_VERSION
+from .schema import create_schema
 
 logger = logging.getLogger(__name__)
 
@@ -154,9 +153,9 @@ class SWORDDatabase:
     @property
     def _spatial_loaded(self) -> bool:
         """Whether spatial extension is loaded (DuckDB only, for backward compat)."""
-        if hasattr(self._backend, '_spatial_loaded'):
+        if hasattr(self._backend, "_spatial_loaded"):
             return self._backend._spatial_loaded
-        if hasattr(self._backend, '_postgis_enabled'):
+        if hasattr(self._backend, "_postgis_enabled"):
             return self._backend._postgis_enabled
         return False
 
@@ -208,7 +207,7 @@ class SWORDDatabase:
         self._backend.close()
         self._conn = None
 
-    def __enter__(self) -> 'SWORDDatabase':
+    def __enter__(self) -> "SWORDDatabase":
         """Context manager entry."""
         self.connect()
         return self
@@ -343,7 +342,7 @@ class SWORDDatabase:
             List of 2-letter region codes.
         """
         result = self.query("SELECT DISTINCT region FROM reaches ORDER BY region")
-        return result['region'].tolist()
+        return result["region"].tolist()
 
     def get_versions(self) -> pd.DataFrame:
         """
@@ -381,32 +380,38 @@ class SWORDDatabase:
         counts = {}
 
         # Tables with region column
-        for table in ['centerlines', 'nodes', 'reaches']:
+        for table in ["centerlines", "nodes", "reaches"]:
             sql = f"SELECT COUNT(*) as cnt FROM {table} {where_clause}"
             result = self.query(sql, params if params else None)
-            counts[table] = result.iloc[0]['cnt']
+            counts[table] = result.iloc[0]["cnt"]
 
         # Derived tables (no region column, need to join)
         if region:
-            counts['reach_topology'] = self.query(f"""
+            counts["reach_topology"] = self.query(
+                f"""
                 SELECT COUNT(*) as cnt FROM reach_topology t
                 JOIN reaches r ON t.reach_id = r.reach_id
                 WHERE r.region = {placeholder}
-            """, [region]).iloc[0]['cnt']
+            """,
+                [region],
+            ).iloc[0]["cnt"]
 
-            counts['reach_swot_orbits'] = self.query(f"""
+            counts["reach_swot_orbits"] = self.query(
+                f"""
                 SELECT COUNT(*) as cnt FROM reach_swot_orbits o
                 JOIN reaches r ON o.reach_id = r.reach_id
                 WHERE r.region = {placeholder}
-            """, [region]).iloc[0]['cnt']
+            """,
+                [region],
+            ).iloc[0]["cnt"]
         else:
-            counts['reach_topology'] = self.query(
+            counts["reach_topology"] = self.query(
                 "SELECT COUNT(*) as cnt FROM reach_topology"
-            ).iloc[0]['cnt']
+            ).iloc[0]["cnt"]
 
-            counts['reach_swot_orbits'] = self.query(
+            counts["reach_swot_orbits"] = self.query(
                 "SELECT COUNT(*) as cnt FROM reach_swot_orbits"
-            ).iloc[0]['cnt']
+            ).iloc[0]["cnt"]
 
         return counts
 
@@ -419,9 +424,9 @@ class SWORDDatabase:
         bool
             True if spatial queries are supported.
         """
-        if hasattr(self._backend, 'spatial_available'):
+        if hasattr(self._backend, "spatial_available"):
             return self._backend.spatial_available
-        if hasattr(self._backend, '_postgis_enabled'):
+        if hasattr(self._backend, "_postgis_enabled"):
             return self._backend._postgis_enabled
         return False
 
@@ -434,7 +439,7 @@ class SWORDDatabase:
                 WHERE version = 'schema'
             """)
             if len(result) > 0:
-                return result['schema_version'].iloc[0]
+                return result["schema_version"].iloc[0]
         except Exception:
             pass
         return None
@@ -487,7 +492,9 @@ class SWORDDatabase:
             with self._backend.acquire_region_lock(region, timeout_ms) as conn:
                 yield conn
         else:
-            raise NotImplementedError(f"Region locking not supported for {self._backend_type}")
+            raise NotImplementedError(
+                f"Region locking not supported for {self._backend_type}"
+            )
 
     def has_region_lock(self, region: str) -> bool:
         """

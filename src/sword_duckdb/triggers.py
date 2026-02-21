@@ -40,7 +40,7 @@ See DEVELOPMENT_STATUS.md for tracking.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ DROP TABLE IF EXISTS {prefix}sword_changes;
 """
 
 
-def _get_pg_connection(connection_string: str) -> 'psycopg2.extensions.connection':
+def _get_pg_connection(connection_string: str) -> Any:
     """Get a PostgreSQL connection using psycopg2."""
     try:
         import psycopg2
@@ -235,9 +235,7 @@ def _get_pg_connection(connection_string: str) -> 'psycopg2.extensions.connectio
 
 
 def install_triggers(
-    connection_string: str,
-    prefix: str = "",
-    verbose: bool = True
+    connection_string: str, prefix: str = "", verbose: bool = True
 ) -> bool:
     """
     Install change tracking triggers on SWORD tables in PostgreSQL.
@@ -299,9 +297,7 @@ def install_triggers(
 
 
 def remove_triggers(
-    connection_string: str,
-    prefix: str = "",
-    verbose: bool = True
+    connection_string: str, prefix: str = "", verbose: bool = True
 ) -> bool:
     """
     Remove change tracking triggers from SWORD tables.
@@ -344,9 +340,7 @@ def remove_triggers(
 
 
 def get_pending_changes(
-    connection_string: str,
-    prefix: str = "",
-    table: str = None
+    connection_string: str, prefix: str = "", table: str = None
 ) -> Dict[str, int]:
     """
     Get count of pending (unsynced) changes by table.
@@ -389,10 +383,7 @@ def get_pending_changes(
 
 
 def get_changed_entities(
-    connection_string: str,
-    prefix: str = "",
-    table: str = "reaches",
-    since: str = None
+    connection_string: str, prefix: str = "", table: str = "reaches", since: str = None
 ) -> List[Dict]:
     """
     Get list of changed entities with their changes.
@@ -436,8 +427,16 @@ def get_changed_entities(
             ORDER BY changed_at
         """)
 
-        columns = ['change_id', 'entity_id', 'region', 'change_type',
-                   'changed_columns', 'old_values', 'new_values', 'changed_at']
+        columns = [
+            "change_id",
+            "entity_id",
+            "region",
+            "change_type",
+            "changed_columns",
+            "old_values",
+            "new_values",
+            "changed_at",
+        ]
         return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
     finally:
@@ -449,7 +448,7 @@ def mark_changes_synced(
     connection_string: str,
     prefix: str = "",
     change_ids: List[int] = None,
-    all_changes: bool = False
+    all_changes: bool = False,
 ) -> int:
     """
     Mark changes as synced after importing to DuckDB.
@@ -481,11 +480,14 @@ def mark_changes_synced(
                 WHERE synced = FALSE
             """)
         elif change_ids:
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 UPDATE {prefix}sword_changes
                 SET synced = TRUE, synced_at = CURRENT_TIMESTAMP
                 WHERE change_id = ANY(%s)
-            """, (change_ids,))
+            """,
+                (change_ids,),
+            )
         else:
             return 0
 
@@ -502,7 +504,7 @@ def clear_change_history(
     connection_string: str,
     prefix: str = "",
     synced_only: bool = True,
-    older_than_days: int = None
+    older_than_days: int = None,
 ) -> int:
     """
     Clear change history records.
@@ -531,7 +533,9 @@ def clear_change_history(
         if synced_only:
             where_clauses.append("synced = TRUE")
         if older_than_days:
-            where_clauses.append(f"changed_at < CURRENT_TIMESTAMP - INTERVAL '{older_than_days} days'")
+            where_clauses.append(
+                f"changed_at < CURRENT_TIMESTAMP - INTERVAL '{older_than_days} days'"
+            )
 
         where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
 

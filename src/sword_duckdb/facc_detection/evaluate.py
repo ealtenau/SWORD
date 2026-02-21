@@ -21,9 +21,8 @@ from typing import Optional, List, Dict, Any, Union, Set
 from dataclasses import dataclass
 import duckdb
 import pandas as pd
-import numpy as np
 
-from .detect import FaccDetector, DetectionResult, DetectionConfig
+from .detect import FaccDetector
 from .features import get_seed_reach_features
 
 
@@ -31,71 +30,97 @@ from .features import get_seed_reach_features
 # All seeds are BAD in v17b (have corrupted facc values)
 SEED_REACHES = {
     # SA region - Amazon/Orinoco basins (15 seeds)
-    64231000301: {'region': 'SA', 'facc_width_ratio': 35239},
-    62236100011: {'region': 'SA', 'facc_width_ratio': 22811},
-    62238000021: {'region': 'SA', 'facc_width_ratio': 1559},
-    64231000291: {'region': 'SA', 'facc_width_ratio': 982},
-    62255000451: {'region': 'SA', 'facc_width_ratio': 528},
-    17211100181: {'region': 'SA'},
-    13261100101: {'region': 'SA', 'facc_width_ratio': 15404},
-    13214000011: {'region': 'SA'},
-    13212000011: {'region': 'SA'},
-    62210000705: {'region': 'SA', 'note': 'facc should be on 62210000055/45/35'},
-    62233000095: {'region': 'SA'},
-    61550900161: {'region': 'SA', 'facc_width_ratio': 1124, 'river_name': 'Cinaruco River'},
-    61550700051: {'region': 'SA', 'facc_width_ratio': 6961},
-    62281800021: {'region': 'SA', 'facc_width_ratio': 3197},
-    62283000081: {'region': 'SA', 'facc_width_ratio': 2018, 'river_name': 'Rio Unini'},
-    62293100143: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
-    62293100156: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
-    62253000321: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
-    62235900101: {'region': 'SA', 'note': 'added 2026-02-05, missed by RF regressor'},
+    64231000301: {"region": "SA", "facc_width_ratio": 35239},
+    62236100011: {"region": "SA", "facc_width_ratio": 22811},
+    62238000021: {"region": "SA", "facc_width_ratio": 1559},
+    64231000291: {"region": "SA", "facc_width_ratio": 982},
+    62255000451: {"region": "SA", "facc_width_ratio": 528},
+    17211100181: {"region": "SA"},
+    13261100101: {"region": "SA", "facc_width_ratio": 15404},
+    13214000011: {"region": "SA"},
+    13212000011: {"region": "SA"},
+    62210000705: {"region": "SA", "note": "facc should be on 62210000055/45/35"},
+    62233000095: {"region": "SA"},
+    61550900161: {
+        "region": "SA",
+        "facc_width_ratio": 1124,
+        "river_name": "Cinaruco River",
+    },
+    61550700051: {"region": "SA", "facc_width_ratio": 6961},
+    62281800021: {"region": "SA", "facc_width_ratio": 3197},
+    62283000081: {"region": "SA", "facc_width_ratio": 2018, "river_name": "Rio Unini"},
+    62293100143: {"region": "SA", "note": "added 2026-02-05, missed by RF regressor"},
+    62293100156: {"region": "SA", "note": "added 2026-02-05, missed by RF regressor"},
+    62253000321: {"region": "SA", "note": "added 2026-02-05, missed by RF regressor"},
+    62235900101: {"region": "SA", "note": "added 2026-02-05, missed by RF regressor"},
     # EU seeds (7)
-    28315000523: {'region': 'EU', 'facc_width_ratio': 1076},
-    28315000751: {'region': 'EU', 'facc_width_ratio': 31989},
-    28315000783: {'region': 'EU'},
-    22513000171: {'region': 'EU', 'facc_width_ratio': 2126},
-    28311300405: {'region': 'EU', 'facc_width_ratio': 29193},
-    26183000491: {'region': 'EU', 'facc_width_ratio': 1112},
-    28311700191: {'region': 'EU', 'note': 'detected by fwr_drop rule'},
+    28315000523: {"region": "EU", "facc_width_ratio": 1076},
+    28315000751: {"region": "EU", "facc_width_ratio": 31989},
+    28315000783: {"region": "EU"},
+    22513000171: {"region": "EU", "facc_width_ratio": 2126},
+    28311300405: {"region": "EU", "facc_width_ratio": 29193},
+    26183000491: {"region": "EU", "facc_width_ratio": 1112},
+    28311700191: {"region": "EU", "note": "detected by fwr_drop rule"},
     # AF seeds (5)
-    31251000111: {'region': 'AF'},
-    31248100141: {'region': 'AF', 'note': 'side channel with downstream facc'},
-    32257000231: {'region': 'AF'},
-    14279001411: {'region': 'AF', 'facc_width_ratio': 4230, 'river_name': 'Niger River'},
-    14631000181: {'region': 'AF', 'facc_width_ratio': 5049, 'river_name': 'Ngalanka'},
+    31251000111: {"region": "AF"},
+    31248100141: {"region": "AF", "note": "side channel with downstream facc"},
+    32257000231: {"region": "AF"},
+    14279001411: {
+        "region": "AF",
+        "facc_width_ratio": 4230,
+        "river_name": "Niger River",
+    },
+    14631000181: {"region": "AF", "facc_width_ratio": 5049, "river_name": "Ngalanka"},
     # AS seeds (14)
-    45670300691: {'region': 'AS', 'facc_width_ratio': 4548},
-    31241700301: {'region': 'AS', 'facc_width_ratio': 4560, 'main_side': 1},
-    44240100011: {'region': 'AS', 'facc_width_ratio': 654, 'river_name': 'Mekong River'},
-    43667100371: {'region': 'AS', 'width': 0, 'river_name': 'Dadu River'},
-    45253002045: {'region': 'AS', 'facc_width_ratio': 3394, 'main_side': 1},
-    31241700541: {'region': 'AS', 'facc_width_ratio': 2555, 'main_side': 1},
-    45259500101: {'region': 'AS', 'facc_width_ratio': 4401},
-    44581100665: {'region': 'AS', 'facc_width_ratio': 2385, 'main_side': 1},
-    44581100675: {'region': 'AS', 'facc_width_ratio': 504, 'main_side': 1},
-    44570000175: {'region': 'AS', 'facc_width_ratio': 4714, 'river_name': 'Irrawaddy River'},
-    34211700241: {'region': 'AS', 'facc_width_ratio': 1146, 'river_name': 'Lena River', 'note': 'propagation from 34211700251'},
-    34211101775: {'region': 'AS', 'facc_width_ratio': 3131, 'main_side': 1, 'river_name': 'Lena River', 'note': 'side channel with mainstem facc'},
+    45670300691: {"region": "AS", "facc_width_ratio": 4548},
+    31241700301: {"region": "AS", "facc_width_ratio": 4560, "main_side": 1},
+    44240100011: {
+        "region": "AS",
+        "facc_width_ratio": 654,
+        "river_name": "Mekong River",
+    },
+    43667100371: {"region": "AS", "width": 0, "river_name": "Dadu River"},
+    45253002045: {"region": "AS", "facc_width_ratio": 3394, "main_side": 1},
+    31241700541: {"region": "AS", "facc_width_ratio": 2555, "main_side": 1},
+    45259500101: {"region": "AS", "facc_width_ratio": 4401},
+    44581100665: {"region": "AS", "facc_width_ratio": 2385, "main_side": 1},
+    44581100675: {"region": "AS", "facc_width_ratio": 504, "main_side": 1},
+    44570000175: {
+        "region": "AS",
+        "facc_width_ratio": 4714,
+        "river_name": "Irrawaddy River",
+    },
+    34211700241: {
+        "region": "AS",
+        "facc_width_ratio": 1146,
+        "river_name": "Lena River",
+        "note": "propagation from 34211700251",
+    },
+    34211101775: {
+        "region": "AS",
+        "facc_width_ratio": 3131,
+        "main_side": 1,
+        "river_name": "Lena River",
+        "note": "side channel with mainstem facc",
+    },
     # NA seeds (12) - added 2026-02-05
     # 74268100011 removed - facc is stable, not anomalous
-    72555700163: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72555700173: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72555700183: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72555700193: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72570700063: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72570700053: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72570700043: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72570900013: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72570800013: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72570800023: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72570800033: {'region': 'NA', 'note': 'added 2026-02-05 from v17b'},
-    72557600023: {'region': 'NA', 'note': 'lake polluted by through-flow river'},
-    72557600033: {'region': 'NA', 'note': 'lake polluted by through-flow river'},
-    72557400013: {'region': 'NA', 'note': 'lake polluted by through-flow river'},
-    72557400021: {'region': 'NA', 'note': 'river into lake, entry point for pollution'},
+    72555700163: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72555700173: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72555700183: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72555700193: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72570700063: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72570700053: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72570700043: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72570900013: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72570800013: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72570800023: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72570800033: {"region": "NA", "note": "added 2026-02-05 from v17b"},
+    72557600023: {"region": "NA", "note": "lake polluted by through-flow river"},
+    72557600033: {"region": "NA", "note": "lake polluted by through-flow river"},
+    72557400013: {"region": "NA", "note": "lake polluted by through-flow river"},
+    72557400021: {"region": "NA", "note": "river into lake, entry point for pollution"},
 }
-
 
 
 @dataclass
@@ -103,8 +128,8 @@ class EvaluationResult:
     """Result of evaluating facc detection."""
 
     precision: float  # TP / (TP + FP)
-    recall: float     # TP / (TP + FN)
-    f1: float         # 2 * precision * recall / (precision + recall)
+    recall: float  # TP / (TP + FN)
+    f1: float  # 2 * precision * recall / (precision + recall)
 
     true_positives: int
     false_positives: int
@@ -152,7 +177,7 @@ class FaccEvaluator:
     def __init__(
         self,
         db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
-        seed_reaches: Optional[Dict[int, Dict]] = None
+        seed_reaches: Optional[Dict[int, Dict]] = None,
     ):
         if isinstance(db_path_or_conn, str):
             self.conn = duckdb.connect(db_path_or_conn, read_only=True)
@@ -181,7 +206,7 @@ class FaccEvaluator:
         self,
         region: Optional[str] = None,
         anomaly_threshold: float = 0.5,
-        expanded_positives: Optional[Set[int]] = None
+        expanded_positives: Optional[Set[int]] = None,
     ) -> EvaluationResult:
         """
         Evaluate detection against known corrupted reaches.
@@ -207,10 +232,9 @@ class FaccEvaluator:
 
         # Run detection
         result = self.detector.detect(
-            region=region,
-            anomaly_threshold=anomaly_threshold
+            region=region, anomaly_threshold=anomaly_threshold
         )
-        detected = set(result.anomalies['reach_id'].tolist())
+        detected = set(result.anomalies["reach_id"].tolist())
 
         # Compute metrics
         true_positives = known_positives & detected
@@ -223,7 +247,11 @@ class FaccEvaluator:
 
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
 
         # T003 comparison
         t003_overlap = self.detector.validate_against_t003(region=region)
@@ -257,7 +285,7 @@ class FaccEvaluator:
         self,
         region: Optional[str] = None,
         similarity_threshold: float = 0.8,
-        max_candidates: int = 100
+        max_candidates: int = 100,
     ) -> pd.DataFrame:
         """
         Find reaches with similar feature profiles to seeds.
@@ -284,7 +312,7 @@ class FaccEvaluator:
             return pd.DataFrame()
 
         # Define feature ranges from seeds
-        feature_cols = ['facc_width_ratio', 'facc_reach_acc_ratio', 'facc_jump_ratio']
+        feature_cols = ["facc_width_ratio", "facc_reach_acc_ratio", "facc_jump_ratio"]
         available_cols = [c for c in feature_cols if c in seed_profiles.columns]
 
         if not available_cols:
@@ -294,7 +322,7 @@ class FaccEvaluator:
         result = self.detector.detect(
             region=region,
             anomaly_threshold=0.3,  # Lower threshold to get more candidates
-            return_features=True
+            return_features=True,
         )
 
         if len(result.anomalies) == 0:
@@ -303,37 +331,30 @@ class FaccEvaluator:
         candidates = result.anomalies.copy()
 
         # Exclude known seeds
-        candidates = candidates[
-            ~candidates['reach_id'].isin(self.seed_reaches.keys())
-        ]
+        candidates = candidates[~candidates["reach_id"].isin(self.seed_reaches.keys())]
 
         # Score similarity to seeds
         for col in available_cols:
             if col in candidates.columns and col in seed_profiles.columns:
-                seed_range = (
-                    seed_profiles[col].min(),
-                    seed_profiles[col].max()
-                )
+                seed_range = (seed_profiles[col].min(), seed_profiles[col].max())
                 if seed_range[1] > seed_range[0]:
                     # Check if value is in range
-                    candidates[f'{col}_in_range'] = (
-                        (candidates[col] >= seed_range[0] * 0.5) &
-                        (candidates[col] <= seed_range[1] * 2.0)
+                    candidates[f"{col}_in_range"] = (
+                        (candidates[col] >= seed_range[0] * 0.5)
+                        & (candidates[col] <= seed_range[1] * 2.0)
                     ).astype(int)
 
         # Compute overall similarity
-        range_cols = [c for c in candidates.columns if c.endswith('_in_range')]
+        range_cols = [c for c in candidates.columns if c.endswith("_in_range")]
         if range_cols:
-            candidates['similarity'] = candidates[range_cols].mean(axis=1)
-            candidates = candidates[candidates['similarity'] >= similarity_threshold]
-            candidates = candidates.sort_values('similarity', ascending=False)
+            candidates["similarity"] = candidates[range_cols].mean(axis=1)
+            candidates = candidates[candidates["similarity"] >= similarity_threshold]
+            candidates = candidates.sort_values("similarity", ascending=False)
 
         return candidates.head(max_candidates)
 
     def suggest_new_labels(
-        self,
-        region: Optional[str] = None,
-        n_candidates: int = 20
+        self, region: Optional[str] = None, n_candidates: int = 20
     ) -> pd.DataFrame:
         """
         Suggest reaches for manual labeling to expand training set.
@@ -359,40 +380,35 @@ class FaccEvaluator:
 
         # High scorers not in seeds
         result = self.detector.detect(
-            region=region,
-            anomaly_threshold=0.5,
-            return_features=True
+            region=region, anomaly_threshold=0.5, return_features=True
         )
 
         if len(result.anomalies) > 0:
             high_scorers = result.anomalies[
-                ~result.anomalies['reach_id'].isin(self.seed_reaches.keys())
+                ~result.anomalies["reach_id"].isin(self.seed_reaches.keys())
             ].head(n_candidates // 2)
             high_scorers = high_scorers.copy()
-            high_scorers['suggestion_reason'] = 'high_anomaly_score'
+            high_scorers["suggestion_reason"] = "high_anomaly_score"
             suggestions.append(high_scorers)
 
         # Downstream of seeds (propagation candidates)
         propagation = self.detector.detect_propagation(
-            region=region,
-            seed_reach_ids=list(self.seed_reaches.keys())
+            region=region, seed_reach_ids=list(self.seed_reaches.keys())
         )
         if len(propagation) > 0:
             propagation = propagation.head(n_candidates // 2)
             propagation = propagation.copy()
-            propagation['suggestion_reason'] = 'downstream_of_seed'
+            propagation["suggestion_reason"] = "downstream_of_seed"
             suggestions.append(propagation)
 
         if suggestions:
             result = pd.concat(suggestions, ignore_index=True)
-            return result.drop_duplicates(subset='reach_id').head(n_candidates)
+            return result.drop_duplicates(subset="reach_id").head(n_candidates)
 
         return pd.DataFrame()
 
     def threshold_sweep(
-        self,
-        region: Optional[str] = None,
-        thresholds: Optional[List[float]] = None
+        self, region: Optional[str] = None, thresholds: Optional[List[float]] = None
     ) -> pd.DataFrame:
         """
         Sweep detection thresholds to find optimal operating point.
@@ -414,19 +430,18 @@ class FaccEvaluator:
 
         results = []
         for thresh in thresholds:
-            eval_result = self.evaluate(
-                region=region,
-                anomaly_threshold=thresh
+            eval_result = self.evaluate(region=region, anomaly_threshold=thresh)
+            results.append(
+                {
+                    "threshold": thresh,
+                    "precision": eval_result.precision,
+                    "recall": eval_result.recall,
+                    "f1": eval_result.f1,
+                    "true_positives": eval_result.true_positives,
+                    "false_positives": eval_result.false_positives,
+                    "false_negatives": eval_result.false_negatives,
+                }
             )
-            results.append({
-                'threshold': thresh,
-                'precision': eval_result.precision,
-                'recall': eval_result.recall,
-                'f1': eval_result.f1,
-                'true_positives': eval_result.true_positives,
-                'false_positives': eval_result.false_positives,
-                'false_negatives': eval_result.false_negatives,
-            })
 
         return pd.DataFrame(results)
 
@@ -435,7 +450,7 @@ def evaluate_detection(
     db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
     region: Optional[str] = None,
     anomaly_threshold: float = 0.5,
-    seed_reaches: Optional[Dict[int, Dict]] = None
+    seed_reaches: Optional[Dict[int, Dict]] = None,
 ) -> EvaluationResult:
     """
     Convenience function to evaluate facc detection.

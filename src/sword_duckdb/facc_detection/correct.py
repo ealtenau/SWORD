@@ -22,17 +22,16 @@ Safeguards:
 - Regional rollout (NA → EU → SA → OC → AS → AF)
 """
 
-from typing import Optional, List, Dict, Any, Union, Tuple
-from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, Union, Tuple
+from dataclasses import dataclass
 import duckdb
 import pandas as pd
 import numpy as np
-from collections import deque
 import logging
 
 from .features import FaccFeatureExtractor
 from .detect import FaccDetector, DetectionResult, detect_hybrid
-from .merit_search import MeritGuidedSearch, create_merit_search
+from .merit_search import create_merit_search
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +39,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RegressionModel:
     """Fitted regression model for facc estimation."""
+
     coefficients: Dict[str, float]
     intercept: float
     r_squared: float
@@ -51,7 +51,10 @@ class RegressionModel:
 @dataclass
 class CorrectionResult:
     """Result of facc correction."""
-    corrections: pd.DataFrame  # reach_id, old_facc, facc_corrected, fix_type, model_used
+
+    corrections: (
+        pd.DataFrame
+    )  # reach_id, old_facc, facc_corrected, fix_type, model_used
     applied: int
     skipped: int
     failed: int
@@ -90,7 +93,7 @@ class FaccCorrector:
     def __init__(
         self,
         db_path_or_conn: Union[str, duckdb.DuckDBPyConnection],
-        read_only: bool = False
+        read_only: bool = False,
     ):
         if isinstance(db_path_or_conn, str):
             self.conn = duckdb.connect(db_path_or_conn, read_only=read_only)
@@ -142,9 +145,7 @@ class FaccCorrector:
         self.close()
 
     def filter_fixable(
-        self,
-        anomalies: pd.DataFrame,
-        include_lakes: bool = False
+        self, anomalies: pd.DataFrame, include_lakes: bool = False
     ) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         Split anomalies into fixable vs skipped.
@@ -168,8 +169,8 @@ class FaccCorrector:
             return pd.DataFrame(), pd.DataFrame()
 
         # Get additional attributes needed for filtering
-        reach_ids = anomalies['reach_id'].tolist()
-        reach_ids_str = ', '.join(str(r) for r in reach_ids)
+        reach_ids = anomalies["reach_id"].tolist()
+        reach_ids_str = ", ".join(str(r) for r in reach_ids)
 
         attrs_df = self.conn.execute(f"""
             SELECT reach_id, region, lakeflag, stream_order, slope, n_rch_up, n_rch_down
@@ -179,35 +180,39 @@ class FaccCorrector:
 
         # Merge with anomalies
         merged = anomalies.merge(
-            attrs_df,
-            on=['reach_id', 'region'],
-            how='left',
-            suffixes=('', '_attr')
+            attrs_df, on=["reach_id", "region"], how="left", suffixes=("", "_attr")
         )
 
         # Skip conditions
         if include_lakes:
-            skip_mask = (merged['stream_order'] == self.SKIP_STREAM_ORDER)
+            skip_mask = merged["stream_order"] == self.SKIP_STREAM_ORDER
         else:
-            skip_mask = (
-                (merged['lakeflag'] == self.SKIP_LAKEFLAG) |
-                (merged['stream_order'] == self.SKIP_STREAM_ORDER)
+            skip_mask = (merged["lakeflag"] == self.SKIP_LAKEFLAG) | (
+                merged["stream_order"] == self.SKIP_STREAM_ORDER
             )
 
         skipped = merged[skip_mask].copy()
         if not include_lakes:
-            skipped['skip_reason'] = np.where(
-                merged.loc[skip_mask, 'lakeflag'] == self.SKIP_LAKEFLAG,
-                'lake',
-                'topology_missing'
+            skipped["skip_reason"] = np.where(
+                merged.loc[skip_mask, "lakeflag"] == self.SKIP_LAKEFLAG,
+                "lake",
+                "topology_missing",
             )
         else:
-            skipped['skip_reason'] = 'topology_missing'
+            skipped["skip_reason"] = "topology_missing"
 
         fixable = merged[~skip_mask].copy()
 
-        lake_count = (skipped['skip_reason'] == 'lake').sum() if 'skip_reason' in skipped.columns else 0
-        topo_count = (skipped['skip_reason'] == 'topology_missing').sum() if len(skipped) > 0 else 0
+        lake_count = (
+            (skipped["skip_reason"] == "lake").sum()
+            if "skip_reason" in skipped.columns
+            else 0
+        )
+        topo_count = (
+            (skipped["skip_reason"] == "topology_missing").sum()
+            if len(skipped) > 0
+            else 0
+        )
 
         logger.info(
             f"Filtered anomalies: {len(fixable)} fixable, {len(skipped)} skipped "
@@ -259,28 +264,30 @@ class FaccCorrector:
         train_df = self.conn.execute(query).fetchdf()
 
         if len(train_df) < 100:
-            logger.warning(f"Insufficient training data for {region}: {len(train_df)} reaches")
+            logger.warning(
+                f"Insufficient training data for {region}: {len(train_df)} reaches"
+            )
             return {}
 
         # Prepare features
-        train_df['log_facc'] = np.log(train_df['facc'])
-        train_df['log_width'] = np.log(train_df['width'])
-        train_df['log_path_freq'] = np.log(train_df['path_freq'])
+        train_df["log_facc"] = np.log(train_df["facc"])
+        train_df["log_width"] = np.log(train_df["width"])
+        train_df["log_path_freq"] = np.log(train_df["path_freq"])
 
         # Handle slope - avoid log(0) warnings
-        train_df['has_slope'] = (train_df['slope'] > 0) & (train_df['slope'].notna())
+        train_df["has_slope"] = (train_df["slope"] > 0) & (train_df["slope"].notna())
         # Only compute log on valid slopes
-        valid_slopes = train_df.loc[train_df['has_slope'], 'slope']
-        train_df['log_slope'] = 0.0  # Default
-        train_df.loc[train_df['has_slope'], 'log_slope'] = np.log(valid_slopes.values)
+        valid_slopes = train_df.loc[train_df["has_slope"], "slope"]
+        train_df["log_slope"] = 0.0  # Default
+        train_df.loc[train_df["has_slope"], "log_slope"] = np.log(valid_slopes.values)
 
         models = {}
 
         # Primary model (with slope)
-        primary_df = train_df[train_df['has_slope']]
+        primary_df = train_df[train_df["has_slope"]]
         if len(primary_df) >= 50:
-            X_primary = primary_df[['log_width', 'log_slope', 'log_path_freq']].values
-            y_primary = primary_df['log_facc'].values
+            X_primary = primary_df[["log_width", "log_slope", "log_path_freq"]].values
+            y_primary = primary_df["log_facc"].values
 
             # Add intercept column
             X_primary = np.column_stack([np.ones(len(X_primary)), X_primary])
@@ -293,25 +300,27 @@ class FaccCorrector:
                 ss_tot = np.sum((y_primary - np.mean(y_primary)) ** 2)
                 r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
 
-                models['primary'] = RegressionModel(
+                models["primary"] = RegressionModel(
                     coefficients={
-                        'log_width': beta[1],
-                        'log_slope': beta[2],
-                        'log_path_freq': beta[3]
+                        "log_width": beta[1],
+                        "log_slope": beta[2],
+                        "log_path_freq": beta[3],
                     },
                     intercept=beta[0],
                     r_squared=r2,
                     n_samples=len(primary_df),
-                    model_type='primary',
-                    region=region
+                    model_type="primary",
+                    region=region,
                 )
-                logger.info(f"Primary model for {region}: R²={r2:.3f}, n={len(primary_df)}")
+                logger.info(
+                    f"Primary model for {region}: R²={r2:.3f}, n={len(primary_df)}"
+                )
             except Exception as e:
                 logger.warning(f"Primary model fit failed for {region}: {e}")
 
         # Fallback model (without slope)
-        X_fallback = train_df[['log_width', 'log_path_freq']].values
-        y_fallback = train_df['log_facc'].values
+        X_fallback = train_df[["log_width", "log_path_freq"]].values
+        y_fallback = train_df["log_facc"].values
         X_fallback = np.column_stack([np.ones(len(X_fallback)), X_fallback])
 
         try:
@@ -321,16 +330,13 @@ class FaccCorrector:
             ss_tot = np.sum((y_fallback - np.mean(y_fallback)) ** 2)
             r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
 
-            models['fallback'] = RegressionModel(
-                coefficients={
-                    'log_width': beta[1],
-                    'log_path_freq': beta[2]
-                },
+            models["fallback"] = RegressionModel(
+                coefficients={"log_width": beta[1], "log_path_freq": beta[2]},
                 intercept=beta[0],
                 r_squared=r2,
                 n_samples=len(train_df),
-                model_type='fallback',
-                region=region
+                model_type="fallback",
+                region=region,
             )
             logger.info(f"Fallback model for {region}: R²={r2:.3f}, n={len(train_df)}")
         except Exception as e:
@@ -361,9 +367,9 @@ class FaccCorrector:
         df = anomalies.copy()
 
         # Get upstream info if not present
-        if 'n_rch_up' not in df.columns or 'facc_jump_ratio' not in df.columns:
-            reach_ids = df['reach_id'].tolist()
-            reach_ids_str = ', '.join(str(r) for r in reach_ids)
+        if "n_rch_up" not in df.columns or "facc_jump_ratio" not in df.columns:
+            reach_ids = df["reach_id"].tolist()
+            reach_ids_str = ", ".join(str(r) for r in reach_ids)
 
             topo_query = f"""
                 WITH upstream_info AS (
@@ -394,36 +400,43 @@ class FaccCorrector:
 
             topo_df = self.conn.execute(topo_query).fetchdf()
             df = df.merge(
-                topo_df[['reach_id', 'region', 'n_rch_up', 'slope', 'upstream_facc_sum', 'facc_jump_ratio']],
-                on=['reach_id', 'region'],
-                how='left',
-                suffixes=('', '_topo')
+                topo_df[
+                    [
+                        "reach_id",
+                        "region",
+                        "n_rch_up",
+                        "slope",
+                        "upstream_facc_sum",
+                        "facc_jump_ratio",
+                    ]
+                ],
+                on=["reach_id", "region"],
+                how="left",
+                suffixes=("", "_topo"),
             )
 
         # Classify
         def classify_reach(row):
-            if row.get('n_rch_up', 0) == 0 or pd.isna(row.get('n_rch_up')):
-                return 'orphan_entry'
-            elif row.get('facc_jump_ratio', 0) > 10:
-                return 'entry_point'
+            if row.get("n_rch_up", 0) == 0 or pd.isna(row.get("n_rch_up")):
+                return "orphan_entry"
+            elif row.get("facc_jump_ratio", 0) > 10:
+                return "entry_point"
             else:
-                return 'propagation'
+                return "propagation"
 
-        df['fix_type'] = df.apply(classify_reach, axis=1)
+        df["fix_type"] = df.apply(classify_reach, axis=1)
 
         # Flag reaches needing fallback model (slope = 0 or NULL)
-        df['needs_fallback'] = (df['slope'] <= 0) | (df['slope'].isna())
+        df["needs_fallback"] = (df["slope"] <= 0) | (df["slope"].isna())
 
         # Count by type
-        type_counts = df['fix_type'].value_counts()
+        type_counts = df["fix_type"].value_counts()
         logger.info(f"Classified anomalies: {dict(type_counts)}")
 
         return df
 
     def _predict_facc(
-        self,
-        row: pd.Series,
-        models: Dict[str, RegressionModel]
+        self, row: pd.Series, models: Dict[str, RegressionModel]
     ) -> Tuple[float, str]:
         """
         Predict facc for a single reach using regression.
@@ -439,31 +452,31 @@ class FaccCorrector:
         -------
         tuple of (predicted_facc, model_used)
         """
-        width = row.get('width', 1)
-        path_freq = row.get('path_freq', 1)
-        slope = row.get('slope', 0)
+        width = row.get("width", 1)
+        path_freq = row.get("path_freq", 1)
+        slope = row.get("slope", 0)
 
         # Use primary model if slope is valid
-        if slope > 0 and 'primary' in models:
-            model = models['primary']
+        if slope > 0 and "primary" in models:
+            model = models["primary"]
             log_facc = (
-                model.intercept +
-                model.coefficients['log_width'] * np.log(max(width, 1)) +
-                model.coefficients['log_slope'] * np.log(max(slope, 1e-6)) +
-                model.coefficients['log_path_freq'] * np.log(max(path_freq, 1))
+                model.intercept
+                + model.coefficients["log_width"] * np.log(max(width, 1))
+                + model.coefficients["log_slope"] * np.log(max(slope, 1e-6))
+                + model.coefficients["log_path_freq"] * np.log(max(path_freq, 1))
             )
-            return np.exp(log_facc), 'primary'
-        elif 'fallback' in models:
-            model = models['fallback']
+            return np.exp(log_facc), "primary"
+        elif "fallback" in models:
+            model = models["fallback"]
             log_facc = (
-                model.intercept +
-                model.coefficients['log_width'] * np.log(max(width, 1)) +
-                model.coefficients['log_path_freq'] * np.log(max(path_freq, 1))
+                model.intercept
+                + model.coefficients["log_width"] * np.log(max(width, 1))
+                + model.coefficients["log_path_freq"] * np.log(max(path_freq, 1))
             )
-            return np.exp(log_facc), 'fallback'
+            return np.exp(log_facc), "fallback"
         else:
             # Last resort: use path_freq * regional median
-            return path_freq * 1000, 'median_fallback'
+            return path_freq * 1000, "median_fallback"
 
     def estimate_corrections(
         self,
@@ -495,9 +508,16 @@ class FaccCorrector:
             Corrections with [reach_id, old_facc, facc_corrected, fix_type, model_used]
         """
         if len(anomalies) == 0:
-            return pd.DataFrame(columns=[
-                'reach_id', 'region', 'old_facc', 'facc_corrected', 'fix_type', 'model_used'
-            ])
+            return pd.DataFrame(
+                columns=[
+                    "reach_id",
+                    "region",
+                    "old_facc",
+                    "facc_corrected",
+                    "fix_type",
+                    "model_used",
+                ]
+            )
 
         # Initialize MERIT search if path provided
         merit_search = create_merit_search(merit_path)
@@ -507,12 +527,12 @@ class FaccCorrector:
             logger.info("MERIT guided search disabled (no path or invalid path)")
 
         # Determine regions
-        regions = anomalies['region'].unique() if region is None else [region]
+        regions = anomalies["region"].unique() if region is None else [region]
 
         all_corrections = []
 
         for reg in regions:
-            reg_anomalies = anomalies[anomalies['region'] == reg].copy()
+            reg_anomalies = anomalies[anomalies["region"] == reg].copy()
             if len(reg_anomalies) == 0:
                 continue
 
@@ -523,8 +543,8 @@ class FaccCorrector:
                 continue
 
             # Get upstream/downstream topology for all anomalies
-            reach_ids = reg_anomalies['reach_id'].tolist()
-            reach_ids_str = ', '.join(str(r) for r in reach_ids)
+            reach_ids = reg_anomalies["reach_id"].tolist()
+            reach_ids_str = ", ".join(str(r) for r in reach_ids)
             anomaly_set = set(reach_ids)
 
             # Get upstream neighbors and their facc
@@ -544,10 +564,10 @@ class FaccCorrector:
             # Build upstream map: reach_id -> [(upstream_id, facc), ...]
             upstream_map = {}
             for _, row in upstream_df.iterrows():
-                rid = row['reach_id']
+                rid = row["reach_id"]
                 if rid not in upstream_map:
                     upstream_map[rid] = []
-                upstream_map[rid].append((row['upstream_id'], row['upstream_facc']))
+                upstream_map[rid].append((row["upstream_id"], row["upstream_facc"]))
 
             # Pre-fetch geometries if MERIT search enabled
             geom_map = {}
@@ -569,9 +589,10 @@ class FaccCorrector:
                             AND region = '{reg}'
                     """).fetchdf()
                     from shapely import wkt
+
                     for _, grow in geom_df.iterrows():
                         try:
-                            geom_map[grow['reach_id']] = wkt.loads(grow['geom_wkt'])
+                            geom_map[grow["reach_id"]] = wkt.loads(grow["geom_wkt"])
                         except Exception:
                             pass
                 except Exception as e:
@@ -585,12 +606,12 @@ class FaccCorrector:
             merit_misses = 0
 
             # Process in order: orphan_entry -> entry_point -> propagation
-            for fix_type in ['orphan_entry', 'entry_point', 'propagation']:
-                type_anomalies = reg_anomalies[reg_anomalies['fix_type'] == fix_type]
+            for fix_type in ["orphan_entry", "entry_point", "propagation"]:
+                type_anomalies = reg_anomalies[reg_anomalies["fix_type"] == fix_type]
 
                 for _, row in type_anomalies.iterrows():
-                    reach_id = row['reach_id']
-                    old_facc = row['facc']
+                    reach_id = row["reach_id"]
+                    old_facc = row["facc"]
 
                     # Predict local contribution (regression estimate)
                     local_estimate, model_used = self._predict_facc(row, models)
@@ -603,7 +624,7 @@ class FaccCorrector:
                             upstream_sum += corrected_facc[up_id]
                         elif up_id in anomaly_set:
                             # Upstream is also an anomaly but not yet corrected - use regression
-                            upstream_sum += local_estimate / row.get('path_freq', 1)
+                            upstream_sum += local_estimate / row.get("path_freq", 1)
                         else:
                             # Upstream is clean
                             upstream_sum += up_facc
@@ -611,12 +632,12 @@ class FaccCorrector:
                     # Compute correction based on fix type
                     source = model_used  # Track correction source
 
-                    if fix_type in ['orphan_entry', 'entry_point']:
+                    if fix_type in ["orphan_entry", "entry_point"]:
                         # Try guided MERIT search first
                         merit_match = None
                         if merit_search and reach_id in geom_map:
                             geom = geom_map[reach_id]
-                            width = row.get('width', 100)
+                            width = row.get("width", 100)
 
                             merit_match, meta = merit_search.search_near_reach(
                                 geom=geom,
@@ -627,7 +648,7 @@ class FaccCorrector:
 
                             if merit_match:
                                 facc_corrected = merit_match
-                                source = 'merit_guided'
+                                source = "merit_guided"
                                 merit_hits += 1
                                 logger.debug(
                                     f"MERIT match for {reach_id}: "
@@ -643,21 +664,23 @@ class FaccCorrector:
 
                         if merit_match is None:
                             # Fallback based on fix type
-                            if fix_type == 'orphan_entry':
+                            if fix_type == "orphan_entry":
                                 # Headwater: use regression
                                 facc_corrected = local_estimate
-                                source = f'{model_used}_fallback'
+                                source = f"{model_used}_fallback"
                             else:
                                 # Entry point: use topology-based
-                                local_contrib = local_estimate / max(row.get('path_freq', 1), 1)
+                                local_contrib = local_estimate / max(
+                                    row.get("path_freq", 1), 1
+                                )
                                 facc_corrected = upstream_sum + local_contrib
-                                source = 'topology_fallback'
+                                source = "topology_fallback"
                     else:
                         # Propagation: always topology-based
                         # Use corrected upstream sum + small local contribution
-                        local_contrib = local_estimate / max(row.get('path_freq', 1), 1)
+                        local_contrib = local_estimate / max(row.get("path_freq", 1), 1)
                         facc_corrected = upstream_sum + local_contrib
-                        source = 'topology'
+                        source = "topology"
 
                     # Safeguards
                     facc_corrected = max(1.0, facc_corrected)  # Never negative/zero
@@ -665,21 +688,27 @@ class FaccCorrector:
 
                     # Ensure monotonicity: facc >= max(upstream)
                     if upstream_sum > 0 and facc_corrected < upstream_sum:
-                        facc_corrected = upstream_sum * 1.01  # Slightly more than upstream
+                        facc_corrected = (
+                            upstream_sum * 1.01
+                        )  # Slightly more than upstream
 
                     # Store for downstream propagation
                     corrected_facc[reach_id] = facc_corrected
 
-                    all_corrections.append({
-                        'reach_id': reach_id,
-                        'region': reg,
-                        'old_facc': old_facc,
-                        'facc_corrected': facc_corrected,
-                        'fix_type': fix_type,
-                        'model_used': source,
-                        'upstream_facc_sum': upstream_sum,
-                        'reduction_factor': old_facc / facc_corrected if facc_corrected > 0 else 0
-                    })
+                    all_corrections.append(
+                        {
+                            "reach_id": reach_id,
+                            "region": reg,
+                            "old_facc": old_facc,
+                            "facc_corrected": facc_corrected,
+                            "fix_type": fix_type,
+                            "model_used": source,
+                            "upstream_facc_sum": upstream_sum,
+                            "reduction_factor": old_facc / facc_corrected
+                            if facc_corrected > 0
+                            else 0,
+                        }
+                    )
 
             # Log MERIT stats for this region
             if merit_search:
@@ -687,7 +716,7 @@ class FaccCorrector:
                 if total > 0:
                     logger.info(
                         f"MERIT search for {reg}: {merit_hits}/{total} hits "
-                        f"({100*merit_hits/total:.1f}%)"
+                        f"({100 * merit_hits / total:.1f}%)"
                     )
 
         # Clean up MERIT cache
@@ -716,28 +745,30 @@ class FaccCorrector:
             Validation metrics.
         """
         if len(corrections) == 0:
-            return {'valid': True, 'issues': []}
+            return {"valid": True, "issues": []}
 
         issues = []
 
         # Check for negative/zero corrections
-        neg_mask = corrections['facc_corrected'] <= 0
+        neg_mask = corrections["facc_corrected"] <= 0
         if neg_mask.any():
             issues.append(f"Negative/zero facc: {neg_mask.sum()} reaches")
 
         # Check for extreme values
-        extreme_mask = corrections['facc_corrected'] > 1e9
+        extreme_mask = corrections["facc_corrected"] > 1e9
         if extreme_mask.any():
             issues.append(f"Extreme facc (>1e9): {extreme_mask.sum()} reaches")
 
         # Check reduction is reasonable
-        if 'reduction_factor' in corrections.columns:
-            small_reduction = corrections['reduction_factor'] < 2
+        if "reduction_factor" in corrections.columns:
+            small_reduction = corrections["reduction_factor"] < 2
             if small_reduction.sum() > len(corrections) * 0.5:
-                issues.append(f"Small reduction (<2x) for {small_reduction.sum()} reaches")
+                issues.append(
+                    f"Small reduction (<2x) for {small_reduction.sum()} reaches"
+                )
 
         # Compute ratio_to_median after correction
-        regions = corrections['region'].unique()
+        regions = corrections["region"].unique()
         ratio_issues = 0
 
         for region in regions:
@@ -754,34 +785,37 @@ class FaccCorrector:
             median_fpr = self.conn.execute(median_query).fetchone()[0]
 
             if median_fpr and median_fpr > 0:
-                reg_corrections = corrections[corrections['region'] == region]
+                reg_corrections = corrections[corrections["region"] == region]
                 for _, row in reg_corrections.iterrows():
-                    path_freq = self.conn.execute(f"""
-                        SELECT path_freq FROM reaches WHERE reach_id = {row['reach_id']}
-                    """).fetchone()[0] or 1
+                    path_freq = (
+                        self.conn.execute(f"""
+                        SELECT path_freq FROM reaches WHERE reach_id = {row["reach_id"]}
+                    """).fetchone()[0]
+                        or 1
+                    )
 
-                    fpr_after = row['facc_corrected'] / path_freq
+                    fpr_after = row["facc_corrected"] / path_freq
                     ratio_after = fpr_after / median_fpr
 
                     if ratio_after > 50:
                         ratio_issues += 1
 
         if ratio_issues > 0:
-            issues.append(f"High ratio_to_median (>50) after correction: {ratio_issues} reaches")
+            issues.append(
+                f"High ratio_to_median (>50) after correction: {ratio_issues} reaches"
+            )
 
         return {
-            'valid': len(issues) == 0,
-            'issues': issues,
-            'total_corrections': len(corrections),
-            'negative_count': neg_mask.sum() if 'neg_mask' in dir() else 0,
-            'extreme_count': extreme_mask.sum() if 'extreme_mask' in dir() else 0,
-            'ratio_issues': ratio_issues
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "total_corrections": len(corrections),
+            "negative_count": neg_mask.sum() if "neg_mask" in dir() else 0,
+            "extreme_count": extreme_mask.sum() if "extreme_mask" in dir() else 0,
+            "ratio_issues": ratio_issues,
         }
 
     def apply_corrections(
-        self,
-        corrections: pd.DataFrame,
-        dry_run: bool = True
+        self, corrections: pd.DataFrame, dry_run: bool = True
     ) -> CorrectionResult:
         """
         Apply corrections with logging.
@@ -800,16 +834,12 @@ class FaccCorrector:
         """
         if len(corrections) == 0:
             return CorrectionResult(
-                corrections=corrections,
-                applied=0,
-                skipped=0,
-                failed=0,
-                dry_run=dry_run
+                corrections=corrections, applied=0, skipped=0, failed=0, dry_run=dry_run
             )
 
         # Validate first
         validation = self.validate_corrections(corrections)
-        if not validation['valid']:
+        if not validation["valid"]:
             logger.warning(f"Validation issues: {validation['issues']}")
 
         if dry_run:
@@ -820,7 +850,7 @@ class FaccCorrector:
                 skipped=0,
                 failed=0,
                 dry_run=True,
-                validation=validation
+                validation=validation,
             )
 
         # Get next batch ID
@@ -834,18 +864,28 @@ class FaccCorrector:
 
         for _, row in corrections.iterrows():
             try:
-                reach_id = row['reach_id']
-                region = row['region']
-                old_facc = row['old_facc']
-                new_facc = row['facc_corrected']
+                reach_id = row["reach_id"]
+                region = row["region"]
+                old_facc = row["old_facc"]
+                new_facc = row["facc_corrected"]
 
                 # Log the change
-                self.conn.execute("""
+                self.conn.execute(
+                    """
                     INSERT INTO facc_fix_log
                     (batch_id, reach_id, region, old_facc, new_facc, fix_type, model_used)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, [batch_id, reach_id, region, old_facc, new_facc,
-                      row.get('fix_type', 'unknown'), row.get('model_used', 'unknown')])
+                """,
+                    [
+                        batch_id,
+                        reach_id,
+                        region,
+                        old_facc,
+                        new_facc,
+                        row.get("fix_type", "unknown"),
+                        row.get("model_used", "unknown"),
+                    ],
+                )
 
                 # Update reaches table
                 self.conn.execute(f"""
@@ -860,7 +900,9 @@ class FaccCorrector:
                 logger.error(f"Failed to update reach {row['reach_id']}: {e}")
                 failed += 1
 
-        logger.info(f"Applied {applied} corrections (batch_id={batch_id}), {failed} failed")
+        logger.info(
+            f"Applied {applied} corrections (batch_id={batch_id}), {failed} failed"
+        )
 
         return CorrectionResult(
             corrections=corrections,
@@ -869,7 +911,7 @@ class FaccCorrector:
             failed=failed,
             batch_id=batch_id,
             dry_run=False,
-            validation=validation
+            validation=validation,
         )
 
     def rollback(self, batch_id: int) -> int:
@@ -902,8 +944,8 @@ class FaccCorrector:
             try:
                 self.conn.execute(f"""
                     UPDATE reaches
-                    SET facc = {row['old_facc']}
-                    WHERE reach_id = {row['reach_id']} AND region = '{row['region']}'
+                    SET facc = {row["old_facc"]}
+                    WHERE reach_id = {row["reach_id"]} AND region = '{row["region"]}'
                 """)
                 reverted += 1
             except Exception as e:
@@ -934,7 +976,7 @@ class FaccCorrector:
     def classify_with_mainstem(
         self,
         anomalies: pd.DataFrame,
-        v17c_conn: Optional[duckdb.DuckDBPyConnection] = None
+        v17c_conn: Optional[duckdb.DuckDBPyConnection] = None,
     ) -> pd.DataFrame:
         """
         Classify anomalies using v17c mainstem routing information.
@@ -970,8 +1012,8 @@ class FaccCorrector:
             logger.warning("v17c routing columns not found, using basic classification")
             has_v17c = False
 
-        reach_ids = df['reach_id'].tolist()
-        reach_ids_str = ', '.join(str(r) for r in reach_ids)
+        reach_ids = df["reach_id"].tolist()
+        reach_ids_str = ", ".join(str(r) for r in reach_ids)
 
         if has_v17c:
             # Get v17c routing info
@@ -983,9 +1025,9 @@ class FaccCorrector:
 
             df = df.merge(
                 routing_df,
-                on=['reach_id', 'region'],
-                how='left',
-                suffixes=('', '_v17c')
+                on=["reach_id", "region"],
+                how="left",
+                suffixes=("", "_v17c"),
             )
 
         # Get v17b info for classification
@@ -997,10 +1039,10 @@ class FaccCorrector:
         """).fetchdf()
 
         df = df.merge(
-            v17b_info[['reach_id', 'region', 'main_side', 'n_rch_up', 'fwr']],
-            on=['reach_id', 'region'],
-            how='left',
-            suffixes=('', '_v17b')
+            v17b_info[["reach_id", "region", "main_side", "n_rch_up", "fwr"]],
+            on=["reach_id", "region"],
+            how="left",
+            suffixes=("", "_v17b"),
         )
 
         # Classify each anomaly
@@ -1008,19 +1050,18 @@ class FaccCorrector:
         correction_targets = []
 
         for _, row in df.iterrows():
-            rid = row['reach_id']
-            region = row['region']
-            facc = row.get('facc', 0)
-            main_side = row.get('main_side', 0)
-            n_rch_up = row.get('n_rch_up', 0)
-            fwr = row.get('fwr', 0)
-            is_mainstem = row.get('is_mainstem_edge', True)
+            rid = row["reach_id"]
+            facc = row.get("facc", 0)
+            main_side = row.get("main_side", 0)
+            n_rch_up = row.get("n_rch_up", 0)
+            fwr = row.get("fwr", 0)
+            is_mainstem = row.get("is_mainstem_edge", True)
 
             correction_type = None
             correction_target = None
 
             # Case 1: Side channel (not on mainstem) with significant facc
-            if has_v17c and is_mainstem == False and facc > 100000:
+            if has_v17c and not is_mainstem and facc > 100000:
                 # Find mainstem sibling at upstream junction
                 upstream = self.conn.execute(f"""
                     SELECT rt.neighbor_reach_id
@@ -1056,7 +1097,12 @@ class FaccCorrector:
                 correction_type = "headwater_reset"
 
             # Case 3: High FWR on mainstem (D8 misroute, needs re-extraction)
-            if correction_type is None and (is_mainstem or not has_v17c) and fwr and fwr > 10000:
+            if (
+                correction_type is None
+                and (is_mainstem or not has_v17c)
+                and fwr
+                and fwr > 10000
+            ):
                 correction_type = "mainstem_reextract"
 
             # Case 4: Side channel via main_side (v17b fallback if no v17c)
@@ -1070,11 +1116,11 @@ class FaccCorrector:
             correction_types.append(correction_type)
             correction_targets.append(correction_target)
 
-        df['correction_type'] = correction_types
-        df['correction_target'] = correction_targets
+        df["correction_type"] = correction_types
+        df["correction_target"] = correction_targets
 
         # Log stats
-        type_counts = df['correction_type'].value_counts()
+        type_counts = df["correction_type"].value_counts()
         logger.info(f"Mainstem classification: {dict(type_counts)}")
 
         return df
@@ -1082,7 +1128,7 @@ class FaccCorrector:
     def estimate_mainstem_corrections(
         self,
         classified_anomalies: pd.DataFrame,
-        v17c_conn: Optional[duckdb.DuckDBPyConnection] = None
+        v17c_conn: Optional[duckdb.DuckDBPyConnection] = None,
     ) -> pd.DataFrame:
         """
         Estimate corrections using mainstem routing.
@@ -1108,7 +1154,7 @@ class FaccCorrector:
 
         corrections = []
 
-        for region in classified_anomalies['region'].unique():
+        for region in classified_anomalies["region"].unique():
             # Fit regression model for fallback
             models = self.fit_regression(region)
 
@@ -1126,14 +1172,16 @@ class FaccCorrector:
             """).fetchone()
             headwater_typical = baseline[1] if baseline and baseline[1] else 1000
 
-            reg_anomalies = classified_anomalies[classified_anomalies['region'] == region]
+            reg_anomalies = classified_anomalies[
+                classified_anomalies["region"] == region
+            ]
 
             for _, row in reg_anomalies.iterrows():
-                rid = row['reach_id']
-                old_facc = row['facc']
-                correction_type = row['correction_type']
-                width = row.get('width', 50)
-                path_freq = row.get('path_freq', 1)
+                rid = row["reach_id"]
+                old_facc = row["facc"]
+                correction_type = row["correction_type"]
+                width = row.get("width", 50)
+                path_freq = row.get("path_freq", 1)
                 if path_freq <= 0:
                     path_freq = 1
 
@@ -1143,7 +1191,7 @@ class FaccCorrector:
                 if correction_type == "side_to_mainstem":
                     # Side channel should have minimal facc (just local catchment)
                     # Estimate: width * reach_length / 1e6 (very rough km² approx)
-                    reach_length = row.get('reach_length', 5000)
+                    reach_length = row.get("reach_length", 5000)
                     local_catchment = width * reach_length / 1e6  # km²
                     facc_corrected = max(local_catchment * 100, 100)  # min 100 km²
 
@@ -1159,7 +1207,7 @@ class FaccCorrector:
 
                 elif correction_type == "side_channel_high_facc":
                     # Similar to side_to_mainstem
-                    reach_length = row.get('reach_length', 5000)
+                    reach_length = row.get("reach_length", 5000)
                     local_catchment = width * reach_length / 1e6
                     facc_corrected = max(local_catchment * 100, 100)
 
@@ -1172,16 +1220,20 @@ class FaccCorrector:
                 facc_corrected = max(1.0, facc_corrected)
                 facc_corrected = min(facc_corrected, 1e9)
 
-                corrections.append({
-                    'reach_id': rid,
-                    'region': region,
-                    'old_facc': old_facc,
-                    'facc_corrected': facc_corrected,
-                    'correction_type': correction_type,
-                    'model_used': source,
-                    'reduction_factor': old_facc / facc_corrected if facc_corrected > 0 else 0,
-                    'correction_target': row.get('correction_target')
-                })
+                corrections.append(
+                    {
+                        "reach_id": rid,
+                        "region": region,
+                        "old_facc": old_facc,
+                        "facc_corrected": facc_corrected,
+                        "correction_type": correction_type,
+                        "model_used": source,
+                        "reduction_factor": old_facc / facc_corrected
+                        if facc_corrected > 0
+                        else 0,
+                        "correction_target": row.get("correction_target"),
+                    }
+                )
 
         return pd.DataFrame(corrections)
 
@@ -1261,7 +1313,7 @@ def correct_facc_anomalies(
                 applied=0,
                 skipped=len(skipped),
                 failed=0,
-                dry_run=dry_run
+                dry_run=dry_run,
             )
 
         # Classify

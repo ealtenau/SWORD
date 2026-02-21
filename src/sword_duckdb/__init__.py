@@ -55,9 +55,16 @@ except ImportError:
     SWORDDatabase = create_database = None
 
 try:
-    from .migrations import migrate_region, migrate_all_regions, validate_migration, build_all_geometry
+    from .migrations import (
+        migrate_region,
+        migrate_all_regions,
+        validate_migration,
+        build_all_geometry,
+    )
 except ImportError:
-    migrate_region = migrate_all_regions = validate_migration = build_all_geometry = None
+    migrate_region = migrate_all_regions = validate_migration = build_all_geometry = (
+        None
+    )
 
 try:
     from .sword_class import SWORD
@@ -161,76 +168,76 @@ except ImportError:
 
 __all__ = [
     # Main SWORD class (drop-in replacement)
-    'SWORD',
+    "SWORD",
     # Workflow orchestration (recommended entry point)
-    'SWORDWorkflow',
+    "SWORDWorkflow",
     # View classes
-    'CenterlinesView',
-    'NodesView',
-    'ReachesView',
-    'WritableArray',
+    "CenterlinesView",
+    "NodesView",
+    "ReachesView",
+    "WritableArray",
     # Reactive updates
-    'SWORDReactive',
-    'DependencyGraph',
-    'ChangeType',
-    'mark_geometry_changed',
-    'mark_topology_changed',
-    'full_recalculate',
+    "SWORDReactive",
+    "DependencyGraph",
+    "ChangeType",
+    "mark_geometry_changed",
+    "mark_topology_changed",
+    "full_recalculate",
     # Provenance logging
-    'ProvenanceLogger',
-    'OperationType',
-    'OperationStatus',
+    "ProvenanceLogger",
+    "OperationType",
+    "OperationStatus",
     # Reconstruction
-    'ReconstructionEngine',
-    'SourceDataset',
-    'DerivationMethod',
-    'AttributeSpec',
-    'ATTRIBUTE_SOURCES',
+    "ReconstructionEngine",
+    "SourceDataset",
+    "DerivationMethod",
+    "AttributeSpec",
+    "ATTRIBUTE_SOURCES",
     # Connection management
-    'SWORDDatabase',
-    'create_database',
+    "SWORDDatabase",
+    "create_database",
     # Schema
-    'create_schema',
-    'create_provenance_tables',
-    'add_v17c_columns',
-    'add_swot_obs_columns',
-    'add_sync_tracking_column',
-    'get_schema_sql',
-    'SCHEMA_VERSION',
+    "create_schema",
+    "create_provenance_tables",
+    "add_v17c_columns",
+    "add_swot_obs_columns",
+    "add_sync_tracking_column",
+    "get_schema_sql",
+    "SCHEMA_VERSION",
     # Migration
-    'migrate_region',
-    'migrate_all_regions',
-    'validate_migration',
-    'build_all_geometry',
+    "migrate_region",
+    "migrate_all_regions",
+    "validate_migration",
+    "build_all_geometry",
     # Export functions
-    'export_to_postgres',
-    'export_to_geoparquet',
-    'export_to_geopackage',
-    'sync_from_postgres',
-    'PostgresExportError',
-    'PgConnectionError',
-    'AuthenticationError',
-    'NetworkError',
+    "export_to_postgres",
+    "export_to_geoparquet",
+    "export_to_geopackage",
+    "sync_from_postgres",
+    "PostgresExportError",
+    "PgConnectionError",
+    "AuthenticationError",
+    "NetworkError",
     # Trigger functions
-    'install_triggers',
-    'remove_triggers',
-    'get_pending_changes',
-    'get_changed_entities',
-    'mark_changes_synced',
-    'get_trigger_sql',
+    "install_triggers",
+    "remove_triggers",
+    "get_pending_changes",
+    "get_changed_entities",
+    "mark_changes_synced",
+    "get_trigger_sql",
     # Lint framework
-    'LintRunner',
-    'Severity',
-    'Category',
-    'CheckResult',
-    'get_lint_registry',
+    "LintRunner",
+    "Severity",
+    "Category",
+    "CheckResult",
+    "get_lint_registry",
     # Database backends
-    'DatabaseBackend',
-    'BackendType',
-    'DuckDBBackend',
-    'PostgresBackend',
-    'get_backend',
-    'detect_backend_type',
-    'IsolationLevel',
-    'TransactionContext',
+    "DatabaseBackend",
+    "BackendType",
+    "DuckDBBackend",
+    "PostgresBackend",
+    "get_backend",
+    "detect_backend_type",
+    "IsolationLevel",
+    "TransactionContext",
 ]

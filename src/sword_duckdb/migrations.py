@@ -194,7 +194,7 @@ def _migrate_centerlines(
 
     # Insert in batches
     for i in range(0, n, batch_size):
-        batch = df.iloc[i : i + batch_size]
+        batch = df.iloc[i : i + batch_size]  # noqa: F841 — used by DuckDB replacement scan
         conn.execute("""
             INSERT INTO centerlines (cl_id, region, x, y, reach_id, node_id, version)
             SELECT * FROM batch
@@ -211,7 +211,6 @@ def _migrate_centerline_neighbors(
 
     NOTE: Region is part of the composite key since cl_id is only unique within a region.
     """
-    n = len(centerlines.cl_id)
     count = 0
 
     # Process neighbor ranks 1, 2, 3 (row 0 is primary, in main table)
@@ -235,7 +234,7 @@ def _migrate_centerline_neighbors(
 
         # Insert in batches
         for i in range(0, len(df), batch_size):
-            batch = df.iloc[i : i + batch_size]
+            batch = df.iloc[i : i + batch_size]  # noqa: F841 — used by DuckDB replacement scan
             conn.execute("""
                 INSERT INTO centerline_neighbors (cl_id, region, neighbor_rank, reach_id, node_id)
                 SELECT * FROM batch
@@ -308,7 +307,7 @@ def _migrate_nodes(conn, nodes, region: str, version: str, batch_size: int) -> i
 
     # Insert in batches
     for i in range(0, n, batch_size):
-        batch = df.iloc[i : i + batch_size]
+        batch = df.iloc[i : i + batch_size]  # noqa: F841 — used by DuckDB replacement scan
         conn.execute(f"""
             INSERT INTO nodes ({placeholders})
             SELECT {placeholders} FROM batch
@@ -384,7 +383,7 @@ def _migrate_reaches(conn, reaches, region: str, version: str, batch_size: int) 
 
     # Insert in batches
     for i in range(0, n, batch_size):
-        batch = df.iloc[i : i + batch_size]
+        batch = df.iloc[i : i + batch_size]  # noqa: F841 — used by DuckDB replacement scan
         conn.execute(f"""
             INSERT INTO reaches ({placeholders})
             SELECT {placeholders} FROM batch
@@ -420,7 +419,7 @@ def _migrate_reach_topology(conn, reaches, region: str, batch_size: int) -> int:
         )
 
         for i in range(0, len(df), batch_size):
-            batch = df.iloc[i : i + batch_size]
+            batch = df.iloc[i : i + batch_size]  # noqa: F841 — used by DuckDB replacement scan
             conn.execute("""
                 INSERT INTO reach_topology
                 SELECT * FROM batch
@@ -446,7 +445,7 @@ def _migrate_reach_topology(conn, reaches, region: str, batch_size: int) -> int:
         )
 
         for i in range(0, len(df), batch_size):
-            batch = df.iloc[i : i + batch_size]
+            batch = df.iloc[i : i + batch_size]  # noqa: F841 — used by DuckDB replacement scan
             conn.execute("""
                 INSERT INTO reach_topology
                 SELECT * FROM batch
@@ -481,7 +480,7 @@ def _migrate_swot_orbits(conn, reaches, region: str, batch_size: int) -> int:
         )
 
         for i in range(0, len(df), batch_size):
-            batch = df.iloc[i : i + batch_size]
+            batch = df.iloc[i : i + batch_size]  # noqa: F841 — used by DuckDB replacement scan
             conn.execute("""
                 INSERT INTO reach_swot_orbits
                 SELECT * FROM batch

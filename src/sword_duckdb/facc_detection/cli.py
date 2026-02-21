@@ -26,14 +26,18 @@ from pathlib import Path
 
 import pandas as pd
 
-from .detect import FaccDetector, DetectionConfig, detect_hybrid, export_categorized_geojsons
+from .detect import (
+    FaccDetector,
+    DetectionConfig,
+    detect_hybrid,
+    export_categorized_geojsons,
+)
 from .evaluate import FaccEvaluator, SEED_REACHES
-from .correct import FaccCorrector, correct_facc_anomalies
+from .correct import FaccCorrector
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 
@@ -61,21 +65,25 @@ Examples:
     )
 
     parser.add_argument(
-        "--db", "-d",
+        "--db",
+        "-d",
         required=True,
         help="Path to SWORD DuckDB database",
     )
     parser.add_argument(
-        "--region", "-r",
+        "--region",
+        "-r",
         help="Region to check (NA, SA, EU, AF, AS, OC)",
     )
     parser.add_argument(
-        "--all", "-a",
+        "--all",
+        "-a",
         action="store_true",
         help="Check all regions",
     )
     parser.add_argument(
-        "--threshold", "-t",
+        "--threshold",
+        "-t",
         type=float,
         default=0.5,
         help="Anomaly score threshold (default: 0.5)",
@@ -93,17 +101,20 @@ Examples:
         help="Facc jump ratio threshold (default: 100)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output file for results (CSV format)",
     )
     parser.add_argument(
-        "--format", "-f",
+        "--format",
+        "-f",
         choices=["text", "csv", "json"],
         default="text",
         help="Output format (default: text)",
     )
     parser.add_argument(
-        "--evaluate", "-e",
+        "--evaluate",
+        "-e",
         action="store_true",
         help="Evaluate detection against known corrupted reaches",
     )
@@ -190,7 +201,8 @@ Examples:
         help="Path to MERIT Hydro base directory (enables guided MERIT search for corrections)",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Verbose output",
     )
@@ -211,8 +223,13 @@ Examples:
 
     # Validate arguments
     needs_region = not (
-        args.evaluate or args.profile_seeds or args.rollback or
-        args.show_batches or args.fix or args.verify_seeds or args.export_geojson
+        args.evaluate
+        or args.profile_seeds
+        or args.rollback
+        or args.show_batches
+        or args.fix
+        or args.verify_seeds
+        or args.export_geojson
     )
     if needs_region and not args.all and not args.region:
         print("Error: Must specify --region, --all, or a specific mode")
@@ -264,7 +281,7 @@ Examples:
 
 def run_detect(db_path: str, args, config: DetectionConfig):
     """Run anomaly detection."""
-    regions = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'] if args.all else [args.region]
+    regions = ["NA", "SA", "EU", "AF", "AS", "OC"] if args.all else [args.region]
 
     all_anomalies = []
 
@@ -279,7 +296,7 @@ def run_detect(db_path: str, args, config: DetectionConfig):
             print(result.summary())
 
             if len(result.anomalies) > 0:
-                result.anomalies['detection_region'] = region
+                result.anomalies["detection_region"] = region
                 all_anomalies.append(result.anomalies)
 
     if all_anomalies:
@@ -300,10 +317,14 @@ def run_detect(db_path: str, args, config: DetectionConfig):
 
 def run_export_geojson(db_path: str, args):
     """Export detection results as categorized GeoJSON files for QGIS review."""
-    regions = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'] if args.all else ([args.region] if args.region else ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'])
+    regions = (
+        ["NA", "SA", "EU", "AF", "AS", "OC"]
+        if args.all
+        else ([args.region] if args.region else ["NA", "SA", "EU", "AF", "AS", "OC"])
+    )
     output_dir = Path(args.output_dir)
 
-    print(f"\nRunning facc detection with GeoJSON export...")
+    print("\nRunning facc detection with GeoJSON export...")
     print(f"  Database: {db_path}")
     print(f"  Regions: {regions}")
     print(f"  Output directory: {output_dir}")
@@ -346,18 +367,18 @@ def run_export_geojson(db_path: str, args):
     print("=" * 60)
     print(f"Total anomalies: {summary['total_anomalies']}")
     print("\nBy detection rule:")
-    for rule, count in summary['by_rule'].items():
+    for rule, count in summary["by_rule"].items():
         print(f"  {rule}: {count}")
 
     print("\nFiles created:")
-    for name, filepath in summary['files'].items():
+    for name, filepath in summary["files"].items():
         print(f"  {name}: {filepath}")
 
     # Seed verification
     if seed_reach_ids:
         print(f"\nSeed verification ({len(seed_reach_ids)} seeds):")
         print(f"  Detected: {len(summary['seeds_detected'])}/{len(seed_reach_ids)}")
-        if summary['seeds_missed']:
+        if summary["seeds_missed"]:
             print(f"  MISSED: {summary['seeds_missed']}")
         else:
             print("  All seeds detected!")
@@ -369,7 +390,7 @@ def run_export_geojson(db_path: str, args):
 
 def run_entry_points(db_path: str, args, config: DetectionConfig):
     """Detect entry point errors."""
-    regions = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'] if args.all else [args.region]
+    regions = ["NA", "SA", "EU", "AF", "AS", "OC"] if args.all else [args.region]
 
     with FaccDetector(db_path, config=config) as detector:
         for region in regions:
@@ -429,11 +450,15 @@ def run_profile_seeds(db_path: str, args):
         print("=" * 80)
 
         for _, row in profile.iterrows():
-            print(f"\nReach {row['reach_id']} ({row.get('corruption_mode', 'unknown')}):")
+            print(
+                f"\nReach {row['reach_id']} ({row.get('corruption_mode', 'unknown')}):"
+            )
             print(f"  facc: {row.get('facc', 'N/A'):,.0f}")
             print(f"  width: {row.get('width', 'N/A'):,.1f}")
             print(f"  facc/width: {row.get('facc_width_ratio', 'N/A'):,.1f}")
-            print(f"  facc_reach_acc_ratio: {row.get('facc_reach_acc_ratio', 'N/A'):.2f}")
+            print(
+                f"  facc_reach_acc_ratio: {row.get('facc_reach_acc_ratio', 'N/A'):.2f}"
+            )
             print(f"  facc_jump_ratio: {row.get('facc_jump_ratio', 'N/A')}")
             print(f"  stream_order: {row.get('stream_order', 'N/A')}")
 
@@ -468,7 +493,7 @@ def run_threshold_sweep(db_path: str, args):
         print(results.to_string(index=False))
 
         # Find optimal F1
-        best_idx = results['f1'].idxmax()
+        best_idx = results["f1"].idxmax()
         best = results.loc[best_idx]
         print(f"\nBest F1 at threshold={best['threshold']:.1f}: {best['f1']:.2%}")
 
@@ -492,15 +517,20 @@ def run_suggest_labels(db_path: str, args):
 # Phase 2: Correction functions
 # ============================================================================
 
+
 def run_fix(db_path: str, args, config: DetectionConfig):
     """Detect and correct facc anomalies."""
-    regions = ['NA', 'SA', 'EU', 'AF', 'AS', 'OC'] if args.all else ([args.region] if args.region else None)
+    regions = (
+        ["NA", "SA", "EU", "AF", "AS", "OC"]
+        if args.all
+        else ([args.region] if args.region else None)
+    )
 
     # Determine if dry run
     dry_run = not args.apply
 
     # Determine detection method
-    use_hybrid = not getattr(args, 'use_basic_detector', False)
+    use_hybrid = not getattr(args, "use_basic_detector", False)
 
     if dry_run:
         print("\n" + "=" * 60)
@@ -510,7 +540,9 @@ def run_fix(db_path: str, args, config: DetectionConfig):
 
     with FaccCorrector(db_path, read_only=dry_run) as corrector:
         # Detect anomalies
-        detection_method = "HYBRID (ratio_to_median)" if use_hybrid else "BASIC (threshold)"
+        detection_method = (
+            "HYBRID (ratio_to_median)" if use_hybrid else "BASIC (threshold)"
+        )
         print(f"\nStep 1: Detecting anomalies using {detection_method}...")
 
         if use_hybrid:
@@ -536,7 +568,9 @@ def run_fix(db_path: str, args, config: DetectionConfig):
             if regions:
                 all_anomalies = []
                 for region in regions:
-                    result = detector.detect(region=region, anomaly_threshold=args.threshold)
+                    result = detector.detect(
+                        region=region, anomaly_threshold=args.threshold
+                    )
                     print(f"  {region}: {len(result.anomalies)} anomalies")
                     if len(result.anomalies) > 0:
                         all_anomalies.append(result.anomalies)
@@ -556,9 +590,13 @@ def run_fix(db_path: str, args, config: DetectionConfig):
         print(f"\nTotal anomalies detected: {len(anomalies)}")
 
         # Filter fixable
-        include_lakes = getattr(args, 'include_lakes', False)
-        print(f"\nStep 2: Filtering fixable anomalies (include_lakes={include_lakes})...")
-        fixable, skipped = corrector.filter_fixable(anomalies, include_lakes=include_lakes)
+        include_lakes = getattr(args, "include_lakes", False)
+        print(
+            f"\nStep 2: Filtering fixable anomalies (include_lakes={include_lakes})..."
+        )
+        fixable, skipped = corrector.filter_fixable(
+            anomalies, include_lakes=include_lakes
+        )
 
         if len(fixable) == 0:
             print("No fixable anomalies found")
@@ -572,23 +610,23 @@ def run_fix(db_path: str, args, config: DetectionConfig):
         print("\nStep 3: Classifying anomalies...")
         classified = corrector.classify_anomalies(fixable)
 
-        type_counts = classified['fix_type'].value_counts()
+        type_counts = classified["fix_type"].value_counts()
         for fix_type, count in type_counts.items():
             print(f"  {fix_type}: {count}")
 
         # Fit models and estimate corrections
         print("\nStep 4: Fitting regression models...")
-        for region in classified['region'].unique():
+        for region in classified["region"].unique():
             models = corrector.fit_regression(region)
-            if 'primary' in models:
+            if "primary" in models:
                 print(f"  {region} primary: R²={models['primary'].r_squared:.3f}")
-            if 'fallback' in models:
+            if "fallback" in models:
                 print(f"  {region} fallback: R²={models['fallback'].r_squared:.3f}")
 
         # Get MERIT path
-        merit_path = getattr(args, 'merit_path', None)
+        merit_path = getattr(args, "merit_path", None)
         if merit_path:
-            print(f"\nStep 5: Estimating corrections with MERIT guided search...")
+            print("\nStep 5: Estimating corrections with MERIT guided search...")
             print(f"  MERIT path: {merit_path}")
         else:
             print("\nStep 5: Estimating corrections (regression only)...")
@@ -602,7 +640,7 @@ def run_fix(db_path: str, args, config: DetectionConfig):
         # Show sample
         print(f"\nGenerated {len(corrections)} corrections")
         print("\nSample corrections (top 10 by reduction):")
-        sample = corrections.nlargest(10, 'reduction_factor')
+        sample = corrections.nlargest(10, "reduction_factor")
         for _, row in sample.iterrows():
             print(
                 f"  {row['reach_id']}: {row['old_facc']:,.0f} → {row['facc_corrected']:,.0f} "
@@ -613,11 +651,11 @@ def run_fix(db_path: str, args, config: DetectionConfig):
         print("\nStep 6: Validating corrections...")
         validation = corrector.validate_corrections(corrections)
 
-        if validation['valid']:
+        if validation["valid"]:
             print("  ✓ All validation checks passed")
         else:
             print("  ⚠ Validation issues:")
-            for issue in validation['issues']:
+            for issue in validation["issues"]:
                 print(f"    - {issue}")
 
         # Apply or show summary
@@ -662,11 +700,13 @@ def run_show_batches(db_path: str, args):
 
 def run_verify_seeds(db_path: str, args, config: DetectionConfig):
     """Verify that seed reaches would be fixed correctly."""
-    use_hybrid = not getattr(args, 'use_basic_detector', False)
-    merit_path = getattr(args, 'merit_path', None)
+    use_hybrid = not getattr(args, "use_basic_detector", False)
+    merit_path = getattr(args, "merit_path", None)
     detection_method = "HYBRID" if use_hybrid else "BASIC"
 
-    print(f"\nVerifying seed reach corrections using {detection_method} detection (dry run)...")
+    print(
+        f"\nVerifying seed reach corrections using {detection_method} detection (dry run)..."
+    )
     if merit_path:
         print(f"  MERIT guided search enabled: {merit_path}")
     print()
@@ -678,13 +718,13 @@ def run_verify_seeds(db_path: str, args, config: DetectionConfig):
         # Detect using hybrid (default) or basic
         if use_hybrid:
             # Seeds are in SA region
-            result = corrector.detect_hybrid(region='SA')
+            result = corrector.detect_hybrid(region="SA")
         else:
             detector = FaccDetector(corrector.conn)
             result = detector.detect(anomaly_threshold=args.threshold)
 
         # Check if seeds are in detected anomalies
-        detected_ids = set(result.anomalies['reach_id'].tolist())
+        detected_ids = set(result.anomalies["reach_id"].tolist())
         seeds_detected = [s for s in seed_ids if s in detected_ids]
         seeds_missed = [s for s in seed_ids if s not in detected_ids]
 
@@ -693,7 +733,7 @@ def run_verify_seeds(db_path: str, args, config: DetectionConfig):
             print(f"  MISSED: {seeds_missed}")
 
         # Filter to just seeds for correction preview
-        seed_anomalies = result.anomalies[result.anomalies['reach_id'].isin(seed_ids)]
+        seed_anomalies = result.anomalies[result.anomalies["reach_id"].isin(seed_ids)]
 
         if len(seed_anomalies) == 0:
             print("\nNo seed anomalies to correct")
@@ -713,14 +753,20 @@ def run_verify_seeds(db_path: str, args, config: DetectionConfig):
         # Show results
         print("\nSeed Reach Corrections Preview:")
         print("=" * 110)
-        print(f"{'reach_id':<15} {'mode':<12} {'old_facc':>15} {'new_facc':>15} {'reduction':>10} {'fix_type':<15} {'source':<15}")
+        print(
+            f"{'reach_id':<15} {'mode':<12} {'old_facc':>15} {'new_facc':>15} {'reduction':>10} {'fix_type':<15} {'source':<15}"
+        )
         print("-" * 110)
 
         for _, row in corrections.iterrows():
-            seed_info = SEED_REACHES.get(row['reach_id'], {})
-            mode = seed_info.get('mode', 'unknown')
-            reduction = row['old_facc'] / row['facc_corrected'] if row['facc_corrected'] > 0 else 0
-            source = row.get('model_used', 'unknown')
+            seed_info = SEED_REACHES.get(row["reach_id"], {})
+            mode = seed_info.get("mode", "unknown")
+            reduction = (
+                row["old_facc"] / row["facc_corrected"]
+                if row["facc_corrected"] > 0
+                else 0
+            )
+            source = row.get("model_used", "unknown")
 
             print(
                 f"{row['reach_id']:<15} {mode:<12} {row['old_facc']:>15,.0f} "
@@ -729,7 +775,10 @@ def run_verify_seeds(db_path: str, args, config: DetectionConfig):
 
         # Validate
         validation = corrector.validate_corrections(corrections)
-        print("\n" + ("✓ Validation passed" if validation['valid'] else "⚠ Validation issues"))
+        print(
+            "\n"
+            + ("✓ Validation passed" if validation["valid"] else "⚠ Validation issues")
+        )
 
 
 if __name__ == "__main__":

@@ -112,17 +112,16 @@ class ConsoleFormatter:
             # Result line
             symbol = self._severity_symbol(result.severity, result.passed)
             sev_label = f"[{result.severity.value.upper()}]"
-            sev_colored = self._color(
-                sev_label, self._severity_color(result.severity)
-            )
+            sev_colored = self._color(sev_label, self._severity_color(result.severity))
 
-            status = self._color("PASS", "green") if result.passed else self._color(
-                "FAIL", self._severity_color(result.severity)
+            status = (
+                self._color("PASS", "green")
+                if result.passed
+                else self._color("FAIL", self._severity_color(result.severity))
             )
 
             lines.append(
-                f"  {symbol} {result.check_id} {result.name}: {status} "
-                f"{sev_colored}"
+                f"  {symbol} {result.check_id} {result.name}: {status} {sev_colored}"
             )
 
             # Stats line
@@ -161,10 +160,13 @@ class ConsoleFormatter:
 
         total = len(results)
         passed = sum(1 for r in results if r.passed)
-        failed = total - passed
 
-        errors = sum(1 for r in results if not r.passed and r.severity == Severity.ERROR)
-        warnings = sum(1 for r in results if not r.passed and r.severity == Severity.WARNING)
+        errors = sum(
+            1 for r in results if not r.passed and r.severity == Severity.ERROR
+        )
+        warnings = sum(
+            1 for r in results if not r.passed and r.severity == Severity.WARNING
+        )
         infos = sum(1 for r in results if not r.passed and r.severity == Severity.INFO)
 
         total_issues = sum(r.issues_found for r in results)
@@ -202,12 +204,21 @@ class ConsoleFormatter:
         """Format a brief one-line summary."""
         total = len(results)
         passed = sum(1 for r in results if r.passed)
-        errors = sum(1 for r in results if not r.passed and r.severity == Severity.ERROR)
-        warnings = sum(1 for r in results if not r.passed and r.severity == Severity.WARNING)
+        errors = sum(
+            1 for r in results if not r.passed and r.severity == Severity.ERROR
+        )
+        warnings = sum(
+            1 for r in results if not r.passed and r.severity == Severity.WARNING
+        )
 
         if errors > 0:
-            return self._color(f"FAIL: {errors} errors, {warnings} warnings ({passed}/{total} passed)", "red")
+            return self._color(
+                f"FAIL: {errors} errors, {warnings} warnings ({passed}/{total} passed)",
+                "red",
+            )
         elif warnings > 0:
-            return self._color(f"WARN: {warnings} warnings ({passed}/{total} passed)", "yellow")
+            return self._color(
+                f"WARN: {warnings} warnings ({passed}/{total} passed)", "yellow"
+            )
         else:
             return self._color(f"OK: All {total} checks passed", "green")

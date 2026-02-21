@@ -56,14 +56,14 @@ def detect_backend_type(connection: Union[str, Path]) -> BackendType:
     conn_str = str(connection)
 
     # Check for PostgreSQL URL patterns
-    if conn_str.startswith(('postgresql://', 'postgres://', 'psql://')):
+    if conn_str.startswith(("postgresql://", "postgres://", "psql://")):
         return BackendType.POSTGRES
 
     # Check for environment variable override
-    env_backend = os.environ.get('SWORD_PRIMARY_BACKEND', '').lower()
-    if env_backend == 'postgres':
+    env_backend = os.environ.get("SWORD_PRIMARY_BACKEND", "").lower()
+    if env_backend == "postgres":
         # If SWORD_POSTGRES_URL is set, use PostgreSQL
-        if os.environ.get('SWORD_POSTGRES_URL'):
+        if os.environ.get("SWORD_POSTGRES_URL"):
             return BackendType.POSTGRES
 
     # Default to DuckDB for file paths
@@ -125,9 +125,9 @@ def get_backend(
     if backend_type == BackendType.DUCKDB:
         # Extract DuckDB-specific kwargs
         duckdb_kwargs = {
-            'db_path': connection,
-            'read_only': kwargs.pop('read_only', False),
-            'spatial': kwargs.pop('spatial', True),
+            "db_path": connection,
+            "read_only": kwargs.pop("read_only", False),
+            "spatial": kwargs.pop("spatial", True),
         }
         return DuckDBBackend(**duckdb_kwargs)
 
@@ -136,15 +136,15 @@ def get_backend(
         conn_str = str(connection)
 
         # Support environment variable for connection string
-        if not conn_str.startswith(('postgresql://', 'postgres://', 'psql://')):
-            conn_str = os.environ.get('SWORD_POSTGRES_URL', conn_str)
+        if not conn_str.startswith(("postgresql://", "postgres://", "psql://")):
+            conn_str = os.environ.get("SWORD_POSTGRES_URL", conn_str)
 
         # Extract PostgreSQL-specific kwargs
         pg_kwargs = {
-            'connection_string': conn_str,
-            'min_connections': kwargs.pop('min_connections', 1),
-            'max_connections': kwargs.pop('max_connections', 10),
-            'enable_postgis': kwargs.pop('enable_postgis', True),
+            "connection_string": conn_str,
+            "min_connections": kwargs.pop("min_connections", 1),
+            "max_connections": kwargs.pop("max_connections", 10),
+            "enable_postgis": kwargs.pop("enable_postgis", True),
         }
         return PostgresBackend(**pg_kwargs)
 
@@ -175,18 +175,18 @@ def get_backend_from_env() -> Optional[DatabaseBackend]:
     >>> type(backend)
     <class 'PostgresBackend'>
     """
-    backend_type_str = os.environ.get('SWORD_PRIMARY_BACKEND', '').lower()
+    backend_type_str = os.environ.get("SWORD_PRIMARY_BACKEND", "").lower()
 
-    if backend_type_str == 'postgres':
-        pg_url = os.environ.get('SWORD_POSTGRES_URL')
+    if backend_type_str == "postgres":
+        pg_url = os.environ.get("SWORD_POSTGRES_URL")
         if not pg_url:
             raise ValueError(
                 "SWORD_PRIMARY_BACKEND=postgres but SWORD_POSTGRES_URL not set"
             )
         return get_backend(pg_url, BackendType.POSTGRES)
 
-    elif backend_type_str == 'duckdb':
-        db_path = os.environ.get('SWORD_DUCKDB_PATH')
+    elif backend_type_str == "duckdb":
+        db_path = os.environ.get("SWORD_DUCKDB_PATH")
         if not db_path:
             raise ValueError(
                 "SWORD_PRIMARY_BACKEND=duckdb but SWORD_DUCKDB_PATH not set"

@@ -35,7 +35,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Union
 
 if TYPE_CHECKING:
     from .sword_db import SWORDDatabase
@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 class OperationType(Enum):
     """Types of operations that can be logged."""
+
     CREATE = "CREATE"
     UPDATE = "UPDATE"
     DELETE = "DELETE"
@@ -59,6 +60,7 @@ class OperationType(Enum):
 
 class OperationStatus(Enum):
     """Status of an operation."""
+
     PENDING = "PENDING"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
@@ -107,7 +109,7 @@ class ProvenanceLogger:
 
     def __init__(
         self,
-        db: 'SWORDDatabase',
+        db: "SWORDDatabase",
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         enabled: bool = True,
@@ -269,39 +271,48 @@ class ProvenanceLogger:
             )
         """
 
-        self._db.execute(sql, [
-            op_id,
-            op_type,
-            table_name,
-            entity_ids_list,
-            region,
-            self.user_id,
-            self.session_id,
-            json.dumps(details) if details else None,
-            affected_cols_list,
-            reason,
-            parent_op_id,
-        ])
+        self._db.execute(
+            sql,
+            [
+                op_id,
+                op_type,
+                table_name,
+                entity_ids_list,
+                region,
+                self.user_id,
+                self.session_id,
+                json.dumps(details) if details else None,
+                affected_cols_list,
+                reason,
+                parent_op_id,
+            ],
+        )
 
         logger.debug(f"Started operation {op_id}: {op_type} on {table_name}")
         return op_id
 
     def _complete_operation(self, operation_id: int) -> None:
         """Mark an operation as completed."""
-        self._db.execute("""
+        self._db.execute(
+            """
             UPDATE sword_operations
             SET status = 'COMPLETED', completed_at = CURRENT_TIMESTAMP
             WHERE operation_id = ?
-        """, [operation_id])
+        """,
+            [operation_id],
+        )
         logger.debug(f"Completed operation {operation_id}")
 
     def _fail_operation(self, operation_id: int, error_message: str) -> None:
         """Mark an operation as failed."""
-        self._db.execute("""
+        self._db.execute(
+            """
             UPDATE sword_operations
             SET status = 'FAILED', completed_at = CURRENT_TIMESTAMP, error_message = ?
             WHERE operation_id = ?
-        """, [error_message, operation_id])
+        """,
+            [error_message, operation_id],
+        )
         logger.warning(f"Operation {operation_id} failed: {error_message}")
 
     def log_value_change(
@@ -355,21 +366,24 @@ class ProvenanceLogger:
             else:
                 data_type = "json"
 
-        self._db.execute("""
+        self._db.execute(
+            """
             INSERT INTO sword_value_snapshots (
                 snapshot_id, operation_id, table_name, entity_id, column_name,
                 old_value, new_value, data_type
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            snapshot_id,
-            operation_id,
-            table_name,
-            entity_id,
-            column_name,
-            json.dumps(old_value) if old_value is not None else None,
-            json.dumps(new_value) if new_value is not None else None,
-            data_type,
-        ])
+        """,
+            [
+                snapshot_id,
+                operation_id,
+                table_name,
+                entity_id,
+                column_name,
+                json.dumps(old_value) if old_value is not None else None,
+                json.dumps(new_value) if new_value is not None else None,
+                data_type,
+            ],
+        )
 
         return snapshot_id
 
@@ -414,8 +428,13 @@ class ProvenanceLogger:
         snapshot_ids = []
         for entity_id, old_val, new_val in zip(entity_ids, old_values, new_values):
             snap_id = self.log_value_change(
-                operation_id, table_name, entity_id, column_name,
-                old_val, new_val, data_type
+                operation_id,
+                table_name,
+                entity_id,
+                column_name,
+                old_val,
+                new_val,
+                data_type,
             )
             snapshot_ids.append(snap_id)
 
@@ -446,9 +465,9 @@ class ProvenanceLogger:
         """
         # Map entity type to table name
         table_map = {
-            'reach': 'reaches',
-            'node': 'nodes',
-            'centerline': 'centerlines',
+            "reach": "reaches",
+            "node": "nodes",
+            "centerline": "centerlines",
         }
         table_name = table_map.get(entity_type, entity_type)
 
@@ -491,26 +510,30 @@ class ProvenanceLogger:
 
             value_changes = []
             for change in changes:
-                value_changes.append({
-                    'column': change[0],
-                    'old_value': json.loads(change[1]) if change[1] else None,
-                    'new_value': json.loads(change[2]) if change[2] else None,
-                    'data_type': change[3],
-                })
+                value_changes.append(
+                    {
+                        "column": change[0],
+                        "old_value": json.loads(change[1]) if change[1] else None,
+                        "new_value": json.loads(change[2]) if change[2] else None,
+                        "data_type": change[3],
+                    }
+                )
 
-            history.append({
-                'operation_id': op_id,
-                'operation_type': row[1],
-                'table_name': row[2],
-                'user_id': row[3],
-                'session_id': row[4],
-                'started_at': row[5],
-                'completed_at': row[6],
-                'reason': row[7],
-                'status': row[8],
-                'affected_columns': row[9],
-                'value_changes': value_changes,
-            })
+            history.append(
+                {
+                    "operation_id": op_id,
+                    "operation_type": row[1],
+                    "table_name": row[2],
+                    "user_id": row[3],
+                    "session_id": row[4],
+                    "started_at": row[5],
+                    "completed_at": row[6],
+                    "reason": row[7],
+                    "status": row[8],
+                    "affected_columns": row[9],
+                    "value_changes": value_changes,
+                }
+            )
 
         return history
 
@@ -577,18 +600,18 @@ class ProvenanceLogger:
 
         return [
             {
-                'operation_id': r[0],
-                'operation_type': r[1],
-                'table_name': r[2],
-                'entity_ids': r[3],
-                'region': r[4],
-                'user_id': r[5],
-                'session_id': r[6],
-                'started_at': r[7],
-                'completed_at': r[8],
-                'reason': r[9],
-                'status': r[10],
-                'error_message': r[11],
+                "operation_id": r[0],
+                "operation_type": r[1],
+                "table_name": r[2],
+                "entity_ids": r[3],
+                "region": r[4],
+                "user_id": r[5],
+                "session_id": r[6],
+                "started_at": r[7],
+                "completed_at": r[8],
+                "reason": r[9],
+                "status": r[10],
+                "error_message": r[11],
             }
             for r in results
         ]
@@ -616,9 +639,12 @@ class ProvenanceLogger:
             If the operation cannot be rolled back
         """
         # Check operation status
-        result = self._db.execute("""
+        result = self._db.execute(
+            """
             SELECT status, table_name FROM sword_operations WHERE operation_id = ?
-        """, [operation_id]).fetchone()
+        """,
+            [operation_id],
+        ).fetchone()
 
         if not result:
             raise ValueError(f"Operation {operation_id} not found")
@@ -628,12 +654,15 @@ class ProvenanceLogger:
             raise ValueError(f"Operation {operation_id} already rolled back")
 
         # Get all snapshots for this operation
-        snapshots = self._db.execute("""
+        snapshots = self._db.execute(
+            """
             SELECT snapshot_id, table_name, entity_id, column_name, old_value, data_type
             FROM sword_value_snapshots
             WHERE operation_id = ?
             ORDER BY snapshot_id DESC
-        """, [operation_id]).fetchall()
+        """,
+            [operation_id],
+        ).fetchall()
 
         if not snapshots:
             logger.warning(f"No snapshots found for operation {operation_id}")
@@ -651,27 +680,33 @@ class ProvenanceLogger:
 
             # Determine the ID column for this table
             id_col_map = {
-                'reaches': 'reach_id',
-                'nodes': 'node_id',
-                'centerlines': 'cl_id',
+                "reaches": "reach_id",
+                "nodes": "node_id",
+                "centerlines": "cl_id",
             }
-            id_col = id_col_map.get(tbl, 'id')
+            id_col = id_col_map.get(tbl, "id")
 
             # Update the value
             try:
-                self._db.execute(f"""
+                self._db.execute(
+                    f"""
                     UPDATE {tbl} SET {column} = ? WHERE {id_col} = ?
-                """, [old_value, entity_id])
+                """,
+                    [old_value, entity_id],
+                )
                 restored += 1
             except Exception as e:
                 logger.error(f"Failed to restore {tbl}.{column} for {entity_id}: {e}")
 
         # Mark operation as rolled back
-        self._db.execute("""
+        self._db.execute(
+            """
             UPDATE sword_operations
             SET status = 'ROLLED_BACK'
             WHERE operation_id = ?
-        """, [operation_id])
+        """,
+            [operation_id],
+        )
 
         logger.info(f"Rolled back operation {operation_id}, restored {restored} values")
         return restored
@@ -702,24 +737,27 @@ class ProvenanceLogger:
         list of dict
             Lineage records showing source attribution
         """
-        results = self._db.execute("""
+        results = self._db.execute(
+            """
             SELECT
                 lineage_id, source_dataset, source_id, source_version,
                 attribute_name, derivation_method, created_at
             FROM sword_source_lineage
             WHERE entity_type = ? AND entity_id = ? AND region = ?
             ORDER BY attribute_name
-        """, [entity_type, entity_id, region]).fetchall()
+        """,
+            [entity_type, entity_id, region],
+        ).fetchall()
 
         return [
             {
-                'lineage_id': r[0],
-                'source_dataset': r[1],
-                'source_id': r[2],
-                'source_version': r[3],
-                'attribute_name': r[4],
-                'derivation_method': r[5],
-                'created_at': r[6],
+                "lineage_id": r[0],
+                "source_dataset": r[1],
+                "source_id": r[2],
+                "source_version": r[3],
+                "attribute_name": r[4],
+                "derivation_method": r[5],
+                "created_at": r[6],
             }
             for r in results
         ]
@@ -768,17 +806,26 @@ class ProvenanceLogger:
         ).fetchone()
         lineage_id = result[0]
 
-        self._db.execute("""
+        self._db.execute(
+            """
             INSERT INTO sword_source_lineage (
                 lineage_id, entity_type, entity_id, region,
                 source_dataset, source_id, source_version,
                 attribute_name, derivation_method
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            lineage_id, entity_type, entity_id, region,
-            source_dataset, source_id, source_version,
-            attribute_name, derivation_method,
-        ])
+        """,
+            [
+                lineage_id,
+                entity_type,
+                entity_id,
+                region,
+                source_dataset,
+                source_id,
+                source_version,
+                attribute_name,
+                derivation_method,
+            ],
+        )
 
         return lineage_id
 
@@ -839,7 +886,8 @@ class ProvenanceLogger:
             type_exclusion = f" AND operation_type NOT IN ({placeholders})"
             query_params.extend(exclude_types)
 
-        results = self._db.execute(f"""
+        results = self._db.execute(
+            f"""
             SELECT
                 operation_id, operation_type, table_name, entity_ids, region,
                 user_id, session_id, started_at, completed_at,
@@ -849,21 +897,23 @@ class ProvenanceLogger:
               AND status {status_filter}
               {type_exclusion}
             ORDER BY operation_id DESC
-        """, query_params).fetchall()
+        """,
+            query_params,
+        ).fetchall()
 
         return [
             {
-                'operation_id': r[0],
-                'operation_type': r[1],
-                'table_name': r[2],
-                'entity_ids': r[3],
-                'region': r[4],
-                'user_id': r[5],
-                'session_id': r[6],
-                'started_at': r[7],
-                'completed_at': r[8],
-                'reason': r[9],
-                'status': r[10],
+                "operation_id": r[0],
+                "operation_type": r[1],
+                "table_name": r[2],
+                "entity_ids": r[3],
+                "region": r[4],
+                "user_id": r[5],
+                "session_id": r[6],
+                "started_at": r[7],
+                "completed_at": r[8],
+                "reason": r[9],
+                "status": r[10],
             }
             for r in results
         ]

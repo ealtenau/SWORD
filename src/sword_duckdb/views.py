@@ -16,7 +16,7 @@ WritableArray enables in-place array modifications to persist to the database.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Any, Callable, Union
+from typing import TYPE_CHECKING, Optional, Any
 import numpy as np
 import gc
 
@@ -50,10 +50,10 @@ class WritableArray:
         db_col_name: str,
         ids: np.ndarray,
         region: str,
-        reactive: Optional['SWORDReactive'] = None,
+        reactive: Optional["SWORDReactive"] = None,
         attr_name: Optional[str] = None,
-        provenance_logger: Optional['ProvenanceLogger'] = None,
-        operation_id: Optional[int] = None
+        provenance_logger: Optional["ProvenanceLogger"] = None,
+        operation_id: Optional[int] = None,
     ):
         """
         Initialize WritableArray.
@@ -109,7 +109,11 @@ class WritableArray:
     def __setitem__(self, key, value) -> None:
         """Set items and sync to database."""
         # Capture old values for provenance logging
-        old_values = self._data[key].copy() if hasattr(self._data[key], 'copy') else self._data[key]
+        old_values = (
+            self._data[key].copy()
+            if hasattr(self._data[key], "copy")
+            else self._data[key]
+        )
 
         # Update local array
         self._data[key] = value
@@ -124,17 +128,28 @@ class WritableArray:
         try:
             # Use db.execute() for backend-agnostic SQL execution
             # Placeholders (?) are automatically converted for PostgreSQL
-            if np.isscalar(affected_ids) or (isinstance(affected_ids, np.ndarray) and affected_ids.ndim == 0):
+            if np.isscalar(affected_ids) or (
+                isinstance(affected_ids, np.ndarray) and affected_ids.ndim == 0
+            ):
                 # Single value update
-                id_val = int(affected_ids) if hasattr(affected_ids, 'item') else int(affected_ids)
-                val = value.item() if hasattr(value, 'item') else value
-                old_val = old_values.item() if hasattr(old_values, 'item') else old_values
+                id_val = (
+                    int(affected_ids)
+                    if hasattr(affected_ids, "item")
+                    else int(affected_ids)
+                )
+                val = value.item() if hasattr(value, "item") else value
+                old_val = (
+                    old_values.item() if hasattr(old_values, "item") else old_values
+                )
 
-                self._db.execute(f"""
+                self._db.execute(
+                    f"""
                     UPDATE {self._table}
                     SET {self._db_col_name} = ?
                     WHERE {self._id_col} = ? AND region = ?
-                """, [val, id_val, self._region])
+                """,
+                    [val, id_val, self._region],
+                )
 
                 # Log to provenance system if configured
                 if self._provenance_logger and self._operation_id:
@@ -144,7 +159,7 @@ class WritableArray:
                         id_val,
                         self._db_col_name,
                         old_val,
-                        val
+                        val,
                     )
 
                 # Hook into reactive system if configured
@@ -161,15 +176,22 @@ class WritableArray:
                     values = np.repeat(values, len(affected_ids))
 
                 for i, (id_val, val) in enumerate(zip(affected_ids, values)):
-                    id_val = int(id_val) if hasattr(id_val, 'item') else int(id_val)
-                    val = val.item() if hasattr(val, 'item') else val
-                    old_val = old_vals[i].item() if hasattr(old_vals[i], 'item') else old_vals[i]
+                    id_val = int(id_val) if hasattr(id_val, "item") else int(id_val)
+                    val = val.item() if hasattr(val, "item") else val
+                    old_val = (
+                        old_vals[i].item()
+                        if hasattr(old_vals[i], "item")
+                        else old_vals[i]
+                    )
 
-                    self._db.execute(f"""
+                    self._db.execute(
+                        f"""
                         UPDATE {self._table}
                         SET {self._db_col_name} = ?
                         WHERE {self._id_col} = ? AND region = ?
-                    """, [val, id_val, self._region])
+                    """,
+                        [val, id_val, self._region],
+                    )
 
                     # Log to provenance system if configured
                     if self._provenance_logger and self._operation_id:
@@ -179,7 +201,7 @@ class WritableArray:
                             id_val,
                             self._db_col_name,
                             old_val,
-                            val
+                            val,
                         )
 
                 # Hook into reactive system if configured
@@ -202,32 +224,22 @@ class WritableArray:
         from .reactive import ChangeType
 
         # Determine change type based on attribute name
-        if 'geometry' in self._attr_name or self._col_name in ('x', 'y'):
+        if "geometry" in self._attr_name or self._col_name in ("x", "y"):
             change_type = ChangeType.GEOMETRY
-        elif 'topology' in self._attr_name:
+        elif "topology" in self._attr_name:
             change_type = ChangeType.TOPOLOGY
         else:
             change_type = ChangeType.ATTRIBUTE
 
         # Map table to the appropriate parameter
-        if self._table == 'reaches':
+        if self._table == "reaches":
             self._reactive.mark_dirty(
-                self._attr_name,
-                change_type,
-                reach_ids=entity_ids
+                self._attr_name, change_type, reach_ids=entity_ids
             )
-        elif self._table == 'nodes':
-            self._reactive.mark_dirty(
-                self._attr_name,
-                change_type,
-                node_ids=entity_ids
-            )
-        elif self._table == 'centerlines':
-            self._reactive.mark_dirty(
-                self._attr_name,
-                change_type,
-                cl_ids=entity_ids
-            )
+        elif self._table == "nodes":
+            self._reactive.mark_dirty(self._attr_name, change_type, node_ids=entity_ids)
+        elif self._table == "centerlines":
+            self._reactive.mark_dirty(self._attr_name, change_type, cl_ids=entity_ids)
 
     def __len__(self) -> int:
         return len(self._data)
@@ -324,12 +336,12 @@ class CenterlinesView:
 
     def __init__(
         self,
-        df: 'pd.DataFrame',
+        df: "pd.DataFrame",
         reach_id_array: np.ndarray,
         node_id_array: np.ndarray,
         db=None,
         region: str = None,
-        reactive: Optional['SWORDReactive'] = None
+        reactive: Optional["SWORDReactive"] = None,
     ):
         """
         Initialize CenterlinesView.
@@ -354,7 +366,7 @@ class CenterlinesView:
         self._node_id = node_id_array
         self._db = db
         self._region = region
-        self._ids = df['cl_id'].values
+        self._ids = df["cl_id"].values
         self._reactive = reactive
 
     def _writable(self, col_name: str, db_col_name: str = None) -> WritableArray:
@@ -362,36 +374,36 @@ class CenterlinesView:
         if db_col_name is None:
             db_col_name = col_name
         # Determine reactive attribute name based on column
-        attr_name = f'centerline.{col_name}'
-        if col_name in ('x', 'y'):
-            attr_name = 'centerline.geometry'  # x,y changes are geometry changes
+        attr_name = f"centerline.{col_name}"
+        if col_name in ("x", "y"):
+            attr_name = "centerline.geometry"  # x,y changes are geometry changes
         return WritableArray(
             self._df[db_col_name].values,
             self._db,
-            'centerlines',
-            'cl_id',
+            "centerlines",
+            "cl_id",
             col_name,
             db_col_name,
             self._ids,
             self._region,
             reactive=self._reactive,
-            attr_name=attr_name
+            attr_name=attr_name,
         )
 
     @property
     def cl_id(self) -> np.ndarray:
         """Centerline IDs [N] - read only."""
-        return self._df['cl_id'].values
+        return self._df["cl_id"].values
 
     @property
     def x(self) -> WritableArray:
         """Longitude coordinates [N]."""
-        return self._writable('x')
+        return self._writable("x")
 
     @property
     def y(self) -> WritableArray:
         """Latitude coordinates [N]."""
-        return self._writable('y')
+        return self._writable("y")
 
     @property
     def reach_id(self) -> np.ndarray:
@@ -443,10 +455,10 @@ class NodesView:
 
     def __init__(
         self,
-        df: 'pd.DataFrame',
+        df: "pd.DataFrame",
         db=None,
         region: str = None,
-        reactive: Optional['SWORDReactive'] = None
+        reactive: Optional["SWORDReactive"] = None,
     ):
         """
         Initialize NodesView.
@@ -465,194 +477,191 @@ class NodesView:
         self._df = df
         self._db = db
         self._region = region
-        self._ids = df['node_id'].values
+        self._ids = df["node_id"].values
         self._reactive = reactive
         # Build cl_id [2,N] array from min/max columns
-        self._cl_id = np.vstack([
-            df['cl_id_min'].values,
-            df['cl_id_max'].values
-        ])
+        self._cl_id = np.vstack([df["cl_id_min"].values, df["cl_id_max"].values])
 
     def _writable(self, col_name: str, db_col_name: str = None) -> WritableArray:
         """Create a WritableArray for the given column."""
         if db_col_name is None:
             db_col_name = col_name
         # Determine reactive attribute name
-        attr_name = f'node.{col_name}'
-        if col_name in ('x', 'y'):
-            attr_name = 'node.xy'
-        elif col_name == 'len':
-            attr_name = 'node.len'
-        elif col_name == 'dist_out':
-            attr_name = 'node.dist_out'
-        elif col_name == 'end_rch':
-            attr_name = 'node.end_rch'
-        elif col_name == 'main_side':
-            attr_name = 'node.main_side'
+        attr_name = f"node.{col_name}"
+        if col_name in ("x", "y"):
+            attr_name = "node.xy"
+        elif col_name == "len":
+            attr_name = "node.len"
+        elif col_name == "dist_out":
+            attr_name = "node.dist_out"
+        elif col_name == "end_rch":
+            attr_name = "node.end_rch"
+        elif col_name == "main_side":
+            attr_name = "node.main_side"
         return WritableArray(
             self._df[db_col_name].values,
             self._db,
-            'nodes',
-            'node_id',
+            "nodes",
+            "node_id",
             col_name,
             db_col_name,
             self._ids,
             self._region,
             reactive=self._reactive,
-            attr_name=attr_name
+            attr_name=attr_name,
         )
 
     # Direct mappings (same name) - now writable
     @property
     def x(self) -> WritableArray:
-        return self._writable('x')
+        return self._writable("x")
 
     @property
     def y(self) -> WritableArray:
-        return self._writable('y')
+        return self._writable("y")
 
     @property
     def wse(self) -> WritableArray:
-        return self._writable('wse')
+        return self._writable("wse")
 
     @property
     def wse_var(self) -> WritableArray:
-        return self._writable('wse_var')
+        return self._writable("wse_var")
 
     @property
     def facc(self) -> WritableArray:
-        return self._writable('facc')
+        return self._writable("facc")
 
     @property
     def dist_out(self) -> WritableArray:
-        return self._writable('dist_out')
+        return self._writable("dist_out")
 
     @property
     def lakeflag(self) -> WritableArray:
-        return self._writable('lakeflag')
+        return self._writable("lakeflag")
 
     @property
     def wth_coef(self) -> WritableArray:
-        return self._writable('wth_coef')
+        return self._writable("wth_coef")
 
     @property
     def ext_dist_coef(self) -> WritableArray:
-        return self._writable('ext_dist_coef')
+        return self._writable("ext_dist_coef")
 
     @property
     def sinuosity(self) -> WritableArray:
-        return self._writable('sinuosity')
+        return self._writable("sinuosity")
 
     @property
     def river_name(self) -> WritableArray:
-        return self._writable('river_name')
+        return self._writable("river_name")
 
     @property
     def manual_add(self) -> WritableArray:
-        return self._writable('manual_add')
+        return self._writable("manual_add")
 
     @property
     def edit_flag(self) -> WritableArray:
-        return self._writable('edit_flag')
+        return self._writable("edit_flag")
 
     @property
     def trib_flag(self) -> WritableArray:
-        return self._writable('trib_flag')
+        return self._writable("trib_flag")
 
     @property
     def path_freq(self) -> WritableArray:
-        return self._writable('path_freq')
+        return self._writable("path_freq")
 
     @property
     def path_order(self) -> WritableArray:
-        return self._writable('path_order')
+        return self._writable("path_order")
 
     @property
     def path_segs(self) -> WritableArray:
-        return self._writable('path_segs')
+        return self._writable("path_segs")
 
     @property
     def main_side(self) -> WritableArray:
-        return self._writable('main_side')
+        return self._writable("main_side")
 
     @property
     def network(self) -> WritableArray:
-        return self._writable('network')
+        return self._writable("network")
 
     @property
     def add_flag(self) -> WritableArray:
-        return self._writable('add_flag')
+        return self._writable("add_flag")
 
     # Renamed mappings - writable
     @property
     def id(self) -> np.ndarray:
         """Node IDs [N] (DuckDB: node_id) - read only."""
-        return self._df['node_id'].values
+        return self._df["node_id"].values
 
     @property
     def len(self) -> WritableArray:
         """Node length [N] (DuckDB: node_length)."""
-        return self._writable('len', 'node_length')
+        return self._writable("len", "node_length")
 
     @property
     def wth(self) -> WritableArray:
         """Width [N] (DuckDB: width)."""
-        return self._writable('wth', 'width')
+        return self._writable("wth", "width")
 
     @property
     def wth_var(self) -> WritableArray:
         """Width variance [N] (DuckDB: width_var)."""
-        return self._writable('wth_var', 'width_var')
+        return self._writable("wth_var", "width_var")
 
     @property
     def max_wth(self) -> WritableArray:
         """Max width [N] (DuckDB: max_width)."""
-        return self._writable('max_wth', 'max_width')
+        return self._writable("max_wth", "max_width")
 
     @property
     def grod(self) -> WritableArray:
         """Obstruction type [N] (DuckDB: obstr_type)."""
-        return self._writable('grod', 'obstr_type')
+        return self._writable("grod", "obstr_type")
 
     @property
     def grod_fid(self) -> WritableArray:
         """GROD feature ID [N] (DuckDB: grod_id)."""
-        return self._writable('grod_fid', 'grod_id')
+        return self._writable("grod_fid", "grod_id")
 
     @property
     def hfalls_fid(self) -> WritableArray:
         """HydroFALLS feature ID [N] (DuckDB: hfalls_id)."""
-        return self._writable('hfalls_fid', 'hfalls_id')
+        return self._writable("hfalls_fid", "hfalls_id")
 
     @property
     def nchan_max(self) -> WritableArray:
         """Max channels [N] (DuckDB: n_chan_max)."""
-        return self._writable('nchan_max', 'n_chan_max')
+        return self._writable("nchan_max", "n_chan_max")
 
     @property
     def nchan_mod(self) -> WritableArray:
         """Modal channels [N] (DuckDB: n_chan_mod)."""
-        return self._writable('nchan_mod', 'n_chan_mod')
+        return self._writable("nchan_mod", "n_chan_mod")
 
     @property
     def meand_len(self) -> WritableArray:
         """Meander length [N] (DuckDB: meander_length)."""
-        return self._writable('meand_len', 'meander_length')
+        return self._writable("meand_len", "meander_length")
 
     @property
     def strm_order(self) -> WritableArray:
         """Stream order [N] (DuckDB: stream_order)."""
-        return self._writable('strm_order', 'stream_order')
+        return self._writable("strm_order", "stream_order")
 
     @property
     def end_rch(self) -> WritableArray:
         """End reach flag [N] (DuckDB: end_reach)."""
-        return self._writable('end_rch', 'end_reach')
+        return self._writable("end_rch", "end_reach")
 
     @property
     def reach_id(self) -> np.ndarray:
         """Parent reach ID [N] - read only."""
-        return self._df['reach_id'].values
+        return self._df["reach_id"].values
 
     # [2,N] array
     @property
@@ -702,14 +711,14 @@ class ReachesView:
 
     def __init__(
         self,
-        df: 'pd.DataFrame',
+        df: "pd.DataFrame",
         rch_id_up: np.ndarray,
         rch_id_down: np.ndarray,
         orbits: np.ndarray = None,
         iceflag: np.ndarray = None,
         db=None,
         region: str = None,
-        reactive: Optional['SWORDReactive'] = None
+        reactive: Optional["SWORDReactive"] = None,
     ):
         """
         Initialize ReachesView.
@@ -740,214 +749,211 @@ class ReachesView:
         self._iceflag = iceflag
         self._db = db
         self._region = region
-        self._ids = df['reach_id'].values
+        self._ids = df["reach_id"].values
         self._reactive = reactive
 
         # Build cl_id [2,N] array from min/max columns
-        self._cl_id = np.vstack([
-            df['cl_id_min'].values,
-            df['cl_id_max'].values
-        ])
+        self._cl_id = np.vstack([df["cl_id_min"].values, df["cl_id_max"].values])
 
     def _writable(self, col_name: str, db_col_name: str = None) -> WritableArray:
         """Create a WritableArray for the given column."""
         if db_col_name is None:
             db_col_name = col_name
         # Determine reactive attribute name
-        attr_name = f'reach.{col_name}'
-        if col_name in ('x', 'y', 'x_min', 'x_max', 'y_min', 'y_max'):
-            attr_name = 'reach.bounds'
-        elif col_name == 'len':
-            attr_name = 'reach.len'
-        elif col_name == 'dist_out':
-            attr_name = 'reach.dist_out'
-        elif col_name == 'end_rch':
-            attr_name = 'reach.end_rch'
-        elif col_name == 'main_side':
-            attr_name = 'reach.main_side'
-        elif col_name in ('n_rch_up', 'n_rch_down'):
-            attr_name = 'reach.topology'
+        attr_name = f"reach.{col_name}"
+        if col_name in ("x", "y", "x_min", "x_max", "y_min", "y_max"):
+            attr_name = "reach.bounds"
+        elif col_name == "len":
+            attr_name = "reach.len"
+        elif col_name == "dist_out":
+            attr_name = "reach.dist_out"
+        elif col_name == "end_rch":
+            attr_name = "reach.end_rch"
+        elif col_name == "main_side":
+            attr_name = "reach.main_side"
+        elif col_name in ("n_rch_up", "n_rch_down"):
+            attr_name = "reach.topology"
         return WritableArray(
             self._df[db_col_name].values,
             self._db,
-            'reaches',
-            'reach_id',
+            "reaches",
+            "reach_id",
             col_name,
             db_col_name,
             self._ids,
             self._region,
             reactive=self._reactive,
-            attr_name=attr_name
+            attr_name=attr_name,
         )
 
     # Direct mappings (same name) - now writable
     @property
     def x(self) -> WritableArray:
-        return self._writable('x')
+        return self._writable("x")
 
     @property
     def y(self) -> WritableArray:
-        return self._writable('y')
+        return self._writable("y")
 
     @property
     def x_min(self) -> WritableArray:
-        return self._writable('x_min')
+        return self._writable("x_min")
 
     @property
     def x_max(self) -> WritableArray:
-        return self._writable('x_max')
+        return self._writable("x_max")
 
     @property
     def y_min(self) -> WritableArray:
-        return self._writable('y_min')
+        return self._writable("y_min")
 
     @property
     def y_max(self) -> WritableArray:
-        return self._writable('y_max')
+        return self._writable("y_max")
 
     @property
     def wse(self) -> WritableArray:
-        return self._writable('wse')
+        return self._writable("wse")
 
     @property
     def wse_var(self) -> WritableArray:
-        return self._writable('wse_var')
+        return self._writable("wse_var")
 
     @property
     def slope(self) -> WritableArray:
-        return self._writable('slope')
+        return self._writable("slope")
 
     @property
     def facc(self) -> WritableArray:
-        return self._writable('facc')
+        return self._writable("facc")
 
     @property
     def dist_out(self) -> WritableArray:
-        return self._writable('dist_out')
+        return self._writable("dist_out")
 
     @property
     def lakeflag(self) -> WritableArray:
-        return self._writable('lakeflag')
+        return self._writable("lakeflag")
 
     @property
     def n_rch_up(self) -> WritableArray:
-        return self._writable('n_rch_up')
+        return self._writable("n_rch_up")
 
     @property
     def n_rch_down(self) -> WritableArray:
-        return self._writable('n_rch_down')
+        return self._writable("n_rch_down")
 
     @property
     def river_name(self) -> WritableArray:
-        return self._writable('river_name')
+        return self._writable("river_name")
 
     @property
     def edit_flag(self) -> WritableArray:
-        return self._writable('edit_flag')
+        return self._writable("edit_flag")
 
     @property
     def trib_flag(self) -> WritableArray:
-        return self._writable('trib_flag')
+        return self._writable("trib_flag")
 
     @property
     def path_freq(self) -> WritableArray:
-        return self._writable('path_freq')
+        return self._writable("path_freq")
 
     @property
     def path_order(self) -> WritableArray:
-        return self._writable('path_order')
+        return self._writable("path_order")
 
     @property
     def path_segs(self) -> WritableArray:
-        return self._writable('path_segs')
+        return self._writable("path_segs")
 
     @property
     def main_side(self) -> WritableArray:
-        return self._writable('main_side')
+        return self._writable("main_side")
 
     @property
     def network(self) -> WritableArray:
-        return self._writable('network')
+        return self._writable("network")
 
     @property
     def add_flag(self) -> WritableArray:
-        return self._writable('add_flag')
+        return self._writable("add_flag")
 
     # Renamed mappings - writable
     @property
     def id(self) -> np.ndarray:
         """Reach IDs [N] (DuckDB: reach_id) - read only."""
-        return self._df['reach_id'].values
+        return self._df["reach_id"].values
 
     @property
     def len(self) -> WritableArray:
         """Reach length [N] (DuckDB: reach_length)."""
-        return self._writable('len', 'reach_length')
+        return self._writable("len", "reach_length")
 
     @property
     def rch_n_nodes(self) -> WritableArray:
         """Number of nodes per reach [N] (DuckDB: n_nodes)."""
-        return self._writable('rch_n_nodes', 'n_nodes')
+        return self._writable("rch_n_nodes", "n_nodes")
 
     @property
     def grod(self) -> WritableArray:
         """Obstruction type [N] (DuckDB: obstr_type)."""
-        return self._writable('grod', 'obstr_type')
+        return self._writable("grod", "obstr_type")
 
     @property
     def grod_fid(self) -> WritableArray:
         """GROD feature ID [N] (DuckDB: grod_id)."""
-        return self._writable('grod_fid', 'grod_id')
+        return self._writable("grod_fid", "grod_id")
 
     @property
     def hfalls_fid(self) -> WritableArray:
         """HydroFALLS feature ID [N] (DuckDB: hfalls_id)."""
-        return self._writable('hfalls_fid', 'hfalls_id')
+        return self._writable("hfalls_fid", "hfalls_id")
 
     @property
     def nchan_max(self) -> WritableArray:
         """Max channels [N] (DuckDB: n_chan_max)."""
-        return self._writable('nchan_max', 'n_chan_max')
+        return self._writable("nchan_max", "n_chan_max")
 
     @property
     def nchan_mod(self) -> WritableArray:
         """Modal channels [N] (DuckDB: n_chan_mod)."""
-        return self._writable('nchan_mod', 'n_chan_mod')
+        return self._writable("nchan_mod", "n_chan_mod")
 
     @property
     def max_obs(self) -> WritableArray:
         """Max SWOT observations [N] (DuckDB: swot_obs)."""
-        return self._writable('max_obs', 'swot_obs')
+        return self._writable("max_obs", "swot_obs")
 
     @property
     def low_slope(self) -> WritableArray:
         """Low slope flag [N] (DuckDB: low_slope_flag)."""
-        return self._writable('low_slope', 'low_slope_flag')
+        return self._writable("low_slope", "low_slope_flag")
 
     @property
     def strm_order(self) -> WritableArray:
         """Stream order [N] (DuckDB: stream_order)."""
-        return self._writable('strm_order', 'stream_order')
+        return self._writable("strm_order", "stream_order")
 
     @property
     def end_rch(self) -> WritableArray:
         """End reach flag [N] (DuckDB: end_reach)."""
-        return self._writable('end_rch', 'end_reach')
+        return self._writable("end_rch", "end_reach")
 
     @property
     def wth(self) -> WritableArray:
         """Width [N] (DuckDB: width)."""
-        return self._writable('wth', 'width')
+        return self._writable("wth", "width")
 
     @property
     def wth_var(self) -> WritableArray:
         """Width variance [N] (DuckDB: width_var)."""
-        return self._writable('wth_var', 'width_var')
+        return self._writable("wth_var", "width_var")
 
     @property
     def max_wth(self) -> WritableArray:
         """Max width [N] (DuckDB: max_width)."""
-        return self._writable('max_wth', 'max_width')
+        return self._writable("max_wth", "max_width")
 
     # Multi-dimensional arrays
     @property

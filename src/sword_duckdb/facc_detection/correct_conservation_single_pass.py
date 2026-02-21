@@ -533,14 +533,14 @@ def _clear_old_tags(
         "'facc_conservation_p3','facc_conservation_single'"
     )
     if "facc_quality" in cols:
-        n = conn.execute(
+        conn.execute(
             f"UPDATE reaches SET facc_quality = NULL "
             f"WHERE region = ? AND facc_quality IN ({old_quality})",
             [region],
         ).fetchone()
         print("    Cleared facc_quality tags")
     if "edit_flag" in cols:
-        n = conn.execute(
+        conn.execute(
             f"UPDATE reaches SET edit_flag = NULL "
             f"WHERE region = ? AND edit_flag IN ({old_edit})",
             [region],

@@ -22,11 +22,10 @@ This avoids the tautology problem where the standard model
 predicts corrupted values because 2-hop neighbors are also corrupted.
 """
 
-from typing import Optional, List, Dict, Set, Tuple
+from typing import List, Dict, Set, Tuple
 from pathlib import Path
 import duckdb
 import pandas as pd
-import numpy as np
 import json
 from datetime import datetime
 
@@ -48,13 +47,13 @@ def identify_entry_points(
     -------
     tuple of (entry_point_ids, propagation_ids)
     """
-    anomaly_ids = set(anomalies['reach_id'].tolist())
+    anomaly_ids = set(anomalies["reach_id"].tolist())
 
     if not anomaly_ids:
         return set(), set()
 
     # Get upstream neighbors for all anomalies
-    ids_str = ', '.join(str(r) for r in anomaly_ids)
+    ids_str = ", ".join(str(r) for r in anomaly_ids)
 
     query = f"""
     SELECT
@@ -72,7 +71,9 @@ def identify_entry_points(
     propagation = set()
 
     for reach_id in anomaly_ids:
-        upstream_neighbors = upstream_df[upstream_df['reach_id'] == reach_id]['upstream_id'].tolist()
+        upstream_neighbors = upstream_df[upstream_df["reach_id"] == reach_id][
+            "upstream_id"
+        ].tolist()
         upstream_anomalies = set(upstream_neighbors) & anomaly_ids
 
         if len(upstream_anomalies) == 0:
@@ -99,8 +100,8 @@ def get_downstream_order(
     if not propagation or not entry_points:
         return []
 
-    entry_str = ', '.join(str(r) for r in entry_points)
-    prop_str = ', '.join(str(r) for r in propagation)
+    entry_str = ", ".join(str(r) for r in entry_points)
+    prop_str = ", ".join(str(r) for r in propagation)
 
     query = f"""
     WITH RECURSIVE downstream_trace AS (
@@ -131,9 +132,9 @@ def get_downstream_order(
     # Group by hop level
     hop_groups = []
     if len(df) > 0:
-        max_hop = int(df['min_hop'].max())
+        max_hop = int(df["min_hop"].max())
         for h in range(1, max_hop + 1):
-            hop_ids = df[df['min_hop'] == h]['reach_id'].tolist()
+            hop_ids = df[df["min_hop"] == h]["reach_id"].tolist()
             if hop_ids:
                 hop_groups.append(hop_ids)
 
@@ -187,7 +188,7 @@ def apply_corrections_to_db(
     for _, row in corrections.iterrows():
         conn.execute(
             "INSERT INTO _temp_corrections VALUES (?, ?)",
-            [int(row['reach_id']), float(row['predicted_facc'])]
+            [int(row["reach_id"]), float(row["predicted_facc"])],
         )
 
     # Update reaches table
@@ -198,7 +199,7 @@ def apply_corrections_to_db(
         WHERE reaches.reach_id = tc.reach_id
     """)
 
-    updated = result.fetchone()[0] if result else len(corrections)
+    result.fetchone() if result else None  # noqa: F841 — ensures DuckDB cursor is consumed
 
     # Clean up
     conn.execute("DROP TABLE IF EXISTS _temp_corrections")
@@ -267,20 +268,24 @@ def correct_hybrid(
         print(f"Mode: {'DRY RUN' if dry_run else 'APPLYING TO DB'}")
 
         # Identify entry points vs propagation
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("STEP 1: Identify entry points vs propagation")
-        print("="*60)
+        print("=" * 60)
 
         entry_points, propagation = identify_entry_points(anomalies, conn)
-        print(f"  Entry points: {len(entry_points)} ({100*len(entry_points)/len(anomalies):.1f}%)")
-        print(f"  Propagation:  {len(propagation)} ({100*len(propagation)/len(anomalies):.1f}%)")
+        print(
+            f"  Entry points: {len(entry_points)} ({100 * len(entry_points) / len(anomalies):.1f}%)"
+        )
+        print(
+            f"  Propagation:  {len(propagation)} ({100 * len(propagation) / len(anomalies):.1f}%)"
+        )
 
         # Get downstream order for propagation
         hop_groups = get_downstream_order(entry_points, propagation, conn)
         if hop_groups:
             print(f"  Propagation hops: {len(hop_groups)}")
             for i, group in enumerate(hop_groups):
-                print(f"    Hop {i+1}: {len(group)} reaches")
+                print(f"    Hop {i + 1}: {len(group)} reaches")
 
         # Storage
         all_corrections = []
@@ -288,27 +293,31 @@ def correct_hybrid(
         # ============================================================
         # STEP 2: Correct entry points with NO-FACC model
         # ============================================================
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("STEP 2: Correct entry points with NO-FACC model (R²=0.79)")
-        print("="*60)
+        print("=" * 60)
 
         # Extract features (pass conn to avoid read_only mismatch)
         print("  Extracting features...")
         extractor = RFFeatureExtractor(conn)
         all_features = extractor.extract_all(region=None)
 
-        entry_features = all_features[all_features['reach_id'].isin(entry_points)].copy()
+        entry_features = all_features[
+            all_features["reach_id"].isin(entry_points)
+        ].copy()
 
         if len(entry_features) > 0:
             entry_preds = nofacc_model.predict(entry_features)
-            entry_preds['correction_pass'] = 1
-            entry_preds['correction_type'] = 'entry_point'
-            entry_preds['model_type'] = 'nofacc'
+            entry_preds["correction_pass"] = 1
+            entry_preds["correction_type"] = "entry_point"
+            entry_preds["model_type"] = "nofacc"
             all_corrections.append(entry_preds)
 
             print(f"  Corrected {len(entry_preds)} entry points")
             print(f"  Median original facc: {entry_preds['facc'].median():,.0f} km²")
-            print(f"  Median predicted facc: {entry_preds['predicted_facc'].median():,.0f} km²")
+            print(
+                f"  Median predicted facc: {entry_preds['predicted_facc'].median():,.0f} km²"
+            )
             print(f"  Median ratio: {entry_preds['facc_ratio'].median():.2f}x")
 
             # Apply to DB if not dry run
@@ -319,9 +328,9 @@ def correct_hybrid(
         # STEP 3: Re-extract features (now 2-hop reads corrected values)
         # ============================================================
         if propagation and not dry_run:
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("STEP 3: Re-extract features from DB")
-            print("="*60)
+            print("=" * 60)
 
             extractor = RFFeatureExtractor(conn)
             all_features = extractor.extract_all(region=None)
@@ -332,22 +341,26 @@ def correct_hybrid(
         # STEP 4: Correct propagation with STANDARD model
         # ============================================================
         if propagation:
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("STEP 4: Correct propagation with STANDARD model (R²=0.98)")
-            print("="*60)
+            print("=" * 60)
 
             # If dry run, we need to simulate the corrected 2-hop features
             if dry_run:
                 corrected_facc = {}
                 if all_corrections:
                     for _, row in all_corrections[0].iterrows():
-                        corrected_facc[row['reach_id']] = row['predicted_facc']
+                        corrected_facc[row["reach_id"]] = row["predicted_facc"]
 
             for hop_idx, hop_ids in enumerate(hop_groups):
                 pass_num = hop_idx + 2
-                print(f"\n  Pass {pass_num}: Hop {hop_idx + 1} ({len(hop_ids)} reaches)")
+                print(
+                    f"\n  Pass {pass_num}: Hop {hop_idx + 1} ({len(hop_ids)} reaches)"
+                )
 
-                hop_features = all_features[all_features['reach_id'].isin(hop_ids)].copy()
+                hop_features = all_features[
+                    all_features["reach_id"].isin(hop_ids)
+                ].copy()
 
                 if len(hop_features) == 0:
                     continue
@@ -360,22 +373,26 @@ def correct_hybrid(
 
                 # Predict with standard model
                 hop_preds = standard_model.predict(hop_features)
-                hop_preds['correction_pass'] = pass_num
-                hop_preds['correction_type'] = f'propagation_hop{hop_idx + 1}'
-                hop_preds['model_type'] = 'standard'
+                hop_preds["correction_pass"] = pass_num
+                hop_preds["correction_type"] = f"propagation_hop{hop_idx + 1}"
+                hop_preds["model_type"] = "standard"
                 all_corrections.append(hop_preds)
 
                 # Store for next hop (dry run only)
                 if dry_run:
                     for _, row in hop_preds.iterrows():
-                        corrected_facc[row['reach_id']] = row['predicted_facc']
+                        corrected_facc[row["reach_id"]] = row["predicted_facc"]
 
                 # Apply to DB if not dry run
                 if not dry_run:
                     apply_corrections_to_db(conn, hop_preds, f"hop{hop_idx + 1}")
 
-                print(f"    Median original facc: {hop_preds['facc'].median():,.0f} km²")
-                print(f"    Median predicted facc: {hop_preds['predicted_facc'].median():,.0f} km²")
+                print(
+                    f"    Median original facc: {hop_preds['facc'].median():,.0f} km²"
+                )
+                print(
+                    f"    Median predicted facc: {hop_preds['predicted_facc'].median():,.0f} km²"
+                )
                 print(f"    Median ratio: {hop_preds['facc_ratio'].median():.2f}x")
 
         # Combine all corrections
@@ -385,53 +402,59 @@ def correct_hybrid(
             corrections = pd.DataFrame()
 
         # Save results
-        output_file = output_dir / 'topological_corrections_hybrid.csv'
+        output_file = output_dir / "topological_corrections_hybrid.csv"
         corrections.to_csv(output_file, index=False)
         print(f"\nSaved {len(corrections)} corrections to {output_file}")
 
         # Summary
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("SUMMARY")
-        print("="*60)
+        print("=" * 60)
         print(f"Total corrected: {len(corrections)}")
 
         if len(corrections) > 0:
             print(f"Median original facc: {corrections['facc'].median():,.0f} km²")
-            print(f"Median predicted facc: {corrections['predicted_facc'].median():,.0f} km²")
+            print(
+                f"Median predicted facc: {corrections['predicted_facc'].median():,.0f} km²"
+            )
             print(f"Overall median ratio: {corrections['facc_ratio'].median():.2f}x")
 
             print("\nBy model type:")
-            for mtype in corrections['model_type'].unique():
-                subset = corrections[corrections['model_type'] == mtype]
-                print(f"  {mtype}: n={len(subset)}, median_ratio={subset['facc_ratio'].median():.2f}x")
+            for mtype in corrections["model_type"].unique():
+                subset = corrections[corrections["model_type"] == mtype]
+                print(
+                    f"  {mtype}: n={len(subset)}, median_ratio={subset['facc_ratio'].median():.2f}x"
+                )
 
             print("\nBy correction type:")
-            for ctype in corrections['correction_type'].unique():
-                subset = corrections[corrections['correction_type'] == ctype]
-                print(f"  {ctype}: n={len(subset)}, median_ratio={subset['facc_ratio'].median():.2f}x")
+            for ctype in corrections["correction_type"].unique():
+                subset = corrections[corrections["correction_type"] == ctype]
+                print(
+                    f"  {ctype}: n={len(subset)}, median_ratio={subset['facc_ratio'].median():.2f}x"
+                )
 
         # Save summary JSON
         summary = {
-            'timestamp': datetime.now().isoformat(),
-            'dry_run': dry_run,
-            'total_anomalies': len(anomalies),
-            'entry_points': len(entry_points),
-            'propagation': len(propagation),
-            'total_corrected': len(corrections),
-            'models': {
-                'entry_points': str(nofacc_model_path),
-                'propagation': str(standard_model_path),
+            "timestamp": datetime.now().isoformat(),
+            "dry_run": dry_run,
+            "total_anomalies": len(anomalies),
+            "entry_points": len(entry_points),
+            "propagation": len(propagation),
+            "total_corrected": len(corrections),
+            "models": {
+                "entry_points": str(nofacc_model_path),
+                "propagation": str(standard_model_path),
             },
         }
 
         if len(corrections) > 0:
-            summary['metrics'] = {
-                'median_original_facc': float(corrections['facc'].median()),
-                'median_predicted_facc': float(corrections['predicted_facc'].median()),
-                'median_ratio': float(corrections['facc_ratio'].median()),
+            summary["metrics"] = {
+                "median_original_facc": float(corrections["facc"].median()),
+                "median_predicted_facc": float(corrections["predicted_facc"].median()),
+                "median_ratio": float(corrections["facc_ratio"].median()),
             }
 
-        with open(output_dir / 'topological_corrections_hybrid_summary.json', 'w') as f:
+        with open(output_dir / "topological_corrections_hybrid_summary.json", "w") as f:
             json.dump(summary, f, indent=2)
 
         return corrections
@@ -455,12 +478,12 @@ def _update_upstream_features(
         return features
 
     features = features.copy()
-    reach_ids = features['reach_id'].tolist()
+    reach_ids = features["reach_id"].tolist()
 
     if not reach_ids:
         return features
 
-    ids_str = ', '.join(str(r) for r in reach_ids)
+    ids_str = ", ".join(str(r) for r in reach_ids)
 
     # Get 1-hop and 2-hop upstream neighbors
     query = f"""
@@ -481,25 +504,27 @@ def _update_upstream_features(
 
     # For each reach, update max_2hop_upstream_facc if any 2-hop neighbor was corrected
     for reach_id in reach_ids:
-        up2_neighbors = hop2_df[hop2_df['reach_id'] == reach_id]['up2'].tolist()
+        up2_neighbors = hop2_df[hop2_df["reach_id"] == reach_id]["up2"].tolist()
 
         # Get corrected values for 2-hop neighbors
-        corrected_up2 = [corrected_facc[n] for n in up2_neighbors if n in corrected_facc]
+        corrected_up2 = [
+            corrected_facc[n] for n in up2_neighbors if n in corrected_facc
+        ]
 
         if corrected_up2:
-            idx = features[features['reach_id'] == reach_id].index
+            idx = features[features["reach_id"] == reach_id].index
 
             if len(idx) == 0:
                 continue
 
             # Use the corrected max
             new_max = max(corrected_up2)
-            features.loc[idx, 'max_2hop_upstream_facc'] = new_max
+            features.loc[idx, "max_2hop_upstream_facc"] = new_max
 
             # Update facc_2hop_ratio
-            facc = features.loc[idx, 'facc'].values[0]
+            facc = features.loc[idx, "facc"].values[0]
             if new_max > 0:
-                features.loc[idx, 'facc_2hop_ratio'] = facc / new_max
+                features.loc[idx, "facc_2hop_ratio"] = facc / new_max
 
     return features
 
@@ -540,30 +565,36 @@ def correct_in_order(
         corrected_facc = {}
 
         # Entry points
-        entry_features = all_features[all_features['reach_id'].isin(entry_points)].copy()
+        entry_features = all_features[
+            all_features["reach_id"].isin(entry_points)
+        ].copy()
         if len(entry_features) > 0:
             entry_preds = model.predict(entry_features)
-            entry_preds['correction_pass'] = 1
-            entry_preds['correction_type'] = 'entry_point'
+            entry_preds["correction_pass"] = 1
+            entry_preds["correction_type"] = "entry_point"
             all_corrections.append(entry_preds)
             for _, row in entry_preds.iterrows():
-                corrected_facc[row['reach_id']] = row['predicted_facc']
+                corrected_facc[row["reach_id"]] = row["predicted_facc"]
 
         # Propagation
         for hop_idx, hop_ids in enumerate(hop_groups):
-            hop_features = all_features[all_features['reach_id'].isin(hop_ids)].copy()
+            hop_features = all_features[all_features["reach_id"].isin(hop_ids)].copy()
             if len(hop_features) == 0:
                 continue
             hop_features = _update_upstream_features(hop_features, corrected_facc, conn)
             hop_preds = model.predict(hop_features)
-            hop_preds['correction_pass'] = hop_idx + 2
-            hop_preds['correction_type'] = f'propagation_hop{hop_idx + 1}'
+            hop_preds["correction_pass"] = hop_idx + 2
+            hop_preds["correction_type"] = f"propagation_hop{hop_idx + 1}"
             all_corrections.append(hop_preds)
             for _, row in hop_preds.iterrows():
-                corrected_facc[row['reach_id']] = row['predicted_facc']
+                corrected_facc[row["reach_id"]] = row["predicted_facc"]
 
-        corrections = pd.concat(all_corrections, ignore_index=True) if all_corrections else pd.DataFrame()
-        corrections.to_csv(output_dir / 'topological_corrections.csv', index=False)
+        corrections = (
+            pd.concat(all_corrections, ignore_index=True)
+            if all_corrections
+            else pd.DataFrame()
+        )
+        corrections.to_csv(output_dir / "topological_corrections.csv", index=False)
 
         return corrections
 
@@ -576,7 +607,7 @@ def main():
     import geopandas as gpd
 
     parser = argparse.ArgumentParser(
-        description='Correct facc anomalies using hybrid approach',
+        description="Correct facc anomalies using hybrid approach",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example usage:
@@ -595,15 +626,27 @@ Example usage:
       --nofacc-model output/facc_detection/rf_regressor_baseline_nofacc.joblib \\
       --standard-model output/facc_detection/rf_regressor_baseline.joblib \\
       --apply
-        """
+        """,
     )
-    parser.add_argument('--db', required=True, help='Path to DuckDB database')
-    parser.add_argument('--anomalies', required=True, help='Path to anomalies GeoJSON')
-    parser.add_argument('--nofacc-model', required=True, help='Path to no-facc model for entry points')
-    parser.add_argument('--standard-model', required=True, help='Path to standard model for propagation')
-    parser.add_argument('--output-dir', default='output/facc_detection', help='Output directory')
-    parser.add_argument('--apply', action='store_true', help='Apply corrections to DB (default: dry run)')
-    parser.add_argument('--split-models', action='store_true', help='Use split model variants')
+    parser.add_argument("--db", required=True, help="Path to DuckDB database")
+    parser.add_argument("--anomalies", required=True, help="Path to anomalies GeoJSON")
+    parser.add_argument(
+        "--nofacc-model", required=True, help="Path to no-facc model for entry points"
+    )
+    parser.add_argument(
+        "--standard-model", required=True, help="Path to standard model for propagation"
+    )
+    parser.add_argument(
+        "--output-dir", default="output/facc_detection", help="Output directory"
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply corrections to DB (default: dry run)",
+    )
+    parser.add_argument(
+        "--split-models", action="store_true", help="Use split model variants"
+    )
 
     args = parser.parse_args()
 
@@ -625,5 +668,5 @@ Example usage:
     return corrections
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

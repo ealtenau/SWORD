@@ -36,14 +36,14 @@ from .factory import get_backend, detect_backend_type
 
 __all__ = [
     # Protocol and base classes
-    'DatabaseBackend',
-    'BackendType',
-    'TransactionContext',
-    'ConnectionType',
+    "DatabaseBackend",
+    "BackendType",
+    "TransactionContext",
+    "ConnectionType",
     # Implementations
-    'DuckDBBackend',
-    'PostgresBackend',
+    "DuckDBBackend",
+    "PostgresBackend",
     # Factory
-    'get_backend',
-    'detect_backend_type',
+    "get_backend",
+    "detect_backend_type",
 ]

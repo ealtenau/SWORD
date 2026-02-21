@@ -42,7 +42,6 @@ from typing import Dict, Set, Tuple
 
 import duckdb
 import networkx as nx
-import numpy as np
 import pandas as pd
 
 from .correct_topological import apply_corrections_to_db
@@ -56,6 +55,7 @@ INFLATE_THRESHOLD = 1.5
 # ------------------------------------------------------------------
 # Data loading
 # ------------------------------------------------------------------
+
 
 def _load_topology(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     return conn.execute(
@@ -83,6 +83,7 @@ def _load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
 # ------------------------------------------------------------------
 # Graph construction
 # ------------------------------------------------------------------
+
 
 def _build_graph(
     topology_df: pd.DataFrame,
@@ -117,6 +118,7 @@ def _build_graph(
 # ------------------------------------------------------------------
 # Core: bifurcation surplus detection + cascade
 # ------------------------------------------------------------------
+
 
 def _run_pass3(
     G: nx.DiGraph,
@@ -197,7 +199,10 @@ def _run_pass3(
         elif len(predecessors) >= 2:
             # Junction: enforce facc >= sum(upstream corrected)
             upstream_sum = sum(corrected.get(p, 0.0) for p in predecessors)
-            if upstream_sum > corrected[node] and abs(upstream_sum - corrected[node]) > 0.01:
+            if (
+                upstream_sum > corrected[node]
+                and abs(upstream_sum - corrected[node]) > 0.01
+            ):
                 corrected[node] = upstream_sum
                 if abs(corrected[node] - original) > 0.01:
                     changes[node] = (original, upstream_sum, "junction_floor_p3")
@@ -215,7 +220,10 @@ def _run_pass3(
                 expected = parent_facc * share
                 child_facc = corrected[child]
 
-                if child_facc > expected * inflate_threshold and child_facc > expected + 100:
+                if (
+                    child_facc > expected * inflate_threshold
+                    and child_facc > expected + 100
+                ):
                     child_orig = G.nodes[child].get("facc", 0.0)
                     if child_orig < 0:
                         child_orig = 0.0
@@ -234,6 +242,7 @@ def _run_pass3(
 # ------------------------------------------------------------------
 # Apply to DB
 # ------------------------------------------------------------------
+
 
 def _apply_to_db(
     conn: duckdb.DuckDBPyConnection,
@@ -283,6 +292,7 @@ def _apply_to_db(
 # Output
 # ------------------------------------------------------------------
 
+
 def _save_outputs(
     corrections_df: pd.DataFrame,
     region: str,
@@ -305,6 +315,7 @@ def _save_outputs(
 # Main
 # ------------------------------------------------------------------
 
+
 def correct_facc_conservation_p3(
     db_path: str,
     region: str,
@@ -316,10 +327,10 @@ def correct_facc_conservation_p3(
     out_path = Path(output_dir)
     mode_str = "DRY RUN" if dry_run else "APPLYING TO DB"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Facc Conservation Pass 3 — {region} [{mode_str}]")
     print(f"  inflate_threshold = {inflate_threshold}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     conn = duckdb.connect(db_path, read_only=dry_run)
     try:
@@ -336,7 +347,9 @@ def correct_facc_conservation_p3(
         print("  Building graph...")
         G = _build_graph(topo_df, reaches_df)
         n_bifurc = sum(1 for n in G.nodes() if G.out_degree(n) >= 2)
-        print(f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, {n_bifurc} bifurcations")
+        print(
+            f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, {n_bifurc} bifurcations"
+        )
 
         print("  Running Pass 3...")
         changes = _run_pass3(G, inflate_threshold)
@@ -344,27 +357,37 @@ def correct_facc_conservation_p3(
 
         if len(changes) == 0:
             print("  No changes needed")
-            _save_outputs(pd.DataFrame(), region, out_path, {
-                "timestamp": datetime.now().isoformat(),
-                "region": region, "dry_run": dry_run, "pass": 3,
-                "total_reaches": len(reaches_df), "corrections": 0,
-                "db_path": str(db_path),
-            })
+            _save_outputs(
+                pd.DataFrame(),
+                region,
+                out_path,
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "region": region,
+                    "dry_run": dry_run,
+                    "pass": 3,
+                    "total_reaches": len(reaches_df),
+                    "corrections": 0,
+                    "db_path": str(db_path),
+                },
+            )
             return pd.DataFrame()
 
         rows = []
         for rid, (orig, corr, ctype) in changes.items():
             delta = corr - orig
             delta_pct = 100.0 * delta / orig if orig > 0 else float("inf")
-            rows.append({
-                "reach_id": rid,
-                "region": region,
-                "original_facc": round(orig, 4),
-                "corrected_facc": round(corr, 4),
-                "delta": round(delta, 4),
-                "delta_pct": round(delta_pct, 2),
-                "correction_type": ctype,
-            })
+            rows.append(
+                {
+                    "reach_id": rid,
+                    "region": region,
+                    "original_facc": round(orig, 4),
+                    "corrected_facc": round(corr, 4),
+                    "delta": round(delta, 4),
+                    "delta_pct": round(delta_pct, 2),
+                    "correction_type": ctype,
+                }
+            )
         corrections_df = pd.DataFrame(rows)
 
         n_raised = (corrections_df["delta"] > 0).sum()
@@ -379,12 +402,14 @@ def correct_facc_conservation_p3(
             median_delta=("delta", "median"),
         )
 
-        print(f"\n  Summary:")
+        print("\n  Summary:")
         print(f"    Raised:  {n_raised}")
         print(f"    Lowered: {n_lowered}")
         print(f"    Net facc change: {total_delta:>+,.0f} km² ({pct:+.3f}%)")
         for ctype, row in by_type.iterrows():
-            print(f"      {ctype:30s}  n={int(row['count']):>5,}  med_delta={row['median_delta']:>+12,.1f} km²")
+            print(
+                f"      {ctype:30s}  n={int(row['count']):>5,}  med_delta={row['median_delta']:>+12,.1f} km²"
+            )
 
         if not dry_run:
             print("\n  Applying to DB...")
@@ -393,16 +418,23 @@ def correct_facc_conservation_p3(
 
         summary = {
             "timestamp": datetime.now().isoformat(),
-            "region": region, "dry_run": dry_run, "pass": 3,
+            "region": region,
+            "dry_run": dry_run,
+            "pass": 3,
             "inflate_threshold": inflate_threshold,
-            "total_reaches": len(reaches_df), "bifurcations": n_bifurc,
+            "total_reaches": len(reaches_df),
+            "bifurcations": n_bifurc,
             "corrections": len(corrections_df),
-            "raised": int(n_raised), "lowered": int(n_lowered),
+            "raised": int(n_raised),
+            "lowered": int(n_lowered),
             "total_facc_before": total_before,
             "net_facc_change": total_delta,
             "pct_change": round(pct, 4),
             "by_type": {
-                ctype: {"count": int(row["count"]), "median_delta": round(float(row["median_delta"]), 2)}
+                ctype: {
+                    "count": int(row["count"]),
+                    "median_delta": round(float(row["median_delta"]), 2),
+                }
                 for ctype, row in by_type.iterrows()
             },
             "db_path": str(db_path),
@@ -423,8 +455,12 @@ def main():
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--output-dir", default="output/facc_detection")
-    parser.add_argument("--threshold", type=float, default=INFLATE_THRESHOLD,
-                        help=f"Inflate threshold (default {INFLATE_THRESHOLD})")
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=INFLATE_THRESHOLD,
+        help=f"Inflate threshold (default {INFLATE_THRESHOLD})",
+    )
 
     args = parser.parse_args()
     if not args.region and not args.all:
@@ -434,8 +470,10 @@ def main():
     all_corrections = []
     for region in regions:
         df = correct_facc_conservation_p3(
-            db_path=args.db, region=region,
-            dry_run=not args.apply, output_dir=args.output_dir,
+            db_path=args.db,
+            region=region,
+            dry_run=not args.apply,
+            output_dir=args.output_dir,
             inflate_threshold=args.threshold,
         )
         if len(df) > 0:
@@ -445,9 +483,11 @@ def main():
         combined = pd.concat(all_corrections, ignore_index=True)
         n_up = (combined["delta"] > 0).sum()
         n_dn = (combined["delta"] < 0).sum()
-        print(f"\n{'='*60}")
-        print(f"GRAND TOTAL: {len(combined)} modifications ({n_up} raised, {n_dn} lowered)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print(
+            f"GRAND TOTAL: {len(combined)} modifications ({n_up} raised, {n_dn} lowered)"
+        )
+        print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":

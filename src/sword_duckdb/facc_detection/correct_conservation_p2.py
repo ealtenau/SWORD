@@ -44,6 +44,7 @@ REGIONS = ["NA", "SA", "EU", "AF", "AS", "OC"]
 # Data loading
 # ------------------------------------------------------------------
 
+
 def _load_topology(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     return conn.execute(
         """
@@ -70,6 +71,7 @@ def _load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
 # ------------------------------------------------------------------
 # Graph construction
 # ------------------------------------------------------------------
+
 
 def _build_graph(
     topology_df: pd.DataFrame,
@@ -108,6 +110,7 @@ def _build_graph(
 # Core algorithm — cascading conservation floor
 # ------------------------------------------------------------------
 
+
 def _run_conservation_pass2(
     G: nx.DiGraph,
 ) -> Dict[int, Tuple[float, float]]:
@@ -134,10 +137,7 @@ def _run_conservation_pass2(
             continue
 
         # Junction: enforce facc >= sum(upstream_facc)
-        upstream_sum = sum(
-            max(G.nodes[p].get("facc", 0.0), 0.0)
-            for p in predecessors
-        )
+        upstream_sum = sum(max(G.nodes[p].get("facc", 0.0), 0.0) for p in predecessors)
 
         if upstream_sum > original and abs(upstream_sum - original) > 0.01:
             changes[node] = (original, upstream_sum)
@@ -148,6 +148,7 @@ def _run_conservation_pass2(
 # ------------------------------------------------------------------
 # Apply to DB (RTREE-safe)
 # ------------------------------------------------------------------
+
 
 def _apply_to_db(
     conn: duckdb.DuckDBPyConnection,
@@ -198,6 +199,7 @@ def _apply_to_db(
 # Output files
 # ------------------------------------------------------------------
 
+
 def _save_outputs(
     corrections_df: pd.DataFrame,
     region: str,
@@ -219,6 +221,7 @@ def _save_outputs(
 # ------------------------------------------------------------------
 # Main entry point
 # ------------------------------------------------------------------
+
 
 def correct_facc_conservation_p2(
     db_path: str,
@@ -252,9 +255,9 @@ def correct_facc_conservation_p2(
     out_path = Path(output_dir)
     mode_str = "DRY RUN" if dry_run else "APPLYING TO DB"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Facc Conservation Pass 2 — {region} [{mode_str}]")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     conn = duckdb.connect(db_path, read_only=dry_run)
     try:
@@ -298,25 +301,25 @@ def correct_facc_conservation_p2(
             delta = corr - orig
             delta_pct = 100.0 * delta / orig if orig > 0 else float("inf")
             n_up = G.in_degree(rid)
-            rows.append({
-                "reach_id": rid,
-                "region": region,
-                "original_facc": round(orig, 4),
-                "corrected_facc": round(corr, 4),
-                "delta": round(delta, 4),
-                "delta_pct": round(delta_pct, 2),
-                "n_rch_up": n_up,
-                "correction_type": "junction_floor" if n_up > 1 else "cascade",
-            })
+            rows.append(
+                {
+                    "reach_id": rid,
+                    "region": region,
+                    "original_facc": round(orig, 4),
+                    "corrected_facc": round(corr, 4),
+                    "delta": round(delta, 4),
+                    "delta_pct": round(delta_pct, 2),
+                    "n_rch_up": n_up,
+                    "correction_type": "junction_floor" if n_up > 1 else "cascade",
+                }
+            )
         corrections_df = pd.DataFrame(rows)
 
         # Stats
         total_facc_before = float(reaches_df["facc"].clip(lower=0).sum())
         total_facc_delta = float(corrections_df["delta"].sum())
         pct_increase = (
-            100.0 * total_facc_delta / total_facc_before
-            if total_facc_before > 0
-            else 0
+            100.0 * total_facc_delta / total_facc_before if total_facc_before > 0 else 0
         )
 
         by_type = corrections_df.groupby("correction_type").agg(
@@ -325,13 +328,19 @@ def correct_facc_conservation_p2(
             median_delta_pct=("delta_pct", "median"),
         )
 
-        print(f"\n  Summary:")
+        print("\n  Summary:")
         print(f"    Total corrections:        {len(corrections_df)}")
         print(f"    Total facc before:        {total_facc_before:,.0f} km²")
-        print(f"    Total facc increase:      {total_facc_delta:,.0f} km² ({pct_increase:.3f}%)")
-        print(f"    Median delta:             {corrections_df['delta'].median():,.1f} km²")
-        print(f"    Median delta pct:         {corrections_df['delta_pct'].median():.1f}%")
-        print(f"\n    By correction type:")
+        print(
+            f"    Total facc increase:      {total_facc_delta:,.0f} km² ({pct_increase:.3f}%)"
+        )
+        print(
+            f"    Median delta:             {corrections_df['delta'].median():,.1f} km²"
+        )
+        print(
+            f"    Median delta pct:         {corrections_df['delta_pct'].median():.1f}%"
+        )
+        print("\n    By correction type:")
         for ctype, row in by_type.iterrows():
             print(
                 f"      {ctype:25s}  n={int(row['count']):>6,}  "
@@ -376,6 +385,7 @@ def correct_facc_conservation_p2(
 # CLI
 # ------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Facc conservation correction — Pass 2 (junction floor, cascading)",
@@ -400,11 +410,14 @@ Examples:
     parser.add_argument("--region", help="Region code (NA, SA, EU, AF, AS, OC)")
     parser.add_argument("--all", action="store_true", help="Process all regions")
     parser.add_argument(
-        "--apply", action="store_true",
+        "--apply",
+        action="store_true",
         help="Write corrections to DB (default: dry run)",
     )
     parser.add_argument(
-        "--output-dir", default="output/facc_detection", help="Output directory",
+        "--output-dir",
+        default="output/facc_detection",
+        help="Output directory",
     )
 
     args = parser.parse_args()
@@ -427,9 +440,11 @@ Examples:
 
     if all_corrections:
         combined = pd.concat(all_corrections, ignore_index=True)
-        print(f"\n{'='*60}")
-        print(f"GRAND TOTAL: {len(combined)} corrections across {len(regions)} region(s)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print(
+            f"GRAND TOTAL: {len(combined)} corrections across {len(regions)} region(s)"
+        )
+        print(f"{'=' * 60}")
     else:
         print("\nNo corrections needed.")
 

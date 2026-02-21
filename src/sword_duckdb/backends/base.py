@@ -23,7 +23,6 @@ from enum import Enum
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
     Generator,
     List,
     Optional,
@@ -42,12 +41,14 @@ if TYPE_CHECKING:
 
 class BackendType(Enum):
     """Supported database backend types."""
+
     DUCKDB = "duckdb"
     POSTGRES = "postgres"
 
 
 class IsolationLevel(Enum):
     """Transaction isolation levels."""
+
     READ_UNCOMMITTED = "READ UNCOMMITTED"
     READ_COMMITTED = "READ COMMITTED"
     REPEATABLE_READ = "REPEATABLE READ"
@@ -57,6 +58,7 @@ class IsolationLevel(Enum):
 @dataclass
 class TransactionContext:
     """Context for an active transaction."""
+
     backend_type: BackendType
     isolation_level: IsolationLevel
     connection: Any  # duckdb.DuckDBPyConnection or psycopg2.connection
@@ -64,7 +66,7 @@ class TransactionContext:
 
 
 # Type alias for connection objects
-ConnectionType = Union['duckdb.DuckDBPyConnection', 'psycopg2.extensions.connection']
+ConnectionType = Union["duckdb.DuckDBPyConnection", "psycopg2.extensions.connection"]
 
 
 @runtime_checkable
@@ -394,13 +396,10 @@ class BaseBackend(ABC):
 
         Default implementation uses DuckDB syntax: [v1, v2, v3]
         """
-        formatted = ', '.join(
-            repr(v) if isinstance(v, str) else str(v)
-            for v in values
-        )
+        formatted = ", ".join(repr(v) if isinstance(v, str) else str(v) for v in values)
         return f"[{formatted}]"
 
-    def __enter__(self) -> 'BaseBackend':
+    def __enter__(self) -> "BaseBackend":
         """Context manager entry."""
         self.connect()
         return self

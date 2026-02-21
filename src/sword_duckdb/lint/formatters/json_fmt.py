@@ -6,7 +6,6 @@ Machine-readable JSON output for CI/CD integration.
 
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO
 
 from ..core import CheckResult, Severity
@@ -129,8 +128,12 @@ class JsonFormatter:
         """Format a brief JSON summary."""
         total = len(results)
         passed = sum(1 for r in results if r.passed)
-        errors = sum(1 for r in results if not r.passed and r.severity == Severity.ERROR)
-        warnings = sum(1 for r in results if not r.passed and r.severity == Severity.WARNING)
+        errors = sum(
+            1 for r in results if not r.passed and r.severity == Severity.ERROR
+        )
+        warnings = sum(
+            1 for r in results if not r.passed and r.severity == Severity.WARNING
+        )
 
         data = {
             "passed": passed,

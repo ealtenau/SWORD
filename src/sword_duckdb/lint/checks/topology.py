@@ -395,7 +395,6 @@ def check_connected_components(
     """
     stats = conn.execute(stats_query).fetchone()
     total_networks = stats[0] if stats else 0
-    total_reaches = stats[1] if stats else 0
 
     return CheckResult(
         check_id="T006",

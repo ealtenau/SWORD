@@ -34,7 +34,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .core import Severity, list_check_ids, get_registry
+from .core import Severity, get_registry
 from .runner import LintRunner
 from .formatters import ConsoleFormatter, JsonFormatter, MarkdownFormatter
 
@@ -86,33 +86,39 @@ Examples:
 
     # Filtering
     parser.add_argument(
-        "--region", "-r",
+        "--region",
+        "-r",
         help="Filter by region (e.g., NA, SA, EU, AF, AS, OC)",
     )
     parser.add_argument(
-        "--checks", "-c",
+        "--checks",
+        "-c",
         nargs="+",
         help="Check IDs or category prefixes to run (e.g., T001 T002, or T for all topology)",
     )
     parser.add_argument(
-        "--severity", "-s",
+        "--severity",
+        "-s",
         choices=["error", "warning", "info"],
         help="Filter by minimum severity",
     )
 
     # Output
     parser.add_argument(
-        "--format", "-f",
+        "--format",
+        "-f",
         choices=["console", "json", "markdown"],
         default="console",
         help="Output format (default: console)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Output file (default: stdout)",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Show detailed issue information",
     )
@@ -136,7 +142,8 @@ Examples:
 
     # Thresholds
     parser.add_argument(
-        "--threshold", "-t",
+        "--threshold",
+        "-t",
         nargs=2,
         action="append",
         metavar=("CHECK_ID", "VALUE"),
@@ -178,7 +185,9 @@ def list_checks():
 
         # Check info
         sev = spec.severity.value.upper()
-        threshold = f" (threshold: {spec.default_threshold})" if spec.default_threshold else ""
+        threshold = (
+            f" (threshold: {spec.default_threshold})" if spec.default_threshold else ""
+        )
         print(f"  {check_id}: {spec.name}")
         print(f"       [{sev}] {spec.description}{threshold}")
 
@@ -278,7 +287,9 @@ def main(args: Optional[List[str]] = None) -> int:
 
     # Determine exit code
     errors = sum(1 for r in results if not r.passed and r.severity == Severity.ERROR)
-    warnings = sum(1 for r in results if not r.passed and r.severity == Severity.WARNING)
+    warnings = sum(
+        1 for r in results if not r.passed and r.severity == Severity.WARNING
+    )
 
     if opts.fail_on_error and errors > 0:
         return 2

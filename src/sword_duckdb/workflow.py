@@ -45,6 +45,8 @@ from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional, Union
 import numpy as np
 
 if TYPE_CHECKING:
+    import pandas
+
     from .sword_class import SWORD
     from .reactive import SWORDReactive
     from .provenance import ProvenanceLogger
@@ -97,11 +99,11 @@ class SWORDWorkflow:
         enable_provenance: bool = True,
     ):
         """Initialize the workflow orchestrator."""
-        self._sword: Optional['SWORD'] = None
-        self._reactive: Optional['SWORDReactive'] = None
-        self._provenance: Optional['ProvenanceLogger'] = None
-        self._reconstruction: Optional['ReconstructionEngine'] = None
-        self._imagery: Optional['ImageryPipeline'] = None
+        self._sword: Optional["SWORD"] = None
+        self._reactive: Optional["SWORDReactive"] = None
+        self._provenance: Optional["ProvenanceLogger"] = None
+        self._reconstruction: Optional["ReconstructionEngine"] = None
+        self._imagery: Optional["ImageryPipeline"] = None
         self._user_id = user_id
         self._enable_provenance = enable_provenance
         self._in_batch: bool = False
@@ -112,27 +114,27 @@ class SWORDWorkflow:
         self._region: Optional[str] = None
 
     @property
-    def sword(self) -> Optional['SWORD']:
+    def sword(self) -> Optional["SWORD"]:
         """Get the loaded SWORD instance."""
         return self._sword
 
     @property
-    def reactive(self) -> Optional['SWORDReactive']:
+    def reactive(self) -> Optional["SWORDReactive"]:
         """Get the reactive system instance."""
         return self._reactive
 
     @property
-    def provenance(self) -> Optional['ProvenanceLogger']:
+    def provenance(self) -> Optional["ProvenanceLogger"]:
         """Get the provenance logger instance."""
         return self._provenance
 
     @property
-    def reconstruction(self) -> Optional['ReconstructionEngine']:
+    def reconstruction(self) -> Optional["ReconstructionEngine"]:
         """Get the reconstruction engine instance."""
         return self._reconstruction
 
     @property
-    def imagery(self) -> Optional['ImageryPipeline']:
+    def imagery(self) -> Optional["ImageryPipeline"]:
         """
         Get the imagery pipeline instance (lazy-loaded).
 
@@ -146,7 +148,7 @@ class SWORDWorkflow:
 
             self._imagery = ImageryPipeline(
                 sword=self._sword,
-                db_conn=self._sword.db.conn if hasattr(self._sword, 'db') else None,
+                db_conn=self._sword.db.conn if hasattr(self._sword, "db") else None,
             )
 
         return self._imagery
@@ -177,7 +179,7 @@ class SWORDWorkflow:
         db_path: Union[str, Path],
         region: str,
         reason: str = "Load database",
-    ) -> 'SWORD':
+    ) -> "SWORD":
         """
         Load a SWORD database and initialize all subsystems.
 
@@ -267,7 +269,7 @@ class SWORDWorkflow:
 
             # Log the load operation
             with self._provenance.operation(
-                'IMPORT', None, None, region, reason=reason
+                "IMPORT", None, None, region, reason=reason
             ):
                 pass  # Just log the operation
 
@@ -278,8 +280,7 @@ class SWORDWorkflow:
         )
 
         logger.info(
-            f"Loaded {len(self._sword.reaches)} reaches, "
-            f"{len(self._sword.nodes)} nodes"
+            f"Loaded {len(self._sword.reaches)} reaches, {len(self._sword.nodes)} nodes"
         )
 
         return self._sword
@@ -301,8 +302,7 @@ class SWORDWorkflow:
                     self.commit()
                 else:
                     logger.warning(
-                        "Closing with uncommitted changes. "
-                        "Changes will be lost."
+                        "Closing with uncommitted changes. Changes will be lost."
                     )
 
             self._sword.close()
@@ -365,7 +365,7 @@ class SWORDWorkflow:
         if self._provenance and self._enable_provenance:
             # We'll use the operation context manager
             with self._provenance.operation(
-                'BATCH',
+                "BATCH",
                 table_name=None,
                 entity_ids=None,
                 region=self._region,
@@ -463,7 +463,7 @@ class SWORDWorkflow:
         # Log the recalculation operation
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'RECALCULATE',
+                "RECALCULATE",
                 table_name=None,
                 entity_ids=None,
                 region=self._region,
@@ -547,8 +547,8 @@ class SWORDWorkflow:
 
         if self._provenance and self._enable_provenance and op_id is None:
             with self._provenance.operation(
-                'UPDATE',
-                table_name='reaches',
+                "UPDATE",
+                table_name="reaches",
                 entity_ids=[reach_id],
                 region=self._region,
                 reason=reason,
@@ -577,7 +577,7 @@ class SWORDWorkflow:
             # Log the change if provenance enabled
             if self._provenance and op_id is not None:
                 self._provenance.log_value_change(
-                    op_id, 'reaches', reach_id, attr_name, old_value, new_value
+                    op_id, "reaches", reach_id, attr_name, old_value, new_value
                 )
 
             # Apply the change
@@ -618,8 +618,8 @@ class SWORDWorkflow:
 
         if self._provenance and self._enable_provenance and op_id is None:
             with self._provenance.operation(
-                'UPDATE',
-                table_name='nodes',
+                "UPDATE",
+                table_name="nodes",
                 entity_ids=[node_id],
                 region=self._region,
                 reason=reason,
@@ -646,7 +646,7 @@ class SWORDWorkflow:
 
             if self._provenance and op_id is not None:
                 self._provenance.log_value_change(
-                    op_id, 'nodes', node_id, attr_name, old_value, new_value
+                    op_id, "nodes", node_id, attr_name, old_value, new_value
                 )
 
             arr[node_idx] = new_value
@@ -691,9 +691,9 @@ class SWORDWorkflow:
 
         # Get the view for this entity type
         view_map = {
-            'reach': (self._sword.reaches, 'reaches'),
-            'node': (self._sword.nodes, 'nodes'),
-            'centerline': (self._sword.centerlines, 'centerlines'),
+            "reach": (self._sword.reaches, "reaches"),
+            "node": (self._sword.nodes, "nodes"),
+            "centerline": (self._sword.centerlines, "centerlines"),
         }
 
         if entity_type not in view_map:
@@ -715,7 +715,7 @@ class SWORDWorkflow:
 
         if self._provenance and self._enable_provenance and op_id is None:
             with self._provenance.operation(
-                'UPDATE',
+                "UPDATE",
                 table_name=table_name,
                 entity_ids=list(entity_ids),
                 region=self._region,
@@ -752,8 +752,12 @@ class SWORDWorkflow:
             # Log batch changes
             if self._provenance and op_id is not None:
                 self._provenance.log_value_changes_batch(
-                    op_id, table_name, entity_ids, attr_name,
-                    list(old_values), list(new_values)
+                    op_id,
+                    table_name,
+                    entity_ids,
+                    attr_name,
+                    list(old_values),
+                    list(new_values),
                 )
 
             # Apply changes
@@ -807,9 +811,9 @@ class SWORDWorkflow:
             table_name = None
             if entity_type:
                 table_map = {
-                    'reach': 'reaches',
-                    'node': 'nodes',
-                    'centerline': 'centerlines',
+                    "reach": "reaches",
+                    "node": "nodes",
+                    "centerline": "centerlines",
                 }
                 table_name = table_map.get(entity_type, entity_type)
 
@@ -931,25 +935,37 @@ class SWORDWorkflow:
         snapshot_id = result[0]
 
         # Insert snapshot
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO sword_snapshots (
                 snapshot_id, name, description, operation_id_max,
                 created_by, session_id,
                 reach_count, node_count, centerline_count,
                 is_auto_snapshot
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            snapshot_id, name, description, max_op_id,
-            self._provenance.user_id, self._provenance.session_id,
-            reach_count, node_count, centerline_count,
-            auto
-        ])
+        """,
+            [
+                snapshot_id,
+                name,
+                description,
+                max_op_id,
+                self._provenance.user_id,
+                self._provenance.session_id,
+                reach_count,
+                node_count,
+                centerline_count,
+                auto,
+            ],
+        )
 
         # Log as operation
         with self._provenance.operation(
-            'SNAPSHOT', None, None, self._region,
+            "SNAPSHOT",
+            None,
+            None,
+            self._region,
             reason=f"Created snapshot: {name}",
-            details={'snapshot_name': name, 'snapshot_id': snapshot_id}
+            details={"snapshot_name": name, "snapshot_id": snapshot_id},
         ):
             pass
 
@@ -957,13 +973,13 @@ class SWORDWorkflow:
         logger.info(f"Created snapshot '{name}' at operation_id {max_op_id}")
 
         return {
-            'snapshot_id': snapshot_id,
-            'name': name,
-            'operation_id_max': max_op_id,
-            'created_at': created_at,
-            'reach_count': reach_count,
-            'node_count': node_count,
-            'centerline_count': centerline_count,
+            "snapshot_id": snapshot_id,
+            "name": name,
+            "operation_id_max": max_op_id,
+            "created_at": created_at,
+            "reach_count": reach_count,
+            "node_count": node_count,
+            "centerline_count": centerline_count,
         }
 
     def list_snapshots(
@@ -1001,13 +1017,12 @@ class SWORDWorkflow:
         if not self.is_loaded:
             raise RuntimeError("No database loaded. Call load() first.")
 
-        import pandas as pd
-
         conn = self._sword.db.conn
 
         auto_filter = "" if include_auto else "WHERE is_auto_snapshot = FALSE"
 
-        result = conn.execute(f"""
+        result = conn.execute(
+            f"""
             SELECT
                 name, created_at, description, operation_id_max,
                 reach_count, node_count, centerline_count, created_by
@@ -1015,7 +1030,9 @@ class SWORDWorkflow:
             {auto_filter}
             ORDER BY created_at DESC
             LIMIT ?
-        """, [limit]).fetchdf()
+        """,
+            [limit],
+        ).fetchdf()
 
         return result
 
@@ -1050,9 +1067,7 @@ class SWORDWorkflow:
         if not self._snapshot_exists(name):
             return False
 
-        conn.execute(
-            "DELETE FROM sword_snapshots WHERE name = ?", [name]
-        )
+        conn.execute("DELETE FROM sword_snapshots WHERE name = ?", [name])
 
         logger.info(f"Deleted snapshot '{name}'")
         return True
@@ -1114,7 +1129,7 @@ class SWORDWorkflow:
         # Look up snapshot
         result = conn.execute(
             "SELECT snapshot_id, operation_id_max, created_at FROM sword_snapshots WHERE name = ?",
-            [name]
+            [name],
         ).fetchone()
 
         if not result:
@@ -1126,11 +1141,11 @@ class SWORDWorkflow:
         results = self._rollback_to_operation_id(
             target_op_id,
             reason=reason or f"Restore to snapshot: {name}",
-            dry_run=dry_run
+            dry_run=dry_run,
         )
 
-        results['snapshot_name'] = name
-        results['snapshot_created_at'] = snapshot_created
+        results["snapshot_name"] = name
+        results["snapshot_created_at"] = snapshot_created
         return results
 
     def restore_to_timestamp(
@@ -1189,10 +1204,13 @@ class SWORDWorkflow:
         conn = self._sword.db.conn
 
         # Find the last operation completed before timestamp
-        result = conn.execute("""
+        result = conn.execute(
+            """
             SELECT MAX(operation_id) FROM sword_operations
             WHERE completed_at <= ? AND status = 'COMPLETED'
-        """, [timestamp]).fetchone()
+        """,
+            [timestamp],
+        ).fetchone()
 
         target_op_id = result[0] if result and result[0] else 0
 
@@ -1200,10 +1218,10 @@ class SWORDWorkflow:
         results = self._rollback_to_operation_id(
             target_op_id,
             reason=reason or f"Restore to timestamp: {timestamp}",
-            dry_run=dry_run
+            dry_run=dry_run,
         )
 
-        results['restored_to_timestamp'] = timestamp
+        results["restored_to_timestamp"] = timestamp
         return results
 
     def _validate_snapshot_name(self, name: str) -> None:
@@ -1214,7 +1232,7 @@ class SWORDWorkflow:
             raise ValueError("Snapshot name cannot be empty")
         if len(name) > 100:
             raise ValueError("Snapshot name too long (max 100 characters)")
-        if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+        if not re.match(r"^[a-zA-Z0-9_-]+$", name):
             raise ValueError(
                 "Snapshot name can only contain letters, numbers, hyphens, and underscores"
             )
@@ -1240,24 +1258,23 @@ class SWORDWorkflow:
         """
         # Get operations to rollback (excluding SNAPSHOT and RESTORE which are metadata operations)
         operations = self._provenance.get_operations_after(
-            target_op_id,
-            exclude_types=['SNAPSHOT', 'RESTORE']
+            target_op_id, exclude_types=["SNAPSHOT", "RESTORE"]
         )
 
         if dry_run:
             return {
-                'dry_run': True,
-                'operations_to_rollback': len(operations),
-                'operation_ids': [op['operation_id'] for op in operations],
-                'restored_to_operation_id': target_op_id,
+                "dry_run": True,
+                "operations_to_rollback": len(operations),
+                "operation_ids": [op["operation_id"] for op in operations],
+                "restored_to_operation_id": target_op_id,
             }
 
         if len(operations) == 0:
             logger.info("Already at target state, nothing to rollback")
             return {
-                'operations_rolled_back': 0,
-                'values_restored': 0,
-                'restored_to_operation_id': target_op_id,
+                "operations_rolled_back": 0,
+                "values_restored": 0,
+                "restored_to_operation_id": target_op_id,
             }
 
         # Track statistics
@@ -1266,16 +1283,19 @@ class SWORDWorkflow:
 
         # Log the RESTORE operation
         with self._provenance.operation(
-            'RESTORE', None, None, self._region,
+            "RESTORE",
+            None,
+            None,
+            self._region,
             reason=reason,
             details={
-                'target_operation_id': target_op_id,
-                'operations_to_rollback': len(operations)
-            }
+                "target_operation_id": target_op_id,
+                "operations_to_rollback": len(operations),
+            },
         ):
             # Rollback each operation in reverse order (already sorted by get_operations_after)
             for op in operations:
-                op_id = op['operation_id']
+                op_id = op["operation_id"]
                 try:
                     values_restored = self._provenance.rollback_operation(op_id)
                     total_values_restored += values_restored
@@ -1290,9 +1310,9 @@ class SWORDWorkflow:
         )
 
         return {
-            'operations_rolled_back': operations_rolled_back,
-            'values_restored': total_values_restored,
-            'restored_to_operation_id': target_op_id,
+            "operations_rolled_back": operations_rolled_back,
+            "values_restored": total_values_restored,
+            "restored_to_operation_id": target_op_id,
         }
 
     # =========================================================================
@@ -1470,12 +1490,12 @@ class SWORDWorkflow:
             return None
 
         return {
-            'attribute': spec.name,
-            'source': spec.source.value,
-            'method': spec.method.value,
-            'source_columns': spec.source_columns,
-            'dependencies': spec.dependencies,
-            'description': spec.description,
+            "attribute": spec.name,
+            "source": spec.source.value,
+            "method": spec.method.value,
+            "source_columns": spec.source_columns,
+            "dependencies": spec.dependencies,
+            "description": spec.description,
         }
 
     def list_reconstructable_attributes(self) -> List[str]:
@@ -1545,9 +1565,17 @@ class SWORDWorkflow:
 
         # v17c attributes to import
         v17c_attrs = [
-            'best_headwater', 'best_outlet', 'pathlen_hw', 'pathlen_out',
-            'main_path_id', 'is_mainstem_edge', 'dist_out_short',
-            'hydro_dist_out', 'hydro_dist_hw', 'rch_id_up_main', 'rch_id_dn_main'
+            "best_headwater",
+            "best_outlet",
+            "pathlen_hw",
+            "pathlen_out",
+            "main_path_id",
+            "is_mainstem_edge",
+            "dist_out_short",
+            "hydro_dist_out",
+            "hydro_dist_hw",
+            "rch_id_up_main",
+            "rch_id_dn_main",
         ]
 
         # Filter to only columns that exist in GPKG
@@ -1560,42 +1588,42 @@ class SWORDWorkflow:
         logger.info(f"Found v17c attributes: {available_attrs}")
 
         # Build update data
-        if 'reach_id' not in gdf.columns:
+        if "reach_id" not in gdf.columns:
             raise ValueError("GPKG missing 'reach_id' column")
 
         # Create temp table and update reaches
         conn = self._sword.db.conn
 
         # Prepare data for update
-        update_df = gdf[['reach_id'] + available_attrs].drop_duplicates('reach_id')
+        update_df = gdf[["reach_id"] + available_attrs].drop_duplicates("reach_id")
 
         # Register as temp table
-        conn.register('v17c_import_temp', update_df)
+        conn.register("v17c_import_temp", update_df)
 
         # Build update SQL for each attribute
         reaches_updated = 0
 
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'IMPORT',
-                table_name='reaches',
+                "IMPORT",
+                table_name="reaches",
                 entity_ids=None,
                 region=self._region,
                 reason=reason,
-                details={'source': str(gpkg_path), 'attributes': available_attrs},
+                details={"source": str(gpkg_path), "attributes": available_attrs},
             ):
                 reaches_updated = self._do_v17c_import(conn, available_attrs)
         else:
             reaches_updated = self._do_v17c_import(conn, available_attrs)
 
         # Unregister temp table
-        conn.unregister('v17c_import_temp')
+        conn.unregister("v17c_import_temp")
 
         logger.info(f"Updated {reaches_updated} reaches with v17c attributes")
 
         return {
-            'reaches_updated': reaches_updated,
-            'attributes_set': available_attrs,
+            "reaches_updated": reaches_updated,
+            "attributes_set": available_attrs,
         }
 
     def _do_v17c_import(self, conn, available_attrs: List[str]) -> int:
@@ -1678,40 +1706,56 @@ class SWORDWorkflow:
             logger.info("Added SWOT observation columns to schema")
 
         results = {
-            'nodes_updated': 0,
-            'reaches_updated': 0,
-            'node_total_obs': 0,
-            'reach_total_obs': 0,
+            "nodes_updated": 0,
+            "reaches_updated": 0,
+            "node_total_obs": 0,
+            "reach_total_obs": 0,
         }
 
         region_filter = None if all_regions else self._region
 
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'IMPORT',
-                table_name='nodes',
+                "IMPORT",
+                table_name="nodes",
                 entity_ids=None,
-                region=self._region if not all_regions else 'ALL',
+                region=self._region if not all_regions else "ALL",
                 reason=reason,
-                details={'source': str(parquet_lake_path), 'type': 'swot_obs_aggregation', 'all_regions': all_regions},
+                details={
+                    "source": str(parquet_lake_path),
+                    "type": "swot_obs_aggregation",
+                    "all_regions": all_regions,
+                },
             ):
-                node_results = self._aggregate_node_observations(conn, nodes_path, region_filter)
+                node_results = self._aggregate_node_observations(
+                    conn, nodes_path, region_filter
+                )
                 results.update(node_results)
 
             with self._provenance.operation(
-                'IMPORT',
-                table_name='reaches',
+                "IMPORT",
+                table_name="reaches",
                 entity_ids=None,
-                region=self._region if not all_regions else 'ALL',
+                region=self._region if not all_regions else "ALL",
                 reason=reason,
-                details={'source': str(parquet_lake_path), 'type': 'swot_obs_aggregation', 'all_regions': all_regions},
+                details={
+                    "source": str(parquet_lake_path),
+                    "type": "swot_obs_aggregation",
+                    "all_regions": all_regions,
+                },
             ):
-                reach_results = self._aggregate_reach_observations(conn, reaches_path, region_filter)
+                reach_results = self._aggregate_reach_observations(
+                    conn, reaches_path, region_filter
+                )
                 results.update(reach_results)
         else:
-            node_results = self._aggregate_node_observations(conn, nodes_path, region_filter)
+            node_results = self._aggregate_node_observations(
+                conn, nodes_path, region_filter
+            )
             results.update(node_results)
-            reach_results = self._aggregate_reach_observations(conn, reaches_path, region_filter)
+            reach_results = self._aggregate_reach_observations(
+                conn, reaches_path, region_filter
+            )
             results.update(reach_results)
 
         logger.info(
@@ -1738,7 +1782,9 @@ class SWORDWorkflow:
 
         # Detect available columns for dynamic filtering (matching reach_swot_obs.py)
         try:
-            sample_df = conn.execute(f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1").df()
+            sample_df = conn.execute(
+                f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1"
+            ).df()
             colnames = set(c.lower() for c in sample_df.columns.tolist())
         except Exception:
             colnames = set()
@@ -1768,7 +1814,9 @@ class SWORDWorkflow:
 
         # Dark water fraction filter
         if "dark_frac" in colnames and "dark_water_frac" in colnames:
-            conditions.append("(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))")
+            conditions.append(
+                "(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))"
+            )
         elif "dark_frac" in colnames:
             conditions.append("(dark_frac <= 0.5 OR dark_frac IS NULL)")
         elif "dark_water_frac" in colnames:
@@ -1776,11 +1824,17 @@ class SWORDWorkflow:
 
         # Cross-track distance filter
         if "xtrk_dist" in colnames and "cross_track_dist" in colnames:
-            conditions.append("(ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN 10000 AND 60000 OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))")
+            conditions.append(
+                "(ABS(COALESCE(xtrk_dist, cross_track_dist)) BETWEEN 10000 AND 60000 OR (xtrk_dist IS NULL AND cross_track_dist IS NULL))"
+            )
         elif "xtrk_dist" in colnames:
-            conditions.append("(ABS(xtrk_dist) BETWEEN 10000 AND 60000 OR xtrk_dist IS NULL)")
+            conditions.append(
+                "(ABS(xtrk_dist) BETWEEN 10000 AND 60000 OR xtrk_dist IS NULL)"
+            )
         elif "cross_track_dist" in colnames:
-            conditions.append("(ABS(cross_track_dist) BETWEEN 10000 AND 60000 OR cross_track_dist IS NULL)")
+            conditions.append(
+                "(ABS(cross_track_dist) BETWEEN 10000 AND 60000 OR cross_track_dist IS NULL)"
+            )
 
         # Crossover calibration quality filter
         if "xovr_cal_q" in colnames:
@@ -1817,7 +1871,9 @@ class SWORDWorkflow:
         conn.execute(agg_sql)
 
         # Count total observations
-        total_obs = conn.execute("SELECT SUM(n_obs) FROM node_obs_agg").fetchone()[0] or 0
+        total_obs = (
+            conn.execute("SELECT SUM(n_obs) FROM node_obs_agg").fetchone()[0] or 0
+        )
 
         # Update nodes table (optionally filter by region)
         region_clause = f"AND nodes.region = '{region_filter}'" if region_filter else ""
@@ -1844,11 +1900,13 @@ class SWORDWorkflow:
         # Clean up temp table
         conn.execute("DROP TABLE IF EXISTS node_obs_agg")
 
-        logger.info(f"Updated {nodes_updated} nodes with {total_obs} total observations")
+        logger.info(
+            f"Updated {nodes_updated} nodes with {total_obs} total observations"
+        )
 
         return {
-            'nodes_updated': nodes_updated,
-            'node_total_obs': int(total_obs),
+            "nodes_updated": nodes_updated,
+            "node_total_obs": int(total_obs),
         }
 
     def _aggregate_reach_observations(
@@ -1873,7 +1931,9 @@ class SWORDWorkflow:
 
         # Detect available columns for dynamic filtering
         try:
-            sample_df = conn.execute(f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1").df()
+            sample_df = conn.execute(
+                f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1"
+            ).df()
             colnames = set(c.lower() for c in sample_df.columns.tolist())
         except Exception:
             colnames = set()
@@ -1900,7 +1960,9 @@ class SWORDWorkflow:
 
         # Dark water fraction filter
         if "dark_frac" in colnames and "dark_water_frac" in colnames:
-            conditions.append("(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))")
+            conditions.append(
+                "(COALESCE(dark_frac, dark_water_frac) <= 0.5 OR (dark_frac IS NULL AND dark_water_frac IS NULL))"
+            )
         elif "dark_frac" in colnames:
             conditions.append("(dark_frac <= 0.5 OR dark_frac IS NULL)")
         elif "dark_water_frac" in colnames:
@@ -1981,10 +2043,14 @@ class SWORDWorkflow:
         conn.execute(agg_sql)
 
         # Count total observations
-        total_obs = conn.execute("SELECT SUM(n_obs) FROM reach_obs_agg").fetchone()[0] or 0
+        total_obs = (
+            conn.execute("SELECT SUM(n_obs) FROM reach_obs_agg").fetchone()[0] or 0
+        )
 
         # Update reaches table (optionally filter by region)
-        region_clause = f"AND reaches.region = '{region_filter}'" if region_filter else ""
+        region_clause = (
+            f"AND reaches.region = '{region_filter}'" if region_filter else ""
+        )
         update_sql = f"""
             UPDATE reaches
             SET
@@ -2015,11 +2081,13 @@ class SWORDWorkflow:
         # Clean up temp table
         conn.execute("DROP TABLE IF EXISTS reach_obs_agg")
 
-        logger.info(f"Updated {reaches_updated} reaches with {total_obs} total observations")
+        logger.info(
+            f"Updated {reaches_updated} reaches with {total_obs} total observations"
+        )
 
         return {
-            'reaches_updated': reaches_updated,
-            'reach_total_obs': int(total_obs),
+            "reaches_updated": reaches_updated,
+            "reach_total_obs": int(total_obs),
         }
 
     # =========================================================================
@@ -2060,8 +2128,7 @@ class SWORDWorkflow:
 
         if self.has_pending_changes:
             logger.warning(
-                "Exporting with uncommitted changes. "
-                "Consider calling commit() first."
+                "Exporting with uncommitted changes. Consider calling commit() first."
             )
 
         output_dir = Path(output_dir)
@@ -2075,12 +2142,12 @@ class SWORDWorkflow:
         # Log export operation
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'EXPORT',
+                "EXPORT",
                 table_name=None,
                 entity_ids=None,
                 region=self._region,
                 reason=reason or f"Export to {formats}",
-                details={'formats': formats, 'output_dir': str(output_dir)},
+                details={"formats": formats, "output_dir": str(output_dir)},
             ):
                 results = self._do_export(
                     formats, output_dir, version_str, overwrite, export
@@ -2107,7 +2174,7 @@ class SWORDWorkflow:
         for fmt in formats:
             fmt_lower = fmt.lower()
 
-            if fmt_lower == 'geopackage':
+            if fmt_lower == "geopackage":
                 output_path = output_dir / f"sword_{self._region}{version_str}.gpkg"
                 if output_path.exists() and not overwrite:
                     raise FileExistsError(
@@ -2119,9 +2186,9 @@ class SWORDWorkflow:
                     str(output_path),
                     self._region,
                 )
-                results['geopackage'] = output_path
+                results["geopackage"] = output_path
 
-            elif fmt_lower == 'geoparquet':
+            elif fmt_lower == "geoparquet":
                 output_path = output_dir / f"sword_{self._region}{version_str}.parquet"
                 if output_path.exists() and not overwrite:
                     raise FileExistsError(
@@ -2133,12 +2200,12 @@ class SWORDWorkflow:
                     str(output_path),
                     self._region,
                 )
-                results['geoparquet'] = output_path
+                results["geoparquet"] = output_path
 
-            elif fmt_lower == 'postgres':
+            elif fmt_lower == "postgres":
                 logger.info("Exporting to PostgreSQL")
                 export_module.export_to_postgres(self._sword.db, self._region)
-                results['postgres'] = None
+                results["postgres"] = None
 
             else:
                 raise ValueError(
@@ -2205,22 +2272,20 @@ class SWORDWorkflow:
                 "sync_to_duckdb() is intended for PostgreSQL primary databases. "
                 "Current backend is DuckDB."
             )
-            return {'status': 'skipped', 'reason': 'not_postgres'}
+            return {"status": "skipped", "reason": "not_postgres"}
 
         if tables is None:
-            tables = ['reaches', 'nodes', 'centerlines']
+            tables = ["reaches", "nodes", "centerlines"]
 
         duckdb_path = Path(duckdb_path)
         duckdb_path.parent.mkdir(parents=True, exist_ok=True)
 
         from .sword_db import SWORDDatabase
-        from .backends import DuckDBBackend
-        import pandas as pd
 
         results = {
-            'tables_synced': [],
-            'rows_synced': {},
-            'operations_marked': 0,
+            "tables_synced": [],
+            "rows_synced": {},
+            "operations_marked": 0,
         }
 
         # Open or create the DuckDB target
@@ -2230,20 +2295,18 @@ class SWORDWorkflow:
         # Log sync operation
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'EXPORT',
+                "EXPORT",
                 table_name=None,
                 entity_ids=None,
                 region=self._region,
                 reason=reason or f"Sync to DuckDB: {duckdb_path}",
-                details={'incremental': incremental, 'tables': tables},
+                details={"incremental": incremental, "tables": tables},
             ):
                 results = self._do_sync_to_duckdb(
                     target_conn, tables, incremental, results
                 )
         else:
-            results = self._do_sync_to_duckdb(
-                target_conn, tables, incremental, results
-            )
+            results = self._do_sync_to_duckdb(target_conn, tables, incremental, results)
 
         target_db.close()
 
@@ -2258,7 +2321,6 @@ class SWORDWorkflow:
         results: dict,
     ) -> dict:
         """Perform the actual sync to DuckDB."""
-        import pandas as pd
 
         for table in tables:
             # Query data from PostgreSQL
@@ -2279,10 +2341,18 @@ class SWORDWorkflow:
                     logger.debug(f"No unsynced changes for {table}")
                     continue
 
-                entity_ids = unsynced['entity_id'].tolist()
-                id_col = 'reach_id' if table == 'reaches' else 'node_id' if table == 'nodes' else 'cl_id'
-                id_list = ', '.join(str(i) for i in entity_ids)
-                region_filter = f"WHERE region = '{self._region}' AND {id_col} IN ({id_list})"
+                entity_ids = unsynced["entity_id"].tolist()
+                id_col = (
+                    "reach_id"
+                    if table == "reaches"
+                    else "node_id"
+                    if table == "nodes"
+                    else "cl_id"
+                )
+                id_list = ", ".join(str(i) for i in entity_ids)
+                region_filter = (
+                    f"WHERE region = '{self._region}' AND {id_col} IN ({id_list})"
+                )
 
             # Fetch data from PostgreSQL
             df = self._sword.db.query(f"SELECT * FROM {table} {region_filter}")
@@ -2294,15 +2364,18 @@ class SWORDWorkflow:
             # Write to DuckDB (truncate + insert for full sync, upsert for incremental)
             if not incremental:
                 # Full sync: truncate region data first
-                target_conn.execute(f"""
+                target_conn.execute(
+                    f"""
                     DELETE FROM {table} WHERE region = ?
-                """, [self._region])
+                """,
+                    [self._region],
+                )
 
             # Insert data
-            df.to_sql(table, target_conn, if_exists='append', index=False)
+            df.to_sql(table, target_conn, if_exists="append", index=False)
 
-            results['tables_synced'].append(table)
-            results['rows_synced'][table] = len(df)
+            results["tables_synced"].append(table)
+            results["rows_synced"][table] = len(df)
 
         # Mark operations as synced in PostgreSQL
         if incremental:
@@ -2313,12 +2386,12 @@ class SWORDWorkflow:
                   AND synced_to_duckdb = FALSE
                   AND status = 'COMPLETED'
             """)
-            if hasattr(marked, 'rowcount'):
-                results['operations_marked'] = marked.rowcount
+            if hasattr(marked, "rowcount"):
+                results["operations_marked"] = marked.rowcount
 
         return results
 
-    def get_unsynced_operations(self) -> 'pd.DataFrame':
+    def get_unsynced_operations(self) -> "pandas.DataFrame":
         """
         Get list of operations that haven't been synced to DuckDB.
 
@@ -2407,31 +2480,27 @@ class SWORDWorkflow:
         # Log operation if provenance enabled
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'BREAK_REACH',
-                table_name='reaches',
+                "BREAK_REACH",
+                table_name="reaches",
                 entity_ids=[reach_id],
                 region=self._region,
                 reason=reason or f"Break reach {reach_id} at cl_id {break_cl_id}",
-                details={'break_cl_id': break_cl_id},
+                details={"break_cl_id": break_cl_id},
             ):
                 self._sword.break_reaches(
-                    np.array([reach_id]),
-                    np.array([break_cl_id]),
-                    verbose=True
+                    np.array([reach_id]), np.array([break_cl_id]), verbose=True
                 )
         else:
             self._sword.break_reaches(
-                np.array([reach_id]),
-                np.array([break_cl_id]),
-                verbose=True
+                np.array([reach_id]), np.array([break_cl_id]), verbose=True
             )
 
         # Get the new reach ID (will be max reach ID in basin after break)
         # This assumes the new reach was just created
         return {
-            'original_reach': reach_id,
-            'break_cl_id': break_cl_id,
-            'success': True,
+            "original_reach": reach_id,
+            "break_cl_id": break_cl_id,
+            "success": True,
         }
 
     def delete_reach(
@@ -2470,12 +2539,12 @@ class SWORDWorkflow:
 
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'DELETE',
-                table_name='reaches',
+                "DELETE",
+                table_name="reaches",
                 entity_ids=[reach_id],
                 region=self._region,
                 reason=reason or f"Delete reach {reach_id}",
-                details={'cascade': cascade},
+                details={"cascade": cascade},
             ):
                 if cascade:
                     self._sword.delete_data([reach_id])
@@ -2488,9 +2557,9 @@ class SWORDWorkflow:
                 self._sword.delete_rchs([reach_id])
 
         return {
-            'deleted_reach': reach_id,
-            'cascade': cascade,
-            'success': True,
+            "deleted_reach": reach_id,
+            "cascade": cascade,
+            "success": True,
         }
 
     def delete_reaches(
@@ -2521,12 +2590,12 @@ class SWORDWorkflow:
 
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'DELETE',
-                table_name='reaches',
+                "DELETE",
+                table_name="reaches",
                 entity_ids=list(reach_ids),
                 region=self._region,
                 reason=reason or f"Delete {len(reach_ids)} reaches",
-                details={'cascade': cascade},
+                details={"cascade": cascade},
             ):
                 if cascade:
                     self._sword.delete_data(reach_ids)
@@ -2539,9 +2608,9 @@ class SWORDWorkflow:
                 self._sword.delete_rchs(reach_ids)
 
         return {
-            'deleted_count': len(reach_ids),
-            'cascade': cascade,
-            'success': True,
+            "deleted_count": len(reach_ids),
+            "cascade": cascade,
+            "success": True,
         }
 
     def merge_reach(
@@ -2610,26 +2679,23 @@ class SWORDWorkflow:
         # Log operation if provenance enabled
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'MERGE_REACH',
-                table_name='reaches',
+                "MERGE_REACH",
+                table_name="reaches",
                 entity_ids=[source_reach_id, target_reach_id],
                 region=self._region,
-                reason=reason or f"Merge reach {source_reach_id} into {target_reach_id}",
+                reason=reason
+                or f"Merge reach {source_reach_id} into {target_reach_id}",
                 details={
-                    'source_reach': source_reach_id,
-                    'target_reach': target_reach_id
+                    "source_reach": source_reach_id,
+                    "target_reach": target_reach_id,
                 },
             ):
                 result = self._sword.merge_reaches(
-                    source_reach_id,
-                    target_reach_id,
-                    verbose=True
+                    source_reach_id, target_reach_id, verbose=True
                 )
         else:
             result = self._sword.merge_reaches(
-                source_reach_id,
-                target_reach_id,
-                verbose=True
+                source_reach_id, target_reach_id, verbose=True
             )
 
         return result
@@ -2669,21 +2735,22 @@ class SWORDWorkflow:
         for source_id, target_id in merge_pairs:
             try:
                 result = self.merge_reach(
-                    source_id, target_id,
-                    reason=reason or f"Batch merge: {source_id} -> {target_id}"
+                    source_id,
+                    target_id,
+                    reason=reason or f"Batch merge: {source_id} -> {target_id}",
                 )
-                total_nodes += result.get('merged_nodes', 0)
-                total_centerlines += result.get('merged_centerlines', 0)
+                total_nodes += result.get("merged_nodes", 0)
+                total_centerlines += result.get("merged_centerlines", 0)
                 merged_count += 1
             except ValueError as e:
                 logger.warning(f"Could not merge {source_id} -> {target_id}: {e}")
                 continue
 
         return {
-            'merged_count': merged_count,
-            'total_nodes': total_nodes,
-            'total_centerlines': total_centerlines,
-            'success': merged_count > 0,
+            "merged_count": merged_count,
+            "total_nodes": total_nodes,
+            "total_centerlines": total_centerlines,
+            "success": merged_count > 0,
         }
 
     def append_reaches(
@@ -2729,31 +2796,31 @@ class SWORDWorkflow:
         if not self.is_loaded:
             raise RuntimeError("No database loaded. Call load() first.")
 
-        reach_ids = list(reaches.id) if hasattr(reaches, 'id') else []
+        reach_ids = list(reaches.id) if hasattr(reaches, "id") else []
 
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'INSERT',
-                table_name='reaches',
+                "INSERT",
+                table_name="reaches",
                 entity_ids=reach_ids,
                 region=self._region,
                 reason=reason or f"Append {len(reach_ids)} new reaches",
             ):
                 self._sword.append_data(
-                    centerlines, nodes, reaches,
-                    validate_ids=validate_ids
+                    centerlines, nodes, reaches, validate_ids=validate_ids
                 )
         else:
             self._sword.append_data(
-                centerlines, nodes, reaches,
-                validate_ids=validate_ids
+                centerlines, nodes, reaches, validate_ids=validate_ids
             )
 
         return {
-            'appended_centerlines': len(centerlines.cl_id) if hasattr(centerlines, 'cl_id') else 0,
-            'appended_nodes': len(nodes.id) if hasattr(nodes, 'id') else 0,
-            'appended_reaches': len(reach_ids),
-            'success': True,
+            "appended_centerlines": len(centerlines.cl_id)
+            if hasattr(centerlines, "cl_id")
+            else 0,
+            "appended_nodes": len(nodes.id) if hasattr(nodes, "id") else 0,
+            "appended_reaches": len(reach_ids),
+            "success": True,
         }
 
     # =========================================================================
@@ -2763,7 +2830,7 @@ class SWORDWorkflow:
     def create_ghost_reach(
         self,
         reach_id: int,
-        position: str = 'auto',
+        position: str = "auto",
         reason: str = None,
     ) -> Dict[str, Any]:
         """
@@ -2815,23 +2882,19 @@ class SWORDWorkflow:
 
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'CREATE_GHOST_REACH',
-                table_name='reaches',
+                "CREATE_GHOST_REACH",
+                table_name="reaches",
                 entity_ids=[reach_id],
                 region=self._region,
                 reason=reason or f"Create ghost reach at {position} of {reach_id}",
-                details={'position': position},
+                details={"position": position},
             ):
                 return self._sword.create_ghost_reach(
-                    reach_id,
-                    position=position,
-                    verbose=True
+                    reach_id, position=position, verbose=True
                 )
         else:
             return self._sword.create_ghost_reach(
-                reach_id,
-                position=position,
-                verbose=True
+                reach_id, position=position, verbose=True
             )
 
     def find_missing_ghost_reaches(self) -> Dict[str, Any]:
@@ -2932,8 +2995,7 @@ class SWORDWorkflow:
             raise RuntimeError("No database loaded. Call load() first.")
 
         return self._sword.check_topo_consistency(
-            verbose=verbose,
-            return_details=return_details
+            verbose=verbose, return_details=return_details
         )
 
     def check_node_lengths(
@@ -2959,10 +3021,7 @@ class SWORDWorkflow:
         if not self.is_loaded:
             raise RuntimeError("No database loaded. Call load() first.")
 
-        return self._sword.check_node_lengths(
-            verbose=verbose,
-            long_threshold=threshold
-        )
+        return self._sword.check_node_lengths(verbose=verbose, long_threshold=threshold)
 
     def validate_ids(
         self,
@@ -3003,11 +3062,11 @@ class SWORDWorkflow:
                 invalid_nodes.append(nid)
 
         return {
-            'passed': len(invalid_reaches) == 0 and len(invalid_nodes) == 0,
-            'total_reaches_checked': len(rids),
-            'total_nodes_checked': len(nids),
-            'invalid_reaches': invalid_reaches,
-            'invalid_nodes': invalid_nodes,
+            "passed": len(invalid_reaches) == 0 and len(invalid_nodes) == 0,
+            "total_reaches_checked": len(rids),
+            "total_nodes_checked": len(nids),
+            "invalid_reaches": invalid_reaches,
+            "invalid_nodes": invalid_nodes,
         }
 
     # =========================================================================
@@ -3061,21 +3120,19 @@ class SWORDWorkflow:
         # Log operation if provenance enabled
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'CALCULATE_DIST_OUT',
-                table_name='reaches',
+                "CALCULATE_DIST_OUT",
+                table_name="reaches",
                 entity_ids=[],  # Affects all reaches
                 region=self._region,
                 reason=reason or "Recalculate dist_out from topology",
-                details={'update_nodes': update_nodes},
+                details={"update_nodes": update_nodes},
             ):
                 result = self._sword.calculate_dist_out_from_topology(
-                    update_nodes=update_nodes,
-                    verbose=True
+                    update_nodes=update_nodes, verbose=True
                 )
         else:
             result = self._sword.calculate_dist_out_from_topology(
-                update_nodes=update_nodes,
-                verbose=True
+                update_nodes=update_nodes, verbose=True
             )
 
         return result
@@ -3110,37 +3167,36 @@ class SWORDWorkflow:
             raise RuntimeError("No database loaded. Call load() first.")
 
         if attributes is None:
-            attributes = ['dist_out']
+            attributes = ["dist_out"]
 
         results = {
-            'attributes_requested': attributes,
-            'attributes_updated': [],
-            'success': True,
+            "attributes_requested": attributes,
+            "attributes_updated": [],
+            "success": True,
         }
 
         for attr in attributes:
-            if attr == 'dist_out':
+            if attr == "dist_out":
                 dist_result = self.calculate_dist_out(
-                    update_nodes=True,
-                    reason=reason or f"Recalculate {attr}"
+                    update_nodes=True, reason=reason or f"Recalculate {attr}"
                 )
-                results['dist_out'] = dist_result
-                if dist_result['success']:
-                    results['attributes_updated'].append('dist_out')
+                results["dist_out"] = dist_result
+                if dist_result["success"]:
+                    results["attributes_updated"].append("dist_out")
                 else:
-                    results['success'] = False
-            elif attr == 'stream_order':
+                    results["success"] = False
+            elif attr == "stream_order":
                 so_result = self.recalculate_stream_order(
                     reason=reason or f"Recalculate {attr}"
                 )
-                results['stream_order'] = so_result
-                results['attributes_updated'].append('stream_order')
-            elif attr == 'path_segs':
+                results["stream_order"] = so_result
+                results["attributes_updated"].append("stream_order")
+            elif attr == "path_segs":
                 ps_result = self.recalculate_path_segs(
                     reason=reason or f"Recalculate {attr}"
                 )
-                results['path_segs'] = ps_result
-                results['attributes_updated'].append('path_segs')
+                results["path_segs"] = ps_result
+                results["attributes_updated"].append("path_segs")
             else:
                 logger.warning(f"Unknown attribute '{attr}' - skipping")
 
@@ -3191,23 +3247,24 @@ class SWORDWorkflow:
         # Log operation if provenance enabled
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'RECALCULATE_STREAM_ORDER',
-                table_name='nodes',
+                "RECALCULATE_STREAM_ORDER",
+                table_name="nodes",
                 entity_ids=[],  # Affects all nodes
                 region=self._region,
                 reason=reason or "Recalculate stream_order from path_freq",
-                details={'update_nodes': update_nodes, 'update_reaches': update_reaches},
+                details={
+                    "update_nodes": update_nodes,
+                    "update_reaches": update_reaches,
+                },
             ):
                 return self._sword.recalculate_stream_order(
                     update_nodes=update_nodes,
                     update_reaches=update_reaches,
-                    verbose=True
+                    verbose=True,
                 )
         else:
             return self._sword.recalculate_stream_order(
-                update_nodes=update_nodes,
-                update_reaches=update_reaches,
-                verbose=True
+                update_nodes=update_nodes, update_reaches=update_reaches, verbose=True
             )
 
     def recalculate_path_segs(
@@ -3255,23 +3312,24 @@ class SWORDWorkflow:
         # Log operation if provenance enabled
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'RECALCULATE_PATH_SEGS',
-                table_name='nodes',
+                "RECALCULATE_PATH_SEGS",
+                table_name="nodes",
                 entity_ids=[],  # Affects all nodes
                 region=self._region,
                 reason=reason or "Recalculate path_segs from path_order and path_freq",
-                details={'update_nodes': update_nodes, 'update_reaches': update_reaches},
+                details={
+                    "update_nodes": update_nodes,
+                    "update_reaches": update_reaches,
+                },
             ):
                 return self._sword.recalculate_path_segs(
                     update_nodes=update_nodes,
                     update_reaches=update_reaches,
-                    verbose=True
+                    verbose=True,
                 )
         else:
             return self._sword.recalculate_path_segs(
-                update_nodes=update_nodes,
-                update_reaches=update_reaches,
-                verbose=True
+                update_nodes=update_nodes, update_reaches=update_reaches, verbose=True
             )
 
     def recalculate_sinuosity(
@@ -3333,15 +3391,15 @@ class SWORDWorkflow:
         # Log operation if provenance enabled
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'RECALCULATE_SINUOSITY',
-                table_name='reaches',
+                "RECALCULATE_SINUOSITY",
+                table_name="reaches",
                 entity_ids=reach_ids or [],  # Affects specified or all reaches
                 region=self._region,
                 reason=reason or "Recalculate sinuosity from centerline geometry",
                 details={
-                    'reach_ids': reach_ids,
-                    'min_reach_len_factor': min_reach_len_factor,
-                    'smoothing_span': smoothing_span,
+                    "reach_ids": reach_ids,
+                    "min_reach_len_factor": min_reach_len_factor,
+                    "smoothing_span": smoothing_span,
                 },
             ):
                 return self._sword.recalculate_sinuosity(
@@ -3349,7 +3407,7 @@ class SWORDWorkflow:
                     update_database=True,
                     min_reach_len_factor=min_reach_len_factor,
                     smoothing_span=smoothing_span,
-                    verbose=True
+                    verbose=True,
                 )
         else:
             return self._sword.recalculate_sinuosity(
@@ -3357,7 +3415,7 @@ class SWORDWorkflow:
                 update_database=True,
                 min_reach_len_factor=min_reach_len_factor,
                 smoothing_span=smoothing_span,
-                verbose=True
+                verbose=True,
             )
 
     def recalculate_trib_flag(
@@ -3425,15 +3483,15 @@ class SWORDWorkflow:
             raise RuntimeError("No database loaded. Call load() first.")
 
         mhv_path = Path(mhv_data_dir)
-        region_path = mhv_path / 'gpkg' / self._region
+        region_path = mhv_path / "gpkg" / self._region
         if not region_path.exists():
             raise FileNotFoundError(
                 f"MHV data not found for region {self._region}: {region_path}"
             )
 
         # Get all gpkg files for this region (exclude macOS ._ metadata files)
-        all_files = sorted(glob.glob(str(region_path / '*.gpkg')))
-        gpkg_files = [f for f in all_files if not Path(f).name.startswith('._')]
+        all_files = sorted(glob.glob(str(region_path / "*.gpkg")))
+        gpkg_files = [f for f in all_files if not Path(f).name.startswith("._")]
         if not gpkg_files:
             raise FileNotFoundError(f"No gpkg files found in {region_path}")
 
@@ -3442,10 +3500,10 @@ class SWORDWorkflow:
         for f in gpkg_files:
             # Extract basin code from filename like "mhv_sword_hb71_pts_v18.gpkg"
             name = Path(f).stem
-            if '_hb' in name:
+            if "_hb" in name:
                 # Extract the 2-digit basin code after 'hb'
-                idx = name.index('_hb') + 3
-                basin_code = name[idx:idx+2]
+                idx = name.index("_hb") + 3
+                basin_code = name[idx : idx + 2]
                 basin_to_file[basin_code] = f
 
         logger.info(f"Found {len(gpkg_files)} MHV files for region {self._region}")
@@ -3453,21 +3511,31 @@ class SWORDWorkflow:
 
         # Get SWORD node coordinates
         conn = self._sword.db.conn
-        nodes_df = conn.execute("""
+        nodes_df = conn.execute(
+            """
             SELECT node_id, reach_id, x, y
             FROM nodes
             WHERE region = ?
-        """, [self._region]).fetchdf()
+        """,
+            [self._region],
+        ).fetchdf()
 
-        sword_x = nodes_df['x'].values
-        sword_y = nodes_df['y'].values
-        sword_nid = nodes_df['node_id'].values
-        sword_nrid = nodes_df['reach_id'].values
+        sword_x = nodes_df["x"].values
+        sword_y = nodes_df["y"].values
+        sword_nid = nodes_df["node_id"].values
+        sword_nrid = nodes_df["reach_id"].values
 
         # Get reach IDs
-        reach_ids = conn.execute("""
+        reach_ids = (
+            conn.execute(
+                """
             SELECT reach_id FROM reaches WHERE region = ?
-        """, [self._region]).fetchdf()['reach_id'].values
+        """,
+                [self._region],
+            )
+            .fetchdf()["reach_id"]
+            .values
+        )
 
         # Compute level-2 basin code for each node (first 2 digits of node_id)
         sword_l2 = np.array([str(nid)[:2] for nid in sword_nid])
@@ -3507,14 +3575,14 @@ class SWORDWorkflow:
                 continue
 
             # Filter: sword_flag=0 AND strmorder>=3 (matching legacy exactly)
-            subset = mhv[(mhv['sword_flag'] == 0) & (mhv['strmorder'] >= 3)]
+            subset = mhv[(mhv["sword_flag"] == 0) & (mhv["strmorder"] >= 3)]
             if len(subset) == 0:
                 logger.debug(f"No unmatched MHV points in {Path(gpkg_file).name}")
                 files_processed += 1
                 continue
 
-            mhv_x = subset['x'].values
-            mhv_y = subset['y'].values
+            mhv_x = subset["x"].values
+            mhv_y = subset["y"].values
             total_mhv_points += len(subset)
 
             # Build KD-tree from MHV points
@@ -3556,42 +3624,39 @@ class SWORDWorkflow:
         # Update database
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'RECALCULATE',
-                'nodes',
+                "RECALCULATE",
+                "nodes",
                 entity_ids=[],
                 region=self._region,
                 reason=reason or "Recalculate trib_flag from MHV data",
                 details={
-                    'mhv_data_dir': str(mhv_data_dir),
-                    'distance_threshold': distance_threshold,
-                    'nodes_flagged': nodes_flagged,
-                    'reaches_flagged': reaches_flagged,
+                    "mhv_data_dir": str(mhv_data_dir),
+                    "distance_threshold": distance_threshold,
+                    "nodes_flagged": nodes_flagged,
+                    "reaches_flagged": reaches_flagged,
                 },
             ):
                 self._update_trib_flag_in_db(
                     sword_nid, node_tribs, reach_ids, rch_tribs
                 )
         else:
-            self._update_trib_flag_in_db(
-                sword_nid, node_tribs, reach_ids, rch_tribs
-            )
+            self._update_trib_flag_in_db(sword_nid, node_tribs, reach_ids, rch_tribs)
 
         return {
-            'nodes_flagged': nodes_flagged,
-            'reaches_flagged': reaches_flagged,
-            'mhv_files_processed': files_processed,
-            'total_mhv_points': total_mhv_points,
+            "nodes_flagged": nodes_flagged,
+            "reaches_flagged": reaches_flagged,
+            "mhv_files_processed": files_processed,
+            "total_mhv_points": total_mhv_points,
         }
 
     def _update_trib_flag_in_db(
         self,
-        node_ids: 'np.ndarray',
-        node_flags: 'np.ndarray',
-        reach_ids: 'np.ndarray',
-        reach_flags: 'np.ndarray',
+        node_ids: "np.ndarray",
+        node_flags: "np.ndarray",
+        reach_ids: "np.ndarray",
+        reach_flags: "np.ndarray",
     ) -> None:
         """Update trib_flag values in database for nodes and reaches."""
-        import numpy as np
 
         conn = self._sword.db.conn
 
@@ -3602,25 +3667,31 @@ class SWORDWorkflow:
         if len(flagged_node_ids) > 0:
             # Batch update for flagged nodes
             for batch_start in range(0, len(flagged_node_ids), 1000):
-                batch = flagged_node_ids[batch_start:batch_start + 1000]
+                batch = flagged_node_ids[batch_start : batch_start + 1000]
                 # Convert numpy int64 to Python int for DuckDB
                 batch_list = [int(x) for x in batch]
-                placeholders = ','.join(['?'] * len(batch_list))
-                conn.execute(f"""
+                placeholders = ",".join(["?"] * len(batch_list))
+                conn.execute(
+                    f"""
                     UPDATE nodes SET trib_flag = 1
                     WHERE node_id IN ({placeholders}) AND region = ?
-                """, batch_list + [self._region])
+                """,
+                    batch_list + [self._region],
+                )
 
         if len(unflagged_node_ids) > 0:
             # Batch update for unflagged nodes
             for batch_start in range(0, len(unflagged_node_ids), 1000):
-                batch = unflagged_node_ids[batch_start:batch_start + 1000]
+                batch = unflagged_node_ids[batch_start : batch_start + 1000]
                 batch_list = [int(x) for x in batch]
-                placeholders = ','.join(['?'] * len(batch_list))
-                conn.execute(f"""
+                placeholders = ",".join(["?"] * len(batch_list))
+                conn.execute(
+                    f"""
                     UPDATE nodes SET trib_flag = 0
                     WHERE node_id IN ({placeholders}) AND region = ?
-                """, batch_list + [self._region])
+                """,
+                    batch_list + [self._region],
+                )
 
         # Update reaches
         flagged_reach_ids = reach_ids[reach_flags == 1]
@@ -3628,23 +3699,29 @@ class SWORDWorkflow:
 
         if len(flagged_reach_ids) > 0:
             for batch_start in range(0, len(flagged_reach_ids), 1000):
-                batch = flagged_reach_ids[batch_start:batch_start + 1000]
+                batch = flagged_reach_ids[batch_start : batch_start + 1000]
                 batch_list = [int(x) for x in batch]
-                placeholders = ','.join(['?'] * len(batch_list))
-                conn.execute(f"""
+                placeholders = ",".join(["?"] * len(batch_list))
+                conn.execute(
+                    f"""
                     UPDATE reaches SET trib_flag = 1
                     WHERE reach_id IN ({placeholders}) AND region = ?
-                """, batch_list + [self._region])
+                """,
+                    batch_list + [self._region],
+                )
 
         if len(unflagged_reach_ids) > 0:
             for batch_start in range(0, len(unflagged_reach_ids), 1000):
-                batch = unflagged_reach_ids[batch_start:batch_start + 1000]
+                batch = unflagged_reach_ids[batch_start : batch_start + 1000]
                 batch_list = [int(x) for x in batch]
-                placeholders = ','.join(['?'] * len(batch_list))
-                conn.execute(f"""
+                placeholders = ",".join(["?"] * len(batch_list))
+                conn.execute(
+                    f"""
                     UPDATE reaches SET trib_flag = 0
                     WHERE reach_id IN ({placeholders}) AND region = ?
-                """, batch_list + [self._region])
+                """,
+                    batch_list + [self._region],
+                )
 
         logger.info("Updated trib_flag in database")
 
@@ -3703,7 +3780,9 @@ class SWORDWorkflow:
 
         import numpy as np
 
-        logger.info(f"Fixing facc violations ({'dry run' if dry_run else 'applying fixes'})")
+        logger.info(
+            f"Fixing facc violations ({'dry run' if dry_run else 'applying fixes'})"
+        )
 
         # Get reach data
         reach_ids = self._sword.reaches.id.copy()
@@ -3719,10 +3798,12 @@ class SWORDWorkflow:
         # =====================================================================
         logger.info("Phase 1: Identifying corrupted reaches...")
 
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             facc_width_ratio = np.where(width > 0, facc / width, 0)
 
-        corrupted_mask = (facc_width_ratio > width_facc_ratio_threshold) & (facc > 50000)
+        corrupted_mask = (facc_width_ratio > width_facc_ratio_threshold) & (
+            facc > 50000
+        )
         corrupted_indices = np.where(corrupted_mask)[0]
         corrupted_ids = set(int(reach_ids[i]) for i in corrupted_indices)
 
@@ -3790,12 +3871,12 @@ class SWORDWorkflow:
             if good_facc is not None:
                 # Found good upstream - use it with small increment
                 new_facc = good_facc + (hops * downstream_increment)
-                corrections[rid] = (old_facc, new_facc, 'traced')
-                quality_flags[rid] = 'traced'
+                corrections[rid] = (old_facc, new_facc, "traced")
+                quality_flags[rid] = "traced"
                 traced_count += 1
             else:
                 # No good upstream found - flag as suspect
-                quality_flags[rid] = 'suspect'
+                quality_flags[rid] = "suspect"
                 unfixable_count += 1
 
         logger.info(f"Traced (fixable): {traced_count}")
@@ -3813,22 +3894,24 @@ class SWORDWorkflow:
         sample_fixes = []
         for rid, (old, new, method) in list(corrections.items())[:20]:
             idx = id_to_idx[rid]
-            sample_fixes.append({
-                'reach_id': rid,
-                'old_facc': old,
-                'new_facc': new,
-                'width': width[idx],
-                'method': method,
-            })
+            sample_fixes.append(
+                {
+                    "reach_id": rid,
+                    "old_facc": old,
+                    "new_facc": new,
+                    "width": width[idx],
+                    "method": method,
+                }
+            )
 
         result = {
-            'total_corrupted': total_corrupted,
-            'traced_fixes': traced_count,
-            'unfixable': unfixable_count,
-            'avg_reduction': float(avg_reduction),
-            'max_reduction': float(max_reduction),
-            'sample_fixes': sample_fixes,
-            'dry_run': dry_run,
+            "total_corrupted": total_corrupted,
+            "traced_fixes": traced_count,
+            "unfixable": unfixable_count,
+            "avg_reduction": float(avg_reduction),
+            "max_reduction": float(max_reduction),
+            "sample_fixes": sample_fixes,
+            "dry_run": dry_run,
         }
 
         if dry_run:
@@ -3843,7 +3926,7 @@ class SWORDWorkflow:
 
         # Ensure facc_quality column exists
         try:
-            conn.execute(f"""
+            conn.execute("""
                 ALTER TABLE reaches ADD COLUMN IF NOT EXISTS facc_quality VARCHAR
             """)
         except Exception:
@@ -3857,19 +3940,25 @@ class SWORDWorkflow:
             idx = id_to_idx[rid]
             facc[idx] = new_facc
 
-            conn.execute("""
+            conn.execute(
+                """
                 UPDATE reaches SET facc = ?, facc_quality = ?
                 WHERE reach_id = ? AND region = ?
-            """, [new_facc, 'traced', rid, self._region])
+            """,
+                [new_facc, "traced", rid, self._region],
+            )
             updated_reaches += 1
 
         # Flag unfixable reaches (no facc change, just quality flag)
         for rid, quality in quality_flags.items():
-            if quality == 'suspect':
-                conn.execute("""
+            if quality == "suspect":
+                conn.execute(
+                    """
                     UPDATE reaches SET facc_quality = ?
                     WHERE reach_id = ? AND region = ?
-                """, ['suspect', rid, self._region])
+                """,
+                    ["suspect", rid, self._region],
+                )
 
         logger.info(f"Updated {updated_reaches} reaches")
 
@@ -3877,29 +3966,32 @@ class SWORDWorkflow:
         if update_nodes and updated_reaches > 0:
             logger.info("Updating node facc values...")
             for rid, (old_facc, new_facc, _) in corrections.items():
-                node_count = conn.execute("""
+                node_count = conn.execute(
+                    """
                     UPDATE nodes SET facc = ?
                     WHERE reach_id = ? AND region = ?
-                """, [new_facc, rid, self._region]).rowcount
+                """,
+                    [new_facc, rid, self._region],
+                ).rowcount
                 updated_nodes += node_count
 
             logger.info(f"Updated {updated_nodes} nodes")
 
-        result['reaches_updated'] = updated_reaches
-        result['nodes_updated'] = updated_nodes
+        result["reaches_updated"] = updated_reaches
+        result["nodes_updated"] = updated_nodes
 
         # Log to provenance
         if self._provenance and self._enable_provenance:
             with self._provenance.operation(
-                'FIX_FACC_VIOLATIONS',
-                table_name='reaches',
+                "FIX_FACC_VIOLATIONS",
+                table_name="reaches",
                 entity_ids=list(corrections.keys()),
                 region=self._region,
                 reason=reason or "Fix facc via upstream trace",
                 details={
-                    'total_corrupted': total_corrupted,
-                    'traced_fixes': traced_count,
-                    'unfixable': unfixable_count,
+                    "total_corrupted": total_corrupted,
+                    "traced_fixes": traced_count,
+                    "unfixable": unfixable_count,
                 },
             ):
                 pass  # Already applied above
@@ -3978,7 +4070,8 @@ class SWORDWorkflow:
         conn = self._sword.db.conn
 
         # Find extreme violations
-        violations_df = conn.execute("""
+        violations_df = conn.execute(
+            """
             WITH reach_facc AS (
                 SELECT
                     reach_id,
@@ -4004,12 +4097,14 @@ class SWORDWorkflow:
             )
             SELECT * FROM violations
             ORDER BY ratio DESC
-        """, [self._region, self._region, min_ratio]).fetchdf()
+        """,
+            [self._region, self._region, min_ratio],
+        ).fetchdf()
 
         result = {
-            'violations_found': len(violations_df),
-            'min_ratio_threshold': min_ratio,
-            'dry_run': dry_run,
+            "violations_found": len(violations_df),
+            "min_ratio_threshold": min_ratio,
+            "dry_run": dry_run,
         }
 
         if len(violations_df) == 0:
@@ -4019,14 +4114,16 @@ class SWORDWorkflow:
         # Add sample violations to result
         samples = []
         for _, row in violations_df.head(10).iterrows():
-            samples.append({
-                'upstream_reach': int(row['upstream_reach']),
-                'downstream_reach': int(row['downstream_reach']),
-                'upstream_facc': float(row['upstream_facc']),
-                'downstream_facc': float(row['downstream_facc']),
-                'ratio': float(row['ratio']),
-            })
-        result['sample_violations'] = samples
+            samples.append(
+                {
+                    "upstream_reach": int(row["upstream_reach"]),
+                    "downstream_reach": int(row["downstream_reach"]),
+                    "upstream_facc": float(row["upstream_facc"]),
+                    "downstream_facc": float(row["downstream_facc"]),
+                    "ratio": float(row["ratio"]),
+                }
+            )
+        result["sample_violations"] = samples
 
         if dry_run:
             logger.info(
@@ -4038,30 +4135,36 @@ class SWORDWorkflow:
         # Remove the erroneous links
         removed_count = 0
         for _, row in violations_df.iterrows():
-            up_reach = int(row['upstream_reach'])
-            dn_reach = int(row['downstream_reach'])
+            up_reach = int(row["upstream_reach"])
+            dn_reach = int(row["downstream_reach"])
 
             # Delete the downstream link
-            conn.execute("""
+            conn.execute(
+                """
                 DELETE FROM reach_topology
                 WHERE reach_id = ?
                   AND neighbor_reach_id = ?
                   AND direction = 'down'
                   AND region = ?
-            """, [up_reach, dn_reach, self._region])
+            """,
+                [up_reach, dn_reach, self._region],
+            )
 
             # Also delete the corresponding upstream link (reverse direction)
-            conn.execute("""
+            conn.execute(
+                """
                 DELETE FROM reach_topology
                 WHERE reach_id = ?
                   AND neighbor_reach_id = ?
                   AND direction = 'up'
                   AND region = ?
-            """, [dn_reach, up_reach, self._region])
+            """,
+                [dn_reach, up_reach, self._region],
+            )
 
             removed_count += 1
 
-        result['links_removed'] = removed_count
+        result["links_removed"] = removed_count
         logger.info(
             f"Removed {removed_count} erroneous topology links (ratio >= {min_ratio})"
         )
@@ -4079,7 +4182,7 @@ class SWORDWorkflow:
         end_date: Optional[str] = None,
         max_cloud_cover: float = 20.0,
         use_otsu: bool = False,
-    ) -> 'Any':
+    ) -> "Any":
         """
         Get satellite imagery and water index for a reach.
 
@@ -4137,7 +4240,7 @@ class SWORDWorkflow:
             )
         return "SWORDWorkflow(not loaded)"
 
-    def __enter__(self) -> 'SWORDWorkflow':
+    def __enter__(self) -> "SWORDWorkflow":
         """Support using workflow as context manager."""
         return self
 

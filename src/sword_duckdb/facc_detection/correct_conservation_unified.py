@@ -54,9 +54,7 @@ def _load_reaches(conn: duckdb.DuckDBPyConnection, region: str) -> pd.DataFrame:
     ).fetchdf()
 
 
-def _build_graph(
-    topology_df: pd.DataFrame, reaches_df: pd.DataFrame
-) -> nx.DiGraph:
+def _build_graph(topology_df: pd.DataFrame, reaches_df: pd.DataFrame) -> nx.DiGraph:
     G = nx.DiGraph()
     for _, row in reaches_df.iterrows():
         rid = int(row["reach_id"])
@@ -125,8 +123,12 @@ def _run_unified(
         corrected[node] = max(original_facc.get(node, 0.0), 0.0)
 
     changes: Dict[int, Tuple[float, float, str]] = {}
-    counts = {"headwater": 0, "single_dn_floor": 0, "bifurc_share": 0,
-              "junction_floor": 0}
+    counts = {
+        "headwater": 0,
+        "single_dn_floor": 0,
+        "bifurc_share": 0,
+        "junction_floor": 0,
+    }
 
     for node in topo_order:
         orig = max(original_facc.get(node, 0.0), 0.0)
@@ -214,13 +216,13 @@ def _apply_to_db(
         "CREATE TEMP TABLE _unified_facc ("
         "  reach_id BIGINT PRIMARY KEY, new_facc DOUBLE)"
     )
-    data = list(zip(
-        corrections_df["reach_id"].astype(int),
-        corrections_df["corrected_facc"].astype(float),
-    ))
-    conn.executemany(
-        "INSERT INTO _unified_facc VALUES (?, ?)", data
+    data = list(
+        zip(
+            corrections_df["reach_id"].astype(int),
+            corrections_df["corrected_facc"].astype(float),
+        )
     )
+    conn.executemany("INSERT INTO _unified_facc VALUES (?, ?)", data)
     conn.execute(
         "UPDATE reaches SET facc = t.new_facc "
         "FROM _unified_facc t WHERE reaches.reach_id = t.reach_id"
@@ -272,10 +274,10 @@ def correct_facc_unified(
     out_path = Path(output_dir)
     mode_str = "DRY RUN" if dry_run else "APPLYING TO DB"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Facc Conservation — Unified Pass — {region} [{mode_str}]")
     print(f"  inflate_threshold = {inflate_threshold}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Read v17b original facc as baseline
     print("  Loading v17b original facc...")
@@ -285,10 +287,12 @@ def correct_facc_unified(
         [region],
     ).fetchdf()
     v17b_conn.close()
-    original_facc = dict(zip(
-        v17b_df["reach_id"].astype(int),
-        v17b_df["facc"].astype(float),
-    ))
+    original_facc = dict(
+        zip(
+            v17b_df["reach_id"].astype(int),
+            v17b_df["facc"].astype(float),
+        )
+    )
     print(f"    {len(original_facc)} v17b reaches")
 
     # Read topology + reach attrs from v17c (topology is same, but width etc.)
@@ -306,8 +310,10 @@ def correct_facc_unified(
         print("  Building graph...")
         G = _build_graph(topo_df, reaches_df)
         n_bifurc = sum(1 for n in G.nodes() if G.out_degree(n) >= 2)
-        print(f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, "
-              f"{n_bifurc} bifurcations")
+        print(
+            f"    {G.number_of_nodes()} nodes, {G.number_of_edges()} edges, "
+            f"{n_bifurc} bifurcations"
+        )
 
         print("  Running unified pass...")
         changes = _run_unified(G, original_facc, inflate_threshold)
@@ -321,15 +327,17 @@ def correct_facc_unified(
         for rid, (orig, corr, ctype) in changes.items():
             delta = corr - orig
             delta_pct = 100.0 * delta / orig if orig > 0 else float("inf")
-            rows.append({
-                "reach_id": rid,
-                "region": region,
-                "original_facc": round(orig, 4),
-                "corrected_facc": round(corr, 4),
-                "delta": round(delta, 4),
-                "delta_pct": round(delta_pct, 2),
-                "correction_type": ctype,
-            })
+            rows.append(
+                {
+                    "reach_id": rid,
+                    "region": region,
+                    "original_facc": round(orig, 4),
+                    "corrected_facc": round(corr, 4),
+                    "delta": round(delta, 4),
+                    "delta_pct": round(delta_pct, 2),
+                    "correction_type": ctype,
+                }
+            )
         corrections_df = pd.DataFrame(rows)
 
         n_raised = (corrections_df["delta"] > 0).sum()
@@ -344,13 +352,15 @@ def correct_facc_unified(
             median_delta=("delta", "median"),
         )
 
-        print(f"\n  Summary:")
+        print("\n  Summary:")
         print(f"    Raised:  {n_raised}")
         print(f"    Lowered: {n_lowered}")
         print(f"    Net facc change: {total_delta:>+,.0f} km² ({pct:+.3f}%)")
         for ctype, row in by_type.iterrows():
-            print(f"      {ctype:25s}  n={int(row['count']):>6,}  "
-                  f"med_delta={row['median_delta']:>+12,.1f} km²")
+            print(
+                f"      {ctype:25s}  n={int(row['count']):>6,}  "
+                f"med_delta={row['median_delta']:>+12,.1f} km²"
+            )
 
         if not dry_run:
             # First restore v17b facc for ALL reaches in this region,
@@ -420,10 +430,12 @@ def _restore_v17b(
         "CREATE TEMP TABLE _v17b_restore ("
         "  reach_id BIGINT PRIMARY KEY, orig_facc DOUBLE)"
     )
-    data = list(zip(
-        v17b_df["reach_id"].astype(int),
-        v17b_df["facc"].astype(float),
-    ))
+    data = list(
+        zip(
+            v17b_df["reach_id"].astype(int),
+            v17b_df["facc"].astype(float),
+        )
+    )
     conn.executemany("INSERT INTO _v17b_restore VALUES (?, ?)", data)
     conn.execute(
         "UPDATE reaches SET facc = t.orig_facc "
@@ -439,10 +451,12 @@ def main():
     parser = argparse.ArgumentParser(
         description="Facc conservation — unified single pass"
     )
-    parser.add_argument("--db", required=True,
-                        help="v17c DuckDB path")
-    parser.add_argument("--v17b", default="data/duckdb/sword_v17b.duckdb",
-                        help="v17b DuckDB path (baseline)")
+    parser.add_argument("--db", required=True, help="v17c DuckDB path")
+    parser.add_argument(
+        "--v17b",
+        default="data/duckdb/sword_v17b.duckdb",
+        help="v17b DuckDB path (baseline)",
+    )
     parser.add_argument("--region", help="Single region")
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--apply", action="store_true")
@@ -471,10 +485,12 @@ def main():
         combined = pd.concat(all_corrections, ignore_index=True)
         n_up = (combined["delta"] > 0).sum()
         n_dn = (combined["delta"] < 0).sum()
-        print(f"\n{'='*60}")
-        print(f"GRAND TOTAL: {len(combined)} modifications "
-              f"({n_up} raised, {n_dn} lowered)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print(
+            f"GRAND TOTAL: {len(combined)} modifications "
+            f"({n_up} raised, {n_dn} lowered)"
+        )
+        print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
