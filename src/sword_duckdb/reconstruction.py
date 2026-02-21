@@ -4160,15 +4160,28 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct node hfalls_id from HydroFALLS spatial join.
+        """Reconstruct node hfalls_id from HydroFALLS spatial join."""
+        hf_dir = self._source_data_dir / "HydroFALLS" if self._source_data_dir else None
+        if hf_dir is None or not hf_dir.exists():
+            logger.warning(
+                "node.hfalls_id: HydroFALLS data not found. Preserving values."
+            )
+            where_clause = ""
+            params = [self._region]
+            if node_ids is not None:
+                placeholders = ", ".join(["?"] * len(node_ids))
+                where_clause = f"AND node_id IN ({placeholders})"
+                params.extend(node_ids)
+            result_df = self._conn.execute(
+                f"SELECT node_id, COALESCE(hfalls_id, 0) as hfalls_id FROM nodes WHERE region = ? {where_clause}",
+                params,
+            ).fetchdf()
+            return self._update_node_attribute("hfalls_id", result_df, dry_run)
 
-        REQUIRES EXTERNAL DATA: HydroFALLS database
-        This is a stub - preserves existing values.
-        """
-        logger.warning(
-            "node.hfalls_id requires external HydroFALLS data - preserving existing values"
-        )
+        import geopandas as gpd
+        from scipy.spatial import cKDTree
+
+        logger.info("Reconstructing node.hfalls_id from HydroFALLS spatial join")
 
         where_clause = ""
         params = [self._region]
@@ -4177,16 +4190,79 @@ class ReconstructionEngine:
             where_clause = f"AND node_id IN ({placeholders})"
             params.extend(node_ids)
 
-        result_df = self._conn.execute(
-            f"""
-            SELECT node_id, COALESCE(hfalls_id, 0) as hfalls_id
-            FROM nodes
-            WHERE region = ? {where_clause}
-        """,
-            params,
+        nodes_df = self._conn.execute(
+            f"SELECT node_id, x, y FROM nodes WHERE region = ? {where_clause}", params
         ).fetchdf()
+        if nodes_df.empty:
+            return {"status": "ok", "updated": 0, "dry_run": dry_run}
 
-        return self._update_node_attribute("hfalls_id", result_df, dry_run)
+        hf_files = sorted(hf_dir.glob("*.gpkg")) + sorted(hf_dir.glob("*.shp"))
+        if not hf_files:
+            nodes_df["hfalls_id"] = 0
+            return self._update_node_attribute(
+                "hfalls_id", nodes_df[["node_id", "hfalls_id"]], dry_run
+            )
+
+        import pandas as pd
+
+        all_hf = []
+        for f in hf_files:
+            try:
+                all_hf.append(gpd.read_file(f))
+            except Exception as e:
+                logger.warning(f"Failed to read {f}: {e}")
+        if not all_hf:
+            nodes_df["hfalls_id"] = 0
+            return self._update_node_attribute(
+                "hfalls_id", nodes_df[["node_id", "hfalls_id"]], dry_run
+            )
+
+        hf = pd.concat(all_hf, ignore_index=True)
+
+        # Normalize column name
+        id_col = None
+        for c in hf.columns:
+            if c.lower() == "hfalls_id":
+                id_col = c
+                break
+        if id_col is None:
+            nodes_df["hfalls_id"] = 0
+            return self._update_node_attribute(
+                "hfalls_id", nodes_df[["node_id", "hfalls_id"]], dry_run
+            )
+
+        if "geometry" in hf.columns:
+            hf["_x"] = hf.geometry.centroid.x
+            hf["_y"] = hf.geometry.centroid.y
+        elif "x" in hf.columns and "y" in hf.columns:
+            hf["_x"] = hf["x"]
+            hf["_y"] = hf["y"]
+        else:
+            nodes_df["hfalls_id"] = 0
+            return self._update_node_attribute(
+                "hfalls_id", nodes_df[["node_id", "hfalls_id"]], dry_run
+            )
+
+        hf = hf.dropna(subset=["_x", "_y"])
+        if hf.empty:
+            nodes_df["hfalls_id"] = 0
+            return self._update_node_attribute(
+                "hfalls_id", nodes_df[["node_id", "hfalls_id"]], dry_run
+            )
+
+        kdt = cKDTree(np.column_stack([hf["_x"].values, hf["_y"].values]))
+        node_pts = np.column_stack([nodes_df["x"].values, nodes_df["y"].values])
+        distances, indices = kdt.query(node_pts, k=1)
+
+        hfalls_ids = np.zeros(len(nodes_df), dtype=np.int64)
+        matched = distances <= 0.005
+        if matched.any():
+            hfalls_ids[matched] = hf[id_col].values[indices[matched]]
+
+        nodes_df["hfalls_id"] = hfalls_ids
+        return self._update_node_attribute(
+            "hfalls_id", nodes_df[["node_id", "hfalls_id"]], dry_run
+        )
 
     def _reconstruct_node_river_name(
         self,
@@ -4248,32 +4324,18 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct reach hfalls_id from HydroFALLS spatial join.
-
-        REQUIRES EXTERNAL DATA: HydroFALLS database
-        This is a stub - preserves existing values.
-        """
-        logger.warning(
-            "reach.hfalls_id requires external HydroFALLS data - preserving existing values"
-        )
-
+        """Reconstruct reach hfalls_id as MAX of node hfalls_ids."""
+        logger.info("Reconstructing reach.hfalls_id from node max")
         where_clause = ""
         params = [self._region]
         if reach_ids is not None:
             placeholders = ", ".join(["?"] * len(reach_ids))
-            where_clause = f"AND reach_id IN ({placeholders})"
+            where_clause = f"AND n.reach_id IN ({placeholders})"
             params.extend(reach_ids)
-
         result_df = self._conn.execute(
-            f"""
-            SELECT reach_id, COALESCE(hfalls_id, 0) as hfalls_id
-            FROM reaches
-            WHERE region = ? {where_clause}
-        """,
+            f"SELECT n.reach_id, MAX(n.hfalls_id) as hfalls_id FROM nodes n WHERE n.region = ? {where_clause} GROUP BY n.reach_id",
             params,
         ).fetchdf()
-
         return self._update_reach_attribute("hfalls_id", result_df, dry_run)
 
     def _reconstruct_reach_river_name(
