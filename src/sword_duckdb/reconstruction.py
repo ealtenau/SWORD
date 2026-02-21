@@ -3936,38 +3936,42 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
-        Reconstruct reach path_segs (total segments in path).
+        Reconstruct path_segs: unique segment ID per (path_order, path_freq) combo.
 
-        This is the count of reaches in the same path (same path_freq).
+        Per legacy stream_order.py, path_segs is a sequential ID assigned to each
+        unique (path_order, path_freq) combination, numbered from outlet upstream.
+        Reaches with invalid path_freq get path_segs=-9999.
         """
-        logger.info("Reconstructing reach.path_segs from path analysis")
+        logger.info("Reconstructing reach.path_segs from (path_order, path_freq)")
 
         where_clause = ""
-        params = [self._region]
+        params = [self._region, self._region]
         if reach_ids is not None:
             placeholders = ", ".join(["?"] * len(reach_ids))
-            where_clause = f"AND reach_id IN ({placeholders})"
+            where_clause = f"AND r.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        # Count reaches per path_freq
         result_df = self._conn.execute(
             f"""
-            WITH path_counts AS (
-                SELECT
-                    path_freq,
-                    COUNT(*) as seg_count
+            WITH combos AS (
+                SELECT DISTINCT path_order, path_freq
                 FROM reaches
-                WHERE region = ?
-                GROUP BY path_freq
+                WHERE region = ? AND path_freq > 0
+                ORDER BY path_order, path_freq
+            ),
+            numbered AS (
+                SELECT path_order, path_freq,
+                       ROW_NUMBER() OVER (ORDER BY path_order, path_freq) as path_segs
+                FROM combos
             )
-            SELECT
-                r.reach_id,
-                COALESCE(pc.seg_count, 1) as path_segs
+            SELECT r.reach_id,
+                   COALESCE(n.path_segs, -9999) as path_segs
             FROM reaches r
-            LEFT JOIN path_counts pc ON r.path_freq = pc.path_freq
+            LEFT JOIN numbered n
+                ON r.path_order = n.path_order AND r.path_freq = n.path_freq
             WHERE r.region = ? {where_clause}
         """,
-            [self._region] + params,
+            params,
         ).fetchdf()
 
         return self._update_reach_attribute("path_segs", result_df, dry_run)

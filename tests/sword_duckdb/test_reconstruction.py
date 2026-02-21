@@ -836,3 +836,56 @@ class TestPathOrder:
             if not sorted_g["path_order"].is_monotonic_increasing:
                 violations += 1
         assert violations == 0, f"{violations} groups have non-monotonic path_order"
+
+
+class TestPathSegs:
+    """Test path_segs reconstruction — unique ID per (path_order, path_freq)."""
+
+    def test_positive_integers(self, sword_writable):
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_path_segs(dry_run=True)
+        valid = [v for v in result["values"] if v != -9999]
+        if valid:
+            assert min(valid) >= 1
+
+    def test_same_combo_same_id(self, sword_writable):
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_path_segs(dry_run=True)
+
+        reaches = sword_writable._db.execute(
+            "SELECT reach_id, path_order, path_freq FROM reaches WHERE region = 'NA'"
+        ).fetchdf()
+        ps_map = dict(zip(result["entity_ids"], result["values"]))
+        reaches["path_segs"] = reaches["reach_id"].map(ps_map)
+
+        for (po, pf), group in reaches.groupby(["path_order", "path_freq"]):
+            if pf <= 0:
+                continue
+            assert group["path_segs"].nunique() == 1, (
+                f"({po}, {pf}) has multiple path_segs values"
+            )
+
+    def test_different_combos_different_ids(self, sword_writable):
+        """Different (path_order, path_freq) combos must get different IDs."""
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_path_segs(dry_run=True)
+
+        reaches = sword_writable._db.execute(
+            "SELECT reach_id, path_order, path_freq FROM reaches WHERE region = 'NA'"
+        ).fetchdf()
+        ps_map = dict(zip(result["entity_ids"], result["values"]))
+        reaches["path_segs"] = reaches["reach_id"].map(ps_map)
+
+        valid = reaches[reaches["path_freq"] > 0]
+        combos = valid.groupby(["path_order", "path_freq"])["path_segs"].first()
+        n_combos = len(combos)
+        n_unique_ids = combos.nunique()
+        assert n_unique_ids == n_combos, (
+            f"{n_combos} distinct combos but only {n_unique_ids} unique path_segs IDs"
+        )
