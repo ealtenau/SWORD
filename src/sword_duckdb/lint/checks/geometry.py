@@ -1613,7 +1613,7 @@ def check_single_node_reaches(
         check_id="G022",
         name="single_node_reaches",
         severity=Severity.INFO,
-        passed=True,  # INFO: always passes, just reports
+        passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,
@@ -1691,7 +1691,7 @@ def check_duplicate_centerline_points(
         check_id="G023",
         name="duplicate_centerline_points",
         severity=Severity.INFO,
-        passed=True,  # INFO: always passes, just reports
+        passed=len(issues) == 0,
         total_checked=total,
         issues_found=len(issues),
         issue_pct=100 * len(issues) / total if total > 0 else 0,

@@ -4201,7 +4201,9 @@ class SWORDWorkflow:
         if not self.is_loaded:
             raise RuntimeError("No database loaded. Call load() first.")
 
-        region = region or self._region
+        from .schema import normalize_region
+
+        region = normalize_region(region or self._region)
         conn = self._sword.db.conn
         where = f"AND n.region = '{region}'" if region else ""
 
@@ -4228,10 +4230,30 @@ class SWORDWorkflow:
             """
         ).fetchdf()
 
+        # Count nodes in reaches where ALL widths are zero (no median available)
+        unhandled = conn.execute(
+            f"""
+            SELECT COUNT(*) FROM nodes n
+            WHERE n.width <= 0 {where}
+              AND NOT EXISTS (
+                  SELECT 1 FROM nodes n2
+                  WHERE n2.reach_id = n.reach_id
+                    AND n2.region = n.region AND n2.width > 0
+              )
+            """
+        ).fetchone()[0]
+
+        if unhandled > 0:
+            logger.warning(
+                f"{unhandled} zero-width nodes in reaches with no positive widths "
+                f"(cannot compute median) — these will not be filled"
+            )
+
         if dry_run or len(issues_df) == 0:
             return {
                 "issues": issues_df,
                 "filled_count": 0,
+                "unhandled_count": unhandled,
             }
 
         # RTREE drop → UPDATE → RTREE recreate
@@ -4292,6 +4314,7 @@ class SWORDWorkflow:
         return {
             "issues": issues_df,
             "filled_count": len(issues_df),
+            "unhandled_count": unhandled,
         }
 
     def remove_duplicate_centerline_points(
@@ -4323,7 +4346,9 @@ class SWORDWorkflow:
         if not self.is_loaded:
             raise RuntimeError("No database loaded. Call load() first.")
 
-        region = region or self._region
+        from .schema import normalize_region
+
+        region = normalize_region(region or self._region)
         conn = self._sword.db.conn
         where = f"AND c.region = '{region}'" if region else ""
 
@@ -4465,7 +4490,9 @@ class SWORDWorkflow:
 
         import pandas as pd
 
-        region = region or self._region
+        from .schema import normalize_region
+
+        region = normalize_region(region or self._region)
         conn = self._sword.db.conn
         where = f"AND r.region = '{region}'" if region else ""
 
@@ -4625,12 +4652,16 @@ class SWORDWorkflow:
 
         import math
 
-        region = region or self._region
+        from .schema import normalize_region
+
+        region = normalize_region(region or self._region)
         conn = self._sword.db.conn
+
+        # Pre-compute node data per reach (before RTREE manipulation)
+        reach_plans = []
         details = []
 
         for reach_id in reach_ids:
-            # Get centerlines sorted by cl_id
             cl_df = conn.execute(
                 """
                 SELECT cl_id, x, y FROM centerlines
@@ -4646,7 +4677,6 @@ class SWORDWorkflow:
                 )
                 continue
 
-            # Get current node count
             node_count = conn.execute(
                 "SELECT COUNT(*) FROM nodes WHERE reach_id = ? AND region = ?",
                 [reach_id, region],
@@ -4654,6 +4684,21 @@ class SWORDWorkflow:
 
             if node_count == 0:
                 details.append({"reach_id": reach_id, "status": "no_nodes", "nodes": 0})
+                continue
+
+            # Skip reaches where centerlines < nodes (can't partition properly)
+            if len(cl_df) < node_count:
+                logger.warning(
+                    f"Reach {reach_id}: {len(cl_df)} centerlines < "
+                    f"{node_count} nodes — skipping"
+                )
+                details.append(
+                    {
+                        "reach_id": reach_id,
+                        "status": "insufficient_centerlines",
+                        "nodes": 0,
+                    }
+                )
                 continue
 
             # Compute cumulative distances (equirectangular approximation)
@@ -4684,22 +4729,19 @@ class SWORDWorkflow:
             if current_group:
                 groups.append(current_group)
 
-            # Pad or merge to ensure exactly node_count groups
-            while len(groups) < node_count and len(groups) > 0:
-                groups.append(groups[-1][-1:])
+            # Merge excess groups (can only happen when len(cl_df) >= node_count)
             while len(groups) > node_count and len(groups) > 1:
                 last = groups.pop()
                 groups[-1].extend(last)
 
             # Compute per-group stats
             new_nodes = []
-            for g_idx, g_points in enumerate(groups):
+            for g_points in groups:
                 g_xs = [xs[p] for p in g_points]
                 g_ys = [ys[p] for p in g_points]
                 g_x = float(np.median(g_xs))
                 g_y = float(np.median(g_ys))
 
-                # Node length = distance span of this group
                 if len(g_points) > 1:
                     g_len = dists[g_points[-1]] - dists[g_points[0]]
                 else:
@@ -4718,18 +4760,7 @@ class SWORDWorkflow:
                     }
                 )
 
-            details.append(
-                {
-                    "reach_id": reach_id,
-                    "status": "ok" if not dry_run else "dry_run",
-                    "nodes": len(new_nodes),
-                }
-            )
-
-            if dry_run:
-                continue
-
-            # Get existing node IDs to preserve them
+            # Get existing node IDs
             existing = conn.execute(
                 """
                 SELECT node_id FROM nodes
@@ -4740,7 +4771,25 @@ class SWORDWorkflow:
             ).fetchall()
             node_ids = [r[0] for r in existing]
 
-            # RTREE drop → UPDATE → RTREE recreate
+            details.append(
+                {
+                    "reach_id": reach_id,
+                    "status": "ok" if not dry_run else "dry_run",
+                    "nodes": len(new_nodes),
+                }
+            )
+
+            if not dry_run:
+                reach_plans.append(
+                    {
+                        "reach_id": reach_id,
+                        "node_ids": node_ids,
+                        "new_nodes": new_nodes,
+                    }
+                )
+
+        # Apply all updates with a single RTREE drop/recreate cycle
+        if reach_plans:
             conn.execute("INSTALL spatial; LOAD spatial;")
             indexes = conn.execute(
                 "SELECT index_name, table_name, sql FROM duckdb_indexes() "
@@ -4750,45 +4799,56 @@ class SWORDWorkflow:
                 conn.execute(f'DROP INDEX "{idx_name}"')
 
             try:
-                for i, (nid, nd) in enumerate(zip(node_ids, new_nodes)):
-                    conn.execute(
-                        """
-                        UPDATE nodes
-                        SET x = ?, y = ?, node_length = ?,
-                            cl_id_min = ?, cl_id_max = ?
-                        WHERE node_id = ? AND region = ?
-                        """,
-                        [
-                            nd["x"],
-                            nd["y"],
-                            nd["node_length"],
-                            nd["cl_id_min"],
-                            nd["cl_id_max"],
-                            nid,
-                            region,
-                        ],
-                    )
+                for plan in reach_plans:
+                    node_ids = plan["node_ids"]
+                    new_nodes = plan["new_nodes"]
+
+                    def _do_updates():
+                        for nid, nd in zip(node_ids, new_nodes):
+                            conn.execute(
+                                """
+                                UPDATE nodes
+                                SET x = ?, y = ?, node_length = ?,
+                                    cl_id_min = ?, cl_id_max = ?
+                                WHERE node_id = ? AND region = ?
+                                """,
+                                [
+                                    nd["x"],
+                                    nd["y"],
+                                    nd["node_length"],
+                                    nd["cl_id_min"],
+                                    nd["cl_id_max"],
+                                    nid,
+                                    region,
+                                ],
+                            )
+
+                    if self._provenance and self._enable_provenance:
+                        with self._provenance.operation(
+                            "UPDATE",
+                            table_name="nodes",
+                            entity_ids=node_ids,
+                            region=region,
+                            reason=reason
+                            or f"Re-derive nodes for reach {plan['reach_id']}",
+                            details={
+                                "reach_id": plan["reach_id"],
+                                "node_count": len(new_nodes),
+                            },
+                            affected_columns=[
+                                "x",
+                                "y",
+                                "node_length",
+                                "cl_id_min",
+                                "cl_id_max",
+                            ],
+                        ):
+                            _do_updates()
+                    else:
+                        _do_updates()
             finally:
                 for _, _, sql in indexes:
                     conn.execute(sql)
-
-            if self._provenance and self._enable_provenance:
-                with self._provenance.operation(
-                    "UPDATE",
-                    table_name="nodes",
-                    entity_ids=node_ids,
-                    region=region,
-                    reason=reason or f"Re-derive nodes for reach {reach_id}",
-                    details={"reach_id": reach_id, "node_count": len(new_nodes)},
-                    affected_columns=[
-                        "x",
-                        "y",
-                        "node_length",
-                        "cl_id_min",
-                        "cl_id_max",
-                    ],
-                ):
-                    pass  # already updated above
 
         processed = sum(1 for d in details if d["status"] == "ok")
         logger.info(f"Re-derived nodes for {processed}/{len(reach_ids)} reaches")

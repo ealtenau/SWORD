@@ -26,7 +26,7 @@ def meters_to_degrees(meters: float, latitude: float) -> float:
         Equivalent distance in decimal degrees of longitude.
     """
     cos_lat = math.cos(math.radians(latitude))
-    if cos_lat == 0:
+    if abs(cos_lat) < 1e-10:
         return float("inf")
     return meters / (111320.0 * cos_lat)
 
