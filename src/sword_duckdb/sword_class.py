@@ -34,6 +34,7 @@ import numpy as np
 if TYPE_CHECKING:
     from .reactive import SWORDReactive
 
+from .column_order import NODES_COLUMN_ORDER, REACHES_COLUMN_ORDER
 from .sword_db import SWORDDatabase
 from .views import CenterlinesView, NodesView, ReachesView
 

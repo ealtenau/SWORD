@@ -38,6 +38,13 @@ Example Usage:
 """
 
 # --- Core imports (always available) ---
+from .column_order import (
+    CENTERLINES_COLUMN_ORDER,
+    NODES_COLUMN_ORDER,
+    REACHES_COLUMN_ORDER,
+    get_column_order,
+    reorder_columns,
+)
 from .schema import create_schema, get_schema_sql, SCHEMA_VERSION
 from .lint import (
     LintRunner,
@@ -167,6 +174,12 @@ except ImportError:
     IsolationLevel = TransactionContext = None
 
 __all__ = [
+    # Column ordering
+    "REACHES_COLUMN_ORDER",
+    "NODES_COLUMN_ORDER",
+    "CENTERLINES_COLUMN_ORDER",
+    "get_column_order",
+    "reorder_columns",
     # Main SWORD class (drop-in replacement)
     "SWORD",
     # Workflow orchestration (recommended entry point)
