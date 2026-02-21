@@ -227,3 +227,4 @@ DrainageAreaFix/
 *.qgz
 *.duckdb
 !tests/sword_duckdb/fixtures/sword_test_minimal.duckdb
+.dmux/
