@@ -1003,3 +1003,38 @@ class TestRiverName:
         # Every value should be exactly "NODATA" when no names files are present
         for v in result["values"]:
             assert v == "NODATA", f"Expected 'NODATA' but got '{v}'"
+
+
+class TestIceFlag:
+    def test_from_ice_flags_table(self, sword_writable):
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_iceflag(dry_run=True)
+        assert result.get("status") != "skipped"
+        # Values should be in valid range: -9999, 0, 1, 2
+        for v in result["values"]:
+            assert int(v) in {-9999, 0, 1, 2}, f"Invalid iceflag: {v}"
+
+    def test_aggregates_max_from_table(self, sword_writable):
+        """reach_ice_flags has max=1 but reaches.iceflag=0; correct impl uses table MAX."""
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        # Verify precondition: existing reach iceflag is 0 but table has 1s
+        reach = sword_writable._db.execute(
+            "SELECT reach_id FROM reaches WHERE region = 'NA' AND iceflag = 0 LIMIT 1"
+        ).fetchone()
+        assert reach is not None, "Need a reach with iceflag=0"
+        rid = reach[0]
+
+        table_max = sword_writable._db.execute(
+            "SELECT MAX(iceflag) FROM reach_ice_flags WHERE reach_id = ?", [rid]
+        ).fetchone()[0]
+        assert table_max > 0, "Need ice_flags table data with iceflag > 0"
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_iceflag(reach_ids=[rid], dry_run=True)
+        vals = dict(zip(result["entity_ids"], result["values"]))
+        assert int(vals[rid]) == table_max, (
+            f"Expected {table_max} from table MAX, got {vals[rid]}"
+        )

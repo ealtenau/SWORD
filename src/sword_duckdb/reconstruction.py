@@ -4414,29 +4414,55 @@ class ReconstructionEngine:
         force: bool = False,
         dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Reconstruct reach iceflag from external ice flag CSV.
+        """Reconstruct iceflag from reach_ice_flags table (max of daily values)."""
+        logger.info("Reconstructing reach.iceflag from reach_ice_flags")
 
-        REQUIRES EXTERNAL DATA: Ice flag CSV (366-day array per reach)
-        This is a stub - preserves existing values.
-        """
-        logger.warning(
-            "reach.iceflag requires external ice flag data - preserving existing values"
-        )
+        count = self._conn.execute(
+            "SELECT COUNT(*) FROM reach_ice_flags WHERE reach_id IN "
+            "(SELECT reach_id FROM reaches WHERE region = ?)",
+            [self._region],
+        ).fetchone()[0]
+
+        if count == 0 and self._source_data_dir:
+            ice_dir = self._source_data_dir / "ice_flags"
+            if ice_dir and ice_dir.exists():
+                import pandas as pd
+
+                for csv_file in ice_dir.glob("*.csv"):
+                    df = pd.read_csv(csv_file)
+                    if "reach_id" not in df.columns:
+                        continue
+                    day_cols = [c for c in df.columns if c != "reach_id"]
+                    if day_cols:
+                        melted = df.melt(
+                            id_vars=["reach_id"],
+                            value_vars=day_cols,
+                            var_name="jd",
+                            value_name="iceflag",
+                        )
+                        melted["julian_day"] = (
+                            melted["jd"].str.extract(r"(\d+)").astype(int)
+                        )
+                        self._conn.executemany(
+                            "INSERT INTO reach_ice_flags VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+                            melted[
+                                ["reach_id", "julian_day", "iceflag"]
+                            ].values.tolist(),
+                        )
+                        logger.info(f"Loaded {len(melted)} ice records from {csv_file}")
 
         where_clause = ""
         params = [self._region]
-        if reach_ids is not None:
+        if reach_ids:
             placeholders = ", ".join(["?"] * len(reach_ids))
-            where_clause = f"AND reach_id IN ({placeholders})"
+            where_clause = f"AND r.reach_id IN ({placeholders})"
             params.extend(reach_ids)
 
-        # iceflag is a 366-element array - just preserve existing
         result_df = self._conn.execute(
             f"""
-            SELECT reach_id, iceflag
-            FROM reaches
-            WHERE region = ? {where_clause}
+            SELECT r.reach_id, COALESCE(MAX(i.iceflag), -9999) as iceflag
+            FROM reaches r LEFT JOIN reach_ice_flags i ON r.reach_id = i.reach_id
+            WHERE r.region = ? {where_clause} GROUP BY r.reach_id
         """,
             params,
         ).fetchdf()
