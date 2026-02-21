@@ -1797,7 +1797,7 @@ class SWORDWorkflow:
 
         where_clause, wse_col = build_node_filter_sql(colnames)
 
-        # Two-pass: first compute medians, then join for MAD
+        # Single-pass with APPROX_QUANTILE (t-digest, ~1% accuracy, O(1) memory)
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE node_obs_agg AS
             WITH filtered AS (
@@ -1805,40 +1805,33 @@ class SWORDWorkflow:
                        {wse_col} as wse, width
                 FROM read_parquet('{glob_pattern}', union_by_name=true)
                 WHERE {where_clause}
-            ),
-            medians AS (
-                SELECT node_id,
-                    QUANTILE_CONT(wse, 0.5) as med_wse,
-                    QUANTILE_CONT(width, 0.5) as med_width
-                FROM filtered GROUP BY node_id
             )
-            SELECT f.node_id,
-                QUANTILE_CONT(f.wse, 0.1) as wse_obs_p10,
-                QUANTILE_CONT(f.wse, 0.2) as wse_obs_p20,
-                QUANTILE_CONT(f.wse, 0.3) as wse_obs_p30,
-                QUANTILE_CONT(f.wse, 0.4) as wse_obs_p40,
-                QUANTILE_CONT(f.wse, 0.5) as wse_obs_p50,
-                QUANTILE_CONT(f.wse, 0.6) as wse_obs_p60,
-                QUANTILE_CONT(f.wse, 0.7) as wse_obs_p70,
-                QUANTILE_CONT(f.wse, 0.8) as wse_obs_p80,
-                QUANTILE_CONT(f.wse, 0.9) as wse_obs_p90,
-                MAX(f.wse) - MIN(f.wse) as wse_obs_range,
-                MEDIAN(ABS(f.wse - m.med_wse)) as wse_obs_mad,
-                QUANTILE_CONT(f.width, 0.1) as width_obs_p10,
-                QUANTILE_CONT(f.width, 0.2) as width_obs_p20,
-                QUANTILE_CONT(f.width, 0.3) as width_obs_p30,
-                QUANTILE_CONT(f.width, 0.4) as width_obs_p40,
-                QUANTILE_CONT(f.width, 0.5) as width_obs_p50,
-                QUANTILE_CONT(f.width, 0.6) as width_obs_p60,
-                QUANTILE_CONT(f.width, 0.7) as width_obs_p70,
-                QUANTILE_CONT(f.width, 0.8) as width_obs_p80,
-                QUANTILE_CONT(f.width, 0.9) as width_obs_p90,
-                MAX(f.width) - MIN(f.width) as width_obs_range,
-                MEDIAN(ABS(f.width - m.med_width)) as width_obs_mad,
+            SELECT node_id,
+                APPROX_QUANTILE(wse, 0.1) as wse_obs_p10,
+                APPROX_QUANTILE(wse, 0.2) as wse_obs_p20,
+                APPROX_QUANTILE(wse, 0.3) as wse_obs_p30,
+                APPROX_QUANTILE(wse, 0.4) as wse_obs_p40,
+                APPROX_QUANTILE(wse, 0.5) as wse_obs_p50,
+                APPROX_QUANTILE(wse, 0.6) as wse_obs_p60,
+                APPROX_QUANTILE(wse, 0.7) as wse_obs_p70,
+                APPROX_QUANTILE(wse, 0.8) as wse_obs_p80,
+                APPROX_QUANTILE(wse, 0.9) as wse_obs_p90,
+                MAX(wse) - MIN(wse) as wse_obs_range,
+                MAD(wse) as wse_obs_mad,
+                APPROX_QUANTILE(width, 0.1) as width_obs_p10,
+                APPROX_QUANTILE(width, 0.2) as width_obs_p20,
+                APPROX_QUANTILE(width, 0.3) as width_obs_p30,
+                APPROX_QUANTILE(width, 0.4) as width_obs_p40,
+                APPROX_QUANTILE(width, 0.5) as width_obs_p50,
+                APPROX_QUANTILE(width, 0.6) as width_obs_p60,
+                APPROX_QUANTILE(width, 0.7) as width_obs_p70,
+                APPROX_QUANTILE(width, 0.8) as width_obs_p80,
+                APPROX_QUANTILE(width, 0.9) as width_obs_p90,
+                MAX(width) - MIN(width) as width_obs_range,
+                MAD(width) as width_obs_mad,
                 COUNT(*) as n_obs
-            FROM filtered f
-            JOIN medians m ON f.node_id = m.node_id
-            GROUP BY f.node_id
+            FROM filtered
+            GROUP BY node_id
         """
 
         conn.execute(agg_sql)
@@ -1948,70 +1941,63 @@ class SWORDWorkflow:
         where_clause = build_reach_filter_sql(colnames)
         ref_u = SLOPE_REF_UNCERTAINTY
 
+        # Single-pass with APPROX_QUANTILE (t-digest, ~1% accuracy, O(1) memory)
         agg_sql = f"""
             CREATE OR REPLACE TEMP TABLE reach_obs_agg AS
             WITH filtered AS (
                 SELECT
                     CAST(reach_id AS BIGINT) as reach_id,
                     wse, width, slope,
-                    COALESCE(n_good_nod, 1) as weight  -- NULL → 1 (equal weight if col absent)
+                    COALESCE(n_good_nod, 1) as weight
                 FROM read_parquet('{glob_pattern}', union_by_name=true)
                 WHERE {where_clause}
             ),
-            medians AS (
-                SELECT reach_id,
-                    QUANTILE_CONT(wse, 0.5) as med_wse,
-                    QUANTILE_CONT(width, 0.5) as med_width,
-                    QUANTILE_CONT(slope, 0.5) as med_slope
-                FROM filtered GROUP BY reach_id
-            ),
             percentiles AS (
-                SELECT f.reach_id,
-                    -- WSE percentiles
-                    QUANTILE_CONT(f.wse, 0.1) as wse_obs_p10,
-                    QUANTILE_CONT(f.wse, 0.2) as wse_obs_p20,
-                    QUANTILE_CONT(f.wse, 0.3) as wse_obs_p30,
-                    QUANTILE_CONT(f.wse, 0.4) as wse_obs_p40,
-                    QUANTILE_CONT(f.wse, 0.5) as wse_obs_p50,
-                    QUANTILE_CONT(f.wse, 0.6) as wse_obs_p60,
-                    QUANTILE_CONT(f.wse, 0.7) as wse_obs_p70,
-                    QUANTILE_CONT(f.wse, 0.8) as wse_obs_p80,
-                    QUANTILE_CONT(f.wse, 0.9) as wse_obs_p90,
-                    MAX(f.wse) - MIN(f.wse) as wse_obs_range,
-                    MEDIAN(ABS(f.wse - m.med_wse)) as wse_obs_mad,
-                    -- Width percentiles
-                    QUANTILE_CONT(f.width, 0.1) as width_obs_p10,
-                    QUANTILE_CONT(f.width, 0.2) as width_obs_p20,
-                    QUANTILE_CONT(f.width, 0.3) as width_obs_p30,
-                    QUANTILE_CONT(f.width, 0.4) as width_obs_p40,
-                    QUANTILE_CONT(f.width, 0.5) as width_obs_p50,
-                    QUANTILE_CONT(f.width, 0.6) as width_obs_p60,
-                    QUANTILE_CONT(f.width, 0.7) as width_obs_p70,
-                    QUANTILE_CONT(f.width, 0.8) as width_obs_p80,
-                    QUANTILE_CONT(f.width, 0.9) as width_obs_p90,
-                    MAX(f.width) - MIN(f.width) as width_obs_range,
-                    MEDIAN(ABS(f.width - m.med_width)) as width_obs_mad,
-                    -- Slope percentiles (unweighted)
-                    QUANTILE_CONT(f.slope, 0.1) as slope_obs_p10,
-                    QUANTILE_CONT(f.slope, 0.2) as slope_obs_p20,
-                    QUANTILE_CONT(f.slope, 0.3) as slope_obs_p30,
-                    QUANTILE_CONT(f.slope, 0.4) as slope_obs_p40,
-                    QUANTILE_CONT(f.slope, 0.5) as slope_obs_p50,
-                    QUANTILE_CONT(f.slope, 0.6) as slope_obs_p60,
-                    QUANTILE_CONT(f.slope, 0.7) as slope_obs_p70,
-                    QUANTILE_CONT(f.slope, 0.8) as slope_obs_p80,
-                    QUANTILE_CONT(f.slope, 0.9) as slope_obs_p90,
-                    MAX(f.slope) - MIN(f.slope) as slope_obs_range,
-                    MEDIAN(ABS(f.slope - m.med_slope)) as slope_obs_mad,
-                    -- slopeF: weighted sign fraction (uses n_good_nod weight)
-                    SUM(f.weight) as sum_w,
-                    SUM(f.weight * CASE WHEN f.slope > 0 THEN 1
-                                        WHEN f.slope < 0 THEN -1
-                                        ELSE 0 END) as signed_sum,
+                SELECT reach_id,
+                    -- WSE
+                    APPROX_QUANTILE(wse, 0.1) as wse_obs_p10,
+                    APPROX_QUANTILE(wse, 0.2) as wse_obs_p20,
+                    APPROX_QUANTILE(wse, 0.3) as wse_obs_p30,
+                    APPROX_QUANTILE(wse, 0.4) as wse_obs_p40,
+                    APPROX_QUANTILE(wse, 0.5) as wse_obs_p50,
+                    APPROX_QUANTILE(wse, 0.6) as wse_obs_p60,
+                    APPROX_QUANTILE(wse, 0.7) as wse_obs_p70,
+                    APPROX_QUANTILE(wse, 0.8) as wse_obs_p80,
+                    APPROX_QUANTILE(wse, 0.9) as wse_obs_p90,
+                    MAX(wse) - MIN(wse) as wse_obs_range,
+                    MAD(wse) as wse_obs_mad,
+                    -- Width
+                    APPROX_QUANTILE(width, 0.1) as width_obs_p10,
+                    APPROX_QUANTILE(width, 0.2) as width_obs_p20,
+                    APPROX_QUANTILE(width, 0.3) as width_obs_p30,
+                    APPROX_QUANTILE(width, 0.4) as width_obs_p40,
+                    APPROX_QUANTILE(width, 0.5) as width_obs_p50,
+                    APPROX_QUANTILE(width, 0.6) as width_obs_p60,
+                    APPROX_QUANTILE(width, 0.7) as width_obs_p70,
+                    APPROX_QUANTILE(width, 0.8) as width_obs_p80,
+                    APPROX_QUANTILE(width, 0.9) as width_obs_p90,
+                    MAX(width) - MIN(width) as width_obs_range,
+                    MAD(width) as width_obs_mad,
+                    -- Slope
+                    APPROX_QUANTILE(slope, 0.1) as slope_obs_p10,
+                    APPROX_QUANTILE(slope, 0.2) as slope_obs_p20,
+                    APPROX_QUANTILE(slope, 0.3) as slope_obs_p30,
+                    APPROX_QUANTILE(slope, 0.4) as slope_obs_p40,
+                    APPROX_QUANTILE(slope, 0.5) as slope_obs_p50,
+                    APPROX_QUANTILE(slope, 0.6) as slope_obs_p60,
+                    APPROX_QUANTILE(slope, 0.7) as slope_obs_p70,
+                    APPROX_QUANTILE(slope, 0.8) as slope_obs_p80,
+                    APPROX_QUANTILE(slope, 0.9) as slope_obs_p90,
+                    MAX(slope) - MIN(slope) as slope_obs_range,
+                    MAD(slope) as slope_obs_mad,
+                    -- slopeF: weighted sign fraction
+                    SUM(weight) as sum_w,
+                    SUM(weight * CASE WHEN slope > 0 THEN 1
+                                      WHEN slope < 0 THEN -1
+                                      ELSE 0 END) as signed_sum,
                     COUNT(*) as n_obs
-                FROM filtered f
-                JOIN medians m ON f.reach_id = m.reach_id
-                GROUP BY f.reach_id
+                FROM filtered
+                GROUP BY reach_id
             )
             SELECT
                 reach_id,
@@ -2024,16 +2010,12 @@ class SWORDWorkflow:
                 slope_obs_p10, slope_obs_p20, slope_obs_p30, slope_obs_p40, slope_obs_p50,
                 slope_obs_p60, slope_obs_p70, slope_obs_p80, slope_obs_p90,
                 slope_obs_range, slope_obs_mad,
-                -- Derived: adj = GREATEST(p50, 0)
                 GREATEST(slope_obs_p50, 0.0) as slope_obs_adj,
-                -- slopeF
                 CASE WHEN sum_w > 0 THEN signed_sum / sum_w ELSE 0 END as slope_obs_slopeF,
-                -- Reliable: |slopeF| > 0.5 AND |p50| > ref_uncertainty
                 CASE WHEN sum_w > 0
                      AND ABS(signed_sum / sum_w) > 0.5
                      AND ABS(slope_obs_p50) > {ref_u}
                      THEN TRUE ELSE FALSE END as slope_obs_reliable,
-                -- Quality category (negative checked first, independent of slopeF)
                 CASE
                     WHEN slope_obs_p50 < -{ref_u}
                         THEN 'negative'

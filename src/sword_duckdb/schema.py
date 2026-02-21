@@ -994,10 +994,35 @@ def add_swot_obs_columns(conn) -> bool:
     def _drop_legacy_columns(table_name: str, legacy_cols: list[str]) -> None:
         nonlocal changed
         existing = _get_existing(table_name)
-        for col in legacy_cols:
-            if col.lower() in existing:
-                conn.execute(f"ALTER TABLE {table_name} DROP COLUMN {col}")
-                changed = True
+        cols_to_drop = [c for c in legacy_cols if c.lower() in existing]
+        if not cols_to_drop:
+            return
+        # Drop ALL dependent views and indexes before ALTER TABLE
+        views = conn.execute(
+            "SELECT view_name, sql FROM duckdb_views() WHERE NOT internal"
+        ).fetchall()
+        dropped_views = []
+        for vname, vsql in views:
+            if table_name in vsql.lower():
+                conn.execute(f"DROP VIEW IF EXISTS {vname}")
+                dropped_views.append((vname, vsql))
+        indexes = conn.execute(
+            f"SELECT index_name, sql FROM duckdb_indexes() "
+            f"WHERE table_name = '{table_name}'"
+        ).fetchall()
+        dropped_indexes = []
+        for iname, isql in indexes:
+            if isql:
+                conn.execute(f"DROP INDEX IF EXISTS {iname}")
+                dropped_indexes.append((iname, isql))
+        for col in cols_to_drop:
+            conn.execute(f"ALTER TABLE {table_name} DROP COLUMN {col}")
+            changed = True
+        # Recreate indexes and views
+        for iname, isql in dropped_indexes:
+            conn.execute(isql)
+        for vname, vsql in dropped_views:
+            conn.execute(vsql)
 
     if _table_exists("nodes"):
         _add_columns_to_table("nodes", nodes_swot_columns)

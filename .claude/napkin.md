@@ -47,6 +47,9 @@
 
 | 2026-02-20 | self | Linter stripped column_order imports from sword_class.py and export.py between separate Edit calls | For export.py: used inline `from .column_order import reorder_columns` inside each function body. For sword_class.py: re-added the import in a later task. Best approach: add import + usage in the same Edit call, or use inline imports in function bodies. |
 
+| 2026-02-21 | self | DuckDB APPROX_QUANTILE t-digest: ~3KB/digest. 18 quantiles × 2M groups = ~100GB hash state. threads=4 + 64GB OOM'd at 91GB RSS. threads=4 + 32GB also OOM'd. | Sub-chunk ID ranges (27 chunks) + threads=2 + memory_limit=32GB works. RSS stabilizes ~65%. MAD from percentiles: `(p80-p20)*0.7413` |
+| 2026-02-21 | self | DuckDB `memory_limit` only controls buffer pool. RSS = buffer_pool + hash_tables + mmap'd parquet. threads=4 pushes RSS to ~90GB on 128GB Mac → OOM. | threads=2 + memory_limit=32GB → ~87GB RSS, stable. Don't exceed ~70% RSS on macOS (Jetsam kills). |
+
 ## Patterns That Work
 - `SWORDWorkflow.__new__(SWORDWorkflow)` creates uninitialized workflow for testing aggregation methods in isolation with raw DuckDB connections
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
