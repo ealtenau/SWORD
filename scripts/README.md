@@ -36,6 +36,7 @@ Standalone scripts organized by purpose.
 | reimport_fixes.py | Reimport lint fixes exported from topology_reviewer.py into another database |
 | check_reviewer_setup.py | Verify all dependencies and data are ready for the SWORD QA Reviewer |
 | load_from_duckdb.py | Export SWORD DuckDB data into PostgreSQL with PostGIS geometry support |
+| check_roadmap_sync.sh | Validate roadmap milestone counts/due date against live GitHub issue + milestone data |
 
 ## sql/
 

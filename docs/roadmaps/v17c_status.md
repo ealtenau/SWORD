@@ -241,28 +241,41 @@ The correction pipeline uses v17c routing (`is_mainstem_edge`) to preserve mains
 - Region-level advisory locking
 
 ### Related Issues
-- #77, #78, #80, #120: Implemented (code exists, issues open for testing)
+- #77, #78, #80, #120: CLOSED (PostgreSQL backend, schema, and sync delivered)
+- #121: OPEN (QGIS integration guide with PostGIS)
+- #33: OPEN (essential schema columns)
 
 **Question for meeting**: Ready for undergrad QGIS editing? Timeline?
 
 ---
 
-## GitHub Milestone: v17c-april-2026
+## GitHub Milestone: v17c-april-2026 (as of 2026-02-21)
 
 | Status | Count |
 |--------|-------|
-| Closed | 17 |
-| Open | ~30 |
+| Closed | 64 |
+| Open | 20 |
+| Due date | 2026-03-31 |
 
 ### Priority Open Issues
 
 | Priority | Issue | Title |
 |----------|-------|-------|
-| P0 | #87 | Topology errors |
-| P0 | #101 | Error-level lint |
-| P1 | #83 | Mainstem lint |
-| P1 | #78, #77 | PostgreSQL |
-| P1 | #72, #71, #70 | Validation |
+| P1 | #33 | Add essential new columns only |
+| P1 | #15 | Recalculate stream_order |
+| P1 | #17 | Fix island-in-lake misclassification |
+| P1 | #19 | Update lakeflag for misclassified reaches |
+| P1 | #121 | QGIS integration guide with PostGIS |
+| P2 | #164 | Port MERIT Hydro raster ingestion from legacy code |
+| P2 | #127 | Integrate DL-GROD and add obstruction lint checks |
+| P2 | #18 | Document lake sandwich reaches (3,167) |
+| P2 | #42 | Generate validation report |
+
+### Recently Closed Priority Work
+
+- #87, #101, #83: Topology and lint closure set complete
+- #78, #77, #80, #120: PostgreSQL infrastructure closure set complete
+- #72, #71, #70: Validation closure set complete
 
 ---
 
