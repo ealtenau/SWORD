@@ -778,3 +778,27 @@ class TestPathFreqRepair:
         assert pf_map.get(orphan_id, 0) > 0, (
             f"Orphan reach {orphan_id} should have path_freq > 0 after repair"
         )
+
+
+class TestMainSide:
+    """Test main_side reconstruction from topology and path_freq."""
+
+    def test_values_valid(self, sword_writable):
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_main_side(dry_run=True)
+        if result.get("status") == "skipped":
+            pytest.fail("main_side still a stub")
+        assert set(result["values"]).issubset({0, 1, 2})
+
+    def test_majority_zero(self, sword_writable):
+        import numpy as np
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_main_side(dry_run=True)
+        if result.get("status") == "skipped":
+            pytest.fail("main_side still a stub")
+        vals = np.array(result["values"])
+        assert (vals == 0).sum() / len(vals) > 0.80

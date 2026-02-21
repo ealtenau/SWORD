@@ -3767,39 +3767,82 @@ class ReconstructionEngine:
         dry_run: bool = False,
     ) -> Dict[str, Any]:
         """
-        STUB: Preserve existing main_side values.
+        Reconstruct main_side from topology and path_freq.
 
-        main_side indicates channel classification:
-        - 0 = Main network (94.96% of reaches)
-        - 1 = Side network / anabranch (2.73%)
-        - 2 = Secondary outlet on main network (2.30%)
-
-        CRITICAL: The previous implementation was WRONG:
-        - It output only 1 and 2, NEVER 0
-        - It incorrectly labeled 1="main" and 2="side"
-        - But PDD defines: 0=main, 1=side, 2=secondary outlet
-
-        Original algorithm (from path construction):
-        1. Start at outlets, traverse upstream
-        2. At bifurcations, higher facc/path_freq branch = main (main_side=0)
-        3. Lower branch = side channel (main_side=1)
-        4. Secondary outlets (multiple paths to ocean) = main_side=2
-
-        This stub preserves existing values since reconstruction requires
-        full path traversal algorithm not currently implemented.
+        0 = Main channel (highest path_freq at bifurcations)
+        1 = Side channel (lower path_freq at bifurcations)
+        2 = Secondary outlet (outlet that isn't primary of its network)
         """
-        logger.warning(
-            "reach.main_side reconstruction requires path traversal algorithm. "
-            "Preserving existing values."
-        )
+        logger.info("Reconstructing reach.main_side from topology + path_freq")
 
-        # Return empty result to preserve existing values
-        return {
-            "status": "skipped",
-            "reason": "main_side requires path traversal - preserving existing values",
-            "updated": 0,
-            "dry_run": dry_run,
-        }
+        topology_df = self._conn.execute(
+            "SELECT reach_id, direction, neighbor_reach_id "
+            "FROM reach_topology WHERE region = ?",
+            [self._region],
+        ).fetchdf()
+
+        reaches_df = self._conn.execute(
+            "SELECT reach_id, path_freq, facc, network FROM reaches WHERE region = ?",
+            [self._region],
+        ).fetchdf()
+
+        pf_map = dict(zip(reaches_df["reach_id"], reaches_df["path_freq"]))
+        facc_map = dict(zip(reaches_df["reach_id"], reaches_df["facc"]))
+        network_map = dict(zip(reaches_df["reach_id"], reaches_df["network"]))
+        all_reach_ids = set(reaches_df["reach_id"])
+
+        downstream_map: Dict[int, list] = {}
+        for _, row in topology_df.iterrows():
+            if row["direction"] == "down":
+                downstream_map.setdefault(row["reach_id"], []).append(
+                    row["neighbor_reach_id"]
+                )
+
+        outlets = all_reach_ids - set(downstream_map.keys())
+
+        # Primary outlet per network = highest facc
+        primary_outlets: Dict[Any, int] = {}
+        for oid in outlets:
+            net = network_map.get(oid, -1)
+            if net not in primary_outlets or facc_map.get(oid, 0) > facc_map.get(
+                primary_outlets[net], 0
+            ):
+                primary_outlets[net] = oid
+
+        main_side = {rid: 0 for rid in all_reach_ids}
+
+        # Secondary outlets
+        for oid in outlets:
+            net = network_map.get(oid, -1)
+            if primary_outlets.get(net) != oid:
+                main_side[oid] = 2
+
+        # Side channels: at bifurcations, lower path_freq downstream = side
+        for rid, dn_neighbors in downstream_map.items():
+            if len(dn_neighbors) > 1:
+                sorted_dn = sorted(
+                    dn_neighbors,
+                    key=lambda n: pf_map.get(n, 0),
+                    reverse=True,
+                )
+                for side_reach in sorted_dn[1:]:
+                    main_side[side_reach] = 1
+
+        if reach_ids is not None:
+            main_side = {k: v for k, v in main_side.items() if k in reach_ids}
+
+        result_df = self._conn.execute(
+            "SELECT reach_id FROM reaches WHERE region = ?"
+            + (
+                " AND reach_id IN (" + ",".join(["?"] * len(reach_ids)) + ")"
+                if reach_ids
+                else ""
+            ),
+            [self._region] + (list(reach_ids) if reach_ids else []),
+        ).fetchdf()
+        result_df["main_side"] = result_df["reach_id"].map(main_side)
+
+        return self._update_reach_attribute("main_side", result_df, dry_run)
 
     def _reconstruct_reach_obstr_type(
         self,
