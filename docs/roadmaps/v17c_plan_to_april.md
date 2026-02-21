@@ -159,6 +159,13 @@
 
 All work tracked in milestone: **v17c-april-2026**
 
-Filter: `milestone:"v17c-april-2026" is:open sort:priority`
+Status snapshot (2026-02-21):
+- Open: 20
+- Closed: 64
+- Due date: 2026-03-31
+
+Primary filter: `milestone:"v17c-april-2026" is:open sort:updated-desc`
+
+Sync check: `scripts/maintenance/check_roadmap_sync.sh`
 
 When closing issues, reference this plan in comments.

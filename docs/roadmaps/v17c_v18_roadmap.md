@@ -4,8 +4,8 @@
 
 | Version | Deadline | Scope | Issues |
 |---------|----------|-------|--------|
-| **v17c** | 1-2 months (JPL) | Attributes only, no geometry changes | 39 |
-| **v18** | 6+ months | Geometry updates, new reaches, ID changes | 25 |
+| **v17c** | 1-2 months (JPL) | Attributes only, no geometry changes | 20 open / 64 closed (`v17c-april-2026`) |
+| **v18** | 6+ months | Geometry updates, new reaches, ID changes | 25 open (`label:v18-deferred`) |
 
 ---
 
@@ -22,18 +22,12 @@
 - No reach ID changes
 - No dtype optimization
 
-### v17c Milestones
+### v17c Milestones (Current Tracking)
 
-| Milestone | Issues | Description |
-|-----------|--------|-------------|
-| v17c-verify | 7 | Verify pipeline outputs before use |
-| v17c-topology | 6 | facc fix, stream_order, path_freq recalc |
-| v17c-lake-type | 4 | Island/lake misclassification fixes |
-| v17c-pipeline | 8 | Import 20+ new columns (6 regions) |
-| v17c-swot | 4 | SWOT observation statistics |
-| v17c-schema | 1 | Essential new columns |
-| v17c-export | 6 | DuckDB, GPKG, NetCDF, Parquet exports |
-| v17c-docs | 3 | Release notes, data dictionary |
+| Milestone | State | Open | Closed | Description |
+|-----------|-------|------|--------|-------------|
+| v17c-april-2026 | Open | 20 | 64 | Active consolidated delivery milestone (due 2026-03-31) |
+| v17c-verify/topology/lake-type/pipeline/swot/schema/export/docs | Closed | 0 | n/a | Legacy split milestones; retained for history |
 
 ### v17c New Columns
 
@@ -76,10 +70,10 @@
 - **Source data refresh** - Latest MERIT Hydro, updated GROD
 - **ID mapping** - old_reach_id → new_reach_id tracking
 
-### v18 Milestones
+### v18 Planned Workstreams (Deferred)
 
-| Milestone | Issues | Description |
-|-----------|--------|-------------|
+| Workstream | Planned Issues | Description |
+|-----------|----------------|-------------|
 | v18-planning | 5 | Scope, ID mapping design, legacy code |
 | v18-sources | 5 | MERIT Hydro, GRWL v2, GROD updates |
 | v18-imagery | 6 | Sentinel-2 centerline pipeline |
@@ -100,7 +94,11 @@
 ## Tracking
 
 - **Issues**: https://github.com/ealtenau/SWORD/issues
-- **Project Board**: https://github.com/users/jameshgrn/projects/1
+- **v17c Filter**: `milestone:"v17c-april-2026" is:open`
+- **v18 Filter**: `label:v18-deferred is:open`
+- **Project Board**: https://github.com/users/jameshgrn/projects/1 (verified 2026-02-21)
+- **Project Board Scope Recovery**: `gh auth refresh -s read:project -s project` (required for `gh project` commands)
+- **Roadmap Sync Check**: `scripts/maintenance/check_roadmap_sync.sh`
 - **v17c Branch**: `v17c-updates`
 - **v18 Branch**: `v18-planning`
 
