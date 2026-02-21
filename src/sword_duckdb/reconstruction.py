@@ -3891,8 +3891,10 @@ class ReconstructionEngine:
         """
         Reconstruct reach path_order (order within path from outlet).
 
-        This is computed during path analysis - reaches are ordered
-        from outlet (path_order=1) upstream.
+        path_order: position within path from outlet (1) upstream.
+        Legacy (path_variables_nc.py) derived from shortest-path traces.
+        This approximation partitions by path_freq and orders by dist_out,
+        which is equivalent for non-branching segments.
         """
         logger.info("Reconstructing reach.path_order from topology")
 

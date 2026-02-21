@@ -802,3 +802,37 @@ class TestMainSide:
             pytest.fail("main_side still a stub")
         vals = np.array(result["values"])
         assert (vals == 0).sum() / len(vals) > 0.80
+
+
+class TestPathOrder:
+    """Test path_order reconstruction."""
+
+    def test_starts_at_one(self, sword_writable):
+        import numpy as np
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_path_order(dry_run=True)
+        vals = np.array(result["values"])
+        assert vals.min() >= 1
+
+    def test_monotonic_with_dist_out(self, sword_writable):
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+        result = engine._reconstruct_reach_path_order(dry_run=True)
+
+        dist_outs = sword_writable._db.execute(
+            "SELECT reach_id, dist_out, path_freq FROM reaches WHERE region = 'NA'"
+        ).fetchdf()
+        po_map = dict(zip(result["entity_ids"], result["values"]))
+        dist_outs["path_order"] = dist_outs["reach_id"].map(po_map)
+
+        violations = 0
+        for pf, group in dist_outs.groupby("path_freq"):
+            if len(group) < 2 or pf <= 0:
+                continue
+            sorted_g = group.sort_values("dist_out")
+            if not sorted_g["path_order"].is_monotonic_increasing:
+                violations += 1
+        assert violations == 0, f"{violations} groups have non-monotonic path_order"
