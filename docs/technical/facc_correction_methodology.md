@@ -91,7 +91,7 @@ The pipeline targets specific violations detected by our [lint framework](../src
 | **T003** | Facc monotonicity — downstream facc < upstream facc on non-bifurcation edges |
 | **F006** | Junction conservation — facc < sum(upstream facc) at junctions with 2+ inputs |
 | **F007** | Bifurcation balance — children facc don't sum to parent facc |
-| **F012** | Non-negative incremental area — facc < sum(upstream facc) at any reach |
+| **F012** | Non-negative incremental area — removed, merged into F006 (same condition) |
 
 ### 3.2 Pipeline Architecture Overview
 

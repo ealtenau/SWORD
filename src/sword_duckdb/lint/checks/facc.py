@@ -11,8 +11,10 @@ Checks:
   F009 - facc_quality tag coverage — INFO
   F010 - junction-raise drop (raised junction → unchanged downstream) — INFO
   F011 - 1:1 link monotonicity (facc drop on single-upstream links) — INFO
-  F012 - incremental area non-negativity (junctions only) — ERROR
 Removed:
+  F012 - incremental area non-negativity — removed, exact duplicate of F006
+         (same scope, threshold, condition). F006 now includes incremental_area
+         output column.
   F013 - incremental area Tukey IQR outlier — removed because Tukey IQR on
          fat-tailed drainage-area distribution flags 6% as "outliers" — just
          the natural tail, not meaningful signal.
@@ -209,8 +211,18 @@ def check_facc_conservation(
     Check conservation at JUNCTIONS (2+ upstream reaches).
 
     This is the core physics check: at a confluence, total drainage area
-    must be >= sum of incoming branches. Deficits indicate D8 cloning or
-    topology errors. Threshold defaults to 1 km² to ignore FP rounding.
+    must be >= sum of incoming branches (non-negative incremental area).
+    Deficits indicate D8 cloning or topology errors.
+
+    Threshold defaults to 1 km² to absorb floating-point noise from
+    junction floor enforcement.
+
+    Scope: junctions only (n_upstream >= 2). Excluded by design:
+      - Bifurcation children: child facc < parent is correct (width-split).
+      - 1:1 links: downstream < upstream is D8 raster noise (flagged by T003).
+
+    Previously also covered by F012 (incremental_area_nonneg), which was
+    removed as an exact duplicate.
     """
     min_deficit = threshold if threshold is not None else 1.0
     where_clause = f"AND r.region = '{region}'" if region else ""
@@ -230,8 +242,9 @@ def check_facc_conservation(
     SELECT r.reach_id, r.region, r.river_name, r.x, r.y,
            r.facc, uf.upstream_facc_sum,
            uf.upstream_facc_sum - r.facc as conservation_deficit,
+           r.facc - uf.upstream_facc_sum as incremental_area,
            100.0 * (uf.upstream_facc_sum - r.facc) / uf.upstream_facc_sum as deficit_pct,
-           uf.n_upstream, r.width, r.stream_order
+           uf.n_upstream, r.width, r.stream_order, r.n_rch_down
     FROM reaches r
     JOIN upstream_facc uf ON r.reach_id = uf.reach_id AND r.region = uf.region
     WHERE r.facc > 0 AND r.facc != -9999
@@ -544,103 +557,6 @@ def check_junction_raise_drop(
     )
 
 
-# ---------------------------------------------------------------------------
-# Integrator-derived checks (F012, F013)
-#
-# Back-inferred from DrainageAreaFix/ CVXPY integrator constraints:
-#   x >= 0  →  F012 (incremental area non-negativity)
-#   Tukey IQR outlier downweighting  →  F013 (correction magnitude outlier)
-# ---------------------------------------------------------------------------
-
-
-@register_check(
-    "F012",
-    Category.ATTRIBUTES,
-    Severity.ERROR,
-    "Incremental area non-negativity (facc >= sum upstream facc at junctions)",
-    default_threshold=1.0,
-)
-def check_incremental_area_nonneg(
-    conn: duckdb.DuckDBPyConnection,
-    region: Optional[str] = None,
-    threshold: Optional[float] = None,
-) -> CheckResult:
-    """
-    Check that incremental drainage area is non-negative at junctions.
-
-    For every reach with 2+ upstream neighbors, compute:
-        incr_area = facc - sum(upstream facc)
-    Flag if incr_area < -threshold.
-
-    Scope: junctions only (n_upstream >= 2). Excluded by design:
-      - Bifurcation children: child facc < parent is correct (width-split).
-      - 1:1 links: downstream < upstream is D8 raster noise (flagged by T003).
-
-    Threshold default 1.0 km² (same as F006) absorbs floating-point noise
-    from junction floor enforcement.
-    """
-    epsilon = threshold if threshold is not None else 1.0
-    where_clause = f"AND r.region = '{region}'" if region else ""
-
-    query = f"""
-    WITH upstream_facc AS (
-        SELECT rt.reach_id, rt.region,
-               SUM(r_up.facc) as upstream_facc_sum,
-               COUNT(*) as n_upstream
-        FROM reach_topology rt
-        JOIN reaches r_up ON rt.neighbor_reach_id = r_up.reach_id
-            AND rt.region = r_up.region
-        WHERE rt.direction = 'up'
-          AND r_up.facc > 0 AND r_up.facc != -9999
-        GROUP BY rt.reach_id, rt.region
-    )
-    SELECT r.reach_id, r.region, r.river_name, r.x, r.y,
-           r.facc, uf.upstream_facc_sum,
-           r.facc - uf.upstream_facc_sum as incremental_area,
-           uf.n_upstream, r.width, r.stream_order,
-           r.n_rch_down
-    FROM reaches r
-    JOIN upstream_facc uf ON r.reach_id = uf.reach_id AND r.region = uf.region
-    WHERE r.facc > 0 AND r.facc != -9999
-      AND uf.n_upstream >= 2
-      AND (r.facc - uf.upstream_facc_sum) < -{epsilon}
-      {where_clause}
-    ORDER BY (r.facc - uf.upstream_facc_sum) ASC
-    """
-
-    issues = conn.execute(query).fetchdf()
-
-    total_query = f"""
-    SELECT COUNT(DISTINCT uf.reach_id)
-    FROM (
-        SELECT rt.reach_id, rt.region, COUNT(*) as n_upstream
-        FROM reach_topology rt
-        JOIN reaches r_up ON rt.neighbor_reach_id = r_up.reach_id
-            AND rt.region = r_up.region
-        WHERE rt.direction = 'up'
-          AND r_up.facc > 0 AND r_up.facc != -9999
-        GROUP BY rt.reach_id, rt.region
-        HAVING COUNT(*) >= 2
-    ) uf
-    JOIN reaches r ON uf.reach_id = r.reach_id AND uf.region = r.region
-    WHERE r.facc > 0 AND r.facc != -9999
-        {where_clause}
-    """
-    total = conn.execute(total_query).fetchone()[0]
-
-    return CheckResult(
-        check_id="F012",
-        name="incremental_area_nonneg",
-        severity=Severity.ERROR,
-        passed=len(issues) == 0,
-        total_checked=total,
-        issues_found=len(issues),
-        issue_pct=100 * len(issues) / total if total > 0 else 0,
-        details=issues,
-        description=(
-            f"Junctions where facc < sum(upstream facc) - {epsilon} km² "
-            f"(negative incremental area). Bifurc children and 1:1 links "
-            f"excluded (covered by T003)."
-        ),
-        threshold=epsilon,
-    )
+# F012 (incremental_area_nonneg) was removed — exact duplicate of F006.
+# Both checked facc < sum(upstream) - 1km² at junctions with 2+ upstream.
+# F006 now includes the incremental_area output column from F012.

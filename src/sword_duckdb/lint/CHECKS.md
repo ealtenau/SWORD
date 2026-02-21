@@ -31,8 +31,6 @@ This document provides detailed documentation for each lint check in the SWORD l
   - [G016: node_spacing](#g016-node_spacing)
   - [G017: cross_reach_nodes](#g017-cross_reach_nodes)
   - [G018: dist_out_vs_reach_length](#g018-dist_out_vs_reach_length)
-  - [G019: confluence_geometry](#g019-confluence_geometry)
-  - [G020: bifurcation_geometry](#g020-bifurcation_geometry)
   - [G021: reach_overlap](#g021-reach_overlap)
 - [Classification Checks (C0xx)](#classification-checks-c0xx)
   - [C001: lake_sandwich](#c001-lake_sandwich)
@@ -761,27 +759,7 @@ For each downstream connection, checks `|r1.dist_out - r2.dist_out - r1.reach_le
 
 ---
 
-### G019: confluence_geometry
-
-| Property | Value |
-|----------|-------|
-| **Severity** | INFO |
-| **Default Threshold** | 500.0 (meters) |
-| **Category** | Geometry |
-
-At confluences (`n_rch_up >= 2`): checks that upstream reach endpoints are within 500m of the downstream reach endpoints. Uses LEAST-of-4-distances pattern (robust to digitization direction). Requires spatial extension.
-
----
-
-### G020: bifurcation_geometry
-
-| Property | Value |
-|----------|-------|
-| **Severity** | INFO |
-| **Default Threshold** | 500.0 (meters) |
-| **Category** | Geometry |
-
-Mirror of G019 at bifurcations (`n_rch_down >= 2`). Checks that downstream reach endpoints are within 500m of the upstream reach endpoints. Requires spatial extension.
+> **Removed checks:** G019 (confluence_geometry) and G020 (bifurcation_geometry) were removed as strict subsets of G012 (endpoint_alignment). G012 checks ALL downstream pairs, which includes confluences and bifurcations.
 
 ---
 
@@ -1087,8 +1065,6 @@ Checks that SWOT-observed slope mean is below 50 m/km. Extremely high slopes are
 | G016 | threshold | 2.0 | ratio | Max node_length / mean ratio |
 | G017 | threshold | 50.0 | meters | Min dist before cross-reach check |
 | G018 | threshold | 0.2 | ratio | Max dist_out gap vs reach_length |
-| G019 | threshold | 500.0 | meters | Max confluence endpoint gap |
-| G020 | threshold | 500.0 | meters | Max bifurcation endpoint gap |
 
 Override thresholds via CLI:
 ```bash
