@@ -10,6 +10,7 @@ peak memory proportional to one region's data (~10M rows) not all regions.
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -45,7 +46,7 @@ REACH_RANGES = {
 }
 
 
-def detect_columns(con, sample_dir, table_type):
+def detect_columns(con, sample_dir):
     """Detect columns from one parquet file."""
     sample = next(
         (
@@ -91,11 +92,10 @@ def process_nodes(con, swot_path, region, id_min, id_max):
     data rather than the entire region.
     """
     nodes_dir = swot_path / "nodes"
-    colnames = detect_columns(con, nodes_dir, "nodes")
+    colnames = detect_columns(con, nodes_dir)
     if not colnames:
         return 0, 0
     where_clause, wse_col = build_node_filter_sql(colnames)
-    range_filter = f"CAST(node_id AS BIGINT) BETWEEN {id_min} AND {id_max}"
 
     con.execute("DROP TABLE IF EXISTS _node_agg")
     con.execute("""
@@ -117,8 +117,6 @@ def process_nodes(con, swot_path, region, id_min, id_max):
     # With 27 sub-chunks, each has ~70K groups → ~3.6GB hash table state
     n_subchunks = 27
     sub_size = (id_max - id_min + 1) // n_subchunks
-
-    import time
 
     total_obs = 0
     t0_all = time.monotonic()
@@ -151,8 +149,8 @@ def process_nodes(con, swot_path, region, id_min, id_max):
                     ) filtered
                     GROUP BY node_id
                 """)
-            except Exception:
-                pass  # No files for this continent
+            except duckdb.IOException:
+                continue  # No parquet files match this continent glob
 
         elapsed = time.monotonic() - t0
         cnt = con.execute("SELECT SUM(n_obs) FROM _node_agg").fetchone()[0] or 0
@@ -215,11 +213,12 @@ def process_nodes(con, swot_path, region, id_min, id_max):
         con.execute("DROP TABLE _node_agg")
         con.execute("ALTER TABLE _node_merged RENAME TO _node_agg")
 
-    # Derive MAD from percentiles
+    # Derive MAD from percentiles (assuming normality):
+    #   MAD = 0.6745σ, p80-p20 = 1.6832σ → factor = 0.6745/1.6832 ≈ 0.4010
     con.execute("""
         UPDATE _node_agg SET
-            wse_obs_mad = (wse_obs_p80 - wse_obs_p20) * 0.7413,
-            width_obs_mad = (width_obs_p80 - width_obs_p20) * 0.7413
+            wse_obs_mad = (wse_obs_p80 - wse_obs_p20) * 0.4010,
+            width_obs_mad = (width_obs_p80 - width_obs_p20) * 0.4010
     """)
     print(f"    {total_obs} obs total, MAD derived", flush=True)
 
@@ -262,12 +261,11 @@ def process_nodes(con, swot_path, region, id_min, id_max):
 def process_reaches(con, swot_path, region, id_min, id_max):
     """Aggregate reach observations directly from parquet, one continent at a time."""
     reaches_dir = swot_path / "reaches"
-    colnames = detect_columns(con, reaches_dir, "reaches")
+    colnames = detect_columns(con, reaches_dir)
     if not colnames:
         return 0, 0
     where_clause = build_reach_filter_sql(colnames)
     ref_u = SLOPE_REF_UNCERTAINTY
-    range_filter = f"CAST(reach_id AS BIGINT) BETWEEN {id_min} AND {id_max}"
 
     con.execute("DROP TABLE IF EXISTS _reach_pct")
     con.execute("""
@@ -292,8 +290,6 @@ def process_reaches(con, swot_path, region, id_min, id_max):
     # Sub-chunk reach IDs to limit t-digest memory
     n_subchunks = 27
     sub_size = (id_max - id_min + 1) // n_subchunks
-
-    import time
 
     total_obs = 0
     t0_all = time.monotonic()
@@ -324,8 +320,8 @@ def process_reaches(con, swot_path, region, id_min, id_max):
                     WHERE {sub_filter} AND {where_clause}
                     GROUP BY reach_id
                 """)
-            except Exception:
-                pass
+            except duckdb.IOException:
+                continue  # No parquet files match this continent glob
 
         elapsed = time.monotonic() - t0
         cnt = con.execute("SELECT SUM(n_obs) FROM _reach_pct").fetchone()[0] or 0
@@ -340,7 +336,11 @@ def process_reaches(con, swot_path, region, id_min, id_max):
         con.execute("DROP TABLE IF EXISTS _reach_pct")
         return 0, 0
 
-    # Merge multi-continent reaches (weighted average of percentiles)
+    # Merge multi-continent reaches: weighted average of per-continent percentiles.
+    # This is an approximation — proper merging would require raw observations,
+    # which is infeasible at this scale (~413M obs). Affects <1% of reaches.
+    # MAX(range) also underestimates true combined range since per-continent
+    # extremes may differ; tracking separate MIN/MAX not worth the complexity.
     n_dupes = con.execute("""
         SELECT COUNT(*) FROM (
             SELECT reach_id FROM _reach_pct GROUP BY reach_id HAVING COUNT(*) > 1
@@ -392,21 +392,22 @@ def process_reaches(con, swot_path, region, id_min, id_max):
         con.execute("ALTER TABLE _reach_merged RENAME TO _reach_pct")
 
     # Derive MAD + slope quality from percentiles
+    # MAD factor: 0.6745/1.6832 ≈ 0.4010 (normality assumption, p80-p20 spread)
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE _reach_agg AS
         SELECT reach_id,
             wse_obs_p10, wse_obs_p20, wse_obs_p30, wse_obs_p40, wse_obs_p50,
             wse_obs_p60, wse_obs_p70, wse_obs_p80, wse_obs_p90,
             wse_obs_range,
-            (wse_obs_p80 - wse_obs_p20) * 0.7413 as wse_obs_mad,
+            (wse_obs_p80 - wse_obs_p20) * 0.4010 as wse_obs_mad,
             width_obs_p10, width_obs_p20, width_obs_p30, width_obs_p40, width_obs_p50,
             width_obs_p60, width_obs_p70, width_obs_p80, width_obs_p90,
             width_obs_range,
-            (width_obs_p80 - width_obs_p20) * 0.7413 as width_obs_mad,
+            (width_obs_p80 - width_obs_p20) * 0.4010 as width_obs_mad,
             slope_obs_p10, slope_obs_p20, slope_obs_p30, slope_obs_p40, slope_obs_p50,
             slope_obs_p60, slope_obs_p70, slope_obs_p80, slope_obs_p90,
             slope_obs_range,
-            (slope_obs_p80 - slope_obs_p20) * 0.7413 as slope_obs_mad,
+            (slope_obs_p80 - slope_obs_p20) * 0.4010 as slope_obs_mad,
             GREATEST(slope_obs_p50, 0.0) as slope_obs_adj,
             CASE WHEN sum_w > 0 THEN signed_sum / sum_w ELSE 0 END as slope_obs_slopeF,
             CASE WHEN sum_w > 0 AND ABS(signed_sum / sum_w) > 0.5
@@ -422,10 +423,7 @@ def process_reaches(con, swot_path, region, id_min, id_max):
         FROM _reach_pct
     """)
 
-    try:
-        con.execute("INSTALL spatial; LOAD spatial;")
-    except Exception:
-        pass
+    con.execute("INSTALL spatial; LOAD spatial;")
     rtrees = con.execute(
         "SELECT index_name, sql FROM duckdb_indexes() "
         "WHERE sql LIKE '%RTREE%' AND table_name = 'reaches'"

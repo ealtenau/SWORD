@@ -998,12 +998,18 @@ def add_swot_obs_columns(conn) -> bool:
         if not cols_to_drop:
             return
         # Drop ALL dependent views and indexes before ALTER TABLE
+        # Match views that reference this table via FROM/JOIN (not just substring)
+        import re
+
+        table_pat = re.compile(
+            rf"\b(?:FROM|JOIN)\s+{re.escape(table_name)}\b", re.IGNORECASE
+        )
         views = conn.execute(
             "SELECT view_name, sql FROM duckdb_views() WHERE NOT internal"
         ).fetchall()
         dropped_views = []
         for vname, vsql in views:
-            if table_name in vsql.lower():
+            if table_pat.search(vsql):
                 conn.execute(f"DROP VIEW IF EXISTS {vname}")
                 dropped_views.append((vname, vsql))
         indexes = conn.execute(
