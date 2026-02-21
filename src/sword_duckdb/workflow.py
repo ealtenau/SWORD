@@ -1788,7 +1788,11 @@ class SWORDWorkflow:
                 f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1"
             ).df()
             colnames = set(c.lower() for c in sample_df.columns.tolist())
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                f"Could not sample parquet columns from {glob_pattern}: {e}. "
+                "Optional quality filters (dark_frac, xtrack, ice) disabled."
+            )
             colnames = set()
 
         where_clause, wse_col = build_node_filter_sql(colnames)
@@ -1877,8 +1881,24 @@ class SWORDWorkflow:
               {region_clause}
         """
 
-        result = conn.execute(update_sql)
-        nodes_updated = result.fetchone()[0] if result else 0
+        # RTREE indexes must be dropped before UPDATE (DuckDB segfault)
+        try:
+            conn.execute("INSTALL spatial; LOAD spatial;")
+        except Exception:
+            pass
+        rtree_indexes = conn.execute(
+            "SELECT index_name, table_name, sql FROM duckdb_indexes() "
+            "WHERE sql LIKE '%RTREE%' AND table_name = 'nodes'"
+        ).fetchall()
+        for idx_name, _, _ in rtree_indexes:
+            conn.execute(f'DROP INDEX "{idx_name}"')
+
+        try:
+            result = conn.execute(update_sql)
+            nodes_updated = result.fetchone()[0] if result else 0
+        finally:
+            for _, _, idx_sql in rtree_indexes:
+                conn.execute(idx_sql)
 
         # Clean up temp table
         conn.execute("DROP TABLE IF EXISTS node_obs_agg")
@@ -1918,7 +1938,11 @@ class SWORDWorkflow:
                 f"SELECT * FROM read_parquet('{glob_pattern}', union_by_name=true) LIMIT 1"
             ).df()
             colnames = set(c.lower() for c in sample_df.columns.tolist())
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                f"Could not sample parquet columns from {glob_pattern}: {e}. "
+                "Optional quality filters (dark_frac, xtrack, ice) disabled."
+            )
             colnames = set()
 
         where_clause = build_reach_filter_sql(colnames)
@@ -1930,7 +1954,7 @@ class SWORDWorkflow:
                 SELECT
                     CAST(reach_id AS BIGINT) as reach_id,
                     wse, width, slope,
-                    COALESCE(n_good_nod, 1) as weight
+                    COALESCE(n_good_nod, 1) as weight  -- NULL → 1 (equal weight if col absent)
                 FROM read_parquet('{glob_pattern}', union_by_name=true)
                 WHERE {where_clause}
             ),
@@ -2009,15 +2033,13 @@ class SWORDWorkflow:
                      AND ABS(signed_sum / sum_w) > 0.5
                      AND ABS(slope_obs_p50) > {ref_u}
                      THEN TRUE ELSE FALSE END as slope_obs_reliable,
-                -- Quality category
+                -- Quality category (negative checked first, independent of slopeF)
                 CASE
                     WHEN slope_obs_p50 < -{ref_u}
-                         AND sum_w > 0 AND ABS(signed_sum / sum_w) > 0.5
                         THEN 'negative'
                     WHEN ABS(slope_obs_p50) <= {ref_u}
                         THEN 'below_ref_uncertainty'
                     WHEN sum_w > 0 AND ABS(signed_sum / sum_w) <= 0.5
-                         AND ABS(slope_obs_p50) > {ref_u}
                         THEN 'high_uncertainty'
                     ELSE 'reliable'
                 END as slope_obs_quality,
@@ -2082,8 +2104,24 @@ class SWORDWorkflow:
               {region_clause}
         """
 
-        result = conn.execute(update_sql)
-        reaches_updated = result.fetchone()[0] if result else 0
+        # RTREE indexes must be dropped before UPDATE (DuckDB segfault)
+        try:
+            conn.execute("INSTALL spatial; LOAD spatial;")
+        except Exception:
+            pass
+        rtree_indexes = conn.execute(
+            "SELECT index_name, table_name, sql FROM duckdb_indexes() "
+            "WHERE sql LIKE '%RTREE%' AND table_name = 'reaches'"
+        ).fetchall()
+        for idx_name, _, _ in rtree_indexes:
+            conn.execute(f'DROP INDEX "{idx_name}"')
+
+        try:
+            result = conn.execute(update_sql)
+            reaches_updated = result.fetchone()[0] if result else 0
+        finally:
+            for _, _, idx_sql in rtree_indexes:
+                conn.execute(idx_sql)
 
         # Clean up temp table
         conn.execute("DROP TABLE IF EXISTS reach_obs_agg")

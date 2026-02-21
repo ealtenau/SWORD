@@ -130,6 +130,7 @@ class TestSwotFilters:
         assert "slope > -1" in where
         assert "slope < 1" in where
         assert "1e10" not in where
+        assert str(int(SENTINEL)) in where
 
     def test_reach_filter_quality_cols(self):
         where = build_reach_filter_sql(
@@ -167,8 +168,8 @@ class TestAddSwotObsColumns:
         for c in LEGACY_COLS:
             try:
                 conn.execute(f"ALTER TABLE reaches ADD COLUMN {c} DOUBLE")
-            except Exception:
-                pass
+            except duckdb.Error:
+                pass  # Column may already exist
         add_swot_obs_columns(conn)
         rcols = {
             r[0]
@@ -298,6 +299,31 @@ class TestReachAggregation:
         assert row[1] == pytest.approx(1.0)
         assert row[2] is True
         assert row[3] == "reliable"
+        c.close()
+
+    def test_below_ref_uncertainty(self, tmp_path):
+        def pq(d):
+            _reach_parquet(str(d / "SWOT_u.parquet"), n=30, rid=100, slope=0.000010)
+
+        _, c = _run_reach_agg(tmp_path, pq)
+        row = c.execute(
+            "SELECT slope_obs_reliable, slope_obs_quality "
+            "FROM reaches WHERE reach_id=100"
+        ).fetchone()
+        assert row[0] is False
+        assert row[1] == "below_ref_uncertainty"
+        c.close()
+
+    def test_negative_slope_quality(self, tmp_path):
+        def pq(d):
+            _reach_parquet(str(d / "SWOT_n.parquet"), n=30, rid=100, slope=-0.001)
+
+        _, c = _run_reach_agg(tmp_path, pq)
+        row = c.execute(
+            "SELECT slope_obs_p50, slope_obs_quality FROM reaches WHERE reach_id=100"
+        ).fetchone()
+        assert row[0] == pytest.approx(-0.001)
+        assert row[1] == "negative"
         c.close()
 
     def test_single_obs(self, tmp_path):

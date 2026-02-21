@@ -958,7 +958,7 @@ def add_swot_obs_columns(conn) -> bool:
     bool
         True if any columns were added or dropped, False if schema unchanged.
     """
-    added = False
+    changed = False
 
     _PERCENTILES = ["p10", "p20", "p30", "p40", "p50", "p60", "p70", "p80", "p90"]
 
@@ -999,38 +999,40 @@ def add_swot_obs_columns(conn) -> bool:
         ).fetchall()
         return {row[0].lower() for row in result}
 
+    def _table_exists(table_name: str) -> bool:
+        result = conn.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            f"WHERE table_name = '{table_name}'"
+        ).fetchone()
+        return result[0] > 0
+
     def _add_columns_to_table(table_name: str, columns: list) -> None:
-        nonlocal added
+        nonlocal changed
         existing = _get_existing(table_name)
         for col_name, col_type in columns:
             if col_name.lower() not in existing:
                 conn.execute(
                     f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}"
                 )
-                added = True
+                changed = True
 
     def _drop_legacy_columns(table_name: str, legacy_cols: list[str]) -> None:
-        nonlocal added
+        nonlocal changed
         existing = _get_existing(table_name)
         for col in legacy_cols:
             if col.lower() in existing:
                 conn.execute(f"ALTER TABLE {table_name} DROP COLUMN {col}")
-                added = True
+                changed = True
 
-    # Add new columns
-    try:
+    if _table_exists("nodes"):
         _add_columns_to_table("nodes", nodes_swot_columns)
         _drop_legacy_columns("nodes", _LEGACY_NODE_COLS)
-    except Exception:
-        pass
 
-    try:
+    if _table_exists("reaches"):
         _add_columns_to_table("reaches", reaches_swot_columns)
         _drop_legacy_columns("reaches", _LEGACY_REACH_COLS)
-    except Exception:
-        pass
 
-    return added
+    return changed
 
 
 def add_osm_name_columns(conn) -> bool:
