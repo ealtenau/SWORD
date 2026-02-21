@@ -44,6 +44,8 @@
 
 | 2026-02-20 | self | Lint redundancy audit: F012 was exact duplicate of F006, G019/G020 were strict subsets of G012 | Before adding a new lint check, search for existing checks on the same join pattern + condition. Duplicate checks waste runtime and confuse the issue count. |
 
+| 2026-02-20 | self | Linter stripped column_order imports from sword_class.py and export.py between separate Edit calls | For export.py: used inline `from .column_order import reorder_columns` inside each function body. For sword_class.py: re-added the import in a later task. Best approach: add import + usage in the same Edit call, or use inline imports in function bodies. |
+
 ## Patterns That Work
 - RTREE drop/recreate pattern for DuckDB UPDATEs on spatial tables
 - Parallel background agents for independent region processing
