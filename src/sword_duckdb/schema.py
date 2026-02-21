@@ -19,7 +19,7 @@ Tables:
 """
 
 # Schema version for migration tracking
-SCHEMA_VERSION = "1.5.0"  # Updated for SWOT observation statistics
+SCHEMA_VERSION = "1.6.0"  # Added dn_node_id, up_node_id, node_order
 
 # Valid region codes (uppercase)
 VALID_REGIONS = frozenset(["NA", "SA", "EU", "AF", "AS", "OC"])
@@ -112,6 +112,9 @@ CREATE TABLE IF NOT EXISTS nodes (
 
     -- Parent reach
     reach_id BIGINT NOT NULL,
+
+    -- Position within reach (1=downstream, n=upstream, ordered by dist_out)
+    node_order INTEGER,
 
     -- Core measurements
     node_length DOUBLE,          -- len
@@ -213,6 +216,11 @@ CREATE TABLE IF NOT EXISTS reaches (
     -- Core measurements
     reach_length DOUBLE,         -- len (m)
     n_nodes INTEGER,             -- rch_n_nodes
+
+    -- Boundary node IDs (downstream/upstream ends of reach)
+    dn_node_id BIGINT,               -- downstream boundary node ID
+    up_node_id BIGINT,               -- upstream boundary node ID
+
     wse DOUBLE,                  -- water surface elevation (m)
     wse_var DOUBLE,              -- wse variance (m^2)
     width DOUBLE,                -- wth (m)
