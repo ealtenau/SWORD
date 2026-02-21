@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, TypeVar, Union
 import numpy as np
 import pandas as pd
 
+
 if TYPE_CHECKING:
     import psycopg2
     from .sword_class import SWORD
@@ -613,6 +614,11 @@ def _export_reaches_to_pg(
     df = df.replace({np.nan: None})
     df = df.where(pd.notna(df), None)
 
+    # Reorder columns to canonical order
+    from .column_order import reorder_columns
+
+    df = reorder_columns(df, "reaches")
+
     # Insert in batches
     columns = df.columns.tolist()
 
@@ -721,6 +727,11 @@ def _export_nodes_to_pg(
     # Replace pandas NA with None
     df = df.where(pd.notna(df), None)
 
+    # Reorder columns to canonical order
+    from .column_order import reorder_columns
+
+    df = reorder_columns(df, "nodes")
+
     # Insert in batches
     columns = df.columns.tolist()
     placeholders = ", ".join(["%s"] * len(columns))
@@ -798,6 +809,11 @@ def _export_centerlines_to_pg(
             "version": sword.version,
         }
     )
+
+    # Reorder columns to canonical order
+    from .column_order import reorder_columns
+
+    df = reorder_columns(df, "centerlines")
 
     # Insert in batches
     columns = df.columns.tolist()
@@ -1011,6 +1027,11 @@ def export_to_geoparquet(
     else:
         raise ValueError(f"Unknown table: {table}")
 
+    # Reorder columns to canonical order
+    from .column_order import reorder_columns
+
+    gdf = reorder_columns(gdf, table)
+
     gdf.to_parquet(str(output_path), compression=compression)
     return len(gdf)
 
@@ -1098,6 +1119,11 @@ def export_to_geopackage(
             )
         else:
             continue
+
+        # Reorder columns to canonical order
+        from .column_order import reorder_columns
+
+        gdf = reorder_columns(gdf, table)
 
         # Always write fresh layers (mode='a' can cause fiona issues)
         # GeoPackage supports multiple layers natively
