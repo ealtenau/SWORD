@@ -95,48 +95,42 @@ CREATE TABLE IF NOT EXISTS centerline_neighbors (
 
 NODES_TABLE = """
 CREATE TABLE IF NOT EXISTS nodes (
-    -- Composite primary key (node_id is only unique within region)
+    -- Identity
     node_id BIGINT NOT NULL,
     region VARCHAR(2) NOT NULL,
 
-    -- Coordinates
+    -- Geometry
     x DOUBLE NOT NULL,
     y DOUBLE NOT NULL,
-
-    -- Geometry (populated after insert via ST_Point)
     geom GEOMETRY,
 
-    -- Centerline range (from cl_ids[2,N])
+    -- Structure
     cl_id_min BIGINT,
     cl_id_max BIGINT,
-
-    -- Parent reach
     reach_id BIGINT NOT NULL,
-
-    -- Position within reach (1=downstream, n=upstream, ordered by dist_out)
-    node_order INTEGER,
-
-    -- Core measurements
+    node_order INTEGER,          -- 1=downstream, n=upstream (by dist_out)
     node_length DOUBLE,          -- len
+
+    -- WSE (prior + observed)
     wse DOUBLE,                  -- water surface elevation (m)
     wse_var DOUBLE,              -- wse variance (m^2)
+    wse_obs_mean DOUBLE,         -- mean observed WSE
+    wse_obs_median DOUBLE,       -- median observed WSE
+    wse_obs_std DOUBLE,          -- std dev of observed WSE
+    wse_obs_range DOUBLE,        -- range (max-min) of observed WSE
+
+    -- Width (prior + observed)
     width DOUBLE,                -- wth (m)
     width_var DOUBLE,            -- wth_var (m^2)
     max_width DOUBLE,            -- max_wth (m)
+    width_obs_mean DOUBLE,       -- mean observed width
+    width_obs_median DOUBLE,     -- median observed width
+    width_obs_std DOUBLE,        -- std dev of observed width
+    width_obs_range DOUBLE,      -- range (max-min) of observed width
 
-    -- Flow and hydrology
+    -- Hydrology & Distance
     facc DOUBLE,                 -- flow accumulation (km^2)
     dist_out DOUBLE,             -- distance from outlet (m)
-    lakeflag INTEGER,            -- 0=river, 1=lake, 2=canal, 3=tidal
-
-    -- Obstructions
-    obstr_type INTEGER,          -- grod: 0=none, 1=dam, 2=lock, 3=low-perm, 4=waterfall
-    grod_id BIGINT,              -- GROD database ID
-    hfalls_id BIGINT,            -- HydroFALLS database ID
-
-    -- Channel info
-    n_chan_max INTEGER,          -- nchan_max
-    n_chan_mod INTEGER,          -- nchan_mod
 
     -- SWOT search parameters
     wth_coef DOUBLE,             -- width coefficient for search window
@@ -146,42 +140,36 @@ CREATE TABLE IF NOT EXISTS nodes (
     meander_length DOUBLE,       -- meand_len (m)
     sinuosity DOUBLE,            -- sinuosity ratio
 
-    -- Metadata
-    river_name VARCHAR,          -- semicolon-separated if multiple
-    manual_add INTEGER,          -- 0=not manual, 1=manual
-
-    -- Quality flags
-    edit_flag VARCHAR,           -- comma-separated update codes
-    trib_flag INTEGER,           -- 0=no tributary, 1=tributary
-
-    -- Network analysis
+    -- Network & Path Analysis
+    network INTEGER,             -- connected network ID
+    stream_order INTEGER,        -- strm_order (log scale of path_freq)
     path_freq BIGINT,            -- traversal count
     path_order BIGINT,           -- 1=longest to N=shortest
     path_segs BIGINT,            -- segment ID between junctions
-    stream_order INTEGER,        -- strm_order (log scale of path_freq)
     main_side INTEGER,           -- 0=main, 1=side, 2=secondary outlet
     end_reach INTEGER,           -- end_rch: 0=main, 1=headwater, 2=outlet, 3=junction
-    network INTEGER,             -- connected network ID
-
-    -- v17c columns
     best_headwater BIGINT,       -- best upstream headwater node
     best_outlet BIGINT,          -- best downstream outlet node
     pathlen_hw DOUBLE,           -- cumulative path length to headwater
     pathlen_out DOUBLE,          -- cumulative path length to outlet
 
-    -- SWOT observation statistics (computed from L2 RiverSP data)
-    wse_obs_mean DOUBLE,         -- mean observed WSE
-    wse_obs_median DOUBLE,       -- median observed WSE
-    wse_obs_std DOUBLE,          -- std dev of observed WSE
-    wse_obs_range DOUBLE,        -- range (max-min) of observed WSE
-    width_obs_mean DOUBLE,       -- mean observed width
-    width_obs_median DOUBLE,     -- median observed width
-    width_obs_std DOUBLE,        -- std dev of observed width
-    width_obs_range DOUBLE,      -- range (max-min) of observed width
-    n_obs INTEGER,               -- count of SWOT observations
-
-    -- Addition flag (optional, may not exist in older versions)
+    -- Classification & Flags
+    lakeflag INTEGER,            -- 0=river, 1=lake, 2=canal, 3=tidal
+    n_chan_max INTEGER,           -- nchan_max
+    n_chan_mod INTEGER,           -- nchan_mod
+    obstr_type INTEGER,          -- grod: 0=none, 1=dam, 2=lock, 3=low-perm, 4=waterfall
+    grod_id BIGINT,              -- GROD database ID
+    hfalls_id BIGINT,            -- HydroFALLS database ID
+    trib_flag INTEGER,           -- 0=no tributary, 1=tributary
+    manual_add INTEGER,          -- 0=not manual, 1=manual
+    edit_flag VARCHAR,           -- comma-separated update codes
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
+
+    -- Names
+    river_name VARCHAR,          -- semicolon-separated if multiple
+
+    -- Observation count
+    n_obs INTEGER,               -- count of SWOT observations
 
     -- Metadata
     version VARCHAR(10) NOT NULL,
@@ -192,118 +180,104 @@ CREATE TABLE IF NOT EXISTS nodes (
 
 REACHES_TABLE = """
 CREATE TABLE IF NOT EXISTS reaches (
-    -- Composite primary key (reach_id is globally unique but include region for consistency)
+    -- Identity
     reach_id BIGINT NOT NULL,
     region VARCHAR(2) NOT NULL,
 
-    -- Centroid coordinates
+    -- Geometry
     x DOUBLE,
     y DOUBLE,
-
-    -- Bounding box
     x_min DOUBLE,
     x_max DOUBLE,
     y_min DOUBLE,
     y_max DOUBLE,
-
-    -- Geometry (LINESTRING, populated separately from centerlines)
     geom GEOMETRY,
 
-    -- Centerline range (from cl_ids[2,N])
-    cl_id_min BIGINT,
-    cl_id_max BIGINT,
-
-    -- Core measurements
+    -- Structure
     reach_length DOUBLE,         -- len (m)
     n_nodes INTEGER,             -- rch_n_nodes
+    cl_id_min BIGINT,
+    cl_id_max BIGINT,
+    dn_node_id BIGINT,           -- downstream boundary node ID
+    up_node_id BIGINT,           -- upstream boundary node ID
 
-    -- Boundary node IDs (downstream/upstream ends of reach)
-    dn_node_id BIGINT,               -- downstream boundary node ID
-    up_node_id BIGINT,               -- upstream boundary node ID
-
+    -- WSE (prior + observed)
     wse DOUBLE,                  -- water surface elevation (m)
     wse_var DOUBLE,              -- wse variance (m^2)
+    wse_obs_mean DOUBLE,         -- mean observed WSE
+    wse_obs_median DOUBLE,       -- median observed WSE
+    wse_obs_std DOUBLE,          -- std dev of observed WSE
+    wse_obs_range DOUBLE,        -- range (max-min) of observed WSE
+
+    -- Width (prior + observed)
     width DOUBLE,                -- wth (m)
     width_var DOUBLE,            -- wth_var (m^2)
-    slope DOUBLE,                -- slope (m/km)
     max_width DOUBLE,            -- max_wth (m)
+    width_obs_mean DOUBLE,       -- mean observed width
+    width_obs_median DOUBLE,     -- median observed width
+    width_obs_std DOUBLE,        -- std dev of observed width
+    width_obs_range DOUBLE,      -- range (max-min) of observed width
 
-    -- Flow and hydrology
+    -- Slope (prior + observed)
+    slope DOUBLE,                -- slope (m/km)
+    slope_obs_mean DOUBLE,       -- mean observed slope (raw, may be negative)
+    slope_obs_median DOUBLE,     -- median observed slope
+    slope_obs_std DOUBLE,        -- std dev of observed slope
+    slope_obs_range DOUBLE,      -- range (max-min) of observed slope
+    slope_obs_adj DOUBLE,        -- noise-adjusted slope: 1e-5 for noise, keeps significant negatives
+    slope_obs_slopeF DOUBLE,     -- weighted sign fraction (-1 to +1)
+    slope_obs_reliable BOOLEAN,  -- TRUE if |slopeF| > 0.5 AND slope_obs_mean > noise floor
+    slope_obs_quality VARCHAR,   -- quality category: reliable, high_uncertainty, below_noise, etc.
+
+    -- Hydrology & Distance
     facc DOUBLE,                 -- flow accumulation (km^2)
     dist_out DOUBLE,             -- distance from outlet (m)
-    lakeflag INTEGER,            -- 0=river, 1=lake, 2=canal, 3=tidal
+    hydro_dist_out DOUBLE,       -- hydrologic distance to outlet (via main channel)
+    hydro_dist_hw DOUBLE,        -- hydrologic distance to headwater (via main channel)
+    dist_out_short DOUBLE,       -- shortest-path distance to outlet
 
-    -- Obstructions
-    obstr_type INTEGER,          -- grod
-    grod_id BIGINT,              -- GROD database ID
-    hfalls_id BIGINT,            -- HydroFALLS database ID
-
-    -- Channel info
-    n_chan_max INTEGER,          -- nchan_max
-    n_chan_mod INTEGER,          -- nchan_mod
-
-    -- Topology counts
+    -- Topology
     n_rch_up INTEGER,            -- number of upstream neighbors
     n_rch_down INTEGER,          -- number of downstream neighbors
-
-    -- SWOT observations
-    swot_obs INTEGER,            -- max_obs: max SWOT passes in 21-day cycle
-
-    -- Flags
-    iceflag INTEGER,             -- ice/seasonal flag
-    low_slope_flag INTEGER,      -- low_slope: 1=too low for discharge estimation
-
-    -- Metadata
-    river_name VARCHAR,          -- semicolon-separated if multiple
-
-    -- Quality flags
-    edit_flag VARCHAR,           -- comma-separated update codes
+    rch_id_up_main BIGINT,       -- main upstream reach ID
+    rch_id_dn_main BIGINT,       -- main downstream reach ID
+    end_reach INTEGER,           -- end_rch: 0=main, 1=headwater, 2=outlet, 3=junction
     trib_flag INTEGER,           -- 0=no tributary, 1=tributary
 
-    -- Network analysis
+    -- Network & Path Analysis
+    network INTEGER,             -- connected network ID
+    stream_order INTEGER,        -- strm_order
     path_freq BIGINT,            -- traversal count
     path_order BIGINT,           -- 1=longest to N=shortest
     path_segs BIGINT,            -- segment ID between junctions
-    stream_order INTEGER,        -- strm_order
     main_side INTEGER,           -- 0=main, 1=side, 2=secondary outlet
-    end_reach INTEGER,           -- end_rch: 0=main, 1=headwater, 2=outlet, 3=junction
-    network INTEGER,             -- connected network ID
-
-    -- v17c columns
-    best_headwater BIGINT,           -- best upstream headwater node
-    best_outlet BIGINT,              -- best downstream outlet node
-    pathlen_hw DOUBLE,               -- cumulative path length to headwater
-    pathlen_out DOUBLE,              -- cumulative path length to outlet
-    main_path_id BIGINT,             -- unique ID for headwater-outlet path
+    main_path_id BIGINT,         -- unique ID for headwater-outlet path
     is_mainstem_edge BOOLEAN DEFAULT FALSE,  -- whether edge is on mainstem
-    dist_out_short DOUBLE,           -- shortest-path distance to outlet
-    hydro_dist_out DOUBLE,           -- hydrologic distance to outlet (via main channel)
-    hydro_dist_hw DOUBLE,            -- hydrologic distance to headwater (via main channel)
-    rch_id_up_main BIGINT,           -- main upstream reach ID
-    rch_id_dn_main BIGINT,           -- main downstream reach ID
+    best_headwater BIGINT,       -- best upstream headwater reach
+    best_outlet BIGINT,          -- best downstream outlet reach
+    pathlen_hw DOUBLE,           -- cumulative path length to headwater
+    pathlen_out DOUBLE,          -- cumulative path length to outlet
 
-    -- SWOT observation statistics (computed from L2 RiverSP data)
-    wse_obs_mean DOUBLE,             -- mean observed WSE
-    wse_obs_median DOUBLE,           -- median observed WSE
-    wse_obs_std DOUBLE,              -- std dev of observed WSE
-    wse_obs_range DOUBLE,            -- range (max-min) of observed WSE
-    width_obs_mean DOUBLE,           -- mean observed width
-    width_obs_median DOUBLE,         -- median observed width
-    width_obs_std DOUBLE,            -- std dev of observed width
-    width_obs_range DOUBLE,          -- range (max-min) of observed width
-    slope_obs_mean DOUBLE,           -- mean observed slope (raw, may be negative)
-    slope_obs_median DOUBLE,         -- median observed slope
-    slope_obs_std DOUBLE,            -- std dev of observed slope
-    slope_obs_range DOUBLE,          -- range (max-min) of observed slope
-    slope_obs_adj DOUBLE,            -- noise-adjusted slope: 1e-5 for noise, keeps significant negatives
-    slope_obs_slopeF DOUBLE,         -- weighted sign fraction (-1 to +1): positive = consistent positive slopes
-    slope_obs_reliable BOOLEAN,      -- TRUE if |slopeF| > 0.5 AND slope_obs_mean > noise floor
-    slope_obs_quality VARCHAR,       -- quality category: reliable, high_uncertainty, below_noise,
-                                     -- moderate_negative, large_negative, flat_water_noise, etc.
-    n_obs INTEGER,                   -- count of SWOT observations
-
-    -- Addition flag (optional)
+    -- Classification & Flags
+    lakeflag INTEGER,            -- 0=river, 1=lake, 2=canal, 3=tidal
+    n_chan_max INTEGER,           -- nchan_max
+    n_chan_mod INTEGER,           -- nchan_mod
+    obstr_type INTEGER,          -- grod
+    grod_id BIGINT,              -- GROD database ID
+    hfalls_id BIGINT,            -- HydroFALLS database ID
+    swot_obs INTEGER,            -- max_obs: max SWOT passes in 21-day cycle
+    iceflag INTEGER,             -- ice/seasonal flag
+    low_slope_flag INTEGER,      -- low_slope: 1=too low for discharge estimation
+    edit_flag VARCHAR,           -- comma-separated update codes
     add_flag INTEGER,            -- 0=not added, 1=added from MERIT Hydro
+
+    -- Names
+    river_name VARCHAR,          -- semicolon-separated if multiple
+    river_name_en VARCHAR,       -- standardized English name (from OSM)
+    river_name_local VARCHAR,    -- local/native name (from OSM)
+
+    -- Observation count
+    n_obs INTEGER,               -- count of SWOT observations
 
     -- Metadata
     version VARCHAR(10) NOT NULL,

@@ -147,3 +147,57 @@ class TestCanonicalMatchesDB:
             )
         finally:
             con.close()
+
+
+def _extract_ddl_columns(ddl: str) -> list[str]:
+    """Extract column names from CREATE TABLE DDL, ignoring PK/constraints/comments."""
+    import re
+
+    cols = []
+    for line in ddl.strip().split("\n"):
+        line = line.strip()
+        if (
+            not line
+            or line.startswith("--")
+            or line.startswith("CREATE")
+            or line.startswith(")")
+        ):
+            continue
+        if line.startswith("PRIMARY"):
+            continue
+        match = re.match(r"(\w+)\s+", line)
+        if match:
+            cols.append(match.group(1))
+    return cols
+
+
+@pytest.mark.unit
+class TestSchemaDDLOrder:
+    """Verify schema DDL column order matches canonical order."""
+
+    def test_reaches_ddl_matches_canonical(self):
+        from src.sword_duckdb.schema import REACHES_TABLE
+
+        ddl_cols = _extract_ddl_columns(REACHES_TABLE)
+        canonical = list(REACHES_COLUMN_ORDER)
+        assert ddl_cols == canonical, (
+            f"DDL order != canonical.\nDDL: {ddl_cols}\nCanonical: {canonical}"
+        )
+
+    def test_nodes_ddl_matches_canonical(self):
+        from src.sword_duckdb.schema import NODES_TABLE
+
+        ddl_cols = _extract_ddl_columns(NODES_TABLE)
+        canonical = list(NODES_COLUMN_ORDER)
+        assert ddl_cols == canonical, (
+            f"DDL order != canonical.\nDDL: {ddl_cols}\nCanonical: {canonical}"
+        )
+
+    def test_centerlines_ddl_matches_canonical(self):
+        from src.sword_duckdb.schema import CENTERLINES_TABLE
+
+        ddl_cols = _extract_ddl_columns(CENTERLINES_TABLE)
+        canonical = list(CENTERLINES_COLUMN_ORDER)
+        assert ddl_cols == canonical, (
+            f"DDL order != canonical.\nDDL: {ddl_cols}\nCanonical: {canonical}"
+        )
