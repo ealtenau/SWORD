@@ -673,3 +673,48 @@ class TestStubReconstructors:
             assert "SOURCE DATA" in docstring or "REQUIRES" in docstring, (
                 f"Centerline stub {method_name} should document external requirement"
             )
+
+
+class TestEndReachBifurcation:
+    """Test that end_reach correctly classifies bifurcations as junctions."""
+
+    def test_bifurcation_classified_as_junction(self, sword_writable):
+        from src.sword_duckdb.reconstruction import ReconstructionEngine
+
+        engine = ReconstructionEngine(sword_writable)
+
+        # Find a bifurcation (reach with n_down > 1)
+        result = sword_writable._db.execute("""
+            SELECT rt.reach_id, COUNT(*) as n_down
+            FROM reach_topology rt
+            WHERE rt.region = 'NA' AND rt.direction = 'down'
+            GROUP BY rt.reach_id HAVING COUNT(*) > 1 LIMIT 1
+        """).fetchone()
+
+        if result is None:
+            # Create a bifurcation: parent has 1 upstream + 2 downstream
+            reaches = sword_writable._db.execute(
+                "SELECT reach_id FROM reaches WHERE region = 'NA' LIMIT 4"
+            ).fetchall()
+            upstream, parent = reaches[0][0], reaches[1][0]
+            child1, child2 = reaches[2][0], reaches[3][0]
+            sword_writable._db.execute(
+                """
+                INSERT INTO reach_topology (reach_id, region, direction, neighbor_rank, neighbor_reach_id)
+                VALUES
+                    (?, 'NA', 'up', 0, ?),
+                    (?, 'NA', 'down', 0, ?),
+                    (?, 'NA', 'down', 1, ?)
+                ON CONFLICT DO NOTHING
+            """,
+                [parent, upstream, parent, child1, parent, child2],
+            )
+            bifurc_id = parent
+        else:
+            bifurc_id = result[0]
+
+        res = engine._reconstruct_reach_end_reach(reach_ids=[bifurc_id], dry_run=True)
+        vals = dict(zip(res["entity_ids"], res["values"]))
+        assert vals[bifurc_id] == 3, (
+            f"Bifurcation should be junction (3), got {vals[bifurc_id]}"
+        )

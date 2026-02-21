@@ -2504,7 +2504,8 @@ class ReconstructionEngine:
             [self._region, self._region, self._region],
         ).fetchdf()
 
-        # Classify: headwater (no upstream), outlet (no downstream), junction (multiple up), main (else)
+        # Classify: headwater (no upstream), outlet (no downstream),
+        # junction (confluence OR bifurcation), main (else)
         def classify_reach(row):
             n_up = row["n_up"]
             n_down = row["n_down"]
@@ -2512,8 +2513,8 @@ class ReconstructionEngine:
                 return 1  # headwater
             elif n_down == 0:
                 return 2  # outlet
-            elif n_up > 1:
-                return 3  # junction
+            elif n_up > 1 or n_down > 1:
+                return 3  # junction (confluence OR bifurcation)
             else:
                 return 0  # main
 
