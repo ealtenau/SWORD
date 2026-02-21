@@ -420,3 +420,136 @@ def check_centerline_reach_distance(
         description=f"Centerlines with centroid >{max_dist / 1000:.0f}km from parent reach",
         threshold=max_dist,
     )
+
+
+@register_check(
+    "C006",
+    Category.CLASSIFICATION,
+    Severity.WARNING,
+    "Centerline centroid closer to adjacent node than its assigned node",
+)
+def check_centerline_node_assignment(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Flag nodes where the centroid of assigned centerlines is closer to an adjacent node.
+
+    For each node, compute the centroid of its centerlines, then compare the
+    equirectangular distance to the own node vs the previous/next node (by
+    node_id within the same reach). If the centroid is closer to a neighbor,
+    the centerline assignment may be wrong.
+    """
+    where_clause = f"AND cl.region = '{region}'" if region else ""
+    node_where = f"AND n.region = '{region}'" if region else ""
+
+    # Check if centerlines table exists
+    try:
+        conn.execute("SELECT cl_id FROM centerlines LIMIT 0")
+    except (duckdb.CatalogException, duckdb.BinderException):
+        return CheckResult(
+            check_id="C006",
+            name="centerline_node_assignment",
+            severity=Severity.WARNING,
+            passed=True,
+            total_checked=0,
+            issues_found=0,
+            issue_pct=0,
+            details=pd.DataFrame(),
+            description="Skipped: centerlines table not found",
+        )
+
+    query = f"""
+    WITH cl_centroids AS (
+        SELECT
+            node_id, reach_id, region,
+            AVG(x) as cx, AVG(y) as cy,
+            COUNT(*) as cl_count
+        FROM centerlines cl
+        WHERE 1=1 {where_clause}
+        GROUP BY node_id, reach_id, region
+    ),
+    node_with_neighbors AS (
+        SELECT
+            n.node_id, n.reach_id, n.region, n.x as nx, n.y as ny,
+            LAG(n.node_id) OVER w as prev_node_id,
+            LAG(n.x) OVER w as prev_x,
+            LAG(n.y) OVER w as prev_y,
+            LEAD(n.node_id) OVER w as next_node_id,
+            LEAD(n.x) OVER w as next_x,
+            LEAD(n.y) OVER w as next_y
+        FROM nodes n
+        WHERE 1=1 {node_where}
+        WINDOW w AS (PARTITION BY n.reach_id, n.region ORDER BY n.node_id)
+    ),
+    distances AS (
+        SELECT
+            cc.node_id, cc.reach_id, cc.region, cc.cl_count,
+            cc.cx, cc.cy, nw.nx, nw.ny,
+            111000.0 * SQRT(
+                POWER((cc.cx - nw.nx) * COS(RADIANS((cc.cy + nw.ny) / 2.0)), 2)
+                + POWER(cc.cy - nw.ny, 2)
+            ) as dist_own,
+            CASE WHEN nw.prev_x IS NOT NULL THEN
+                111000.0 * SQRT(
+                    POWER((cc.cx - nw.prev_x) * COS(RADIANS((cc.cy + nw.prev_y) / 2.0)), 2)
+                    + POWER(cc.cy - nw.prev_y, 2)
+                )
+            END as dist_prev,
+            CASE WHEN nw.next_x IS NOT NULL THEN
+                111000.0 * SQRT(
+                    POWER((cc.cx - nw.next_x) * COS(RADIANS((cc.cy + nw.next_y) / 2.0)), 2)
+                    + POWER(cc.cy - nw.next_y, 2)
+                )
+            END as dist_next,
+            nw.prev_node_id, nw.next_node_id
+        FROM cl_centroids cc
+        JOIN node_with_neighbors nw
+            ON cc.node_id = nw.node_id
+            AND cc.reach_id = nw.reach_id
+            AND cc.region = nw.region
+    )
+    SELECT
+        node_id, reach_id, region, cl_count,
+        ROUND(dist_own, 1) as dist_own_m,
+        CASE
+            WHEN dist_prev IS NOT NULL AND dist_prev < dist_own
+                AND (dist_next IS NULL OR dist_prev <= dist_next)
+                THEN prev_node_id
+            WHEN dist_next IS NOT NULL AND dist_next < dist_own
+                THEN next_node_id
+        END as closer_node_id,
+        ROUND(LEAST(
+            COALESCE(dist_prev, 1e9),
+            COALESCE(dist_next, 1e9)
+        ), 1) as dist_closer_m
+    FROM distances
+    WHERE (dist_prev IS NOT NULL AND dist_prev < dist_own)
+       OR (dist_next IS NOT NULL AND dist_next < dist_own)
+    ORDER BY (dist_own - LEAST(
+        COALESCE(dist_prev, 1e9),
+        COALESCE(dist_next, 1e9)
+    )) DESC
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(DISTINCT node_id)
+    FROM centerlines cl
+    WHERE 1=1 {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="C006",
+        name="centerline_node_assignment",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description="Nodes where centerline centroid is closer to an adjacent node",
+    )

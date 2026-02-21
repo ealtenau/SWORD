@@ -294,6 +294,99 @@ def check_boundary_dist_out(
 
 
 @register_check(
+    "N007",
+    Category.NETWORK,
+    Severity.WARNING,
+    "Boundary node geolocation >400m between connected reaches",
+    default_threshold=400.0,
+)
+def check_boundary_node_geolocation(
+    conn: duckdb.DuckDBPyConnection,
+    region: Optional[str] = None,
+    threshold: Optional[float] = None,
+) -> CheckResult:
+    """Check geographic co-location of boundary nodes at reach junctions.
+
+    SWORD convention: node_id increases upstream (higher node_id = higher dist_out).
+    For upstream reach A -> downstream reach B (direction='down'):
+      A's downstream boundary = MIN(node_id) in A
+      B's upstream boundary   = MAX(node_id) in B
+    These two boundary nodes should be geographically close.
+    """
+    max_dist = threshold if threshold is not None else 400.0
+    where_clause = f"AND rt.region = '{region}'" if region else ""
+
+    query = f"""
+    WITH up_boundary AS (
+        SELECT reach_id, region,
+            MIN(node_id) as boundary_node_id
+        FROM nodes
+        GROUP BY reach_id, region
+    ),
+    dn_boundary AS (
+        SELECT reach_id, region,
+            MAX(node_id) as boundary_node_id
+        FROM nodes
+        GROUP BY reach_id, region
+    ),
+    boundary_pairs AS (
+        SELECT
+            rt.reach_id as up_reach,
+            rt.neighbor_reach_id as dn_reach,
+            rt.region,
+            n1.x as up_x, n1.y as up_y,
+            n2.x as dn_x, n2.y as dn_y,
+            n1.node_id as up_boundary_node,
+            n2.node_id as dn_boundary_node
+        FROM reach_topology rt
+        JOIN up_boundary ub ON rt.reach_id = ub.reach_id AND rt.region = ub.region
+        JOIN dn_boundary db ON rt.neighbor_reach_id = db.reach_id AND rt.region = db.region
+        JOIN nodes n1 ON ub.boundary_node_id = n1.node_id AND ub.region = n1.region
+        JOIN nodes n2 ON db.boundary_node_id = n2.node_id AND db.region = n2.region
+        WHERE rt.direction = 'down'
+            AND n1.x IS NOT NULL AND n2.x IS NOT NULL
+            {where_clause}
+    )
+    SELECT
+        up_reach, dn_reach, region,
+        up_boundary_node, dn_boundary_node,
+        up_x, up_y, dn_x, dn_y,
+        111000.0 * SQRT(
+            POWER((up_x - dn_x) * COS(RADIANS((up_y + dn_y) / 2.0)), 2)
+            + POWER(up_y - dn_y, 2)
+        ) as boundary_dist_m
+    FROM boundary_pairs
+    WHERE 111000.0 * SQRT(
+            POWER((up_x - dn_x) * COS(RADIANS((up_y + dn_y) / 2.0)), 2)
+            + POWER(up_y - dn_y, 2)
+        ) > {max_dist}
+    ORDER BY boundary_dist_m DESC
+    LIMIT 10000
+    """
+
+    issues = conn.execute(query).fetchdf()
+
+    total_query = f"""
+    SELECT COUNT(*) FROM reach_topology rt
+    WHERE direction = 'down' {where_clause}
+    """
+    total = conn.execute(total_query).fetchone()[0]
+
+    return CheckResult(
+        check_id="N007",
+        name="boundary_node_geolocation",
+        severity=Severity.WARNING,
+        passed=len(issues) == 0,
+        total_checked=total,
+        issues_found=len(issues),
+        issue_pct=100 * len(issues) / total if total > 0 else 0,
+        details=issues,
+        description=f"Reach boundary nodes >{max_dist:.0f}m apart geographically",
+        threshold=max_dist,
+    )
+
+
+@register_check(
     "N008",
     Category.NETWORK,
     Severity.ERROR,
