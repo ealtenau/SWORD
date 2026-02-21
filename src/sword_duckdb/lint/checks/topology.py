@@ -1194,8 +1194,10 @@ def check_dist_out_bifurcation_monotonicity(
     total_query = f"""
     SELECT COUNT(*) FROM reaches r1
     JOIN reach_topology rt ON r1.reach_id = rt.reach_id AND r1.region = rt.region
+    JOIN reaches r2 ON rt.neighbor_reach_id = r2.reach_id AND rt.region = r2.region
     WHERE rt.direction = 'down'
         AND r1.dist_out > 0 AND r1.dist_out != -9999
+        AND r2.dist_out > 0 AND r2.dist_out != -9999
         {where_clause}
     """
     total = conn.execute(total_query).fetchone()[0]

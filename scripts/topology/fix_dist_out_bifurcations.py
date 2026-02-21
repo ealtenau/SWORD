@@ -76,8 +76,8 @@ def build_topology_maps(
     attrs = con.execute(
         "SELECT reach_id, reach_length, dist_out FROM reaches"
     ).fetchall()
-    reach_lengths = {r[0]: r[1] for r in attrs}
-    current_dist_out = {r[0]: r[2] for r in attrs}
+    reach_lengths = {r[0]: (r[1] if r[1] is not None else 0.0) for r in attrs}
+    current_dist_out = {r[0]: (r[2] if r[2] is not None else -9999) for r in attrs}
 
     return upstream_map, downstream_map, reach_lengths, current_dist_out
 
@@ -95,7 +95,11 @@ def compute_fixes(
         updated: reach_id -> new_dist_out for all affected reaches
     """
     updated: dict[int, float] = {}
-    queue: deque[int] = deque(violations)
+    # Sort violations downstream-first (ascending dist_out) so that when
+    # a violation B is upstream of violation C, C is fixed before B reads
+    # from it.  Without this, BFS FIFO order can use stale values.
+    sorted_violations = sorted(violations, key=lambda r: current_dist_out.get(r, -9999))
+    queue: deque[int] = deque(sorted_violations)
     visited: set[int] = set()
 
     while queue:
@@ -169,16 +173,17 @@ def apply_updates(
         ]
     )
 
-    # Load spatial extension and drop RTREE indexes
+    # Load spatial extension and drop/recreate RTREE indexes around UPDATEs
     con.execute("INSTALL spatial; LOAD spatial;")
     rtree_indexes = con.execute(
         "SELECT index_name, table_name, sql FROM duckdb_indexes() "
         "WHERE sql LIKE '%RTREE%'"
     ).fetchall()
-    for idx_name, _tbl, _sql in rtree_indexes:
-        con.execute(f'DROP INDEX "{idx_name}"')
 
     try:
+        for idx_name, _tbl, _sql in rtree_indexes:
+            con.execute(f'DROP INDEX "{idx_name}"')
+
         # Update reaches
         con.register("reach_fix", reach_df)
         try:
@@ -197,7 +202,7 @@ def apply_updates(
                 UPDATE nodes SET dist_out = nodes.dist_out + nd.delta
                 FROM node_delta nd
                 WHERE nodes.reach_id = nd.reach_id
-                    AND nodes.dist_out > 0
+                    AND nodes.dist_out >= 0
                     AND nodes.dist_out != -9999
             """)
         finally:
